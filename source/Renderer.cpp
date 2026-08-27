@@ -2,6 +2,7 @@
 
 #include "Input.h"
 #include "Offsets.h"
+#include "Registry.h"
 #include "Settings.h"
 #include "Theme.h"
 #include "utils/ToggleSwitch.h"
@@ -203,19 +204,69 @@ namespace renderer
 
 				const float leftWidth = ImGui::GetContentRegionAvail().x * 0.30f;
 
+				// Left pane: ONE entry per mod (index 0 is the framework itself). Right pane:
+				// the selected mod's pages - several pages render as TABS inside the one menu
+				// (project rule: one menu per mod, never several).
+				static int selectedIndex = 0;
+				const std::vector<registry::Entry> entries = registry::Snapshot();
+
+				if (selectedIndex > static_cast<int>(entries.size()))
+				{
+					selectedIndex = 0;
+				}
+
 				ImGui::BeginChild("##menuList", ImVec2(leftWidth, 0.0f), true);
 				ImGui::TextUnformatted("Menus");
 				ImGui::Separator();
-				bool frameworkSelected = true;
-				ImGui::Selectable("Framework Settings", &frameworkSelected);
-				ImGui::Spacing();
-				ImGui::TextWrapped("Mods' menus appear here once the page registry (M3) lands.");
+				if (ImGui::Selectable("Framework Settings", selectedIndex == 0))
+				{
+					selectedIndex = 0;
+				}
+				for (int i = 0; i < static_cast<int>(entries.size()); ++i)
+				{
+					if (ImGui::Selectable(entries[i].modName.c_str(), selectedIndex == i + 1))
+					{
+						selectedIndex = i + 1;
+					}
+				}
+				if (entries.empty())
+				{
+					ImGui::Spacing();
+					ImGui::TextWrapped("No mod has registered a menu yet.");
+				}
 				ImGui::EndChild();
 
 				ImGui::SameLine();
 
 				ImGui::BeginChild("##settingsPane", ImVec2(0.0f, 0.0f), true);
-				DrawFrameworkSettingsPane();
+				if (selectedIndex == 0)
+				{
+					DrawFrameworkSettingsPane();
+				}
+				else
+				{
+					const registry::Entry& entry = entries[selectedIndex - 1];
+
+					ImGui::TextUnformatted(entry.modName.c_str());
+					ImGui::Separator();
+
+					if (entry.pages.size() == 1)
+					{
+						entry.pages[0].render();
+					}
+					else if (ImGui::BeginTabBar("##pages"))
+					{
+						for (const registry::Page& page : entry.pages)
+						{
+							if (ImGui::BeginTabItem(page.pageName.c_str()))
+							{
+								page.render();
+								ImGui::EndTabItem();
+							}
+						}
+						ImGui::EndTabBar();
+					}
+				}
 				ImGui::EndChild();
 			}
 			ImGui::End();

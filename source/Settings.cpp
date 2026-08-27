@@ -125,6 +125,7 @@ namespace settings
 			ReadBool(entries, "Input.bControllerMode", g_values.controllerMode);
 			ReadNumber(entries, "Display.fTextScale", g_values.textScale);
 			ReadNumber(entries, "Display.uWindowPreset", g_values.windowPreset);
+			ReadBool(entries, "Debug.bShowApiDemo", g_values.showApiDemo);
 			ReadNumber(entries, "Log.uLogLevel", g_values.logLevel);
 
 			logger::info("settings loaded: uToggleKey=0x{:X}, bControllerMode={}, fTextScale={:.2f}, uLogLevel={}",
@@ -168,6 +169,10 @@ namespace settings
 				"fTextScale=" << g_values.textScale << "\n"
 				"; Window position preset. 0 = centre. Preset anchors, not free placement.\n"
 				"uWindowPreset=" << g_values.windowPreset << "\n"
+				"\n"
+				"[Debug]\n"
+				"; 1 shows the AMF API Demo menu (registered through the public API).\n"
+				"bShowApiDemo=" << (g_values.showApiDemo ? 1 : 0) << "\n"
 				"\n"
 				"[Log]\n"
 				"; 0 = trace (most comprehensive, the project default) ... 6 = off.\n"

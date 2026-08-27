@@ -23,6 +23,9 @@ namespace settings
 		std::int32_t windowPreset = 0;   // 0 = centre (the standard). Preset positions, never free placement -
 		                                 // the author 2026-08-27, same anchor philosophy as the minimap; more presets later.
 
+		// [Debug]
+		bool showApiDemo = true;         // the AMF API Demo menu (registered via the public API); ships on until real mods populate the registry
+
 		// [Log]
 		std::int32_t logLevel = 0;       // spdlog level: 0 = trace (project rule: ship the most comprehensive level)
 	};

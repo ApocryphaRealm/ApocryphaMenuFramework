@@ -8,6 +8,13 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 * **failed** - built but crashed or malfunctioned; the number was reclaimed
 * **scratch** - a hypothesis-test build that never held a real number
 
+## 1.2.0 - 2026-08-27 - untested
+
+### Added
+- M3 first half: the page registry is LIVE. AMF_RegisterPage accepts registrations (was an honest refusal since M0); the left pane lists one entry per registered mod; a mod with several pages renders them as TABS inside its one menu - the one-menu-per-mod rule implemented at the framework level. Thread-safe registration, render-thread snapshot iteration, duplicate and null-argument refusals logged.
+- AMF API Demo menu (two pages, toggles/slider/button) registered through the public AMF_RegisterPage path itself - proves the registry end to end and gives gamepad navigation real content to select (the author, 1.1.2: nothing to select yet). Controlled by bShowApiDemo (INI, default 1).
+- Second half of M3 (the SMF-compatible ig* export surface + dual-resolve client header) follows in the next versions, driven by the export inventory now being compiled.
+
 ## 1.1.3 - 2026-08-27 - untested
 
 ### Fixed

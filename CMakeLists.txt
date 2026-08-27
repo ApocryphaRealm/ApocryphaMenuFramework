@@ -15,7 +15,7 @@ cmake_minimum_required(VERSION 3.21)
 
 project(
 	ApocryphaMenuFramework
-	VERSION 1.1.3
+	VERSION 1.2.0
 	LANGUAGES CXX
 )
 

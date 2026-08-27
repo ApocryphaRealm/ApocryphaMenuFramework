@@ -1,10 +1,14 @@
 #include "AMF/API.h"
 #include "Input.h"
+#include "Registry.h"
 #include "Renderer.h"
 #include "Settings.h"
 #include "Theme.h"
 
 #include "utils/Logger.h"
+#include "utils/ToggleSwitch.h"
+
+#include <imgui.h>
 
 #include <array>
 
@@ -35,6 +39,38 @@ namespace
 			break;
 		case SKSE::MessagingInterface::kDataLoaded:
 			logger::debug("kDataLoaded received");
+
+			// Dogfood the public API: the demo menu registers through AMF_RegisterPage exactly
+			// as an external mod would, proving the registry + tab rendering end to end - and
+			// giving the window enough selectable content to actually judge gamepad navigation
+			// (the author, 1.1.2: "hard to tell whether it's working... there's not anything to
+			// select yet"). Two pages -> renders as tabs (one-menu-per-mod rule).
+			if (settings::Get().showApiDemo)
+			{
+				AMF_RegisterPage("AMF API Demo", "Widgets", +[]() {
+					static bool toggleA = true;
+					static bool toggleB = false;
+					static float slider = 0.5f;
+					static int counter = 0;
+					widgets::Toggle("Demo toggle A", &toggleA);
+					widgets::Toggle("Demo toggle B", &toggleB);
+					ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
+					ImGui::SliderFloat("Demo slider", &slider, 0.0f, 1.0f, "%.2f");
+					if (ImGui::Button("Demo button"))
+					{
+						++counter;
+					}
+					ImGui::SameLine();
+					ImGui::Text("pressed %d time(s)", counter);
+					ImGui::TextWrapped("This menu registered itself through AMF_RegisterPage - "
+									   "the same path every mod uses. Disable it with "
+									   "bShowApiDemo=0 in ApocryphaMenuFramework.ini.");
+				});
+				AMF_RegisterPage("AMF API Demo", "Second Tab", +[]() {
+					ImGui::TextWrapped("A second page from the same mod renders as a TAB inside "
+									   "the one menu - never as a second menu (project rule).");
+				});
+			}
 			break;
 		default:
 			break;
@@ -79,12 +115,7 @@ AMF_API std::uint32_t AMF_GetAPIVersion()
 
 AMF_API bool AMF_RegisterPage(const char* a_modName, const char* a_pageName, AMF_RenderCallback a_render)
 {
-	// M3 implements the registry. Refusing now (rather than pretending) means an early adopter
-	// gets an honest false + a log line, not a silently dropped page.
-	logger::warn("AMF_RegisterPage(\"{}\", \"{}\") called before the page registry exists (M3); refused honestly",
-				 a_modName ? a_modName : "<null>", a_pageName ? a_pageName : "<null>");
-
-	return false;
+	return registry::Register(a_modName, a_pageName, a_render);
 }
 
 AMF_API std::uint32_t AMF_GetInputMode()
