@@ -288,11 +288,6 @@ namespace input
 			drained.swap(g_queue);
 		}
 
-		if (drained.empty())
-		{
-			return;
-		}
-
 		ImGuiIO& io = ImGui::GetIO();
 		const ImVec2 display = io.DisplaySize;
 		const bool controllerMode = settings::Get().controllerMode;
@@ -306,7 +301,6 @@ namespace input
 				g_cursorY += record.y;
 				g_cursorX = g_cursorX < 0.0f ? 0.0f : (g_cursorX > display.x - 1.0f ? display.x - 1.0f : g_cursorX);
 				g_cursorY = g_cursorY < 0.0f ? 0.0f : (g_cursorY > display.y - 1.0f ? display.y - 1.0f : g_cursorY);
-				io.AddMousePosEvent(g_cursorX, g_cursorY);
 				break;
 			case Record::Kind::kMouseButton:
 				if (record.code < ImGuiMouseButton_COUNT)
@@ -350,6 +344,14 @@ namespace input
 				break;
 			}
 		}
+
+		// One authoritative cursor position per frame, movement or not. The Win32 backend's
+		// fallback poll pushes the OS cursor position (which the game recentres at will) into
+		// the same event queue every frame; on frames where we stayed silent that stale
+		// position won, which is exactly the flicker/teleport of the 1.1.0 smoke test. Being
+		// unconditionally last - paired with trickle-off (set at init) - means the software
+		// cursor is the only position ImGui ever acts on.
+		io.AddMousePosEvent(g_cursorX, g_cursorY);
 	}
 
 	void OnMenuOpened()

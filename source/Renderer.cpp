@@ -87,6 +87,13 @@ namespace renderer
 
 				ImGui::CreateContext();
 
+				// Trickle-off: apply every queued input event in the same NewFrame. With
+				// trickling, the Win32 backend's OS-cursor poll and our software cursor could
+				// land in DIFFERENT frames and the cursor visibly alternated between the two
+				// (the 1.1.0 flicker). All sources resolve within one frame, last-writer wins,
+				// and the last writer is always our integrated position.
+				ImGui::GetIO().ConfigInputTrickleEventQueue = false;
+
 				ImGui_ImplWin32_Init(hwnd);
 				ImGui_ImplDX11_Init(device, context);
 
