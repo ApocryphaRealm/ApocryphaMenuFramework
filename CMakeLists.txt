@@ -54,9 +54,13 @@ find_package(spdlog REQUIRED CONFIG)
 # (Removed once as "DEM-specific"; it is not.)
 find_package(directxtk CONFIG REQUIRED)
 
-# Dear ImGui arrives in M1 (render loop), via vcpkg or vendored per the prior-art survey's
-# recommendation - deliberately NOT added in M0, so the scaffold builds without waiting on that
-# decision. When it lands: MIT licence text ships verbatim with the package.
+# Dear ImGui via the vcpkg port with its binding features - the survey's recommendation, and the
+# pattern Wheeler ships (per its own vcpkg.json). Configure imgui through vcpkg FEATURES, never
+# via IMGUI_USER_CONFIG or consumer-side compile definitions: the port patches imconfig.h, and a
+# consumer-side define like IMGUI_DISABLE_OBSOLETE_FUNCTIONS gates DATA MEMBERS - a silent ABI
+# break against the library vcpkg already compiled (survey Section 5.2). MIT licence text ships
+# verbatim with the package at release time.
+find_package(imgui CONFIG REQUIRED)
 
 add_commonlibsse_plugin(${PROJECT_NAME} SOURCES ${headers} ${sources})
 add_library("${PROJECT_NAME}::${PROJECT_NAME}" ALIAS "${PROJECT_NAME}")
@@ -93,6 +97,7 @@ target_link_libraries(
 	PRIVATE
 		CommonLibSSE::CommonLibSSE
 		spdlog::spdlog_header_only
+		imgui::imgui
 )
 
 if (MSVC)

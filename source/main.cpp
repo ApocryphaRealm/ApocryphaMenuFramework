@@ -1,4 +1,5 @@
 #include "AMF/API.h"
+#include "Renderer.h"
 #include "Theme.h"
 
 #include "utils/Logger.h"
@@ -22,16 +23,47 @@ namespace
 
 	std::uint32_t g_inputMode = 0;  // AMF_InputMode::kKeyboard until the settings page (M2) owns it
 
+	// M1's minimal input: one SKSE event sink watching the toggle key (K, rule 28). Full input
+	// capture - PollInputDevices splicing, ControlMap-aware filtering, the gamepad feed - is M2;
+	// this sink deliberately never blocks anything, so the game also sees the key.
+	class ToggleKeySink : public RE::BSTEventSink<RE::InputEvent*>
+	{
+	public:
+		static ToggleKeySink* GetSingleton()
+		{
+			static ToggleKeySink singleton;
+			return &singleton;
+		}
+
+		RE::BSEventNotifyControl ProcessEvent(RE::InputEvent* const* a_event, RE::BSTEventSource<RE::InputEvent*>*) override
+		{
+			for (RE::InputEvent* e = a_event ? *a_event : nullptr; e; e = e->next)
+			{
+				const RE::ButtonEvent* button = e->AsButtonEvent();
+
+				if (button && button->IsDown() && button->GetIDCode() == 0x25)  // K
+				{
+					renderer::ToggleMainWindow();
+				}
+			}
+
+			return RE::BSEventNotifyControl::kContinue;
+		}
+	};
+
 	void SKSEMessageListener(SKSE::MessagingInterface::Message* a_msg)
 	{
 		switch (a_msg->type)
 		{
+		case SKSE::MessagingInterface::kInputLoaded:
+			if (auto* manager = RE::BSInputDeviceManager::GetSingleton())
+			{
+				manager->AddEventSink(ToggleKeySink::GetSingleton());
+				logger::debug("M1 toggle-key sink registered (K shows/hides the framework window)");
+			}
+			break;
 		case SKSE::MessagingInterface::kDataLoaded:
-			// M1 hooks the renderer here. Deliberately NOT during SKSEPluginLoad: resolving
-			// relocated addresses that early is exactly what the DEM crash investigation
-			// (2026-08-27) taught this project to avoid.
-			logger::debug("kDataLoaded received; renderer hook lands here in M1");
-			theme::Apply();
+			logger::debug("kDataLoaded received");
 			break;
 		default:
 			break;
@@ -111,6 +143,21 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 	}
 
 	logger::debug("SKSE message listener registered");
+
+	// Renderer hooks install HERE, not at kDataLoaded: D3D bring-up precedes kDataLoaded, so
+	// there is no later moment that still catches init. The tension with the DEM early-
+	// relocation lesson is real and deliberate - the mitigation is the byte-pattern guard on
+	// every site: nothing is written over bytes that are not the expected call instruction,
+	// and a refused guard leaves the plugin loaded-but-inert with the reason in the log.
+	if (renderer::Install())
+	{
+		logger::info("Renderer hooks installed");
+	}
+	else
+	{
+		logger::warn("Renderer hooks NOT installed - the framework is inert this session (see errors above)");
+	}
+
 	logger::info("Successfully loaded!");
 
 	return true;

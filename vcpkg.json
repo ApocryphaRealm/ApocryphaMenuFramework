@@ -5,7 +5,14 @@
     "homepage": "https://github.com/ApocryphaRealm/ApocryphaMenuFramework",
     "license": "MIT",
     "dependencies": [
-        "commonlibsse-ng"
+        "commonlibsse-ng",
+        {
+            "name": "imgui",
+            "features": [
+                "dx11-binding",
+                "win32-binding"
+            ]
+        }
     ],
     "builtin-baseline": "8d3649ba34aab36914ddd897958599aa0a91b08e"
 }

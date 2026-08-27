@@ -2,6 +2,8 @@
 
 #include "utils/Logger.h"
 
+#include <imgui.h>
+
 namespace theme
 {
 	namespace
@@ -131,13 +133,63 @@ namespace theme
 
 	void Apply()
 	{
-		// M1: applies kBackground/kFrame/kBorderThickness to the live ImGui style, with
-		// GetGameHUDOpacity() as the global alpha multiplier at draw time. Until then, resolve
-		// and log the opacity once - which both proves the resolver against a live game in M0
-		// and keeps /OPT:REF from dead-stripping it (verified stripped from the first M0 build:
-		// the "fHUDOpacity" strings were absent from the DLL because nothing called this path).
+		// The decided identity, applied to the live style. True black at full opacity, warm
+		// off-white #F5F2E9 framing and text, and a visible border on EVERY interactive element
+		// - windows, frames, buttons, popups - which stock ImGui does not do. The game-opacity
+		// multiplier is deliberately NOT baked in here: the present hook sets style.Alpha every
+		// frame so one value dims everything consistently and follows the options slider live.
+		ImGuiStyle& style = ImGui::GetStyle();
+
+		style.WindowBorderSize = kBorderThickness;
+		style.FrameBorderSize = kBorderThickness;   // the "framing around all buttons" half
+		style.PopupBorderSize = kBorderThickness;
+		style.ChildBorderSize = kBorderThickness;
+		style.TabBorderSize = kBorderThickness;
+		style.WindowRounding = 0.0f;
+		style.FrameRounding = 0.0f;
+
+		const ImVec4 black{ 0.0f, 0.0f, 0.0f, 1.0f };
+		// #F5F2E9 - the project's established warm off-white. NOT pure white; see Theme.h.
+		const ImVec4 frame{ 245.0f / 255.0f, 242.0f / 255.0f, 233.0f / 255.0f, 1.0f };
+		const ImVec4 frameDim{ frame.x, frame.y, frame.z, 0.55f };
+		const ImVec4 frameFaint{ frame.x, frame.y, frame.z, 0.14f };
+		const ImVec4 frameSoft{ frame.x, frame.y, frame.z, 0.28f };
+
+		ImVec4* c = style.Colors;
+		c[ImGuiCol_WindowBg] = black;
+		c[ImGuiCol_ChildBg] = black;
+		c[ImGuiCol_PopupBg] = black;
+		c[ImGuiCol_MenuBarBg] = black;
+		c[ImGuiCol_TitleBg] = black;
+		c[ImGuiCol_TitleBgActive] = black;
+		c[ImGuiCol_TitleBgCollapsed] = black;
+
+		c[ImGuiCol_Text] = frame;
+		// Deliberately NOT ImGui's ~50% grey: the TextDisabled problem is a standing project
+		// rule (unreadable on black). Dimmed only slightly, still legible.
+		c[ImGuiCol_TextDisabled] = frameDim;
+
+		c[ImGuiCol_Border] = frame;
+		c[ImGuiCol_Separator] = frameDim;
+
+		c[ImGuiCol_FrameBg] = black;
+		c[ImGuiCol_FrameBgHovered] = frameFaint;
+		c[ImGuiCol_FrameBgActive] = frameSoft;
+		c[ImGuiCol_Button] = black;
+		c[ImGuiCol_ButtonHovered] = frameFaint;
+		c[ImGuiCol_ButtonActive] = frameSoft;
+		c[ImGuiCol_Header] = frameFaint;
+		c[ImGuiCol_HeaderHovered] = frameSoft;
+		c[ImGuiCol_HeaderActive] = frameSoft;
+
+		c[ImGuiCol_SliderGrab] = frame;
+		c[ImGuiCol_SliderGrabActive] = frame;
+		c[ImGuiCol_CheckMark] = frame;
+
+		c[ImGuiCol_NavHighlight] = frame;  // the nav box is part of the identity, not an afterthought
+
 		const float opacity = GetGameHUDOpacity();
 
-		logger::info("Theme: game HUD opacity resolved to {:.2f} (applied as the global alpha multiplier from M1)", opacity);
+		logger::info("Theme applied: true black / #F5F2E9, borders on all elements; game HUD opacity {:.2f}", opacity);
 	}
 }
