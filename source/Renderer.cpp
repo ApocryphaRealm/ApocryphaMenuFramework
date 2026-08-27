@@ -168,15 +168,31 @@ namespace renderer
 			}
 			ImGui::TextWrapped("Rebinding arrives with the Controls page in a later milestone; "
 							   "until then the key can be changed in ApocryphaMenuFramework.ini.");
+			ImGui::Spacing();
+			ImGui::TextUnformatted("Window position: Centre");
+			ImGui::TextWrapped("Preset positions rather than free placement; more presets arrive "
+							   "in a later milestone.");
 		}
 
 		void DrawFrameworkWindow()
 		{
 			const ImVec2 display = ImGui::GetIO().DisplaySize;
-			ImGui::SetNextWindowPos(ImVec2(display.x * 0.5f, display.y * 0.5f), ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
+
+			// PRESET positions, never free placement (design decision, 2026-08-27) - the same anchor
+			// philosophy as the minimap's corner presets, computed from the display centre so
+			// it is correct at any resolution. Preset 0 = centre is the standard; further
+			// presets become a settings-page dropdown once worked out. Position is therefore
+			// ImGuiCond_Always + NoMove; only the SIZE belongs to the user.
+			ImVec2 anchor{ 0.5f, 0.5f };
+			switch (settings::Get().windowPreset)
+			{
+			default:
+				break;  // 0 (and any unknown value) = centre
+			}
+			ImGui::SetNextWindowPos(ImVec2(display.x * anchor.x, display.y * anchor.y), ImGuiCond_Always, anchor);
 			ImGui::SetNextWindowSize(ImVec2(display.x * 0.55f, display.y * 0.70f), ImGuiCond_FirstUseEver);
 
-			if (ImGui::Begin("Apocrypha Menu Framework##m2"))
+			if (ImGui::Begin("Apocrypha Menu Framework##m2", nullptr, ImGuiWindowFlags_NoMove))
 			{
 				// Version always on show - a version-less status line reads as a stale build
 				// (the author, third smoke test).

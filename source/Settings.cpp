@@ -124,6 +124,7 @@ namespace settings
 			ReadNumber(entries, "Input.uToggleKey", g_values.toggleKey);
 			ReadBool(entries, "Input.bControllerMode", g_values.controllerMode);
 			ReadNumber(entries, "Display.fTextScale", g_values.textScale);
+			ReadNumber(entries, "Display.uWindowPreset", g_values.windowPreset);
 			ReadNumber(entries, "Log.uLogLevel", g_values.logLevel);
 
 			logger::info("settings loaded: uToggleKey=0x{:X}, bControllerMode={}, fTextScale={:.2f}, uLogLevel={}",
@@ -165,6 +166,8 @@ namespace settings
 				"[Display]\n"
 				"; Extra text scale on top of the automatic resolution scaling.\n"
 				"fTextScale=" << g_values.textScale << "\n"
+				"; Window position preset. 0 = centre. Preset anchors, not free placement.\n"
+				"uWindowPreset=" << g_values.windowPreset << "\n"
 				"\n"
 				"[Log]\n"
 				"; 0 = trace (most comprehensive, the project default) ... 6 = off.\n"
