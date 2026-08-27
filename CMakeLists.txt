@@ -49,6 +49,10 @@ source_group(
 
 find_package(CommonLibSSE CONFIG REQUIRED)
 find_package(spdlog REQUIRED CONFIG)
+# Not used directly by this project - CommonLibSSE-NG's own link INTERFACE names
+# Microsoft::DirectXTK, so the consumer must resolve the target or configure fails at generate.
+# (Removed once as "DEM-specific"; it is not.)
+find_package(directxtk CONFIG REQUIRED)
 
 # Dear ImGui arrives in M1 (render loop), via vcpkg or vendored per the prior-art survey's
 # recommendation - deliberately NOT added in M0, so the scaffold builds without waiting on that

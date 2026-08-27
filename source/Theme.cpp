@@ -132,8 +132,12 @@ namespace theme
 	void Apply()
 	{
 		// M1: applies kBackground/kFrame/kBorderThickness to the live ImGui style, with
-		// GetGameHUDOpacity() as the global alpha multiplier at draw time. Stub until the ImGui
-		// dependency lands - kept so main.cpp's wiring is final from M0.
-		logger::debug("Theme::Apply is a stub until M1 (ImGui not yet embedded)");
+		// GetGameHUDOpacity() as the global alpha multiplier at draw time. Until then, resolve
+		// and log the opacity once - which both proves the resolver against a live game in M0
+		// and keeps /OPT:REF from dead-stripping it (verified stripped from the first M0 build:
+		// the "fHUDOpacity" strings were absent from the DLL because nothing called this path).
+		const float opacity = GetGameHUDOpacity();
+
+		logger::info("Theme: game HUD opacity resolved to {:.2f} (applied as the global alpha multiplier from M1)", opacity);
 	}
 }
