@@ -1,5 +1,7 @@
 #include "AMF/API.h"
+#include "Input.h"
 #include "Renderer.h"
+#include "Settings.h"
 #include "Theme.h"
 
 #include "utils/Logger.h"
@@ -24,46 +26,12 @@ namespace
 	// 0xC8/0xD0/0xCB/0xCD = arrow keys, 0x1C = Enter.
 	constexpr std::array<std::int32_t, 8> kReservedKeys{ 0x3B, 0x0F, 0x01, 0xC8, 0xD0, 0xCB, 0xCD, 0x1C };
 
-	std::uint32_t g_inputMode = 0;  // AMF_InputMode::kKeyboard until the settings page (M2) owns it
-
-	// M1's minimal input: one SKSE event sink watching the toggle key (K, rule 28). Full input
-	// capture - PollInputDevices splicing, ControlMap-aware filtering, the gamepad feed - is M2;
-	// this sink deliberately never blocks anything, so the game also sees the key.
-	class ToggleKeySink : public RE::BSTEventSink<RE::InputEvent*>
-	{
-	public:
-		static ToggleKeySink* GetSingleton()
-		{
-			static ToggleKeySink singleton;
-			return &singleton;
-		}
-
-		RE::BSEventNotifyControl ProcessEvent(RE::InputEvent* const* a_event, RE::BSTEventSource<RE::InputEvent*>*) override
-		{
-			for (RE::InputEvent* e = a_event ? *a_event : nullptr; e; e = e->next)
-			{
-				const RE::ButtonEvent* button = e->AsButtonEvent();
-
-				if (button && button->IsDown() && button->GetIDCode() == 0x3B)  // F1
-				{
-					renderer::ToggleMainWindow();
-				}
-			}
-
-			return RE::BSEventNotifyControl::kContinue;
-		}
-	};
-
 	void SKSEMessageListener(SKSE::MessagingInterface::Message* a_msg)
 	{
 		switch (a_msg->type)
 		{
 		case SKSE::MessagingInterface::kInputLoaded:
-			if (auto* manager = RE::BSInputDeviceManager::GetSingleton())
-			{
-				manager->AddEventSink(ToggleKeySink::GetSingleton());
-				logger::debug("M1 toggle-key sink registered (F1 shows/hides the framework window)");
-			}
+			logger::debug("kInputLoaded received (input capture is hook-based since M2; no sink to register)");
 			break;
 		case SKSE::MessagingInterface::kDataLoaded:
 			logger::debug("kDataLoaded received");
@@ -98,7 +66,10 @@ AMF_API std::uint32_t SMF_GetReservedKeyCodes(std::int32_t* a_buffer, std::uint3
 
 AMF_API const char* AMF_GetVersionString()
 {
-	return "1.0.0";
+	// Derived from the one authoritative version (CMake -> plugin declaration), never a
+	// second hand-maintained literal - the literal drifted once already (said 1.0.0 at 1.0.2).
+	static const std::string version = SKSE::PluginDeclaration::GetSingleton()->GetVersion().string(".");
+	return version.c_str();
 }
 
 AMF_API std::uint32_t AMF_GetAPIVersion()
@@ -118,7 +89,7 @@ AMF_API bool AMF_RegisterPage(const char* a_modName, const char* a_pageName, AMF
 
 AMF_API std::uint32_t AMF_GetInputMode()
 {
-	return g_inputMode;
+	return settings::Get().controllerMode ? 1u : 0u;
 }
 
 SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
@@ -152,9 +123,20 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 	// relocation lesson is real and deliberate - the mitigation is the byte-pattern guard on
 	// every site: nothing is written over bytes that are not the expected call instruction,
 	// and a refused guard leaves the plugin loaded-but-inert with the reason in the log.
+	settings::Load();
+
 	if (renderer::Install())
 	{
 		logger::info("Renderer hooks installed");
+
+		if (input::Install())
+		{
+			logger::info("Input capture installed (M2)");
+		}
+		else
+		{
+			logger::warn("Input capture NOT installed - the menu renders but cannot take input (see errors above)");
+		}
 	}
 	else
 	{

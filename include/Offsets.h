@@ -34,6 +34,15 @@ namespace offsets
 	// record the empirical answer per runtime. If both match, the first (Wheeler's) wins; if
 	// neither matches, the framework refuses loudly and stays inert - the game is unaffected.
 	// -----------------------------------------------------------------------------------------
+	// -----------------------------------------------------------------------------------------
+	// BSInputDeviceManager::PollInputDevices - the input splice site (survey §2.1).
+	// (SE 67315, AE 68617) + 0x7B: ModExplorerMenu (MIT) uses REL::Relocate(0x7B, 0x7B, 0x81) and
+	// equipment-cycle-hotkeys (MIT) independently uses REL::Offset(0x7B) with the identical ID -
+	// two unrelated shipping mods agreeing on both runtimes. Treat as settled; guarded anyway.
+	// -----------------------------------------------------------------------------------------
+	inline constexpr REL::RelocationID kPollInputDevicesID{ 67315, 68617 };
+	inline constexpr auto kPollInputDevicesOffset = REL::Offset(0x7B);
+
 	inline constexpr REL::RelocationID kD3DInitID{ 75595, 77226 };
 
 	struct D3DInitCandidate

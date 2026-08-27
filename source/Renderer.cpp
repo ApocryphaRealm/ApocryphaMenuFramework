@@ -1,7 +1,10 @@
 #include "Renderer.h"
 
+#include "Input.h"
 #include "Offsets.h"
+#include "Settings.h"
 #include "Theme.h"
+#include "utils/ToggleSwitch.h"
 #include "utils/Logger.h"
 
 #include <imgui.h>
@@ -19,6 +22,7 @@ namespace renderer
 	{
 		std::atomic<bool> g_d3dReady{ false };
 		std::atomic<bool> g_windowVisible{ false };
+		std::atomic<bool> g_justOpened{ false };  // set on the input thread, consumed on the render thread
 
 		// M1.1 (the author's smoke-test feedback): at 3200x1800 the stock ImGui font and a fixed
 		// 520x340 window are "far too small". One scale factor, derived from the real display
@@ -94,8 +98,13 @@ namespace renderer
 					g_uiScale = 1.0f;  // never shrink below the 1080p baseline
 				}
 
-				ImGui::GetIO().FontGlobalScale = g_uiScale;
+				// Text runs 30% larger than the pure resolution scale - the author's 1.0.1 feedback:
+				// "bigger text relative to the current size." Fonts only; widget/padding
+				// geometry keeps the unboosted scale below.
+				ImGui::GetIO().FontGlobalScale = g_uiScale * 1.30f;
 				ImGui::GetStyle().ScaleAllSizes(g_uiScale);
+
+				ImGui::GetIO().IniFilename = "Data/SKSE/Plugins/ApocryphaMenuFramework_layout.ini";
 
 				logger::info("UI scale set to {:.2f} for a {}px-tall display (1080p baseline)", g_uiScale, window.windowHeight);
 
@@ -103,6 +112,91 @@ namespace renderer
 							 static_cast<const void*>(hwnd), window.windowWidth, window.windowHeight);
 			}
 		};
+
+		// -----------------------------------------------------------------------------------
+		// The framework window: SMF's two-pane structure (design decision, 2026-08-27 - left pane lists
+		// the mods' menus, right pane shows the selected menu's settings). M3's registry fills
+		// the left pane; until then the framework's own settings page is the only entry.
+		// -----------------------------------------------------------------------------------
+		void DrawFrameworkSettingsPane()
+		{
+			auto& values = settings::Get();
+
+			ImGui::TextUnformatted("Framework Settings");
+			ImGui::Separator();
+			ImGui::Spacing();
+
+			// First setting by standing decision: the explicit input-mode toggle.
+			if (widgets::Toggle("Controller input mode", &values.controllerMode))
+			{
+				logger::info("settings page: controller input mode -> {}", values.controllerMode);
+				settings::Save();
+			}
+			ImGui::TextWrapped("Off: keyboard navigation (arrow keys, Enter, Escape). "
+							   "On: gamepad navigation (D-pad moves, A activates, B cancels).");
+			ImGui::Spacing();
+			ImGui::Spacing();
+
+			ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
+			if (ImGui::SliderFloat("Text size", &values.textScale, 1.0f, 2.0f, "%.2f"))
+			{
+				// applied live via FontGlobalScale each frame
+			}
+			if (ImGui::IsItemDeactivatedAfterEdit())
+			{
+				logger::info("settings page: text scale -> {:.2f}", values.textScale);
+				settings::Save();
+			}
+			ImGui::TextWrapped("Extra text scaling on top of the automatic resolution scale.");
+			ImGui::Spacing();
+			ImGui::Spacing();
+
+			if (values.toggleKey == 0x3B)
+			{
+				ImGui::TextUnformatted("Menu toggle key: F1");
+			}
+			else
+			{
+				ImGui::Text("Menu toggle key: scan code %d", values.toggleKey);
+			}
+			ImGui::TextWrapped("Rebinding arrives with the Controls page in a later milestone; "
+							   "until then the key can be changed in ApocryphaMenuFramework.ini.");
+		}
+
+		void DrawFrameworkWindow()
+		{
+			const ImVec2 display = ImGui::GetIO().DisplaySize;
+			ImGui::SetNextWindowPos(ImVec2(display.x * 0.5f, display.y * 0.5f), ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
+			ImGui::SetNextWindowSize(ImVec2(display.x * 0.55f, display.y * 0.70f), ImGuiCond_FirstUseEver);
+
+			if (ImGui::Begin("Apocrypha Menu Framework##m2"))
+			{
+				// Version always on show - a version-less status line reads as a stale build
+				// (the author, third smoke test).
+				static const std::string version =
+					SKSE::PluginDeclaration::GetSingleton()->GetVersion().string(".");
+				ImGui::Text("Apocrypha Menu Framework  v%s", version.c_str());
+				ImGui::Separator();
+
+				const float leftWidth = ImGui::GetContentRegionAvail().x * 0.30f;
+
+				ImGui::BeginChild("##menuList", ImVec2(leftWidth, 0.0f), true);
+				ImGui::TextUnformatted("Menus");
+				ImGui::Separator();
+				bool frameworkSelected = true;
+				ImGui::Selectable("Framework Settings", &frameworkSelected);
+				ImGui::Spacing();
+				ImGui::TextWrapped("Mods' menus appear here once the page registry (M3) lands.");
+				ImGui::EndChild();
+
+				ImGui::SameLine();
+
+				ImGui::BeginChild("##settingsPane", ImVec2(0.0f, 0.0f), true);
+				DrawFrameworkSettingsPane();
+				ImGui::EndChild();
+			}
+			ImGui::End();
+		}
 
 		// -----------------------------------------------------------------------------------
 		// Present - every frame. Fires BEFORE init completes, hence the atomic gate.
@@ -122,32 +216,62 @@ namespace renderer
 
 				ImGui_ImplDX11_NewFrame();
 				ImGui_ImplWin32_NewFrame();
+
+				const bool visible = g_windowVisible.load(std::memory_order_acquire);
+
+				// Open-transition work happens HERE, not in ToggleMainWindow - the toggle is
+				// flipped on the input thread, and cursor centring touches ImGui state.
+				if (g_justOpened.exchange(false, std::memory_order_acq_rel))
+				{
+					input::OnMenuOpened();
+				}
+
+				// Translation runs after the backends' NewFrame (so our queued io.Add*Event
+				// calls land after, and therefore win over, the Win32 backend's own
+				// GetCursorPos-based mouse update) and before ImGui::NewFrame consumes them.
+				if (visible)
+				{
+					input::ProcessQueuedEvents();
+				}
+
+				ImGuiIO& io = ImGui::GetIO();
+
+				// Software cursor while the menu is open - the game hides and recentres the OS
+				// cursor at will, so ImGui draws its own at the position we integrate.
+				io.MouseDrawCursor = visible;
+
+				// Nav mode follows the EXPLICIT setting live (the toggle sits on the settings
+				// page itself). Never auto-detected - that is the nav-focus-drift bug.
+				if (settings::Get().controllerMode)
+				{
+					io.ConfigFlags = (io.ConfigFlags | ImGuiConfigFlags_NavEnableGamepad) & ~ImGuiConfigFlags_NavEnableKeyboard;
+				}
+				else
+				{
+					io.ConfigFlags = (io.ConfigFlags | ImGuiConfigFlags_NavEnableKeyboard) & ~ImGuiConfigFlags_NavEnableGamepad;
+				}
+
+				// Live setting: the fTextScale slider must take effect while being dragged.
+				io.FontGlobalScale = g_uiScale * settings::Get().textScale;
+
 				ImGui::NewFrame();
 
 				// The game's own HUD opacity, re-read every frame so the options slider is
 				// followed live (theme spec point 3), applied as the ONE global multiplier.
 				ImGui::GetStyle().Alpha = theme::GetGameHUDOpacity();
 
-				if (g_windowVisible.load(std::memory_order_relaxed))
+				if (visible)
 				{
-					// Centre-relative default position - the same principle as Local Map Upgrade's
-					// border (the author, from the smoke test): anchor to the DISPLAY CENTRE with a
-					// centre pivot, so the default placement is correct at any resolution instead
-					// of falling wherever ImGui's top-left default lands (a sliver in the corner
-					// at 3200x1800, per the 16:35 capture). FirstUseEver on both, so a player who
-					// moves or resizes the window keeps their arrangement.
-					const ImVec2 display = ImGui::GetIO().DisplaySize;
-					ImGui::SetNextWindowPos(ImVec2(display.x * 0.5f, display.y * 0.5f), ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
-					ImGui::SetNextWindowSize(ImVec2(520.0f * g_uiScale, 340.0f * g_uiScale), ImGuiCond_FirstUseEver);
-
-					if (ImGui::Begin("Apocrypha Menu Framework"))
+					// Escape closes. The keypress was consumed input-side, so the game does
+					// not also react to the same stroke.
+					if (ImGui::IsKeyPressed(ImGuiKey_Escape, false))
 					{
-						ImGui::TextUnformatted("M1 render loop is live.");
-						ImGui::Separator();
-						ImGui::Text("Game HUD opacity: %.2f", theme::GetGameHUDOpacity());
-						ImGui::TextUnformatted("Input capture arrives in M2; this window is display-only.");
+						ToggleMainWindow();
 					}
-					ImGui::End();
+					else
+					{
+						DrawFrameworkWindow();
+					}
 				}
 
 				ImGui::Render();
@@ -174,7 +298,7 @@ namespace renderer
 
 	bool Install()
 	{
-		SKSE::AllocTrampoline(static_cast<std::size_t>(14) * 2);
+		SKSE::AllocTrampoline(static_cast<std::size_t>(14) * 3);  // present + D3D init + PollInputDevices
 
 		// ---- present: settled site, guard anyway ------------------------------------------
 		const std::uintptr_t presentSite = offsets::kPresentID.address() + offsets::kPresentOffset.offset();
@@ -218,7 +342,12 @@ namespace renderer
 	void ToggleMainWindow()
 	{
 		const bool now = !g_windowVisible.load(std::memory_order_relaxed);
-		g_windowVisible.store(now, std::memory_order_relaxed);
+		g_windowVisible.store(now, std::memory_order_release);
+
+		if (now)
+		{
+			g_justOpened.store(true, std::memory_order_release);
+		}
 
 		logger::info("Framework window {}", now ? "shown" : "hidden");
 	}
