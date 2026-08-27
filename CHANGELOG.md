@@ -8,6 +8,11 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 * **failed** - built but crashed or malfunctioned; the number was reclaimed
 * **scratch** - a hypothesis-test build that never held a real number
 
+## 1.1.3 - 2026-08-27 - untested
+
+### Fixed
+- Release-triggered game actions could fire from inside the menu (the author's 1.1.2 report: the shout command worked with the menu open and cascaded into another menu). Root cause: the stuck-key mitigation passed EVERY button release through to the game, and Skyrim's shout activates on RELEASE - so a button pressed inside the menu was consumed on the down-edge but completed as a shout on the up-edge. The hook now tracks which buttons the game actually saw go down; a release passes through only for a button held since before the menu opened, and both edges of anything pressed inside the menu are consumed.
+
 ## 1.1.2 - 2026-08-27 - untested
 
 ### Changed

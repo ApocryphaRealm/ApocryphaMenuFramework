@@ -8,6 +8,7 @@
 #include <imgui.h>
 
 #include <mutex>
+#include <unordered_set>
 #include <vector>
 
 namespace input
@@ -40,6 +41,19 @@ namespace input
 
 		std::mutex g_queueLock;
 		std::vector<Record> g_queue;
+
+		// Buttons the GAME currently believes are held - maintained on the input thread only.
+		// While the menu is open, a release passes through ONLY if its press reached the game
+		// before the menu opened. Passing every release (the 1.1.2 behavior) let release-
+		// triggered actions fire: Skyrim's shout activates on button RELEASE, so a shout
+		// button pressed INSIDE the menu was consumed on the down-edge but completed as a
+		// shout on the up-edge (the author's report). Keyed device<<32|idCode.
+		std::unordered_set<std::uint64_t> g_gameHeldButtons;
+
+		std::uint64_t ButtonKey(const RE::ButtonEvent* a_button)
+		{
+			return (static_cast<std::uint64_t>(a_button->GetDevice()) << 32) | a_button->GetIDCode();
+		}
 
 		// Software cursor, owned by the render thread. The game recentres/hides the OS cursor
 		// at will, so the only trustworthy position is one we integrate ourselves from the
@@ -217,11 +231,40 @@ namespace input
 					{
 						CopyForImGui(current);
 
+						passThrough = false;
+
+						if (button && button->IsUp())
+						{
+							// Pass the release ONLY if the game saw the press (held across the
+							// open transition). A stray release for a key the game never saw
+							// down would be a no-op anyway - but shout-style release-triggered
+							// actions make an unconditional pass actively dangerous.
+							const auto held = g_gameHeldButtons.find(ButtonKey(button));
+							if (held != g_gameHeldButtons.end())
+							{
+								g_gameHeldButtons.erase(held);
+								passThrough = true;
+							}
+						}
+
 						// Releases pass through so a key/button held across the open transition
 						// releases cleanly game-side (a stray release for an unpressed key is a
 						// no-op). Everything else is consumed - THIS is what halts the camera,
 						// the scroll-zoom and movement while the menu is up.
 						passThrough = button && button->IsUp();
+					}
+
+					if (passThrough && button)
+					{
+						// The game is about to see this edge - keep its held-state model current.
+						if (button->IsDown())
+						{
+							g_gameHeldButtons.insert(ButtonKey(button));
+						}
+						else if (button->IsUp())
+						{
+							g_gameHeldButtons.erase(ButtonKey(button));
+						}
 					}
 
 					if (!passThrough)
