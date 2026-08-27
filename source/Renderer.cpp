@@ -20,6 +20,12 @@ namespace renderer
 		std::atomic<bool> g_d3dReady{ false };
 		std::atomic<bool> g_windowVisible{ false };
 
+		// M1.1 (the author's smoke-test feedback): at 3200x1800 the stock ImGui font and a fixed
+		// 520x340 window are "far too small". One scale factor, derived from the real display
+		// height against 1080p as the baseline, applied to the font, the style metrics and the
+		// default window size together so everything stays proportioned.
+		float g_uiScale = 1.0f;
+
 		// -----------------------------------------------------------------------------------
 		// Pattern guard (survey non-negotiable): never write a hook over bytes that are not the
 		// call instruction we expect. A refused guard means "unsupported runtime, and here is
@@ -82,6 +88,17 @@ namespace renderer
 
 				theme::Apply();
 
+				g_uiScale = window.windowHeight > 0 ? static_cast<float>(window.windowHeight) / 1080.0f : 1.0f;
+				if (g_uiScale < 1.0f)
+				{
+					g_uiScale = 1.0f;  // never shrink below the 1080p baseline
+				}
+
+				ImGui::GetIO().FontGlobalScale = g_uiScale;
+				ImGui::GetStyle().ScaleAllSizes(g_uiScale);
+
+				logger::info("UI scale set to {:.2f} for a {}px-tall display (1080p baseline)", g_uiScale, window.windowHeight);
+
 				logger::info("ImGui initialized on the game's device (window {}, {}x{}); theme applied",
 							 static_cast<const void*>(hwnd), window.windowWidth, window.windowHeight);
 			}
@@ -113,7 +130,15 @@ namespace renderer
 
 				if (g_windowVisible.load(std::memory_order_relaxed))
 				{
-					ImGui::SetNextWindowSize(ImVec2(520.0f, 340.0f), ImGuiCond_FirstUseEver);
+					// Centre-relative default position - the same principle as Local Map Upgrade's
+					// border (the author, from the smoke test): anchor to the DISPLAY CENTRE with a
+					// centre pivot, so the default placement is correct at any resolution instead
+					// of falling wherever ImGui's top-left default lands (a sliver in the corner
+					// at 3200x1800, per the 16:35 capture). FirstUseEver on both, so a player who
+					// moves or resizes the window keeps their arrangement.
+					const ImVec2 display = ImGui::GetIO().DisplaySize;
+					ImGui::SetNextWindowPos(ImVec2(display.x * 0.5f, display.y * 0.5f), ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
+					ImGui::SetNextWindowSize(ImVec2(520.0f * g_uiScale, 340.0f * g_uiScale), ImGuiCond_FirstUseEver);
 
 					if (ImGui::Begin("Apocrypha Menu Framework"))
 					{

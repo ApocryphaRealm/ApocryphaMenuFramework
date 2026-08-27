@@ -13,13 +13,16 @@
 
 namespace
 {
-	// The keys the framework consumes while its menu is open. M0 placeholder set: the menu
-	// toggle default (K, per project rule 28) plus ImGui's stock nav keys. M2 replaces this with
-	// the live Controls-page bindings; the EXPORT CONTRACT is what must not change.
+	// The keys the framework consumes while its menu is open. Menu toggle is F1 (0x3B) - the author,
+	// 2026-08-27, during the first smoke test: rule 28's K default is for MODS, and the framework
+	// on K collided with Dragon's Eye Minimap's own K the moment both ran. F1 matches the
+	// established framework convention (SMF uses it), so "F1 = a framework menu" stays one idea
+	// for users. M2 replaces this set with the live Controls-page bindings; the EXPORT CONTRACT
+	// is what must not change.
 	//
-	// DirectInput scan codes: 0x25 = K (rule 28 default), 0x0F = Tab, 0x01 = Escape,
+	// DirectInput scan codes: 0x3B = F1 (framework menu), 0x0F = Tab, 0x01 = Escape,
 	// 0xC8/0xD0/0xCB/0xCD = arrow keys, 0x1C = Enter.
-	constexpr std::array<std::int32_t, 8> kReservedKeys{ 0x25, 0x0F, 0x01, 0xC8, 0xD0, 0xCB, 0xCD, 0x1C };
+	constexpr std::array<std::int32_t, 8> kReservedKeys{ 0x3B, 0x0F, 0x01, 0xC8, 0xD0, 0xCB, 0xCD, 0x1C };
 
 	std::uint32_t g_inputMode = 0;  // AMF_InputMode::kKeyboard until the settings page (M2) owns it
 
@@ -41,7 +44,7 @@ namespace
 			{
 				const RE::ButtonEvent* button = e->AsButtonEvent();
 
-				if (button && button->IsDown() && button->GetIDCode() == 0x25)  // K
+				if (button && button->IsDown() && button->GetIDCode() == 0x3B)  // F1
 				{
 					renderer::ToggleMainWindow();
 				}
@@ -59,7 +62,7 @@ namespace
 			if (auto* manager = RE::BSInputDeviceManager::GetSingleton())
 			{
 				manager->AddEventSink(ToggleKeySink::GetSingleton());
-				logger::debug("M1 toggle-key sink registered (K shows/hides the framework window)");
+				logger::debug("M1 toggle-key sink registered (F1 shows/hides the framework window)");
 			}
 			break;
 		case SKSE::MessagingInterface::kDataLoaded:
