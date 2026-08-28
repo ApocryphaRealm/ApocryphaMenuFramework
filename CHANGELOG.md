@@ -8,6 +8,21 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 * **failed** - built but crashed or malfunctioned; the number was reclaimed
 * **scratch** - a hypothesis-test build that never held a real number
 
+## 1.4.0 - 2026-08-28 - working
+### Changed
+- MENU RESTRUCTURED to the real vanilla shape, corrected from the author's in-game screenshots: the game
+  menu is THREE levels - TOP TABS across the top, a SIDE LIST belonging to the active tab, then a
+  CONTENT pane - not the single vertical tree 1.3.8 shipped.
+  * Top tabs: **Quests | General | Stats | System**.
+  * The **System** side list: Save, Load, **Mod menus** (with each registered mod indented beneath
+    it - the SkyUI/MCM equivalent's home), Settings, Controls, Help, Save and Quit, Quit.
+  * Content pane renders the selected side entry: framework settings under System -> Settings, key
+    bindings under System -> Controls, a Help page, a Mod menus index, live Stats, and each mod's
+    pages (as tabs when a mod has several).
+- `amf.menu` DevBench tool follows the new shape: `select` accepts `tab:<quests|general|stats|
+  system>`, side paths like `system/controls`, and `mod:<index>`; a side path implies its tab, and
+  `state` now reports the active `tab` alongside `selected`.
+
 ## 1.3.9 - 2026-08-28 - working
 ### Added
 - `amf.mainmenu` DevBench driver (rule 64 applied to the GAME's start menu, the author's idea): the
