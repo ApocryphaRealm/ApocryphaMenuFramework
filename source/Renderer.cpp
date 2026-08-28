@@ -110,9 +110,9 @@ namespace renderer
 		// Ordered candidates: a clean sans that matches Skyrim's own menu lettering, then fallbacks.
 		// A user-supplied path (sFontPath in the INI) wins when set, so any .ttf can be dropped in.
 		const char* const kFontCandidates[] = {
-			"C:\Windows\Fonts\segoeui.ttf",
-			"C:\Windows\Fonts\calibri.ttf",
-			"C:\Windows\Fonts\trebuc.ttf",
+			"C:/Windows/Fonts/segoeui.ttf",
+			"C:/Windows/Fonts/calibri.ttf",
+			"C:/Windows/Fonts/trebuc.ttf",
 		};
 
 		// Rebuilds the font atlas at the current scale. Call OUTSIDE a frame (before NewFrame).

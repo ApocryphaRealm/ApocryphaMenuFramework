@@ -8,7 +8,7 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 * **failed** - built but crashed or malfunctioned; the number was reclaimed
 * **scratch** - a hypothesis-test build that never held a real number
 
-## 1.4.2 - 2026-08-28 - untested
+## 1.4.2 - 2026-08-28 - working
 ### Fixed
 - Menu text looked PIXELATED (the author). Cause was not the MO2-Skyrim theme carrying anything over - it
   was the font: AMF used ImGui's built-in ProggyClean, a 13px BITMAP face, and then magnified it with
