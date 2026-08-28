@@ -8,7 +8,7 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 * **failed** - built but crashed or malfunctioned; the number was reclaimed
 * **scratch** - a hypothesis-test build that never held a real number
 
-## 1.3.8 - 2026-08-28 - untested
+## 1.3.8 - 2026-08-28 - working
 ### Added
 - NESTED GAME-MENU MODEL (the author's directional project - build the model overnight): the menu is now
   a tree whose top-level categories mirror the vanilla game menu - Game Settings, Stats, Quest,
