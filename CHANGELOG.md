@@ -8,6 +8,11 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 * **failed** - built but crashed or malfunctioned; the number was reclaimed
 * **scratch** - a hypothesis-test build that never held a real number
 
+## 1.3.1 - 2026-08-27 - untested
+
+### Fixed
+- kSaveGame/kPostLoadGame message handlers no longer construct a string_view over the message payload unchecked - a real in-game crash occurred during kPostLoadGame dispatch to this plugin while testing the persistence channel (loading a save with ~400 missing masters against a near-empty test mod list; root cause not conclusively isolated since Crash Logger wasn't in the minimal test list, but a null/mismatched data+dataLen is a real possibility this code never guarded against). Both handlers now check data && dataLen>0 before touching the payload, logging and no-oping otherwise, regardless of what the actual cause turns out to be - never dereference an SKSE message payload unchecked.
+
 ## 1.3.0 - 2026-08-27 - untested
 
 ### Added

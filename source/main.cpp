@@ -42,13 +42,36 @@ namespace
 		case SKSE::MessagingInterface::kSaveGame:
 			// data/dataLen is the save's own name (SKSE convention, undocumented in the header
 			// but stable across the ecosystem) - not necessarily null-terminated, hence the
-			// explicit length rather than treating it as a C-string.
-			persistence::OnSaveGame(std::string_view(static_cast<const char*>(a_msg->data), a_msg->dataLen));
+			// explicit length rather than treating it as a C-string. NEVER construct a
+			// string_view over a.data unchecked: a null data with nonzero dataLen (or vice
+			// versa) is UB the instant persistence touches it - a crash on every save/load a
+			// bug like this can cause is exactly the kind of defect this project's rules exist
+			// to prevent (rule 14 null checks; observed a real in-game crash during kPostLoadGame
+			// dispatch to this plugin, 2026-08-27 - root cause not yet isolated, but this guard
+			// is correct regardless of what turns out to have actually been null).
+			if (a_msg->data && a_msg->dataLen > 0)
+			{
+				persistence::OnSaveGame(std::string_view(static_cast<const char*>(a_msg->data), a_msg->dataLen));
+			}
+			else
+			{
+				logger::warn("kSaveGame: data={}, dataLen={} - refusing to construct a string_view over this; state for this save was NOT committed",
+							 static_cast<const void*>(a_msg->data), a_msg->dataLen);
+			}
 			break;
 		case SKSE::MessagingInterface::kPostLoadGame:
 			// Fires AFTER the load completes (vs kPreLoadGame, before) - the correct point to
 			// restore state, since the save that's now active is the one whose data we want.
-			persistence::OnLoadGame(std::string_view(static_cast<const char*>(a_msg->data), a_msg->dataLen));
+			if (a_msg->data && a_msg->dataLen > 0)
+			{
+				persistence::OnLoadGame(std::string_view(static_cast<const char*>(a_msg->data), a_msg->dataLen));
+			}
+			else
+			{
+				logger::warn("kPostLoadGame: data={}, dataLen={} - refusing to construct a string_view over this; state cleared to defaults",
+							 static_cast<const void*>(a_msg->data), a_msg->dataLen);
+				persistence::OnLoadGame(std::string_view{});
+			}
 			break;
 		case SKSE::MessagingInterface::kDataLoaded:
 			logger::debug("kDataLoaded received");
