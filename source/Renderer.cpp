@@ -327,6 +327,66 @@ namespace renderer
 							   "value should still be here. A DIFFERENT save should show <unset>.");
 		}
 
+		// ---- nested game-menu leaf panes (the author's game-menu-replacement model, 2026-08-28) ----
+
+		// Placeholder for a System action (Save/Load/Quit/Save and Quit). The button is disabled:
+		// this build ships the menu MODEL and navigation; wiring the real game action - and
+		// intercepting Skyrim's own pause/journal menu to show AMF instead - is the next milestone.
+		void DrawSystemActionPane(const char* a_title, const char* a_desc, const char* a_button)
+		{
+			ImGui::TextUnformatted(a_title);
+			ImGui::Separator();
+			ImGui::TextWrapped("%s", a_desc);
+			ImGui::Spacing();
+			ImGui::BeginDisabled(true);
+			ImGui::Button(a_button, ImVec2(ImGui::GetContentRegionAvail().x * 0.4f, 0.0f));
+			ImGui::EndDisabled();
+			ImGui::Spacing();
+			ImGui::TextDisabled("Not yet wired to the game - this is the nested menu model. The real");
+			ImGui::TextDisabled("action and replacing Skyrim's own menu are the next milestone.");
+		}
+
+		// A live read of player state - proof the nested categories can host real game data, not
+		// just settings. Guarded: null before a save is loaded.
+		void DrawStatsPane()
+		{
+			ImGui::TextUnformatted("Stats");
+			ImGui::Separator();
+			auto* player = RE::PlayerCharacter::GetSingleton();
+			if (!player)
+			{
+				ImGui::TextWrapped("Load a save to see character stats.");
+				return;
+			}
+			ImGui::Text("Level: %u", static_cast<unsigned>(player->GetLevel()));
+			if (auto* avo = player->AsActorValueOwner())
+			{
+				ImGui::Text("Health:  %.0f", avo->GetActorValue(RE::ActorValue::kHealth));
+				ImGui::Text("Magicka: %.0f", avo->GetActorValue(RE::ActorValue::kMagicka));
+				ImGui::Text("Stamina: %.0f", avo->GetActorValue(RE::ActorValue::kStamina));
+			}
+		}
+
+		void DrawQuestPane()
+		{
+			ImGui::TextUnformatted("Quest");
+			ImGui::Separator();
+			ImGui::TextWrapped("Active quest objectives will list here. Enumerating the journal is the "
+							   "next step for this category.");
+		}
+
+		void DrawGeneralPane()
+		{
+			ImGui::TextUnformatted("General");
+			ImGui::Separator();
+			static const std::string version =
+				SKSE::PluginDeclaration::GetSingleton()->GetVersion().string(".");
+			ImGui::Text("Apocrypha Menu Framework v%s", version.c_str());
+			ImGui::TextWrapped("An original, Dear ImGui-based menu framework. This nested layout is the "
+							   "start of a full game-menu replacement: the categories mirror the vanilla "
+							   "menu, and mod settings live under System -> Mods (the MCM equivalent).");
+		}
+
 		void DrawFrameworkWindow()
 		{
 			const ImVec2 display = ImGui::GetIO().DisplaySize;
@@ -360,39 +420,49 @@ namespace renderer
 
 				const float leftWidth = ImGui::GetContentRegionAvail().x * 0.30f;
 
-				// Left pane: ONE entry per mod (index 0 is the framework itself). Right pane:
-				// the selected mod's pages - several pages render as TABS inside the one menu
-				// (project rule: one menu per mod, never several).
-				static int selectedIndex = 0;
+				// NESTED GAME-MENU MODEL (design decision, 2026-08-28): a tree whose top-level categories
+				// mirror the vanilla game menu, with the per-mod settings pages (the MCM/SkyUI
+				// equivalent) nested under System -> Mods. See PLANNED-MODS. This is the STRUCTURE;
+				// wiring the real Save/Load/Quit and intercepting the game's own menu are later steps.
+				static std::string sel = "game-settings";
+				static int selMod = 0;
 				const std::vector<registry::Entry> entries = registry::Snapshot();
+				if (selMod >= static_cast<int>(entries.size())) { selMod = 0; }
 
-				if (selectedIndex > static_cast<int>(entries.size()))
+				// ---- left: nested navigation tree ----
+				ImGui::BeginChild("##nav", ImVec2(leftWidth, 0.0f), true);
+				auto leaf = [&](const char* label, const char* id) {
+					if (ImGui::Selectable(label, sel == id)) { sel = id; }
+				};
+				leaf("Game Settings", "game-settings");
+				leaf("Stats", "stats");
+				leaf("Quest", "quest");
+				leaf("General", "general");
+				if (ImGui::TreeNodeEx("System", ImGuiTreeNodeFlags_DefaultOpen))
 				{
-					selectedIndex = 0;
-				}
-
-				ImGui::BeginChild("##menuList", ImVec2(leftWidth, 0.0f), true);
-				ImGui::TextUnformatted("Menus");
-				ImGui::Separator();
-				if (ImGui::Selectable("Framework Settings", selectedIndex == 0))
-				{
-					selectedIndex = 0;
-				}
-				for (int i = 0; i < static_cast<int>(entries.size()); ++i)
-				{
-					if (ImGui::Selectable(entries[i].modName.c_str(), selectedIndex == i + 1))
+					leaf("Save", "system/save");
+					leaf("Load", "system/load");
+					if (ImGui::TreeNodeEx("Mods", ImGuiTreeNodeFlags_DefaultOpen))
 					{
-						selectedIndex = i + 1;
+						for (int i = 0; i < static_cast<int>(entries.size()); ++i)
+						{
+							if (ImGui::Selectable(entries[i].modName.c_str(), sel == "mod" && selMod == i))
+							{
+								sel = "mod";
+								selMod = i;
+							}
+						}
+						if (entries.empty())
+						{
+							ImGui::TextDisabled("No mod menus yet");
+						}
+						ImGui::TreePop();
 					}
-				}
-				if (entries.empty())
-				{
-					ImGui::Spacing();
-					ImGui::TextWrapped("No mod has registered a menu yet.");
+					leaf("Save and Quit", "system/savequit");
+					leaf("Quit", "system/quit");
+					ImGui::TreePop();
 				}
 				ImGui::EndChild();
-				// Frame EACH panel, not just the outer window - the MO2 Skyrim style puts knotwork
-				// on every framed panel, so consistency means applying it universally.
 				if (knot)
 				{
 					DrawKnotworkFrame(ImGui::GetWindowDrawList(), ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
@@ -400,18 +470,21 @@ namespace renderer
 
 				ImGui::SameLine();
 
-				ImGui::BeginChild("##settingsPane", ImVec2(0.0f, 0.0f), true);
-				if (selectedIndex == 0)
+				// ---- right: content for the selected node ----
+				ImGui::BeginChild("##content", ImVec2(0.0f, 0.0f), true);
+				if (sel == "game-settings")        { DrawFrameworkSettingsPane(); }
+				else if (sel == "stats")           { DrawStatsPane(); }
+				else if (sel == "quest")           { DrawQuestPane(); }
+				else if (sel == "general")         { DrawGeneralPane(); }
+				else if (sel == "system/save")     { DrawSystemActionPane("Save", "Saves the game.", "Save"); }
+				else if (sel == "system/load")     { DrawSystemActionPane("Load", "Loads a saved game.", "Load"); }
+				else if (sel == "system/savequit") { DrawSystemActionPane("Save and Quit", "Saves, then quits to the main menu.", "Save and Quit"); }
+				else if (sel == "system/quit")     { DrawSystemActionPane("Quit", "Quits to the main menu / desktop.", "Quit"); }
+				else if (sel == "mod" && !entries.empty())
 				{
-					DrawFrameworkSettingsPane();
-				}
-				else
-				{
-					const registry::Entry& entry = entries[selectedIndex - 1];
-
+					const registry::Entry& entry = entries[selMod];
 					ImGui::TextUnformatted(entry.modName.c_str());
 					ImGui::Separator();
-
 					if (entry.pages.size() == 1)
 					{
 						entry.pages[0].render();
@@ -429,6 +502,7 @@ namespace renderer
 						ImGui::EndTabBar();
 					}
 				}
+				else { DrawFrameworkSettingsPane(); }
 				ImGui::EndChild();
 				if (knot)
 				{

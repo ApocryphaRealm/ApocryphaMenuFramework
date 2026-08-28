@@ -8,6 +8,19 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 * **failed** - built but crashed or malfunctioned; the number was reclaimed
 * **scratch** - a hypothesis-test build that never held a real number
 
+## 1.3.8 - 2026-08-28 - untested
+### Added
+- NESTED GAME-MENU MODEL (the author's directional project - build the model overnight): the menu is now
+  a tree whose top-level categories mirror the vanilla game menu - Game Settings, Stats, Quest,
+  General, and a System category (Save, Load, Mods, Save and Quit, Quit). The per-mod settings
+  pages (the SkyUI/MCM equivalent) are nested under System -> Mods, exactly where Mod Configuration
+  sits in SkyUI. "Game Settings" holds the framework's own settings (theme/controller/text/rebind);
+  "Stats" shows a live read of player level/health/magicka/stamina (proof the categories can host
+  real game data). Save/Load/Quit/Save-and-Quit are disabled placeholders: this is the STRUCTURE.
+  Wiring the real game actions and intercepting Skyrim's own pause/journal menu are the next steps
+  (PLANNED-MODS "AMF as a full nested game-menu replacement"). Built on 1.3.7, so it also carries
+  the controller Start-closes-menu, left-stick nav, and live keybind-rebind fixes.
+
 ## 1.3.7 - 2026-08-28 - untested
 ### Added
 - Menu-toggle-key REBINDING on the Framework Settings page (the author): a "Rebind" button captures the
