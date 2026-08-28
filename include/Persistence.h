@@ -17,9 +17,19 @@
 
 namespace persistence
 {
-	// Wire these directly to the SKSE kSaveGame/kLoadGame message handlers. a_saveName is the
-	// message payload verbatim (whatever SKSE hands over - base name, with or without .ess).
+	// kSaveGame's payload really IS the save name (SKSE convention), so wire it straight here.
 	void OnSaveGame(std::string_view a_saveName);
+
+	// Load is a TWO-message dance and the payloads differ (this cost a crash, 1.3.3):
+	//   kPreLoadGame  -> data = the save's name  (char* + dataLen)     -> OnPreLoadGame
+	//   kPostLoadGame -> data = a BOOL success flag, NOT a string      -> OnPostLoadGame
+	// Treating kPostLoadGame's data as a name dereferenced (void*)0x1 (bool true) and crashed in
+	// StripExtension. So: capture the name at pre-load, and at post-load restore it only if the
+	// load actually succeeded.
+	void OnPreLoadGame(std::string_view a_saveName);
+	void OnPostLoadGame(bool a_loadSucceeded);
+
+	// Kept internal-but-declared: the actual file read, given a known-good name.
 	void OnLoadGame(std::string_view a_saveName);
 
 	// The shared key-value surface. Values live in memory between save/load events; Set does

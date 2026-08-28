@@ -61,19 +61,24 @@ namespace
 							 static_cast<const void*>(a_msg->data), a_msg->dataLen);
 			}
 			break;
-		case SKSE::MessagingInterface::kPostLoadGame:
-			// Fires AFTER the load completes (vs kPreLoadGame, before) - the correct point to
-			// restore state, since the save that's now active is the one whose data we want.
+		case SKSE::MessagingInterface::kPreLoadGame:
+			// kPreLoadGame's payload is the save NAME (char* + dataLen) - capture it here.
 			if (a_msg->data && a_msg->dataLen > 0)
 			{
-				persistence::OnLoadGame(std::string_view(static_cast<const char*>(a_msg->data), a_msg->dataLen));
+				persistence::OnPreLoadGame(std::string_view(static_cast<const char*>(a_msg->data), a_msg->dataLen));
 			}
 			else
 			{
-				logger::warn("kPostLoadGame: data={}, dataLen={} - refusing to construct a string_view over this; state cleared to defaults",
+				logger::warn("kPreLoadGame: data={}, dataLen={} - no save name captured",
 							 static_cast<const void*>(a_msg->data), a_msg->dataLen);
-				persistence::OnLoadGame(std::string_view{});
+				persistence::OnPreLoadGame(std::string_view{});
 			}
+			break;
+		case SKSE::MessagingInterface::kPostLoadGame:
+			// kPostLoadGame's data is a BOOL (load succeeded), NOT a string - do NOT construct a
+			// string_view over it (that dereferenced (void*)0x1 and crashed, 1.3.3). The name was
+			// captured at kPreLoadGame; restore it only if the load actually succeeded.
+			persistence::OnPostLoadGame(a_msg->data != nullptr);
 			break;
 		case SKSE::MessagingInterface::kDataLoaded:
 			logger::debug("kDataLoaded received");

@@ -8,7 +8,17 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 * **failed** - built but crashed or malfunctioned; the number was reclaimed
 * **scratch** - a hypothesis-test build that never held a real number
 
-## 1.3.3 - 2026-08-28 - untested
+## 1.3.4 - 2026-08-28 - untested
+### Fixed
+- Crash on EVERY successful save load (crash-2026-08-28-10-12-36.log, access violation in
+  StripExtension constructing a std::string from address 0x1). Root cause: kPostLoadGame's
+  message `data` is a BOOL (1 = load succeeded), not the save-name string the handler assumed;
+  it dereferenced (void*)0x1. The earlier "data=0x0" seen on a failed load slipped past the null
+  guard because false is 0x0. Fixed by using the correct SKSE payloads: the save name is now
+  captured at kPreLoadGame (which really carries it), and kPostLoadGame is read as the bool
+  success flag that restores (or, on new game / failure, clears) state.
+
+## 1.3.3 - 2026-08-28 - failed (crashes on save load; number reclaimed by 1.3.4)
 ### Fixed
 - 1.3.2's alias guard compared the module's own filename, but under MO2/usvfs the real DLL and
   the SKSEMenuFramework.dll alias resolve to one file (one module), and the hooked

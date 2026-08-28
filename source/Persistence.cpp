@@ -15,6 +15,7 @@ namespace persistence
 		std::mutex g_lock;
 		std::unordered_map<std::string, std::string> g_values;
 		std::string g_activeSaveBaseName;  // set by OnLoadGame/OnSaveGame; empty until the first one fires
+		std::string g_pendingLoadName;      // set at kPreLoadGame, consumed at kPostLoadGame
 
 		// The game's save directory = Documents\My Games\Skyrim Special Edition\<sLocalSavePath>.
 		// sLocalSavePath:General defaults to "Saves\", but MO2's profile-local saves work by
@@ -113,6 +114,45 @@ namespace persistence
 		}
 
 		logger::info("persistence: {} value(s) committed to {}", snapshot.size(), path);
+	}
+
+	void OnPreLoadGame(std::string_view a_saveName)
+	{
+		// kPreLoadGame's payload is the save name (char* + dataLen) - stash it for post-load.
+		std::string baseName = StripExtension(a_saveName);
+		std::scoped_lock lock(g_lock);
+		g_pendingLoadName = std::move(baseName);
+	}
+
+	void OnPostLoadGame(bool a_loadSucceeded)
+	{
+		std::string name;
+		{
+			std::scoped_lock lock(g_lock);
+			name = g_pendingLoadName;
+			g_pendingLoadName.clear();
+		}
+
+		if (!a_loadSucceeded)
+		{
+			logger::info("persistence: load reported unsuccessful; state left at defaults");
+			std::scoped_lock lock(g_lock);
+			g_values.clear();
+			g_activeSaveBaseName.clear();
+			return;
+		}
+
+		if (name.empty())
+		{
+			// New game, or a load with no preceding kPreLoadGame name - start clean.
+			logger::info("persistence: post-load with no captured save name (new game?) - starting empty");
+			std::scoped_lock lock(g_lock);
+			g_values.clear();
+			g_activeSaveBaseName.clear();
+			return;
+		}
+
+		OnLoadGame(name);
 	}
 
 	void OnLoadGame(std::string_view a_saveName)
