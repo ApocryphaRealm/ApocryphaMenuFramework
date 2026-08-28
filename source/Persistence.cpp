@@ -16,10 +16,13 @@ namespace persistence
 		std::unordered_map<std::string, std::string> g_values;
 		std::string g_activeSaveBaseName;  // set by OnLoadGame/OnSaveGame; empty until the first one fires
 
-		// Documents\My Games\Skyrim Special Edition\Saves\ - resolved via the standard Windows
-		// known-folder API rather than hardcoded, so it is correct under MO2's local-saves
-		// redirection too (usvfs hooks this API transparently at the process level; the plugin
-		// sees whatever path the game itself would see).
+		// The game's save directory = Documents\My Games\Skyrim Special Edition\<sLocalSavePath>.
+		// sLocalSavePath:General defaults to "Saves\", but MO2's profile-local saves work by
+		// setting it to "__MO_Saves\" and mapping the profile's saves folder onto THAT - it does
+		// not remap "Saves\". 1.3.1 assumed "Saves\" and its sibling files landed in the real,
+		// unmanaged Saves folder while the .ess/.skse went to the profile (observed live
+		// 2026-08-28). Reading the setting the game itself uses makes the sibling land next to
+		// the save in every configuration.
 		std::string SavesDirectory()
 		{
 			PWSTR path = nullptr;
@@ -32,7 +35,21 @@ namespace persistence
 				if (written > 0)
 				{
 					result = narrow;
-					result += "\\My Games\\Skyrim Special Edition\\Saves\\";
+					result += "\\My Games\\Skyrim Special Edition\\";
+
+					std::string localSavePath = "Saves\\";
+					if (auto* ini = RE::INISettingCollection::GetSingleton())
+					{
+						if (auto* setting = ini->GetSetting("sLocalSavePath:General"); setting && setting->GetString() && *setting->GetString())
+						{
+							localSavePath = setting->GetString();
+						}
+					}
+					if (localSavePath.back() != '\\' && localSavePath.back() != '/')
+					{
+						localSavePath += '\\';
+					}
+					result += localSavePath;
 				}
 			}
 

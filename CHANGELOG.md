@@ -8,6 +8,18 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 * **failed** - built but crashed or malfunctioned; the number was reclaimed
 * **scratch** - a hypothesis-test build that never held a real number
 
+## 1.3.2 - 2026-08-28 - untested
+### Fixed
+- Crash on save load (crash-2026-08-28-09-55-35.log, EXCEPTION_ACCESS_VIOLATION in
+  SKSEMenuFramework.dll+4C3C during preLoadGame): SKSE loaded this DLL a second time through the
+  AMF-MO2-Plugin's SKSEMenuFramework.dll alias; that instance failed Load (hooks refused) but had
+  already registered a message listener. SKSEPluginLoad now returns false immediately when the
+  module's own filename is the alias - nothing registered, nothing hooked.
+- Per-save state files (.amf-state.ini) were written to the real `Saves\` folder while the game
+  under MO2 profile-local saves writes to `sLocalSavePath` (`__MO_Saves\`, VFS-mapped to the
+  profile). The sibling path now follows `sLocalSavePath:General`, so it lands beside the .ess
+  in every configuration.
+
 ## 1.3.1 - 2026-08-27 - untested
 
 ### Fixed

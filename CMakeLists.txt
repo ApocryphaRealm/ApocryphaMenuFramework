@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.21)
+﻿cmake_minimum_required(VERSION 3.21)
 
 ########################################################################################################################
 ## Apocrypha Menu Framework
@@ -15,7 +15,7 @@ cmake_minimum_required(VERSION 3.21)
 
 project(
 	ApocryphaMenuFramework
-	VERSION 1.3.1
+	VERSION 1.3.2
 	LANGUAGES CXX
 )
 
