@@ -163,32 +163,26 @@ AMF_API std::uint32_t AMF_GetInputMode()
 
 SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 {
-	// ALIAS GUARD (1.3.2). The AMF-MO2-Plugin presents this same DLL a second time under the
-	// virtual name SKSEMenuFramework.dll so that mods importing SMF by name resolve against AMF.
-	// SKSE enumerates that alias as a plugin of its own and calls into it: a second, half-
-	// initialised instance whose renderer hooks are refused (the real copy already owns the
-	// bytes) but whose SKSE message listener had already been registered. That instance then
-	// crashed on preLoadGame (crash-2026-08-28-09-55-35.log, SKSEMenuFramework.dll+4C3C). So:
-	// if our own module file is the alias, refuse to initialise BEFORE touching the logger,
-	// the messaging interface, or any hook. The alias keeps doing its only real job (import
-	// resolution); the real ApocryphaMenuFramework.dll instance is the plugin.
+	// ONCE-ONLY GUARD (1.3.3; replaces the 1.3.2 filename check, which refused BOTH loads).
+	// The AMF-MO2-Plugin presents this same DLL a second time under the virtual name
+	// SKSEMenuFramework.dll so mods importing SMF by name resolve against AMF. SKSE enumerates
+	// that alias as a plugin of its own and calls SKSEPlugin_Load into it a second time. Under
+	// usvfs both names resolve to ONE real file, so the loader dedupes them into one module and
+	// the hooked GetModuleFileNameW can answer with the alias name for the real load as well -
+	// a "which file am I" test cannot tell the two calls apart (1.3.2 proved it live: both
+	// loads "reported as incompatible"). What CAN tell them apart is order: SKSE always reaches
+	// ApocryphaMenuFramework.dll before SKSEMenuFramework.dll (alphabetical, and the load-order
+	// shim lists only the real name). So the FIRST call initialises; any later call - same
+	// module or a genuine second copy - is refused before it touches the logger, the messaging
+	// interface, or a hook. A named event is process-wide, so it holds in both cases.
 	{
-		HMODULE self = nullptr;
-		if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-							   reinterpret_cast<LPCWSTR>(&SKSEMessageListener), &self) && self)
+		HANDLE once = CreateEventW(nullptr, TRUE, FALSE, L"Local\\ApocryphaMenuFramework.SKSEPlugin_Load.once");
+		if (once && GetLastError() == ERROR_ALREADY_EXISTS)
 		{
-			wchar_t modulePath[MAX_PATH]{};
-			if (GetModuleFileNameW(self, modulePath, MAX_PATH) > 0)
-			{
-				const std::wstring_view full(modulePath);
-				const auto slash = full.find_last_of(L"\\/");
-				const std::wstring_view file = (slash == std::wstring_view::npos) ? full : full.substr(slash + 1);
-				if (_wcsicmp(std::wstring(file).c_str(), L"SKSEMenuFramework.dll") == 0)
-				{
-					return false;  // alias instance: not a plugin, only an import target
-				}
-			}
+			CloseHandle(once);
+			return false;  // second SKSEPlugin_Load (the SKSEMenuFramework.dll alias): import target only
 		}
+		// deliberately leaked: the event must outlive this call for the lifetime of the process
 	}
 
 	// Workaround for static initialization order bug of CommonLibSSE-NG

@@ -8,7 +8,16 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 * **failed** - built but crashed or malfunctioned; the number was reclaimed
 * **scratch** - a hypothesis-test build that never held a real number
 
-## 1.3.2 - 2026-08-28 - untested
+## 1.3.3 - 2026-08-28 - untested
+### Fixed
+- 1.3.2's alias guard compared the module's own filename, but under MO2/usvfs the real DLL and
+  the SKSEMenuFramework.dll alias resolve to one file (one module), and the hooked
+  GetModuleFileNameW answered with the alias name for BOTH SKSEPlugin_Load calls - so AMF
+  refused to load at all ("reported as incompatible during load", both handles). Replaced by a
+  process-wide once-only guard (named event): the first SKSEPlugin_Load (always the real
+  ApocryphaMenuFramework.dll) initialises, any later call is refused before registering anything.
+
+## 1.3.2 - 2026-08-28 - failed (both loads refused; number reclaimed by 1.3.3)
 ### Fixed
 - Crash on save load (crash-2026-08-28-09-55-35.log, EXCEPTION_ACCESS_VIOLATION in
   SKSEMenuFramework.dll+4C3C during preLoadGame): SKSE loaded this DLL a second time through the
