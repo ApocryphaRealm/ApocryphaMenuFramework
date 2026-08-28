@@ -8,7 +8,7 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 * **failed** - built but crashed or malfunctioned; the number was reclaimed
 * **scratch** - a hypothesis-test build that never held a real number
 
-## 1.4.3 - 2026-08-28 - untested
+## 1.4.3 - 2026-08-28 - working
 ### Added
 - HANG WATCHDOG + forced exit (the author: the game must be closable without Task Manager, even hung).
   A monitor thread watches the renderer's frame counter; if no frame is produced for `uSeconds`
