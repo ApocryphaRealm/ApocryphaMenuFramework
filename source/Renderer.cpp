@@ -3,6 +3,7 @@
 #include "Input.h"
 #include "Offsets.h"
 #include "Persistence.h"
+#include "KnotworkBorder.h"
 #include "Registry.h"
 #include "Settings.h"
 #include "Theme.h"
@@ -26,6 +27,55 @@ namespace renderer
 		std::atomic<bool> g_d3dReady{ false };
 		std::atomic<bool> g_windowVisible{ false };
 		std::atomic<bool> g_justOpened{ false };  // set on the input thread, consumed on the render thread
+
+		// Knotwork frame texture (the embedded MO2-Skyrim border-image.png). Created once at
+		// D3DInit on the game's own device; used by DrawKnotworkFrame as an ImGui texture id.
+		ID3D11ShaderResourceView* g_knotSRV = nullptr;
+
+		// Draws the 78x78 knotwork PNG as a 9-slice frame around the given screen rect: the four
+		// ornate corners at fixed size, the four edges stretched between them, the centre left
+		// transparent so the window shows through. Faithful reproduction, so the art is drawn at
+		// its own colour (white tint = no recolour). No-op if the texture failed to create.
+		void DrawKnotworkFrame(ImDrawList* dl, const ImVec2& p0, const ImVec2& p1)
+		{
+			if (!g_knotSRV || !dl)
+			{
+				return;
+			}
+
+			const float W = static_cast<float>(knotwork::kWidth);
+			const float H = static_cast<float>(knotwork::kHeight);
+			const float cs = static_cast<float>(knotwork::kCorner);
+
+			// UV split points (source), and screen split points (dest, corners at fixed cs px).
+			const float u0 = 0.0f, u1 = cs / W, u2 = (W - cs) / W, u3 = 1.0f;
+			const float v0 = 0.0f, v1 = cs / H, v2 = (H - cs) / H, v3 = 1.0f;
+			const float x0 = p0.x, x1 = p0.x + cs, x2 = p1.x - cs, x3 = p1.x;
+			const float y0 = p0.y, y1 = p0.y + cs, y2 = p1.y - cs, y3 = p1.y;
+
+			// Degenerate guard: a window smaller than two corners would flip the middle slices.
+			if (x2 <= x1 || y2 <= y1)
+			{
+				return;
+			}
+
+			const auto tex = reinterpret_cast<ImTextureID>(g_knotSRV);
+			const ImU32 white = IM_COL32_WHITE;
+			auto slice = [&](float ax, float ay, float bx, float by, float au, float av, float bu, float bv) {
+				dl->AddImage(tex, ImVec2(ax, ay), ImVec2(bx, by), ImVec2(au, av), ImVec2(bu, bv), white);
+			};
+
+			// corners
+			slice(x0, y0, x1, y1, u0, v0, u1, v1);  // top-left
+			slice(x2, y0, x3, y1, u2, v0, u3, v1);  // top-right
+			slice(x0, y2, x1, y3, u0, v2, u1, v3);  // bottom-left
+			slice(x2, y2, x3, y3, u2, v2, u3, v3);  // bottom-right
+			// edges (stretched along their run)
+			slice(x1, y0, x2, y1, u1, v0, u2, v1);  // top
+			slice(x1, y2, x2, y3, u1, v2, u2, v3);  // bottom
+			slice(x0, y1, x1, y2, u0, v1, u1, v2);  // left
+			slice(x2, y1, x3, y2, u2, v1, u3, v2);  // right
+		}
 
 		// M1.1 (the author's smoke-test feedback): at 3200x1800 the stock ImGui font and a fixed
 		// 520x340 window are "far too small". One scale factor, derived from the real display
@@ -99,6 +149,40 @@ namespace renderer
 
 				ImGui_ImplWin32_Init(hwnd);
 				ImGui_ImplDX11_Init(device, context);
+
+				// Upload the embedded knotwork frame to a texture on the game's device, once.
+				// Failure is non-fatal: DrawKnotworkFrame no-ops and the theme still applies its
+				// colours, just without the ornament.
+				{
+					D3D11_TEXTURE2D_DESC td{};
+					td.Width = static_cast<UINT>(knotwork::kWidth);
+					td.Height = static_cast<UINT>(knotwork::kHeight);
+					td.MipLevels = 1;
+					td.ArraySize = 1;
+					td.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+					td.SampleDesc.Count = 1;
+					td.Usage = D3D11_USAGE_DEFAULT;
+					td.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+
+					D3D11_SUBRESOURCE_DATA sd{};
+					sd.pSysMem = knotwork::kRGBA;
+					sd.SysMemPitch = static_cast<UINT>(knotwork::kWidth) * 4u;
+
+					ID3D11Texture2D* tex = nullptr;
+					if (SUCCEEDED(device->CreateTexture2D(&td, &sd, &tex)) && tex)
+					{
+						if (FAILED(device->CreateShaderResourceView(tex, nullptr, &g_knotSRV)))
+						{
+							g_knotSRV = nullptr;
+							logger::warn("knotwork: CreateShaderResourceView failed; frame ornament disabled");
+						}
+						tex->Release();
+					}
+					else
+					{
+						logger::warn("knotwork: CreateTexture2D failed; frame ornament disabled");
+					}
+				}
 
 				theme::Apply();
 
@@ -320,6 +404,17 @@ namespace renderer
 					}
 				}
 				ImGui::EndChild();
+
+				// Draw the Nordic knotwork frame LAST, on the window's own draw list so it sits
+				// on top of the content and exactly over ImGui's border, at the window rect. Only
+				// for themes that opt in (MO2 Skyrim). Its own transparent centre keeps the pane
+				// fully visible.
+				if (theme::GetActiveTheme().knotwork)
+				{
+					const ImVec2 wp = ImGui::GetWindowPos();
+					const ImVec2 ws = ImGui::GetWindowSize();
+					DrawKnotworkFrame(ImGui::GetWindowDrawList(), wp, ImVec2(wp.x + ws.x, wp.y + ws.y));
+				}
 			}
 			ImGui::End();
 		}

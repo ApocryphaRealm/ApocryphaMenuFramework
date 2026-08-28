@@ -269,14 +269,20 @@ namespace theme
 			// shipped as a selectable theme per the author's instruction, no longer the only option.
 			RegisterTheme({ "untarnished", "Untarnished", 0xFF000000, 0xFFE9F2F5, 1.0f });
 
-			// "MO2 Skyrim" - ported from the REAL C:\Modlists\Apostasy\stylesheets\
-			// Transparent-Style-Skyrim-Trosski.qss (read directly, not guessed): #b0b0b0 is the
-			// dominant text/border colour (41 occurrences, by far the most-used), #717171 the
-			// secondary tone. Background stays solid black - the project's full-opacity rule is
-			// non-negotiable regardless of source theme, since MO2's own near-transparent look
-			// (rgba(0,0,0,10)) exists to show desktop/game art through it, which does not apply
-			// to a menu drawn over live gameplay.
-			RegisterTheme({ "mo2-skyrim", "MO2 Skyrim", 0xFF000000, 0xFFB0B0B0, 1.0f });
+			// "MO2 Skyrim" - REBUILT 2026-08-28 from the real Trosski Skyrim style
+			// (C:\Modlists\Apostasy\stylesheets\Transparent-Style-Skyrim-Trosski.qss + its
+			// SkyrimTP/border-image.png), matched against a live MO2 screenshot. The first port
+			// collapsed the whole style onto one grey (#b0b0b0); the actual style is a layered
+			// palette: silver frame lines #b0b0b0 (41 uses), brighter text #dddddd, a dim
+			// secondary #717171, and a GOLD accent #a1912b for selection/checkmarks - plus the
+			// defining Nordic KNOTWORK frame at the panel corners (border-image.png, now embedded
+			// and drawn by Renderer). ABGR packing (0xAABBGGRR): #a1912b -> 0xFF2B91A1. Background
+			// stays solid black - the project's full-opacity rule holds over live gameplay,
+			// unlike MO2's near-transparent desktop look.
+			RegisterTheme({ "mo2-skyrim", "MO2 Skyrim",
+				/*background*/ 0xFF000000, /*frame*/ 0xFFB0B0B0, /*borderThickness*/ 1.0f,
+				/*border*/ 0xFFB0B0B0, /*text*/ 0xFFDDDDDD, /*textDim*/ 0xFF717171,
+				/*accent*/ 0xFF2B91A1, /*knotwork*/ true });
 
 			// DEFAULT set to MO2 Skyrim for the current test, per the author 2026-08-27: "I want the
 			// default theme to use MO2's Skyrim theme in the current test."
@@ -313,11 +319,27 @@ namespace theme
 			return ImVec4{ r, g, b, a };
 		};
 
+		// A theme provides `frame`; the refined roles (border/text/textDim/accent) fall back to
+		// it when 0, so simple and INI-scanned themes are unchanged while MO2 Skyrim gets its
+		// real layered look.
+		const std::uint32_t borderId = active.border ? active.border : active.frame;
+		const std::uint32_t textId = active.text ? active.text : active.frame;
+		const std::uint32_t textDimId = active.textDim ? active.textDim : active.frame;
+		const std::uint32_t accentId = active.accent ? active.accent : active.frame;
+
 		const ImVec4 black = unpack(active.background);
-		const ImVec4 frame = unpack(active.frame);
-		const ImVec4 frameDim{ frame.x, frame.y, frame.z, 0.55f };
-		const ImVec4 frameFaint{ frame.x, frame.y, frame.z, 0.14f };
-		const ImVec4 frameSoft{ frame.x, frame.y, frame.z, 0.28f };
+		const ImVec4 border = unpack(borderId);
+		const ImVec4 text = unpack(textId);
+		const ImVec4 accent = unpack(accentId);
+
+		// Alpha variants of a base colour, for the graded hover/active/fill states.
+		auto tint = [](const ImVec4& v, float a) { return ImVec4{ v.x, v.y, v.z, a }; };
+		const ImVec4 textDimC = tint(unpack(textDimId), 1.0f);           // secondary text (its own hue)
+		const ImVec4 borderDim = tint(border, 0.55f);                    // separators
+		const ImVec4 borderFaint = tint(border, 0.14f);                  // subtle fills
+		const ImVec4 borderSoft = tint(border, 0.28f);                   // hover fills
+		const ImVec4 accentFaint = tint(accent, 0.22f);                  // selected row (gold wash)
+		const ImVec4 accentSoft = tint(accent, 0.42f);                   // hovered/active selection
 
 		ImVec4* c = style.Colors;
 		c[ImGuiCol_WindowBg] = black;
@@ -328,28 +350,47 @@ namespace theme
 		c[ImGuiCol_TitleBgActive] = black;
 		c[ImGuiCol_TitleBgCollapsed] = black;
 
-		c[ImGuiCol_Text] = frame;
-		c[ImGuiCol_TextDisabled] = frameDim;  // NOT ImGui's ~50% grey - the readability rule applies to every theme
+		c[ImGuiCol_Text] = text;
+		c[ImGuiCol_TextDisabled] = textDimC;  // NOT ImGui's ~50% grey - the readability rule applies to every theme
 
-		c[ImGuiCol_Border] = frame;
-		c[ImGuiCol_Separator] = frameDim;
+		c[ImGuiCol_Border] = border;
+		c[ImGuiCol_BorderShadow] = ImVec4{ 0, 0, 0, 0 };
+		c[ImGuiCol_Separator] = borderDim;
+		c[ImGuiCol_SeparatorHovered] = borderSoft;
+		c[ImGuiCol_SeparatorActive] = border;
 
 		c[ImGuiCol_FrameBg] = black;
-		c[ImGuiCol_FrameBgHovered] = frameFaint;
-		c[ImGuiCol_FrameBgActive] = frameSoft;
+		c[ImGuiCol_FrameBgHovered] = borderFaint;
+		c[ImGuiCol_FrameBgActive] = borderSoft;
 		c[ImGuiCol_Button] = black;
-		c[ImGuiCol_ButtonHovered] = frameFaint;
-		c[ImGuiCol_ButtonActive] = frameSoft;
-		c[ImGuiCol_Header] = frameFaint;
-		c[ImGuiCol_HeaderHovered] = frameSoft;
-		c[ImGuiCol_HeaderActive] = frameSoft;
+		c[ImGuiCol_ButtonHovered] = borderFaint;
+		c[ImGuiCol_ButtonActive] = borderSoft;
 
-		c[ImGuiCol_SliderGrab] = frame;
-		c[ImGuiCol_SliderGrabActive] = frame;
-		c[ImGuiCol_CheckMark] = frame;
+		// Selection (Selectable, tree, list rows) = the gold accent wash - the Skyrim warmth.
+		c[ImGuiCol_Header] = accentFaint;
+		c[ImGuiCol_HeaderHovered] = accentSoft;
+		c[ImGuiCol_HeaderActive] = accentSoft;
 
-		c[ImGuiCol_NavHighlight] = frame;
+		// Tabs: quiet by default, gold when active/selected.
+		c[ImGuiCol_Tab] = black;
+		c[ImGuiCol_TabHovered] = accentSoft;
+		c[ImGuiCol_TabActive] = accentFaint;
+		c[ImGuiCol_TabUnfocused] = black;
+		c[ImGuiCol_TabUnfocusedActive] = borderFaint;
 
-		logger::info("Theme applied: \"{}\" ({}); game HUD opacity {:.2f}", active.name, active.id, GetGameHUDOpacity());
+		// Scrollbar: dark trough, silver grab.
+		c[ImGuiCol_ScrollbarBg] = black;
+		c[ImGuiCol_ScrollbarGrab] = borderDim;
+		c[ImGuiCol_ScrollbarGrabHovered] = borderSoft;
+		c[ImGuiCol_ScrollbarGrabActive] = border;
+
+		// Interactive accents in gold.
+		c[ImGuiCol_SliderGrab] = accent;
+		c[ImGuiCol_SliderGrabActive] = accent;
+		c[ImGuiCol_CheckMark] = accent;
+		c[ImGuiCol_NavHighlight] = accent;
+
+		logger::info("Theme applied: \"{}\" ({}); knotwork={}; game HUD opacity {:.2f}",
+					 active.name, active.id, active.knotwork, GetGameHUDOpacity());
 	}
 }

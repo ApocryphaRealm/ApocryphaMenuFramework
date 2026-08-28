@@ -31,8 +31,22 @@ namespace theme
 		std::string name;   // display name in the theme picker
 
 		std::uint32_t background;    // ABGR
-		std::uint32_t frame;         // ABGR - primary border/text/accent colour
+		std::uint32_t frame;         // ABGR - primary border/text/accent colour (the ONE colour
+		                             // a simple/INI theme provides; the fields below refine it)
 		float borderThickness = 1.0f;
+
+		// Optional refinements (2026-08-28, MO2-Skyrim rebuild). A real UI is not one flat colour:
+		// the Trosski Skyrim style uses silver frame lines, brighter text, a dim secondary tone
+		// and a gold accent. Any left 0 falls back to `frame`, so the two built-ins and every
+		// INI-scanned theme keep working unchanged. ABGR, same packing as `frame`.
+		std::uint32_t border = 0;    // panel/frame lines            (Trosski #b0b0b0 silver)
+		std::uint32_t text = 0;      // primary text                 (Trosski #dddddd bright)
+		std::uint32_t textDim = 0;   // disabled/secondary text      (Trosski #717171)
+		std::uint32_t accent = 0;    // selection / checkmark / grab (Trosski #a1912b gold)
+
+		// Draw the Nordic knotwork frame (border-image.png, embedded) around the window. The
+		// Trosski MO2 style's defining feature; off for plain themes like Untarnished.
+		bool knotwork = false;
 	};
 
 	// Registers a theme additively. Re-registering an existing id REPLACES that entry only

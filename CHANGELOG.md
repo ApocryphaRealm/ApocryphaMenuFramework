@@ -8,6 +8,23 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 * **failed** - built but crashed or malfunctioned; the number was reclaimed
 * **scratch** - a hypothesis-test build that never held a real number
 
+## 1.3.5 - 2026-08-28 - untested
+### Changed
+- REBUILT the "MO2 Skyrim" theme from the real Trosski Skyrim style + a live MO2 screenshot.
+  The first port had collapsed the whole style onto one grey (#b0b0b0 for text, border, and
+  accents alike). It is now a layered palette: silver frame lines (#b0b0b0), brighter primary
+  text (#dddddd), a dim secondary tone (#717171), and a GOLD accent (#a1912b) for selection
+  rows, tabs, checkmarks, sliders and nav-highlight. Scrollbars, separators and tab states got
+  their own graded tones instead of reusing one alpha ramp.
+### Added
+- The Nordic KNOTWORK frame that defines the MO2 Skyrim look: the style's border-image.png
+  (78x78) is embedded (include/KnotworkBorder.h, RGBA) and drawn as a 9-slice frame around the
+  AMF window - four ornate corner knots at fixed size, edges stretched between, transparent
+  centre. Uploaded once to a texture on the game's device at init; a new per-theme `knotwork`
+  flag gates it (on for MO2 Skyrim, off for Untarnished). Palette gained optional
+  border/text/textDim/accent fields that fall back to `frame`, so Untarnished and INI-scanned
+  themes are unchanged.
+
 ## 1.3.4 - 2026-08-28 - working
 ### Fixed
 - Crash on EVERY successful save load (crash-2026-08-28-10-12-36.log, access violation in
