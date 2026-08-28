@@ -15,7 +15,7 @@ cmake_minimum_required(VERSION 3.21)
 
 project(
 	ApocryphaMenuFramework
-	VERSION 1.2.1
+	VERSION 1.3.0
 	LANGUAGES CXX
 )
 
@@ -98,6 +98,8 @@ target_link_libraries(
 		CommonLibSSE::CommonLibSSE
 		spdlog::spdlog_header_only
 		imgui::imgui
+		Shell32.lib   # SHGetKnownFolderPath (Persistence.cpp)
+		Ole32.lib     # CoTaskMemFree (Persistence.cpp)
 )
 
 if (MSVC)

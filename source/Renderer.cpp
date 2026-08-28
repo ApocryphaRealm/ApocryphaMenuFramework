@@ -2,6 +2,7 @@
 
 #include "Input.h"
 #include "Offsets.h"
+#include "Persistence.h"
 #include "Registry.h"
 #include "Settings.h"
 #include "Theme.h"
@@ -9,6 +10,7 @@
 #include "utils/Logger.h"
 
 #include <imgui.h>
+#include <vector>
 // The vcpkg imgui port installs the binding headers FLAT at the include root, not under
 // backends/ as in the upstream repo layout.
 #include <d3d11.h>
@@ -134,6 +136,38 @@ namespace renderer
 			ImGui::Separator();
 			ImGui::Spacing();
 
+			// Theme picker (design decision, 2026-08-27) - supersedes the original "no theme UI by design"
+			// stance; the registry is additive (theme::Theme.h), never overwriting an entry.
+			{
+				const std::vector<theme::Palette> themes = theme::ListThemes();
+				const theme::Palette& active = theme::GetActiveTheme();
+
+				int currentIndex = 0;
+				std::vector<const char*> names;
+				names.reserve(themes.size());
+				for (std::size_t i = 0; i < themes.size(); ++i)
+				{
+					names.push_back(themes[i].name.c_str());
+					if (themes[i].id == active.id)
+					{
+						currentIndex = static_cast<int>(i);
+					}
+				}
+
+				ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
+				if (ImGui::Combo("Theme", &currentIndex, names.data(), static_cast<int>(names.size())))
+				{
+					theme::SetActiveTheme(themes[currentIndex].id);
+					theme::Apply();
+					values.themeId = themes[currentIndex].id;
+					settings::Save();
+				}
+				ImGui::TextWrapped("\"Untarnished\" is the framework's original identity; \"MO2 Skyrim\" "
+								   "is ported from Mod Organizer 2's own real stylesheet.");
+			}
+			ImGui::Spacing();
+			ImGui::Spacing();
+
 			// First setting by standing decision: the explicit input-mode toggle.
 			if (widgets::Toggle("Controller input mode", &values.controllerMode))
 			{
@@ -173,6 +207,24 @@ namespace renderer
 			ImGui::TextUnformatted("Window position: Centre");
 			ImGui::TextWrapped("Preset positions rather than free placement; more presets arrive "
 							   "in a later milestone.");
+
+			// Persistence-channel test harness (decisions doc S10) - lets the per-save round
+			// trip be exercised end to end (write, save, quit, reload, confirm) with no Papyrus
+			// compiler involved. Debug-only surface; not a real setting.
+			ImGui::Spacing();
+			ImGui::Separator();
+			ImGui::TextUnformatted("Persistence test (S10)");
+			static char testBuffer[128] = "";
+			ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.7f);
+			ImGui::InputText("##persistValue", testBuffer, sizeof(testBuffer));
+			ImGui::SameLine();
+			if (ImGui::Button("Set"))
+			{
+				persistence::SetValue("test-value", testBuffer);
+			}
+			ImGui::Text("Currently stored: \"%s\"", persistence::GetValue("test-value", "<unset>").c_str());
+			ImGui::TextWrapped("Set a value, save the game, quit, reload the same save - the "
+							   "value should still be here. A DIFFERENT save should show <unset>.");
 		}
 
 		void DrawFrameworkWindow()

@@ -1,7 +1,9 @@
 #include "AMF/API.h"
 #include "Input.h"
+#include "Persistence.h"
 #include "Registry.h"
 #include "Renderer.h"
+#include "Scripting.h"
 #include "Settings.h"
 #include "Theme.h"
 
@@ -36,6 +38,17 @@ namespace
 		{
 		case SKSE::MessagingInterface::kInputLoaded:
 			logger::debug("kInputLoaded received (input capture is hook-based since M2; no sink to register)");
+			break;
+		case SKSE::MessagingInterface::kSaveGame:
+			// data/dataLen is the save's own name (SKSE convention, undocumented in the header
+			// but stable across the ecosystem) - not necessarily null-terminated, hence the
+			// explicit length rather than treating it as a C-string.
+			persistence::OnSaveGame(std::string_view(static_cast<const char*>(a_msg->data), a_msg->dataLen));
+			break;
+		case SKSE::MessagingInterface::kPostLoadGame:
+			// Fires AFTER the load completes (vs kPreLoadGame, before) - the correct point to
+			// restore state, since the save that's now active is the one whose data we want.
+			persistence::OnLoadGame(std::string_view(static_cast<const char*>(a_msg->data), a_msg->dataLen));
 			break;
 		case SKSE::MessagingInterface::kDataLoaded:
 			logger::debug("kDataLoaded received");
@@ -155,6 +168,8 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 	// every site: nothing is written over bytes that are not the expected call instruction,
 	// and a refused guard leaves the plugin loaded-but-inert with the reason in the log.
 	settings::Load();
+
+	scripting::RegisterNativeFunctions();
 
 	if (renderer::Install())
 	{

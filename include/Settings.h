@@ -9,6 +9,7 @@
 // ============================================================================================
 
 #include <cstdint>
+#include <string>
 
 namespace settings
 {
@@ -22,6 +23,12 @@ namespace settings
 		float textScale = 1.30f;         // extra font multiplier on top of the resolution scale (the author, 1.0.2 feedback round)
 		std::int32_t windowPreset = 0;   // 0 = centre (the standard). Preset positions, never free placement -
 		                                 // the author 2026-08-27, same anchor philosophy as the minimap; more presets later.
+
+		// [Theme]
+		std::string themeId = "mo2-skyrim";  // registry id (theme::Palette::id). Default is MO2's
+		                                     // own Skyrim theme for the current test (the author,
+		                                     // 2026-08-27) - "Untarnished" (the original identity)
+		                                     // is still registered and selectable, just not default.
 
 		// [Debug]
 		bool showApiDemo = true;         // the AMF API Demo menu (registered via the public API); ships on until real mods populate the registry
