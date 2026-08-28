@@ -42,6 +42,11 @@ namespace renderer
 		std::string g_selTab  = "system";          // top tab: quests|general|stats|system
 		std::string g_selNode = "system/settings"; // side-list entry within the active tab
 		int g_selMod = 0;
+		// Set when the selection is changed from OUTSIDE the UI (the amf.menu DevBench tool).
+		// Without this the render loop copied its own state back every frame and ImGui's tab bar,
+		// which owns its selected tab internally, stomped the external change immediately - the
+		// automated pane sweep on 2026-08-28 showed every select() snapping back to "quests".
+		bool g_selExternal = false;
 
 		// Draws the 78x78 knotwork PNG as a 9-slice frame around the given screen rect: the four
 		// ornate corners at fixed size, the four edges stretched between them, the centre left
@@ -553,7 +558,13 @@ namespace renderer
 				// "Mod menus". See PLANNED-MODS for the reference layout.
 				std::string tab, sel;
 				int selMod = 0;
-				{ std::scoped_lock l(g_selLock); tab = g_selTab; sel = g_selNode; selMod = g_selMod; }
+				bool external = false;
+				{
+					std::scoped_lock l(g_selLock);
+					tab = g_selTab; sel = g_selNode; selMod = g_selMod;
+					external = g_selExternal; g_selExternal = false;
+				}
+				bool changed = false;  // set only by a real UI interaction this frame
 				const std::vector<registry::Entry> entries = registry::Snapshot();
 				if (selMod >= static_cast<int>(entries.size())) { selMod = 0; }
 
@@ -561,12 +572,18 @@ namespace renderer
 				if (ImGui::BeginTabBar("##topTabs", ImGuiTabBarFlags_None))
 				{
 					auto tabItem = [&](const char* label, const char* id, const char* defaultNode) {
-						// Keep the externally-set tab (DevBench/amf.menu) in sync with the UI.
-						const bool wantSelected = (tab == id);
-						ImGuiTabItemFlags f = wantSelected ? ImGuiTabItemFlags_SetSelected : 0;
+						// On a frame where the tab was set externally, FORCE ImGui to that tab and
+						// do not let the tab bar's own state write back; otherwise the tab bar is
+						// the user's input and we adopt whatever it reports open.
+						const ImGuiTabItemFlags f = (external && tab == id) ? ImGuiTabItemFlags_SetSelected : 0;
 						if (ImGui::BeginTabItem(label, nullptr, f))
 						{
-							if (tab != id) { tab = id; sel = defaultNode; }
+							if (!external && tab != id)
+							{
+								tab = id;
+								sel = defaultNode;
+								changed = true;
+							}
 							ImGui::EndTabItem();
 						}
 					};
@@ -581,7 +598,7 @@ namespace renderer
 				ImGui::BeginChild("##side", ImVec2(leftWidth, 0.0f), true);
 				auto sideItem = [&](const char* label, const char* id, bool enabled = true) {
 					if (!enabled) { ImGui::BeginDisabled(true); }
-					if (ImGui::Selectable(label, sel == id) && enabled) { sel = id; }
+					if (ImGui::Selectable(label, sel == id) && enabled) { sel = id; changed = true; }
 					if (!enabled) { ImGui::EndDisabled(); }
 				};
 				if (tab == "system")
@@ -599,6 +616,7 @@ namespace renderer
 						{
 							sel = "mod";
 							selMod = i;
+							changed = true;
 						}
 					}
 					if (entries.empty()) { ImGui::TextDisabled("none registered"); }
@@ -672,7 +690,11 @@ namespace renderer
 					const ImVec2 ws = ImGui::GetWindowSize();
 					DrawKnotworkFrame(ImGui::GetWindowDrawList(), wp, ImVec2(wp.x + ws.x, wp.y + ws.y));
 				}
-				{ std::scoped_lock l(g_selLock); g_selTab = tab; g_selNode = sel; g_selMod = selMod; }
+				if (changed)
+				{
+					std::scoped_lock l(g_selLock);
+					g_selTab = tab; g_selNode = sel; g_selMod = selMod;
+				}
 			}
 			ImGui::End();
 		}
@@ -852,6 +874,7 @@ namespace renderer
 	void SetSelectedNode(const std::string& a_node)
 	{
 		std::scoped_lock l(g_selLock);
+		g_selExternal = true;
 		if (a_node.rfind("tab:", 0) == 0)
 		{
 			// "tab:<quests|general|stats|system>" switches the TOP tab.

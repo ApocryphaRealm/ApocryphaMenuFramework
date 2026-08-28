@@ -8,6 +8,17 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 * **failed** - built but crashed or malfunctioned; the number was reclaimed
 * **scratch** - a hypothesis-test build that never held a real number
 
+## 1.4.1 - 2026-08-28 - untested
+### Fixed
+- External menu selection (the `amf.menu` DevBench tool) was overwritten every frame and snapped
+  back to whatever tab ImGui thought was open - an automated sweep of all 14 menu nodes reported
+  `tab=quests` for every one of them. Cause: the render loop copied its own selection state back to
+  the shared globals unconditionally each frame, and ImGui's tab bar owns its selected tab
+  internally, so it always won. Now the copy-back happens ONLY when a real UI interaction changed
+  the selection, and a selection set from outside is flagged so that frame FORCES ImGui to the
+  requested tab instead of adopting the tab bar's opinion. (Found by the framework's own automated
+  pane sweep - the driving tool catching a bug in the thing it drives.)
+
 ## 1.4.0 - 2026-08-28 - working
 ### Changed
 - MENU RESTRUCTURED to the real vanilla shape, corrected from the author's in-game screenshots: the game
