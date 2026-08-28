@@ -117,6 +117,27 @@ namespace mainmenudriver
 			});
 		}
 
+		// Invokes a GameDelegate callback registered by the game on the Main Menu - the exact
+		// C++ handler the menu's own buttons reach. Decompiled StartMenu.as (2026-08-28) shows
+		// the terminal actions are themselves delegate calls: "StartNewGame" (New -> confirm ->
+		// accept -> fade lands here), "ContinueLastSavedGame", "QuitToDesktop", "NEW"/"CONTINUE"
+		// (the pre-confirm button handlers), "HELP", "MOD". So calling the delegate directly IS
+		// pressing the button, minus the fade animation.
+		void InvokeDelegate(std::string a_name)
+		{
+			SKSE::GetTaskInterface()->AddTask([name = std::move(a_name)]() {
+				auto* ui = RE::UI::GetSingleton();
+				auto menu = ui ? ui->GetMenu(RE::MainMenu::MENU_NAME) : nullptr;
+				if (!menu || !menu->uiMovie || !menu->fxDelegate)
+				{
+					logger::warn("amf.mainmenu delegate: Main Menu / movie / fxDelegate unavailable");
+					return;
+				}
+				menu->fxDelegate->Callback(menu->uiMovie.get(), name.c_str(), nullptr, 0);
+				logger::info("amf.mainmenu: FxDelegate callback \"{}\" invoked", name);
+			});
+		}
+
 		void InvokeMoviePath(std::string a_path)
 		{
 			SKSE::GetTaskInterface()->AddTask([path = std::move(a_path)]() {
@@ -164,6 +185,20 @@ namespace mainmenudriver
 				{
 					InvokeMoviePath(path);
 					result = "{\"ok\":true,\"op\":\"invoke\",\"queued\":true,\"path\":\"" + JsonEscape(path) + "\"}";
+				}
+			}
+			else if (op == "delegate")
+			{
+				const std::string name = JsonStr(args, "name");
+				if (name.empty())
+				{
+					result = "{\"ok\":false,\"error\":\"delegate needs name (e.g. StartNewGame, ContinueLastSavedGame, QuitToDesktop)\"}";
+				}
+				else
+				{
+					InvokeDelegate(name);
+					result = "{\"ok\":true,\"op\":\"delegate\",\"queued\":true,\"name\":\"" + JsonEscape(name) +
+							 "\",\"note\":\"watch lifecycle (newGame/preLoadGame) for the outcome\"}";
 				}
 			}
 			else if (op == "getvar")
@@ -238,11 +273,13 @@ namespace mainmenudriver
 		constexpr const char* descriptor =
 			"{"
 			"\"description\":\"Drive and inspect the GAME's vanilla Main Menu headlessly for testing. "
-			"op: state | userevent (text: the button event name, e.g. 'New Game') | invoke (path: an "
-			"ActionScript method on the menu movie) | getvar (path: an ActionScript variable). "
-			"userevent/invoke are queued to the main thread; watch lifecycle/log for the outcome.\","
+			"op: state | delegate (name: a GameDelegate callback - StartNewGame, "
+			"ContinueLastSavedGame, QuitToDesktop, NEW, CONTINUE, HELP - the exact C++ handler the "
+			"menu's buttons reach) | invoke (path: an ActionScript method on the menu movie) | "
+			"getvar (path: an ActionScript variable) | userevent (text: post a kUserEvent). "
+			"delegate/invoke/userevent queue to the main thread; watch lifecycle/log for the outcome.\","
 			"\"inputSchema\":{\"type\":\"object\",\"properties\":{"
-			"\"op\":{\"type\":\"string\"},\"text\":{\"type\":\"string\"},\"path\":{\"type\":\"string\"}}},"
+			"\"op\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"text\":{\"type\":\"string\"},\"path\":{\"type\":\"string\"}}},"
 			"\"readOnly\":false"
 			"}";
 
