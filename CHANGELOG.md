@@ -8,7 +8,7 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 * **failed** - built but crashed or malfunctioned; the number was reclaimed
 * **scratch** - a hypothesis-test build that never held a real number
 
-## 1.4.1 - 2026-08-28 - untested
+## 1.4.1 - 2026-08-28 - working
 ### Fixed
 - External menu selection (the `amf.menu` DevBench tool) was overwritten every frame and snapped
   back to whatever tab ImGui thought was open - an automated sweep of all 14 menu nodes reported
