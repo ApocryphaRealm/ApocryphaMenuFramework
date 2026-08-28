@@ -117,30 +117,22 @@ namespace mainmenudriver
 			});
 		}
 
-		// Invokes a GameDelegate callback registered by the game on the Main Menu - the exact
-		// C++ handler the menu's own buttons reach. Decompiled StartMenu.as (2026-08-28) shows
-		// the terminal actions are themselves delegate calls: "StartNewGame" (New -> confirm ->
-		// accept -> fade lands here), "ContinueLastSavedGame", "QuitToDesktop", "NEW"/"CONTINUE"
-		// (the pre-confirm button handlers), "HELP", "MOD". So calling the delegate directly IS
-		// pressing the button, minus the fade animation.
-		void InvokeDelegate(std::string a_name)
-		{
-			SKSE::GetTaskInterface()->AddTask([name = std::move(a_name)]() {
-				auto* ui = RE::UI::GetSingleton();
-				auto menu = ui ? ui->GetMenu(RE::MainMenu::MENU_NAME) : nullptr;
-				if (!menu || !menu->uiMovie || !menu->fxDelegate)
-				{
-					logger::warn("amf.mainmenu delegate: Main Menu / movie / fxDelegate unavailable");
-					return;
-				}
-				menu->fxDelegate->Callback(menu->uiMovie.get(), name.c_str(), nullptr, 0);
-				logger::info("amf.mainmenu: FxDelegate callback \"{}\" invoked", name);
-			});
-		}
+		// UNSAFE-BY-EXPERIMENT, REMOVED (2026-08-28): calling the game's registered GameDelegate
+		// handler directly - fxDelegate->Callback(movie, "StartNewGame", nullptr, 0) - CRASHED the
+		// game instantly (crash-2026-08-28-19-37-57: access violation reading 0x08 inside
+		// SkyrimSE.exe+0ED6C6D, i.e. the handler dereferencing the FxDelegateArgs we never supplied).
+		// The handlers are not callable with fabricated arguments from outside the UI's own context.
+		//
+		// The SAFE equivalent is to drive the menu's OWN ActionScript, exactly as a button press does,
+		// and let the game build the delegate context itself. Decompiled StartMenu.as (FFDec) shows
+		// the terminal action of the New Game flow is `this.FadeOutAndCall("StartNewGame")`, so:
+		//   invoke path="_root.MenuHolder.Menu_mc.FadeOutAndCall" arg="StartNewGame"
+		// Likewise "ContinueLastSavedGame", and QuitToDesktop via GameDelegate. That is what the
+		// `invoke` op below does, now with an optional string argument.
 
-		void InvokeMoviePath(std::string a_path)
+		void InvokeMoviePath(std::string a_path, std::string a_arg)
 		{
-			SKSE::GetTaskInterface()->AddTask([path = std::move(a_path)]() {
+			SKSE::GetTaskInterface()->AddTask([path = std::move(a_path), arg = std::move(a_arg)]() {
 				auto* ui = RE::UI::GetSingleton();
 				auto menu = ui ? ui->GetMenu(RE::MainMenu::MENU_NAME) : nullptr;
 				if (!menu || !menu->uiMovie)
@@ -149,8 +141,19 @@ namespace mainmenudriver
 					return;
 				}
 				RE::GFxValue result;
-				const bool ok = menu->uiMovie->Invoke(path.c_str(), &result, nullptr, 0);
-				logger::info("amf.mainmenu: Invoke(\"{}\") -> {}", path, ok ? "ok" : "FAILED");
+				bool ok = false;
+				if (arg.empty())
+				{
+					ok = menu->uiMovie->Invoke(path.c_str(), &result, nullptr, 0);
+				}
+				else
+				{
+					RE::GFxValue a;
+					a.SetString(arg.c_str());
+					ok = menu->uiMovie->Invoke(path.c_str(), &result, &a, 1);
+				}
+				logger::info("amf.mainmenu: Invoke(\"{}\"{}) -> {}", path,
+							 arg.empty() ? "" : (", \"" + arg + "\""), ok ? "ok" : "FAILED");
 			});
 		}
 
@@ -183,8 +186,10 @@ namespace mainmenudriver
 				}
 				else
 				{
-					InvokeMoviePath(path);
-					result = "{\"ok\":true,\"op\":\"invoke\",\"queued\":true,\"path\":\"" + JsonEscape(path) + "\"}";
+					const std::string arg = JsonStr(args, "arg");
+					InvokeMoviePath(path, arg);
+					result = "{\"ok\":true,\"op\":\"invoke\",\"queued\":true,\"path\":\"" + JsonEscape(path) +
+							 "\",\"arg\":\"" + JsonEscape(arg) + "\"}";
 				}
 			}
 			else if (op == "delegate")
@@ -196,9 +201,11 @@ namespace mainmenudriver
 				}
 				else
 				{
-					InvokeDelegate(name);
+					// Route through the menu's own ActionScript (safe) rather than calling the
+					// game's handler directly (that crashed - see the note above).
+					InvokeMoviePath("_root.MenuHolder.Menu_mc.FadeOutAndCall", name);
 					result = "{\"ok\":true,\"op\":\"delegate\",\"queued\":true,\"name\":\"" + JsonEscape(name) +
-							 "\",\"note\":\"watch lifecycle (newGame/preLoadGame) for the outcome\"}";
+							 "\",\"via\":\"FadeOutAndCall\",\"note\":\"watch lifecycle (newGame/preLoadGame) for the outcome\"}";
 				}
 			}
 			else if (op == "getvar")

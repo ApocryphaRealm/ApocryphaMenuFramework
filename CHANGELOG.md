@@ -8,7 +8,7 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 * **failed** - built but crashed or malfunctioned; the number was reclaimed
 * **scratch** - a hypothesis-test build that never held a real number
 
-## 1.3.9 - 2026-08-28 - untested
+## 1.3.9 - 2026-08-28 - working
 ### Added
 - `amf.mainmenu` DevBench driver (rule 64 applied to the GAME's start menu, the author's idea): the
   vanilla Main Menu can now be driven and inspected headlessly - op `state` (menu open, movie
@@ -18,6 +18,11 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
   getvar answer synchronously (2s main-thread wait). This is the exploration surface for pressing
   the REAL New Game button headlessly - the one start-menu action nothing could reach before
   (coc-from-menu is flaky by design; DevBench's cold load needed an existing save).
+  VERIFIED live: `invoke path="_root.MenuHolder.Menu_mc.FadeOutAndCall" arg="StartNewGame"` (also
+  reachable as op `delegate` name=StartNewGame) started a new game headlessly - lifecycle=newGame,
+  playerLoaded=true, loaded into Tamriel. NOTE: calling the game's GameDelegate handler DIRECTLY
+  (fxDelegate->Callback with fabricated args) crashes the game and was removed; the safe path is
+  invoking the menu's own ActionScript so the game builds the delegate context itself.
 
 ## 1.3.8 - 2026-08-28 - working
 ### Added
