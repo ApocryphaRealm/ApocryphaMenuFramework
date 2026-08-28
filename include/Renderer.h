@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 // ============================================================================================
 // M1: the render loop. Two trampoline call-hooks (survey §7.1), a probed D3D-init site
 // (Offsets.h explains the dispute), one ImGui context for the whole process.
@@ -22,4 +24,14 @@ namespace renderer
 	// present thunk. Atomic: touched from the input thread, read on the render thread.
 	void ToggleMainWindow();
 	bool IsMainWindowVisible();
+
+	// External menu control + query, used by the DevBench tool (DevBenchTool.cpp) so the menu can
+	// be driven and inspected headlessly for testing (rule 31): open/close, move the selection to a
+	// node path (e.g. "system/quit", "mod" with the mod set via the tool, "stats"), run the
+	// selected node's action, and read the whole menu as JSON. Thread-safe.
+	void SetMenuVisible(bool a_visible);
+	void SetSelectedNode(const std::string& a_node);
+	std::string GetSelectedNode();
+	void ActivateSelectedNode();
+	std::string GetMenuStateJson();
 }

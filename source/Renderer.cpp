@@ -10,6 +10,9 @@
 #include "utils/ToggleSwitch.h"
 #include "utils/Logger.h"
 
+#include <functional>
+#include <mutex>
+
 #include <imgui.h>
 #include <vector>
 // The vcpkg imgui port installs the binding headers FLAT at the include root, not under
@@ -31,6 +34,13 @@ namespace renderer
 		// Knotwork frame texture (the embedded MO2-Skyrim border-image.png). Created once at
 		// D3DInit on the game's own device; used by DrawKnotworkFrame as an ImGui texture id.
 		ID3D11ShaderResourceView* g_knotSRV = nullptr;
+
+		// Menu navigation state, promoted from static locals so the DevBench tool can drive and read
+		// it from the listener thread (see DevBenchTool.cpp). Guarded by g_selLock; the render loop
+		// copies in at frame start and out at frame end.
+		std::mutex g_selLock;
+		std::string g_selNode = "game-settings";
+		int g_selMod = 0;
 
 		// Draws the 78x78 knotwork PNG as a 9-slice frame around the given screen rect: the four
 		// ornate corners at fixed size, the four edges stretched between them, the centre left
@@ -332,18 +342,75 @@ namespace renderer
 		// Placeholder for a System action (Save/Load/Quit/Save and Quit). The button is disabled:
 		// this build ships the menu MODEL and navigation; wiring the real game action - and
 		// intercepting Skyrim's own pause/journal menu to show AMF instead - is the next milestone.
-		void DrawSystemActionPane(const char* a_title, const char* a_desc, const char* a_button)
+		// Runs a console command on the MAIN thread via RE::Script CompileAndRun - the standard,
+		// well-worn modder path, marshalled off the render thread. Worst case for an unsupported
+		// command is a no-op, never a crash. Used by the wired System actions.
+		void RunConsoleCommand(std::string a_cmd)
+		{
+			SKSE::GetTaskInterface()->AddTask([cmd = std::move(a_cmd)]() {
+				const auto factory = RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>();
+				if (auto* script = factory ? factory->Create() : nullptr)
+				{
+					script->SetCommand(cmd);
+					script->CompileAndRun(nullptr);
+					delete script;
+				}
+			});
+		}
+
+		// A System action pane. With an action set, the button runs it (behind a confirm popup when
+		// a_confirm, for destructive actions like Quit). With no action it is a disabled placeholder
+		// - Load and Save and Quit need save enumeration / flush-before-quit sequencing (logged).
+		void DrawSystemActionPane(const char* a_title, const char* a_desc, const char* a_button,
+								  const std::function<void()>& a_action, bool a_confirm)
 		{
 			ImGui::TextUnformatted(a_title);
 			ImGui::Separator();
 			ImGui::TextWrapped("%s", a_desc);
 			ImGui::Spacing();
-			ImGui::BeginDisabled(true);
-			ImGui::Button(a_button, ImVec2(ImGui::GetContentRegionAvail().x * 0.4f, 0.0f));
-			ImGui::EndDisabled();
-			ImGui::Spacing();
-			ImGui::TextDisabled("Not yet wired to the game - this is the nested menu model. The real");
-			ImGui::TextDisabled("action and replacing Skyrim's own menu are the next milestone.");
+			const float w = ImGui::GetContentRegionAvail().x * 0.4f;
+
+			if (!a_action)
+			{
+				ImGui::BeginDisabled(true);
+				ImGui::Button(a_button, ImVec2(w, 0.0f));
+				ImGui::EndDisabled();
+				ImGui::Spacing();
+				ImGui::TextDisabled("Not yet wired - needs save enumeration / flush-before-quit; logged.");
+				return;
+			}
+
+			if (a_confirm)
+			{
+				if (ImGui::Button(a_button, ImVec2(w, 0.0f)))
+				{
+					ImGui::OpenPopup("##amf_confirm");
+				}
+				if (ImGui::BeginPopupModal("##amf_confirm", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+				{
+					ImGui::Text("%s?", a_title);
+					ImGui::TextDisabled("Unsaved progress may be lost.");
+					ImGui::Spacing();
+					if (ImGui::Button("Yes", ImVec2(120.0f, 0.0f)))
+					{
+						a_action();
+						ImGui::CloseCurrentPopup();
+					}
+					ImGui::SameLine();
+					if (ImGui::Button("Cancel", ImVec2(120.0f, 0.0f)))
+					{
+						ImGui::CloseCurrentPopup();
+					}
+					ImGui::EndPopup();
+				}
+			}
+			else
+			{
+				if (ImGui::Button(a_button, ImVec2(w, 0.0f)))
+				{
+					a_action();
+				}
+			}
 		}
 
 		// A live read of player state - proof the nested categories can host real game data, not
@@ -424,8 +491,9 @@ namespace renderer
 				// mirror the vanilla game menu, with the per-mod settings pages (the MCM/SkyUI
 				// equivalent) nested under System -> Mods. See PLANNED-MODS. This is the STRUCTURE;
 				// wiring the real Save/Load/Quit and intercepting the game's own menu are later steps.
-				static std::string sel = "game-settings";
-				static int selMod = 0;
+				std::string sel;
+				int selMod = 0;
+				{ std::scoped_lock l(g_selLock); sel = g_selNode; selMod = g_selMod; }
 				const std::vector<registry::Entry> entries = registry::Snapshot();
 				if (selMod >= static_cast<int>(entries.size())) { selMod = 0; }
 
@@ -476,10 +544,10 @@ namespace renderer
 				else if (sel == "stats")           { DrawStatsPane(); }
 				else if (sel == "quest")           { DrawQuestPane(); }
 				else if (sel == "general")         { DrawGeneralPane(); }
-				else if (sel == "system/save")     { DrawSystemActionPane("Save", "Saves the game.", "Save"); }
-				else if (sel == "system/load")     { DrawSystemActionPane("Load", "Loads a saved game.", "Load"); }
-				else if (sel == "system/savequit") { DrawSystemActionPane("Save and Quit", "Saves, then quits to the main menu.", "Save and Quit"); }
-				else if (sel == "system/quit")     { DrawSystemActionPane("Quit", "Quits to the main menu / desktop.", "Quit"); }
+				else if (sel == "system/save")     { DrawSystemActionPane("Save", "Saves the game to a named AMF save.", "Save", []{ RunConsoleCommand("save AMF_Save"); }, false); }
+				else if (sel == "system/load")     { DrawSystemActionPane("Load", "Loading from a save list arrives with save enumeration.", "Load", {}, false); }
+				else if (sel == "system/savequit") { DrawSystemActionPane("Save and Quit", "Save-then-quit needs flush-before-quit sequencing; arriving next.", "Save and Quit", {}, false); }
+				else if (sel == "system/quit")     { DrawSystemActionPane("Quit", "Quits to desktop. Unsaved progress is lost.", "Quit to Desktop", []{ RunConsoleCommand("qqq"); }, true); }
 				else if (sel == "mod" && !entries.empty())
 				{
 					const registry::Entry& entry = entries[selMod];
@@ -518,6 +586,7 @@ namespace renderer
 					const ImVec2 ws = ImGui::GetWindowSize();
 					DrawKnotworkFrame(ImGui::GetWindowDrawList(), wp, ImVec2(wp.x + ws.x, wp.y + ws.y));
 				}
+				{ std::scoped_lock l(g_selLock); g_selNode = sel; g_selMod = selMod; }
 			}
 			ImGui::End();
 		}
@@ -685,5 +754,70 @@ namespace renderer
 	bool IsMainWindowVisible()
 	{
 		return g_windowVisible.load(std::memory_order_relaxed);
+	}
+
+	void SetMenuVisible(bool a_visible)
+	{
+		g_windowVisible.store(a_visible, std::memory_order_release);
+		if (a_visible) { g_justOpened.store(true, std::memory_order_release); }
+		logger::info("Framework window {} (external/DevBench)", a_visible ? "shown" : "hidden");
+	}
+
+	void SetSelectedNode(const std::string& a_node)
+	{
+		std::scoped_lock l(g_selLock);
+		if (a_node.rfind("mod:", 0) == 0)
+		{
+			// "mod:<index>" selects a specific mod under System -> Mods.
+			g_selNode = "mod";
+			try { g_selMod = std::stoi(a_node.substr(4)); } catch (...) {}
+		}
+		else
+		{
+			g_selNode = a_node;
+		}
+	}
+
+	std::string GetSelectedNode()
+	{
+		std::scoped_lock l(g_selLock);
+		return g_selNode;
+	}
+
+	// Runs the action bound to the currently selected node (Save/Quit); categories and mods have
+	// no direct action - selecting them IS the interaction. Safe from any thread (RunConsoleCommand
+	// marshals to the main thread).
+	void ActivateSelectedNode()
+	{
+		std::string node;
+		{ std::scoped_lock l(g_selLock); node = g_selNode; }
+		if (node == "system/save") { RunConsoleCommand("save AMF_Save"); }
+		else if (node == "system/quit") { RunConsoleCommand("qqq"); }
+	}
+
+	// JSON snapshot of the menu for DevBench: visibility, the selected node, and every registered
+	// mod + its pages. Read-only; safe from the listener thread (registry::Snapshot is thread-safe).
+	std::string GetMenuStateJson()
+	{
+		std::string node; int selMod;
+		{ std::scoped_lock l(g_selLock); node = g_selNode; selMod = g_selMod; }
+		const bool visible = g_windowVisible.load(std::memory_order_relaxed);
+		const auto entries = registry::Snapshot();
+		auto esc = [](const std::string& v) { std::string o; for (char c : v) { if (c == '"' || c == '\x5C') { o += '\x5C'; } o += c; } return o; };
+		std::string mods;
+		for (std::size_t i = 0; i < entries.size(); ++i)
+		{
+			if (i) { mods += ","; }
+			std::string pages;
+			for (std::size_t j = 0; j < entries[i].pages.size(); ++j)
+			{
+				if (j) { pages += ","; }
+				pages += "\"" + esc(entries[i].pages[j].pageName) + "\"";
+			}
+			mods += "{\"index\":" + std::to_string(i) + ",\"name\":\"" + esc(entries[i].modName) + "\",\"pages\":[" + pages + "]}";
+		}
+		return std::string("{\"visible\":") + (visible ? "true" : "false") +
+			   ",\"selected\":\"" + esc(node) + "\",\"selectedMod\":" + std::to_string(selMod) +
+			   ",\"mods\":[" + mods + "]}";
 	}
 }

@@ -1,4 +1,5 @@
 #include "AMF/API.h"
+#include "DevBenchTool.h"
 #include "Input.h"
 #include "Persistence.h"
 #include "Registry.h"
@@ -80,8 +81,15 @@ namespace
 			// captured at kPreLoadGame; restore it only if the load actually succeeded.
 			persistence::OnPostLoadGame(a_msg->data != nullptr);
 			break;
+		case SKSE::MessagingInterface::kPostLoad:
+			// Earliest point DevBench's cross-plugin interface can be requested (its own
+			// contract). Register the amf.menu driving tool; retried at kDataLoaded since
+			// DevBench's server can still be finishing startup here.
+			devbenchtool::Init(false);
+			break;
 		case SKSE::MessagingInterface::kDataLoaded:
 			logger::debug("kDataLoaded received");
+			devbenchtool::Init(true);  // retry / last attempt, after the demo page has registered
 
 			// Dogfood the public API: the demo menu registers through AMF_RegisterPage exactly
 			// as an external mod would, proving the registry + tab rendering end to end - and

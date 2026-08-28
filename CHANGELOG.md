@@ -21,6 +21,13 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
   (PLANNED-MODS "AMF as a full nested game-menu replacement"). Built on 1.3.7, so it also carries
   the controller Start-closes-menu, left-stick nav, and live keybind-rebind fixes.
 
+### Added (cont.)
+- DevBench driving tool `amf.menu` (rule 31): the menu can now be opened, navigated, activated and
+  read over DevBench REST (POST /api/tool/amf.menu {op:open|close|select|activate|state}), so it is
+  testable HEADLESSLY - Claude can push the buttons itself. Vendors the MIT DevBenchAPI.
+- System menu: Save and Quit-to-desktop are now WIRED (console exec via RE::Script), Quit behind a
+  confirm. Load and Save-and-Quit stay placeholders (save enumeration / flush-before-quit sequencing).
+
 ## 1.3.7 - 2026-08-28 - untested
 ### Added
 - Menu-toggle-key REBINDING on the Framework Settings page (the author): a "Rebind" button captures the
