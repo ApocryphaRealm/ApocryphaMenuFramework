@@ -1,5 +1,6 @@
 #include "Input.h"
 
+#include "Compat.h"
 #include "Offsets.h"
 #include "Renderer.h"
 #include "Settings.h"
@@ -229,7 +230,13 @@ namespace input
 					}
 					else if (menuOpen)
 					{
-						CopyForImGui(current);
+						// SMF-compat input callbacks (e.g. DEM's "Press a key..." bind capture)
+						// get first look; a callback that consumes the event keeps it from the
+						// menu's own widgets as well. The game sees it in neither case.
+						if (!compat::DispatchInputEvent(current))
+						{
+							CopyForImGui(current);
+						}
 
 						passThrough = false;
 

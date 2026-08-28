@@ -8,6 +8,14 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 * **failed** - built but crashed or malfunctioned; the number was reclaimed
 * **scratch** - a hypothesis-test build that never held a real number
 
+## 1.2.1 - 2026-08-27 - untested
+
+### Added
+- M3 second half: the SMF-compatible export surface is LIVE - all 39 exports from the project's own export inventory (3. analyze mods\AMF export inventory\inventory.md), sized exactly to what this project's 11 SMF-integrated mods actually resolve, no more. AddSectionItem maps SMF's "Section/Item" path onto the native page registry (section = mod entry, item = page/tab). RegisterInpoutEvent/RegisterEventPriority (+ their Unregister siblings) implemented as real callback registries, wired into the input hook (SMF-compat input callbacks get first look at an event, ahead of ImGui) and a new compat::FireMenuEvent hook point for open/close/render events. Full cimgui text/layout/widget/query/draw-list forwarding to the embedded ImGui, including the one pOut case (igGetCursorScreenPos). GetMenuFrameworkVersion reports 1.2.
+
+### Notes
+- M3 is now functionally complete (registry + compat surface). NOT YET DONE: no existing mod has actually been pointed at AMF and tested - the pilot (Dragon's Eye Minimap's settings page, dual-resolve against both SMF and AMF, SMF disabled) is the next milestone action, not yet started.
+
 ## 1.2.0 - 2026-08-27 - untested
 
 ### Added
