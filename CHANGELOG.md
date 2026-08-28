@@ -8,7 +8,7 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 * **failed** - built but crashed or malfunctioned; the number was reclaimed
 * **scratch** - a hypothesis-test build that never held a real number
 
-## 1.3.4 - 2026-08-28 - untested
+## 1.3.4 - 2026-08-28 - working
 ### Fixed
 - Crash on EVERY successful save load (crash-2026-08-28-10-12-36.log, access violation in
   StripExtension constructing a std::string from address 0x1). Root cause: kPostLoadGame's
