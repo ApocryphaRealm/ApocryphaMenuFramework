@@ -8,7 +8,23 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 * **failed** - built but crashed or malfunctioned; the number was reclaimed
 * **scratch** - a hypothesis-test build that never held a real number
 
-## 1.3.5 - 2026-08-28 - untested
+## 1.3.6 - 2026-08-28 - untested
+### Added
+- New "Vanilla" theme (now the DEFAULT): the MO2 Skyrim look (knotwork frame + silver/gold) but
+  with the cleaner, brighter text from the original Untarnished theme (#F5F2E9 warm white instead
+  of #dddddd), which reads crisper on solid black. MO2 Skyrim and Untarnished remain selectable.
+### Fixed
+- Controller input mode did nothing when toggled on (the author pressed every button, no response).
+  Cause: gamepad ImGui navigation needs the backend to advertise a gamepad - `io.BackendFlags |=
+  ImGuiBackendFlags_HasGamepad` - which was never set, leaving NavEnableGamepad inert. Now set
+  whenever controller mode is on (cleared otherwise).
+### Observability (rule 31)
+- Every gamepad event reaching the input apply-loop is now logged (code, down, controllerMode,
+  mapped ImGuiKey), so a live DevBench-monitored test can distinguish "no gamepad events arrive"
+  (a game/input-device-mode issue - e.g. Auto Input Switch absent) from "events arrive but nav is
+  inert" (ImGui-side). Under live investigation with the minimap zoom-key regression report.
+
+## 1.3.5 - 2026-08-28 - working
 ### Changed
 - REBUILT the "MO2 Skyrim" theme from the real Trosski Skyrim style + a live MO2 screenshot.
   The first port had collapsed the whole style onto one grey (#b0b0b0 for text, border, and

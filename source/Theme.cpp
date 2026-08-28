@@ -284,9 +284,18 @@ namespace theme
 				/*border*/ 0xFFB0B0B0, /*text*/ 0xFFDDDDDD, /*textDim*/ 0xFF717171,
 				/*accent*/ 0xFF2B91A1, /*knotwork*/ true });
 
-			// DEFAULT set to MO2 Skyrim for the current test, per the author 2026-08-27: "I want the
-			// default theme to use MO2's Skyrim theme in the current test."
-			g_activeId = "mo2-skyrim";
+			// "Vanilla" - design decision, 2026-08-28: the MO2 Skyrim look (knotwork + silver/gold) but with
+			// the CLEANER text from the original Untarnished theme. He found MO2 Skyrim's #dddddd
+			// text muddier than Untarnished's brighter warm off-white #F5F2E9 (0xFFE9F2F5), which
+			// reads crisper on solid black. So this theme = mo2-skyrim's border/accent/knotwork
+			// with Untarnished's text. Set as the default, since it is the refinement he asked for.
+			RegisterTheme({ "vanilla", "Vanilla",
+				/*background*/ 0xFF000000, /*frame*/ 0xFFB0B0B0, /*borderThickness*/ 1.0f,
+				/*border*/ 0xFFB0B0B0, /*text*/ 0xFFE9F2F5, /*textDim*/ 0xFF717171,
+				/*accent*/ 0xFF2B91A1, /*knotwork*/ true });
+
+			// DEFAULT is now Vanilla (design decision, 2026-08-28) - the MO2 Skyrim look with the cleaner text.
+			g_activeId = "vanilla";
 
 			ScanUserThemes();
 

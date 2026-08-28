@@ -479,10 +479,16 @@ namespace renderer
 				if (settings::Get().controllerMode)
 				{
 					io.ConfigFlags = (io.ConfigFlags | ImGuiConfigFlags_NavEnableGamepad) & ~ImGuiConfigFlags_NavEnableKeyboard;
+					// REQUIRED for gamepad nav to respond at all: ImGui only processes the
+					// GamepadFace*/GamepadDpad* key events we feed when the backend advertises a
+					// gamepad. Without this flag NavEnableGamepad is inert - which is why toggling
+					// controller mode and pressing every button did nothing (design decision, 2026-08-28).
+					io.BackendFlags |= ImGuiBackendFlags_HasGamepad;
 				}
 				else
 				{
 					io.ConfigFlags = (io.ConfigFlags | ImGuiConfigFlags_NavEnableKeyboard) & ~ImGuiConfigFlags_NavEnableGamepad;
+					io.BackendFlags &= ~ImGuiBackendFlags_HasGamepad;
 				}
 
 				// Live setting: the fTextScale slider must take effect while being dragged.

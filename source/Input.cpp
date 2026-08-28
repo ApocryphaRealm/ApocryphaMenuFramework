@@ -380,10 +380,17 @@ namespace input
 					break;
 				}
 			case Record::Kind::kGamepad:
-				if (controllerMode)
+				// Observability (rule 31): log EVERY gamepad event that reaches this loop, so a
+				// live DevBench-monitored test can tell apart "no gamepad events arrive at all"
+				// (a game-level / input-device-mode problem - e.g. the Auto Input Switch mod not
+				// present to route the device) from "events arrive but nav does not respond" (an
+				// ImGui-side problem). If these lines are ABSENT while pressing buttons with the
+				// menu open, the events are not reaching the framework.
 				{
 					const ImGuiKey key = GamepadMaskToImGuiKey(record.code);
-					if (key != ImGuiKey_None)
+					logger::debug("gamepad event: code=0x{:04X} down={} controllerMode={} -> imguiKey={}",
+								  record.code, record.down, controllerMode, static_cast<int>(key));
+					if (controllerMode && key != ImGuiKey_None)
 					{
 						io.AddKeyEvent(key, record.down);
 					}
