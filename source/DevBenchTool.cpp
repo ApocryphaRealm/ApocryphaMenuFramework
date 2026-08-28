@@ -1,6 +1,7 @@
 #include "DevBenchTool.h"
 
 #include "DevBench/DevBenchAPI.h"
+#include "MainMenuDriver.h"
 #include "Renderer.h"
 #include "utils/Logger.h"
 
@@ -136,6 +137,9 @@ namespace devbenchtool
 		{
 			logger::warn("DevBench reported \"amf.menu\" replaced an existing tool of the same name");
 		}
+
+		// Rule 64's start-menu extension: the vanilla Main Menu driver (amf.mainmenu).
+		mainmenudriver::Register(dev);
 
 		registered = true;
 	}

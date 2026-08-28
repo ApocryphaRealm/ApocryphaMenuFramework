@@ -8,6 +8,17 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 * **failed** - built but crashed or malfunctioned; the number was reclaimed
 * **scratch** - a hypothesis-test build that never held a real number
 
+## 1.3.9 - 2026-08-28 - untested
+### Added
+- `amf.mainmenu` DevBench driver (rule 64 applied to the GAME's start menu, the author's idea): the
+  vanilla Main Menu can now be driven and inspected headlessly - op `state` (menu open, movie
+  present), `userevent` (post the kUserEvent/BSUIMessageData message the menu's own buttons
+  produce, e.g. text "New Game"), `invoke` (call an ActionScript method on the menu movie), and
+  `getvar` (read an ActionScript variable). userevent/invoke queue to the main thread; state and
+  getvar answer synchronously (2s main-thread wait). This is the exploration surface for pressing
+  the REAL New Game button headlessly - the one start-menu action nothing could reach before
+  (coc-from-menu is flaky by design; DevBench's cold load needed an existing save).
+
 ## 1.3.8 - 2026-08-28 - working
 ### Added
 - NESTED GAME-MENU MODEL (the author's directional project - build the model overnight): the menu is now
