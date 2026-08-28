@@ -21,7 +21,9 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
   (78x78) is embedded (include/KnotworkBorder.h, RGBA) and drawn as a 9-slice frame around the
   AMF window - four ornate corner knots at fixed size, edges stretched between, transparent
   centre. Uploaded once to a texture on the game's device at init; a new per-theme `knotwork`
-  flag gates it (on for MO2 Skyrim, off for Untarnished). Palette gained optional
+  flag gates it (on for MO2 Skyrim, off for Untarnished). The frame is drawn around
+  every panel (outer window + both child panes), not just the outer window, matching the MO2
+  style where each framed panel carries the ornament. Palette gained optional
   border/text/textDim/accent fields that fall back to `frame`, so Untarnished and INI-scanned
   themes are unchanged.
 

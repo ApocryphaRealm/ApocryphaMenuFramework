@@ -338,6 +338,10 @@ namespace renderer
 				ImGui::Text("Apocrypha Menu Framework  v%s", version.c_str());
 				ImGui::Separator();
 
+				// Whether this theme wants the knotwork frame - captured once, applied to every
+				// panel below and the outer window for a consistent framed look.
+				const bool knot = theme::GetActiveTheme().knotwork;
+
 				const float leftWidth = ImGui::GetContentRegionAvail().x * 0.30f;
 
 				// Left pane: ONE entry per mod (index 0 is the framework itself). Right pane:
@@ -371,6 +375,12 @@ namespace renderer
 					ImGui::TextWrapped("No mod has registered a menu yet.");
 				}
 				ImGui::EndChild();
+				// Frame EACH panel, not just the outer window - the MO2 Skyrim style puts knotwork
+				// on every framed panel, so consistency means applying it universally.
+				if (knot)
+				{
+					DrawKnotworkFrame(ImGui::GetWindowDrawList(), ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
+				}
 
 				ImGui::SameLine();
 
@@ -404,12 +414,15 @@ namespace renderer
 					}
 				}
 				ImGui::EndChild();
+				if (knot)
+				{
+					DrawKnotworkFrame(ImGui::GetWindowDrawList(), ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
+				}
 
-				// Draw the Nordic knotwork frame LAST, on the window's own draw list so it sits
-				// on top of the content and exactly over ImGui's border, at the window rect. Only
-				// for themes that opt in (MO2 Skyrim). Its own transparent centre keeps the pane
-				// fully visible.
-				if (theme::GetActiveTheme().knotwork)
+				// Draw the OUTER window's knotwork frame LAST, on the window's own draw list so it
+				// sits on top of the content and exactly over ImGui's border, at the window rect.
+				// The transparent centre keeps the panes fully visible.
+				if (knot)
 				{
 					const ImVec2 wp = ImGui::GetWindowPos();
 					const ImVec2 ws = ImGui::GetWindowSize();
