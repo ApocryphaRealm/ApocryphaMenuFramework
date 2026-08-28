@@ -128,6 +128,8 @@ namespace settings
 				auto it = entries.find("Display.sFontPath");
 				if (it != entries.end()) { g_values.fontPath = it->second; }
 			}
+			ReadBool(entries, "Watchdog.bEnabled", g_values.watchdogEnabled);
+			ReadNumber(entries, "Watchdog.uSeconds", g_values.watchdogSeconds);
 			ReadNumber(entries, "Display.uWindowPreset", g_values.windowPreset);
 			ReadBool(entries, "Debug.bShowApiDemo", g_values.showApiDemo);
 			if (const auto it = entries.find("Theme.sThemeId"); it != entries.end() && !it->second.empty())
@@ -179,6 +181,12 @@ namespace settings
 				"sFontPath=" << g_values.fontPath << "\n"
 				"; Window position preset. 0 = centre. Preset anchors, not free placement.\n"
 				"uWindowPreset=" << g_values.windowPreset << "\n"
+				"\n"
+				"[Watchdog]\n"
+				"; If the menu renderer stops producing frames for uSeconds the game is treated as\n"
+				"; hung and closes itself - no Task Manager needed. 0 or bEnabled=0 disables it.\n"
+				"bEnabled=" << (g_values.watchdogEnabled ? 1 : 0) << "\n"
+				"uSeconds=" << g_values.watchdogSeconds << "\n"
 				"\n"
 				"[Debug]\n"
 				"; 1 shows the AMF API Demo menu (registered through the public API).\n"

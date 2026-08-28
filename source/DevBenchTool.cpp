@@ -3,6 +3,7 @@
 #include "DevBench/DevBenchAPI.h"
 #include "MainMenuDriver.h"
 #include "Renderer.h"
+#include "Watchdog.h"
 #include "utils/Logger.h"
 
 #include <string>
@@ -92,6 +93,31 @@ namespace devbenchtool
 
 			a_write(a_sink, result.c_str());
 		}
+
+		// Process control - deliberately separate from the menu tool. Runs on devbench's LISTENER
+		// thread, which keeps answering while the game's main thread is wedged, so "kill" works on a
+		// hung game where taskkill/Task Manager do not (see Watchdog.h).
+		void ProcessTool(void*, const char* a_argsJson, void* a_sink, DevBenchAPI::WriteFn a_write)
+		{
+			const std::string args = a_argsJson ? a_argsJson : "{}";
+			const std::string op = JsonStr(args, "op");
+
+			if (op == "kill")
+			{
+				// Answer BEFORE terminating, so the caller gets a reply rather than a dropped socket.
+				a_write(a_sink, "{\"ok\":true,\"op\":\"kill\",\"note\":\"terminating now\"}");
+				watchdog::KillNow("amf.process kill requested over DevBench");
+			}
+
+			const std::string status = watchdog::StatusJson();
+			if (op == "status" || op.empty())
+			{
+				a_write(a_sink, status.c_str());
+				return;
+			}
+			const std::string err = "{\"ok\":false,\"error\":\"unknown op\",\"status\":" + status + "}";
+			a_write(a_sink, err.c_str());
+		}
 	}
 
 	void Init(bool a_lastAttempt)
@@ -136,6 +162,20 @@ namespace devbenchtool
 		else
 		{
 			logger::warn("DevBench reported \"amf.menu\" replaced an existing tool of the same name");
+		}
+
+		constexpr const char* procDescriptor =
+			"{"
+			"\"description\":\"Process control for the running game. op: status (frame counter, seconds "
+			"since the last rendered frame, whether the hang watchdog considers it hung) | kill (force-exit "
+			"the game immediately - works even when the main thread is HUNG and taskkill cannot help, "
+			"because it terminates from inside the process).\","
+			"\"inputSchema\":{\"type\":\"object\",\"properties\":{\"op\":{\"type\":\"string\"}}},"
+			"\"readOnly\":false"
+			"}";
+		if (dev->RegisterTool("amf.process", procDescriptor, &ProcessTool, nullptr))
+		{
+			logger::info("Registered \"amf.process\" (status/kill) with DevBench");
 		}
 
 		// Rule 64's start-menu extension: the vanilla Main Menu driver (amf.mainmenu).

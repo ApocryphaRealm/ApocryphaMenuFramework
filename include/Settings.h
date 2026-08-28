@@ -24,6 +24,12 @@ namespace settings
 		// Optional path to a .ttf to rasterise the menu text from. Empty = pick a clean system
 		// face automatically. Set it to use any font, e.g. one that matches Skyrim's own lettering.
 		std::string fontPath;
+
+		// Hang watchdog (the author, 2026-08-28): if the renderer stops producing frames for this many
+		// seconds the game is treated as hung and the process terminates itself, so a wedged game
+		// never needs Task Manager. Generous by default - a slow cell load still animates frames.
+		bool watchdogEnabled = true;
+		std::uint32_t watchdogSeconds = 120;
 		std::int32_t windowPreset = 0;   // 0 = centre (the standard). Preset positions, never free placement -
 		                                 // the author 2026-08-27, same anchor philosophy as the minimap; more presets later.
 

@@ -7,9 +7,11 @@
 #include "Registry.h"
 #include "Settings.h"
 #include "Theme.h"
+#include "Watchdog.h"
 #include "utils/ToggleSwitch.h"
 #include "utils/Logger.h"
 
+#include <filesystem>
 #include <functional>
 #include <mutex>
 
@@ -114,6 +116,60 @@ namespace renderer
 			"C:/Windows/Fonts/calibri.ttf",
 			"C:/Windows/Fonts/trebuc.ttf",
 		};
+
+		// Selectable faces for the FONT PICKER (design decision, 2026-08-28: "a separate selector from the
+		// theme that lets you choose a font"). Deliberately its own control, not a theme property -
+		// a theme sets colours; the face is an independent choice, so any font works with any theme.
+		// Scanned once from the Windows font directory plus AMF's own optional fonts folder, so a
+		// .ttf dropped in beside the plugin shows up in the list.
+		struct FontChoice
+		{
+			std::string label;  // shown in the combo
+			std::string path;   // empty = "Default (auto)"
+		};
+		std::vector<FontChoice> g_fontChoices;
+
+		void ScanFonts()
+		{
+			g_fontChoices.clear();
+			g_fontChoices.push_back({ "Default (auto)", "" });
+
+			// Curated, widely-present Windows faces - a full enumeration of C:/Windows/Fonts would
+			// be hundreds of entries, most of them useless for a game menu.
+			const std::pair<const char*, const char*> known[] = {
+				{ "Segoe UI",        "C:/Windows/Fonts/segoeui.ttf" },
+				{ "Segoe UI Semibold","C:/Windows/Fonts/seguisb.ttf" },
+				{ "Calibri",         "C:/Windows/Fonts/calibri.ttf" },
+				{ "Trebuchet MS",    "C:/Windows/Fonts/trebuc.ttf" },
+				{ "Georgia",         "C:/Windows/Fonts/georgia.ttf" },
+				{ "Constantia",      "C:/Windows/Fonts/constan.ttf" },
+				{ "Palatino Linotype","C:/Windows/Fonts/pala.ttf" },
+				{ "Times New Roman", "C:/Windows/Fonts/times.ttf" },
+				{ "Cambria",         "C:/Windows/Fonts/cambria.ttc" },
+			};
+			for (const auto& k : known)
+			{
+				std::error_code ec;
+				if (std::filesystem::exists(k.second, ec)) { g_fontChoices.push_back({ k.first, k.second }); }
+			}
+
+			// Anything the user drops into Data/SKSE/Plugins/ApocryphaMenuFramework/fonts/.
+			const std::filesystem::path dir{ "Data/SKSE/Plugins/ApocryphaMenuFramework/fonts" };
+			std::error_code ec;
+			if (std::filesystem::is_directory(dir, ec))
+			{
+				for (const auto& e : std::filesystem::directory_iterator(dir, ec))
+				{
+					if (!e.is_regular_file(ec)) { continue; }
+					const auto ext = e.path().extension().string();
+					if (_stricmp(ext.c_str(), ".ttf") == 0 || _stricmp(ext.c_str(), ".otf") == 0)
+					{
+						g_fontChoices.push_back({ e.path().stem().string(), e.path().string() });
+					}
+				}
+			}
+			logger::info("font picker: {} face(s) available", g_fontChoices.size());
+		}
 
 		// Rebuilds the font atlas at the current scale. Call OUTSIDE a frame (before NewFrame).
 		void BuildFonts()
@@ -260,7 +316,9 @@ namespace renderer
 
 				// Text is rasterised at native size for this display (see BuildFonts) rather than
 				// magnifying the built-in bitmap font, which is what made it look pixelated.
+				ScanFonts();
 				BuildFonts();
+				watchdog::Init();
 				ImGui::GetStyle().ScaleAllSizes(g_uiScale);
 
 				ImGui::GetIO().IniFilename = "Data/SKSE/Plugins/ApocryphaMenuFramework_layout.ini";
@@ -313,6 +371,32 @@ namespace renderer
 				}
 				ImGui::TextWrapped("\"Untarnished\" is the framework's original identity; \"MO2 Skyrim\" "
 								   "is ported from Mod Organizer 2's own real stylesheet.");
+			}
+			ImGui::Spacing();
+
+			// FONT picker - separate from the theme on purpose (the author): the theme decides colours,
+			// this decides the letterforms, and the two combine freely.
+			{
+				int current = 0;
+				std::vector<const char*> labels;
+				labels.reserve(g_fontChoices.size());
+				for (std::size_t i = 0; i < g_fontChoices.size(); ++i)
+				{
+					labels.push_back(g_fontChoices[i].label.c_str());
+					if (g_fontChoices[i].path == values.fontPath) { current = static_cast<int>(i); }
+				}
+				ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
+				if (!labels.empty() && ImGui::Combo("Font", &current, labels.data(), static_cast<int>(labels.size())))
+				{
+					values.fontPath = g_fontChoices[current].path;
+					settings::Save();
+					g_fontRebuildPending = true;  // re-rasterise in the new face
+					logger::info("settings page: font -> \"{}\" ({})",
+								 g_fontChoices[current].label,
+								 values.fontPath.empty() ? "auto" : values.fontPath.c_str());
+				}
+				ImGui::TextWrapped("Drop a .ttf into Data/SKSE/Plugins/ApocryphaMenuFramework/fonts "
+								   "to add it to this list.");
 			}
 			ImGui::Spacing();
 			ImGui::Spacing();
@@ -817,6 +901,7 @@ namespace renderer
 					BuildFonts();
 				}
 
+				watchdog::Tick();  // liveness signal for the hang watchdog
 				ImGui::NewFrame();
 
 				// The game's own HUD opacity, re-read every frame so the options slider is

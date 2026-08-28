@@ -8,6 +8,22 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 * **failed** - built but crashed or malfunctioned; the number was reclaimed
 * **scratch** - a hypothesis-test build that never held a real number
 
+## 1.4.3 - 2026-08-28 - untested
+### Added
+- HANG WATCHDOG + forced exit (the author: the game must be closable without Task Manager, even hung).
+  A monitor thread watches the renderer's frame counter; if no frame is produced for `uSeconds`
+  (default 120, `[Watchdog]` in the INI) the game is declared hung and the process terminates
+  ITSELF. This works where taskkill/Task Manager fail: a wedged Skyrim's main thread is stuck in a
+  kernel wait, but our watchdog thread is still scheduled, so `TerminateProcess(GetCurrentProcess())`
+  from inside succeeds. Logged and flushed before terminating so the reason survives.
+- `amf.process` DevBench tool - `op:"status"` (frames, seconds since the last frame, whether it is
+  considered hung) and `op:"kill"` (force-exit on demand). It runs on devbench's LISTENER thread,
+  which keeps answering while the main thread is wedged, so it can close a hung game deliberately.
+- FONT PICKER on the settings page, separate from the theme selector (a theme sets colours; the
+  face is an independent choice, so any font pairs with any theme). Lists the curated Windows faces
+  that are present plus any .ttf/.otf dropped into
+  `Data/SKSE/Plugins/ApocryphaMenuFramework/fonts`. Selecting one re-rasterises immediately.
+
 ## 1.4.2 - 2026-08-28 - working
 ### Fixed
 - Menu text looked PIXELATED (the author). Cause was not the MO2-Skyrim theme carrying anything over - it
