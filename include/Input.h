@@ -33,4 +33,12 @@ namespace input
 	// Render-thread notification that the menu just opened: centres the software cursor and
 	// clears any stale queued events from a previous open.
 	void OnMenuOpened();
+
+	// Menu-toggle-key rebinding (the author, 2026-08-28 - "a key binding function on the framework
+	// settings menu to change the key that opens and closes the menu"). BeginRebindToggleKey()
+	// arms capture; the next keyboard key pressed (except Escape, which cancels) becomes the new
+	// toggle key, is saved, and capture disarms. IsAwaitingRebind() drives the "press any key..."
+	// prompt on the settings page. Thread-safe (an atomic flag); capture runs in the input hook.
+	void BeginRebindToggleKey();
+	bool IsAwaitingRebind();
 }

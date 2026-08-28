@@ -277,16 +277,32 @@ namespace renderer
 			ImGui::Spacing();
 			ImGui::Spacing();
 
-			if (values.toggleKey == 0x3B)
+			// Menu toggle-key rebinding, live (design decision, 2026-08-28: "a key binding function ...
+			// to change the key that opens and closes the menu"). Click Rebind, then the next
+			// key pressed becomes the toggle key (Escape cancels); capture runs in the input
+			// hook, so it works whether the menu is driven by keyboard or controller.
+			if (input::IsAwaitingRebind())
 			{
-				ImGui::TextUnformatted("Menu toggle key: F1");
+				ImGui::TextUnformatted("Menu toggle key: press any key...  (Escape cancels)");
 			}
 			else
 			{
-				ImGui::Text("Menu toggle key: scan code %d", values.toggleKey);
+				if (values.toggleKey == 0x3B)
+				{
+					ImGui::TextUnformatted("Menu toggle key: F1");
+				}
+				else
+				{
+					ImGui::Text("Menu toggle key: scan code %d", values.toggleKey);
+				}
+				ImGui::SameLine();
+				if (ImGui::Button("Rebind"))
+				{
+					input::BeginRebindToggleKey();
+				}
 			}
-			ImGui::TextWrapped("Rebinding arrives with the Controls page in a later milestone; "
-							   "until then the key can be changed in ApocryphaMenuFramework.ini.");
+			ImGui::TextWrapped("Click Rebind, then press the key you want to open and close the "
+							   "menu. In controller mode, the Start button also closes the menu.");
 			ImGui::Spacing();
 			ImGui::TextUnformatted("Window position: Centre");
 			ImGui::TextWrapped("Preset positions rather than free placement; more presets arrive "

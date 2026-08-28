@@ -30,6 +30,7 @@ namespace input
 				kMouseWheel,
 				kKeyboard,
 				kGamepad,
+				kThumbstick,  // left stick, for menu nav in controller mode (x,y in [-1,1])
 				kCharacter,
 			};
 
@@ -42,6 +43,15 @@ namespace input
 
 		std::mutex g_queueLock;
 		std::vector<Record> g_queue;
+
+		// Armed by BeginRebindToggleKey(); the next keyboard press in the hook becomes the toggle
+		// key (Escape cancels). Atomic - set on the render thread, consumed on the input thread.
+		std::atomic<bool> g_awaitingRebind{ false };
+
+		// XInput Start button mask (RE::BSWin32GamepadDevice::kStart) - closes the menu in
+		// controller mode, since there is otherwise no gamepad way out (design decision, 2026-08-28).
+		constexpr std::uint32_t kGamepadStart = 0x0010;
+		constexpr std::uint32_t kDIKEscape = 0x01;
 
 		// Buttons the GAME currently believes are held - maintained on the input thread only.
 		// While the menu is open, a release passes through ONLY if its press reached the game
@@ -195,6 +205,18 @@ namespace input
 						Enqueue({ Record::Kind::kCharacter, character->keyCode, true, 0.0f, 0.0f });
 						break;
 					}
+				case RE::INPUT_EVENT_TYPE::kThumbstick:
+					{
+						// LEFT stick drives ImGui menu nav in controller mode (the author could not
+						// switch menus - the D-pad is mapped but he used the stick, which was not
+						// captured). Right stick is left to the game (camera). x,y in [-1,1].
+						const auto* thumb = static_cast<const RE::ThumbstickEvent*>(a_event);
+						if (thumb->IsLeft())
+						{
+							Enqueue({ Record::Kind::kThumbstick, 0, false, thumb->xValue, thumb->yValue });
+						}
+						break;
+					}
 				default:
 					break;
 				}
@@ -210,6 +232,8 @@ namespace input
 
 				const bool menuOpen = renderer::IsMainWindowVisible();
 				const auto toggleKey = static_cast<std::uint32_t>(settings::Get().toggleKey);
+				const bool controllerMode = settings::Get().controllerMode;
+				const bool awaitingRebind = g_awaitingRebind.load(std::memory_order_acquire);
 
 				RE::InputEvent* head = *a_events;
 				RE::InputEvent* previous = nullptr;
@@ -222,11 +246,41 @@ namespace input
 
 					const RE::ButtonEvent* button = current->AsButtonEvent();
 
-					if (button && button->GetDevice() == RE::INPUT_DEVICE::kKeyboard &&
+					if (awaitingRebind && button && button->GetDevice() == RE::INPUT_DEVICE::kKeyboard &&
+						button->IsDown())
+					{
+						// Rebind capture takes precedence: the next keyboard key becomes the new
+						// menu toggle key (Escape cancels). Consumed so the game never sees it.
+						const std::uint32_t code = button->GetIDCode();
+						if (code != kDIKEscape)
+						{
+							settings::Get().toggleKey = static_cast<std::int32_t>(code);
+							settings::Save();
+							logger::info("menu toggle key rebound to scan code {}", code);
+						}
+						else
+						{
+							logger::info("menu toggle key rebind cancelled (Escape)");
+						}
+						g_awaitingRebind.store(false, std::memory_order_release);
+						passThrough = false;
+					}
+					else if (button && button->GetDevice() == RE::INPUT_DEVICE::kKeyboard &&
 						button->GetIDCode() == toggleKey && button->IsDown())
 					{
 						renderer::ToggleMainWindow();
 						passThrough = false;  // the game never sees the framework's own key
+					}
+					else if (menuOpen && controllerMode && button &&
+						button->GetDevice() == RE::INPUT_DEVICE::kGamepad &&
+						button->GetIDCode() == kGamepadStart && button->IsDown())
+					{
+						// Gamepad Start CLOSES the menu in controller mode - the way out with a
+						// controller (the author: "no way to use the controller to leave the menu"). It
+						// only closes, never opens, so the game keeps its own Start/pause button
+						// when the menu is down.
+						renderer::ToggleMainWindow();
+						passThrough = false;
 					}
 					else if (menuOpen)
 					{
@@ -396,6 +450,22 @@ namespace input
 					}
 				}
 				break;
+			case Record::Kind::kThumbstick:
+				// Left stick -> ImGui gamepad-nav analog axes, so the stick moves the menu
+				// selection like the D-pad (the author used the stick to "switch menus"; it was not
+				// captured). Deadzone stops a resting stick drifting nav. y>0 = up in Skyrim's
+				// thumbstick convention; if the live test shows it inverted, flip Up/Down.
+				if (controllerMode)
+				{
+					constexpr float dz = 0.35f;
+					const float sx = record.x, sy = record.y;
+					io.AddKeyAnalogEvent(ImGuiKey_GamepadLStickLeft,  sx < -dz, sx < -dz ? -sx : 0.0f);
+					io.AddKeyAnalogEvent(ImGuiKey_GamepadLStickRight, sx >  dz, sx >  dz ?  sx : 0.0f);
+					io.AddKeyAnalogEvent(ImGuiKey_GamepadLStickUp,    sy >  dz, sy >  dz ?  sy : 0.0f);
+					io.AddKeyAnalogEvent(ImGuiKey_GamepadLStickDown,  sy < -dz, sy < -dz ? -sy : 0.0f);
+					logger::debug("thumbstick(L): x={:.2f} y={:.2f}", sx, sy);
+				}
+				break;
 			case Record::Kind::kCharacter:
 				io.AddInputCharacter(record.code);
 				break;
@@ -422,5 +492,16 @@ namespace input
 		g_queue.clear();
 
 		logger::debug("menu opened: cursor centred at ({:.0f}, {:.0f}), stale queue cleared", g_cursorX, g_cursorY);
+	}
+
+	void BeginRebindToggleKey()
+	{
+		g_awaitingRebind.store(true, std::memory_order_release);
+		logger::info("awaiting menu toggle-key rebind - next keyboard key wins, Escape cancels");
+	}
+
+	bool IsAwaitingRebind()
+	{
+		return g_awaitingRebind.load(std::memory_order_acquire);
 	}
 }

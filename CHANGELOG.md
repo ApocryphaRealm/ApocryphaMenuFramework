@@ -8,7 +8,21 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 * **failed** - built but crashed or malfunctioned; the number was reclaimed
 * **scratch** - a hypothesis-test build that never held a real number
 
-## 1.3.6 - 2026-08-28 - untested
+## 1.3.7 - 2026-08-28 - untested
+### Added
+- Menu-toggle-key REBINDING on the Framework Settings page (the author): a "Rebind" button captures the
+  next key pressed (Escape cancels) as the key that opens/closes the menu, saved immediately.
+- Controller: the gamepad START button now CLOSES the menu in controller mode - the way out with a
+  pad (the author: "no way to use the controller to leave the menu"). It only closes, never opens, so the
+  game keeps its own Start button when the menu is down.
+- Controller: the LEFT ANALOG STICK now drives menu navigation (fed as ImGui GamepadLStick analog
+  nav with a deadzone). The live test showed gamepad button events arriving but no D-pad - the author was
+  using the stick, which was not being captured, so he "couldn't switch menus".
+### Observability (rule 31)
+- Thumbstick x/y logged when controller mode is on, so the live test can confirm the stick reaches
+  nav and whether the up/down axis needs flipping.
+
+## 1.3.6 - 2026-08-28 - working
 ### Added
 - New "Vanilla" theme (now the DEFAULT): the MO2 Skyrim look (knotwork frame + silver/gold) but
   with the cleaner, brighter text from the original Untarnished theme (#F5F2E9 warm white instead
