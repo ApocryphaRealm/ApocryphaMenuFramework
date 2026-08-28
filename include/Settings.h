@@ -21,6 +21,9 @@ namespace settings
 
 		// [Display]
 		float textScale = 1.30f;         // extra font multiplier on top of the resolution scale (the author, 1.0.2 feedback round)
+		// Optional path to a .ttf to rasterise the menu text from. Empty = pick a clean system
+		// face automatically. Set it to use any font, e.g. one that matches Skyrim's own lettering.
+		std::string fontPath;
 		std::int32_t windowPreset = 0;   // 0 = centre (the standard). Preset positions, never free placement -
 		                                 // the author 2026-08-27, same anchor philosophy as the minimap; more presets later.
 

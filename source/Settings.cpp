@@ -124,6 +124,10 @@ namespace settings
 			ReadNumber(entries, "Input.uToggleKey", g_values.toggleKey);
 			ReadBool(entries, "Input.bControllerMode", g_values.controllerMode);
 			ReadNumber(entries, "Display.fTextScale", g_values.textScale);
+			{
+				auto it = entries.find("Display.sFontPath");
+				if (it != entries.end()) { g_values.fontPath = it->second; }
+			}
 			ReadNumber(entries, "Display.uWindowPreset", g_values.windowPreset);
 			ReadBool(entries, "Debug.bShowApiDemo", g_values.showApiDemo);
 			if (const auto it = entries.find("Theme.sThemeId"); it != entries.end() && !it->second.empty())
@@ -171,6 +175,8 @@ namespace settings
 				"[Display]\n"
 				"; Extra text scale on top of the automatic resolution scaling.\n"
 				"fTextScale=" << g_values.textScale << "\n"
+				"; Optional .ttf to rasterise the menu text from. Empty = a clean system font.\n"
+				"sFontPath=" << g_values.fontPath << "\n"
 				"; Window position preset. 0 = centre. Preset anchors, not free placement.\n"
 				"uWindowPreset=" << g_values.windowPreset << "\n"
 				"\n"

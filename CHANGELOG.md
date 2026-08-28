@@ -8,6 +8,20 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 * **failed** - built but crashed or malfunctioned; the number was reclaimed
 * **scratch** - a hypothesis-test build that never held a real number
 
+## 1.4.2 - 2026-08-28 - untested
+### Fixed
+- Menu text looked PIXELATED (the author). Cause was not the MO2-Skyrim theme carrying anything over - it
+  was the font: AMF used ImGui's built-in ProggyClean, a 13px BITMAP face, and then magnified it with
+  `FontGlobalScale = uiScale * textScale` (about 2.17x at 3200x1800). Magnifying a bitmap font is
+  what produced the blocky edges. AMF now rasterises a real TrueType face at the NATIVE pixel size
+  for the display (16px * uiScale * textScale) and keeps FontGlobalScale at 1.0, so nothing is
+  stretched. Moving the text-size slider REBUILDS the atlas at the new size (crisp at any scale)
+  instead of stretching it, done before NewFrame with the DX11 font texture invalidated.
+### Added
+- `sFontPath` in the INI (Display section): point the menu at any .ttf. Empty picks a clean system
+  face automatically (Segoe UI, then Calibri, then Trebuchet). If none load, it falls back to the
+  old built-in font rather than failing to render.
+
 ## 1.4.1 - 2026-08-28 - working
 ### Fixed
 - External menu selection (the `amf.menu` DevBench tool) was overwritten every frame and snapped

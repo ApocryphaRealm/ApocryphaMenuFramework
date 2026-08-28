@@ -99,6 +99,56 @@ namespace renderer
 		// default window size together so everything stays proportioned.
 		float g_uiScale = 1.0f;
 
+		// FONT (1.4.2). The default ImGui font is ProggyClean, a 13px BITMAP face; the old code
+		// magnified it with FontGlobalScale = uiScale * textScale (~2.17x at 3200x1800), which is
+		// exactly why the text looked pixelated. Instead we rasterise a real TrueType face at the
+		// NATIVE pixel size for the display, and keep FontGlobalScale at 1.0 so nothing is
+		// magnified. Changing the text-size slider rebuilds the atlas rather than stretching it.
+		constexpr float kBaseFontPx = 16.0f;   // at the 1080p baseline, before uiScale/textScale
+		std::atomic<bool> g_fontRebuildPending{ false };
+
+		// Ordered candidates: a clean sans that matches Skyrim's own menu lettering, then fallbacks.
+		// A user-supplied path (sFontPath in the INI) wins when set, so any .ttf can be dropped in.
+		const char* const kFontCandidates[] = {
+			"C:\Windows\Fonts\segoeui.ttf",
+			"C:\Windows\Fonts\calibri.ttf",
+			"C:\Windows\Fonts\trebuc.ttf",
+		};
+
+		// Rebuilds the font atlas at the current scale. Call OUTSIDE a frame (before NewFrame).
+		void BuildFonts()
+		{
+			ImGuiIO& io = ImGui::GetIO();
+			const float px = kBaseFontPx * g_uiScale * settings::Get().textScale;
+
+			io.Fonts->Clear();
+			ImFont* loaded = nullptr;
+
+			const std::string& custom = settings::Get().fontPath;
+			if (!custom.empty())
+			{
+				loaded = io.Fonts->AddFontFromFileTTF(custom.c_str(), px);
+				if (!loaded) { logger::warn("font: sFontPath \"{}\" could not be loaded; falling back", custom); }
+			}
+			for (const char* cand : kFontCandidates)
+			{
+				if (loaded) { break; }
+				loaded = io.Fonts->AddFontFromFileTTF(cand, px);
+				if (loaded) { logger::info("font: rasterised \"{}\" at {:.1f}px", cand, px); }
+			}
+			if (!loaded)
+			{
+				// Never fail to render: fall back to the built-in face, magnified as before.
+				io.Fonts->AddFontDefault();
+				io.FontGlobalScale = g_uiScale * settings::Get().textScale;
+				logger::warn("font: no TrueType face could be loaded; using the built-in bitmap font");
+				return;
+			}
+
+			io.FontGlobalScale = 1.0f;  // native size - no magnification, so no pixelation
+			io.Fonts->Build();
+		}
+
 		// -----------------------------------------------------------------------------------
 		// Pattern guard (survey non-negotiable): never write a hook over bytes that are not the
 		// call instruction we expect. A refused guard means "unsupported runtime, and here is
@@ -208,10 +258,9 @@ namespace renderer
 					g_uiScale = 1.0f;  // never shrink below the 1080p baseline
 				}
 
-				// Text runs 30% larger than the pure resolution scale - the author's 1.0.1 feedback:
-				// "bigger text relative to the current size." Fonts only; widget/padding
-				// geometry keeps the unboosted scale below.
-				ImGui::GetIO().FontGlobalScale = g_uiScale * 1.30f;
+				// Text is rasterised at native size for this display (see BuildFonts) rather than
+				// magnifying the built-in bitmap font, which is what made it look pixelated.
+				BuildFonts();
 				ImGui::GetStyle().ScaleAllSizes(g_uiScale);
 
 				ImGui::GetIO().IniFilename = "Data/SKSE/Plugins/ApocryphaMenuFramework_layout.ini";
@@ -288,6 +337,7 @@ namespace renderer
 			{
 				logger::info("settings page: text scale -> {:.2f}", values.textScale);
 				settings::Save();
+				g_fontRebuildPending = true;  // re-rasterise at the new size rather than stretch
 			}
 			ImGui::TextWrapped("Extra text scaling on top of the automatic resolution scale.");
 			ImGui::Spacing();
@@ -758,8 +808,14 @@ namespace renderer
 					io.BackendFlags &= ~ImGuiBackendFlags_HasGamepad;
 				}
 
-				// Live setting: the fTextScale slider must take effect while being dragged.
-				io.FontGlobalScale = g_uiScale * settings::Get().textScale;
+				// A text-size change rebuilds the atlas at the new native size (crisp at any
+				// scale). Done here, before NewFrame, which is the safe point to touch fonts; the
+				// DX11 backend recreates its font texture on the next frame.
+				if (g_fontRebuildPending.exchange(false))
+				{
+					ImGui_ImplDX11_InvalidateDeviceObjects();
+					BuildFonts();
+				}
 
 				ImGui::NewFrame();
 
