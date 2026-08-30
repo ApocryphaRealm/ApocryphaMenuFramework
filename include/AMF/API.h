@@ -78,6 +78,11 @@ AMF_API std::uint32_t AMF_GetInputMode();
 // surface); never touch ImGui windows from a HUD callback - a HUD widget takes no input.
 // Coordinates are screen pixels, origin top-left; colours are 0xAABBGGRR (ImGui's IM_COL32).
 // The callback decides for itself whether to draw (its own enable setting, the game's HUD state).
+// THREAD CONTRACT: the callback runs on the game's RENDER thread inside Present. It must be
+// lock-free with respect to the main thread: never call RE::UI (IsMenuOpen/GetMenu), never build a
+// BSFixedString, never look forms up by editor ID. Track menu state from a MenuOpenCloseEvent sink
+// on the main thread and read atomics here; rate-limit any walk of game data. (The first consumer
+// wedged the game before the main menu by calling IsMenuOpen every frame - 2026-08-29.)
 // --------------------------------------------------------------------------------------------
 using AMF_HudCallback = void (*)();
 
