@@ -19,6 +19,13 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   `rules-version.ps1 -Action bump`. If a number was typed by hand, it is wrong until the tool
 >   agrees.
 
+## 1.4.5 - 2026-08-30 - working
+### Removed
+- Papyrus native-function scaffolding (AMF_Ping / AMF_SetTestValue / AMF_GetTestValue and the
+  AMFTest.psc test script) - design decision, 2026-08-30: of the features beyond SKSE Menu
+  Framework, "8 can be taken out, the rest are fine". The persistence channel, watchdog,
+  DevBench tools, themes, fonts, controller nav and rebinding all stay.
+
 ## 1.4.4 - 2026-08-30 - working
 ### Changed
 - REVERTED TO THE SMF SHAPE (design decision, 2026-08-30): AMF is a one-for-one replacement of

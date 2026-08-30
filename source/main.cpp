@@ -4,7 +4,6 @@
 #include "Persistence.h"
 #include "Registry.h"
 #include "Renderer.h"
-#include "Scripting.h"
 #include "Settings.h"
 #include "Theme.h"
 
@@ -229,7 +228,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 	// and a refused guard leaves the plugin loaded-but-inert with the reason in the log.
 	settings::Load();
 
-	scripting::RegisterNativeFunctions();
 
 	if (renderer::Install())
 	{
