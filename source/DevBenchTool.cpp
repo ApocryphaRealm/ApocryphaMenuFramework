@@ -4,6 +4,10 @@
 #include "MainMenuDriver.h"
 #include "Renderer.h"
 #include "Watchdog.h"
+
+#include <cctype>
+#include <ctime>
+#include <filesystem>
 #include "utils/Logger.h"
 
 #include <string>
@@ -107,6 +111,25 @@ namespace devbenchtool
 				// Answer BEFORE terminating, so the caller gets a reply rather than a dropped socket.
 				a_write(a_sink, "{\"ok\":true,\"op\":\"kill\",\"note\":\"terminating now\"}");
 				watchdog::KillNow("amf.process kill requested over DevBench");
+			}
+
+			if (op == "capture")
+			{
+				// Saves the current frame WITH the framework overlay to
+				// Data\\SKSE\\Plugins\\ApocryphaMenuFramework\\captures\\<name>.png (name from args, default a timestamp).
+				std::string name = JsonStr(args, "name");
+				if (name.empty()) { name = "capture-" + std::to_string(static_cast<long long>(std::time(nullptr))); }
+				for (char& c : name) { if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '-' || c == '_')) { c = '_'; } }
+				std::filesystem::path dir = std::filesystem::path("Data") / "SKSE" / "Plugins" / "ApocryphaMenuFramework" / "captures";
+				std::error_code ec; std::filesystem::create_directories(dir, ec);
+				const std::filesystem::path file = std::filesystem::absolute(dir / (name + ".png"), ec);
+				const std::string err = renderer::CaptureBlocking(file.wstring(), 3000);
+				std::string esc; for (char c : file.string()) { if (c == '\\' || c == '"') { esc += '\\'; } esc += c; }
+				std::string reply = std::string("{\"ok\":") + (err.empty() ? "true" : "false") + ",\"op\":\"capture\",\"path\":\"" + esc + "\"";
+				if (!err.empty()) { reply += ",\"error\":\"" + err + "\""; }
+				reply += "}";
+				a_write(a_sink, reply.c_str());
+				return;
 			}
 
 			const std::string status = watchdog::StatusJson();

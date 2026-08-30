@@ -23,14 +23,27 @@
 #include <d3d11.h>
 #include <imgui_impl_dx11.h>
 #include <imgui_impl_win32.h>
+#include <dxgi.h>
+#include <directxtk/ScreenGrab.h>
+#include <wincodec.h>
+#include <condition_variable>
 
 #include <atomic>
+#include <chrono>
 
 namespace renderer
 {
 	namespace
 	{
 		std::atomic<bool> g_d3dReady{ false };
+		// Kept for the in-process capture (1.4.4). Owned by the game; never released here.
+		IDXGISwapChain* g_swapChain = nullptr;
+		ID3D11DeviceContext* g_captureContext = nullptr;
+		std::mutex g_captureLock;
+		std::condition_variable g_captureCv;
+		std::wstring g_capturePath;      // non-empty = a capture is pending
+		bool g_captureDone = false;
+		std::string g_captureError;
 		std::atomic<bool> g_windowVisible{ false };
 		std::atomic<bool> g_justOpened{ false };  // set on the input thread, consumed on the render thread
 
@@ -272,6 +285,8 @@ namespace renderer
 
 				ImGui_ImplWin32_Init(hwnd);
 				ImGui_ImplDX11_Init(device, context);
+				g_swapChain = reinterpret_cast<IDXGISwapChain*>(window.swapChain);
+				g_captureContext = context;
 
 				// Upload the embedded knotwork frame to a texture on the game's device, once.
 				// Failure is non-fatal: DrawKnotworkFrame no-ops and the theme still applies its
@@ -928,6 +943,30 @@ namespace renderer
 
 				ImGui::Render();
 				ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+
+				// In-process capture: the backbuffer now holds the frame WITH the overlay.
+				{
+					std::wstring path;
+					{ std::scoped_lock l(g_captureLock); path = g_capturePath; }
+					if (!path.empty())
+					{
+						std::string err;
+						ID3D11Texture2D* back = nullptr;
+						if (!g_swapChain || !g_captureContext) { err = "no swapchain"; }
+						else if (FAILED(g_swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&back))) || !back) { err = "GetBuffer failed"; }
+						else
+						{
+							const HRESULT hr = DirectX::SaveWICTextureToFile(g_captureContext, back, GUID_ContainerFormatPng, path.c_str());
+							if (FAILED(hr)) { err = "SaveWICTextureToFile hr=" + std::to_string(static_cast<long>(hr)); }
+							back->Release();
+						}
+						{
+							std::scoped_lock l(g_captureLock);
+							g_captureError = err; g_captureDone = true; g_capturePath.clear();
+						}
+						g_captureCv.notify_all();
+					}
+				}
 			}
 		};
 
@@ -1149,6 +1188,17 @@ namespace renderer
 		if (!text || !ImGui::GetCurrentContext()) { return 0.0F; }
 		ImFont* font = ImGui::GetFont();
 		return font->CalcTextSizeA(size > 0.0F ? size : font->FontSize, FLT_MAX, 0.0F, text).x;
+	}
+
+	std::string CaptureBlocking(const std::wstring& a_path, unsigned a_timeoutMs)
+	{
+		if (!g_d3dReady.load(std::memory_order_acquire)) { return "renderer not ready"; }
+		std::unique_lock l(g_captureLock);
+		if (!g_capturePath.empty()) { return "a capture is already pending"; }
+		g_capturePath = a_path; g_captureDone = false; g_captureError.clear();
+		const bool ok = g_captureCv.wait_for(l, std::chrono::milliseconds(a_timeoutMs), [] { return g_captureDone; });
+		if (!ok) { g_capturePath.clear(); return "timed out waiting for a frame (is the game presenting?)"; }
+		return g_captureError;
 	}
 
 	std::string GetMenuStateJson()

@@ -22,10 +22,12 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 ## 1.4.4 - 2026-08-29 - untested
 
 ### Added
+- IN-PROCESS CAPTURE: amf.process op=capture saves the backbuffer to Data\SKSE\Plugins\ApocryphaMenuFramework\captures\<name>.png right after the overlay is rendered (DirectXTK ScreenGrab), so a capture shows exactly what the player sees including every ImGui element - the game's own screenshot is taken before the Present hook and never can. Enables headless VISUAL verification (rule 64 for pixels).
 - HUD WIDGET API (for the Dragon's Eye Minimap pointer add-on, the author 2026-08-29): AMF_RegisterHudWidget registers a callback the renderer runs EVERY frame, menu open or not; AMF_Hud* primitives (line, circle, filled circle, triangle, rect, text, text width, screen size) draw on the foreground list under the game HUD-opacity alpha. A widget takes no input and decides its own visibility. amf.menu state now lists registered HUD widgets.
 
 ## 1.4.3 - 2026-08-28 - working
 ### Added
+- IN-PROCESS CAPTURE: amf.process op=capture saves the backbuffer to Data\SKSE\Plugins\ApocryphaMenuFramework\captures\<name>.png right after the overlay is rendered (DirectXTK ScreenGrab), so a capture shows exactly what the player sees including every ImGui element - the game's own screenshot is taken before the Present hook and never can. Enables headless VISUAL verification (rule 64 for pixels).
 - HANG WATCHDOG + forced exit (the author: the game must be closable without Task Manager, even hung).
   A monitor thread watches the renderer's frame counter; if no frame is produced for `uSeconds`
   (default 120, `[Watchdog]` in the INI) the game is declared hung and the process terminates
@@ -50,6 +52,7 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
   stretched. Moving the text-size slider REBUILDS the atlas at the new size (crisp at any scale)
   instead of stretching it, done before NewFrame with the DX11 font texture invalidated.
 ### Added
+- IN-PROCESS CAPTURE: amf.process op=capture saves the backbuffer to Data\SKSE\Plugins\ApocryphaMenuFramework\captures\<name>.png right after the overlay is rendered (DirectXTK ScreenGrab), so a capture shows exactly what the player sees including every ImGui element - the game's own screenshot is taken before the Present hook and never can. Enables headless VISUAL verification (rule 64 for pixels).
 - `sFontPath` in the INI (Display section): point the menu at any .ttf. Empty picks a clean system
   face automatically (Segoe UI, then Calibri, then Trebuchet). If none load, it falls back to the
   old built-in font rather than failing to render.
@@ -82,6 +85,7 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 
 ## 1.3.9 - 2026-08-28 - working
 ### Added
+- IN-PROCESS CAPTURE: amf.process op=capture saves the backbuffer to Data\SKSE\Plugins\ApocryphaMenuFramework\captures\<name>.png right after the overlay is rendered (DirectXTK ScreenGrab), so a capture shows exactly what the player sees including every ImGui element - the game's own screenshot is taken before the Present hook and never can. Enables headless VISUAL verification (rule 64 for pixels).
 - `amf.mainmenu` DevBench driver (rule 64 applied to the GAME's start menu, the author's idea): the
   vanilla Main Menu can now be driven and inspected headlessly - op `state` (menu open, movie
   present), `userevent` (post the kUserEvent/BSUIMessageData message the menu's own buttons
@@ -98,6 +102,7 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 
 ## 1.3.8 - 2026-08-28 - working
 ### Added
+- IN-PROCESS CAPTURE: amf.process op=capture saves the backbuffer to Data\SKSE\Plugins\ApocryphaMenuFramework\captures\<name>.png right after the overlay is rendered (DirectXTK ScreenGrab), so a capture shows exactly what the player sees including every ImGui element - the game's own screenshot is taken before the Present hook and never can. Enables headless VISUAL verification (rule 64 for pixels).
 - NESTED GAME-MENU MODEL (the author's directional project - build the model overnight): the menu is now
   a tree whose top-level categories mirror the vanilla game menu - Game Settings, Stats, Quest,
   General, and a System category (Save, Load, Mods, Save and Quit, Quit). The per-mod settings
@@ -118,6 +123,7 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 
 ## 1.3.7 - 2026-08-28 - untested
 ### Added
+- IN-PROCESS CAPTURE: amf.process op=capture saves the backbuffer to Data\SKSE\Plugins\ApocryphaMenuFramework\captures\<name>.png right after the overlay is rendered (DirectXTK ScreenGrab), so a capture shows exactly what the player sees including every ImGui element - the game's own screenshot is taken before the Present hook and never can. Enables headless VISUAL verification (rule 64 for pixels).
 - Menu-toggle-key REBINDING on the Framework Settings page (the author): a "Rebind" button captures the
   next key pressed (Escape cancels) as the key that opens/closes the menu, saved immediately.
 - Controller: the gamepad START button now CLOSES the menu in controller mode - the way out with a
@@ -132,6 +138,7 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 
 ## 1.3.6 - 2026-08-28 - working
 ### Added
+- IN-PROCESS CAPTURE: amf.process op=capture saves the backbuffer to Data\SKSE\Plugins\ApocryphaMenuFramework\captures\<name>.png right after the overlay is rendered (DirectXTK ScreenGrab), so a capture shows exactly what the player sees including every ImGui element - the game's own screenshot is taken before the Present hook and never can. Enables headless VISUAL verification (rule 64 for pixels).
 - New "Vanilla" theme (now the DEFAULT): the MO2 Skyrim look (knotwork frame + silver/gold) but
   with the cleaner, brighter text from the original Untarnished theme (#F5F2E9 warm white instead
   of #dddddd), which reads crisper on solid black. MO2 Skyrim and Untarnished remain selectable.
@@ -155,6 +162,7 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
   rows, tabs, checkmarks, sliders and nav-highlight. Scrollbars, separators and tab states got
   their own graded tones instead of reusing one alpha ramp.
 ### Added
+- IN-PROCESS CAPTURE: amf.process op=capture saves the backbuffer to Data\SKSE\Plugins\ApocryphaMenuFramework\captures\<name>.png right after the overlay is rendered (DirectXTK ScreenGrab), so a capture shows exactly what the player sees including every ImGui element - the game's own screenshot is taken before the Present hook and never can. Enables headless VISUAL verification (rule 64 for pixels).
 - The Nordic KNOTWORK frame that defines the MO2 Skyrim look: the style's border-image.png
   (78x78) is embedded (include/KnotworkBorder.h, RGBA) and drawn as a 9-slice frame around the
   AMF window - four ornate corner knots at fixed size, edges stretched between, transparent
@@ -204,6 +212,7 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 ## 1.3.0 - 2026-08-27 - untested
 
 ### Added
+- IN-PROCESS CAPTURE: amf.process op=capture saves the backbuffer to Data\SKSE\Plugins\ApocryphaMenuFramework\captures\<name>.png right after the overlay is rendered (DirectXTK ScreenGrab), so a capture shows exactly what the player sees including every ImGui element - the game's own screenshot is taken before the Present hook and never can. Enables headless VISUAL verification (rule 64 for pixels).
 - Theme registry (decisions doc S8/S10): AMF's original identity ships as the "Untarnished" theme; a new "MO2 Skyrim" theme, colours read directly from Mod Organizer 2's own real stylesheet (C:\Modlists\Apostasy\stylesheets\Transparent-Style-Skyrim-Trosski.qss - #b0b0b0 dominant grey, solid black background per the project's non-negotiable full-opacity rule), is now the DEFAULT for the current test per the author. Selectable live from the Framework Settings page; additively scans Data/SKSE/Plugins/ApocryphaMenuFramework/themes/*.ini for user-added themes, never overwriting another entry.
 - AMF-owned per-save persistence channel (decisions doc S10): hooks kSaveGame/kPostLoadGame (the save's own filename is the message payload), writes/reads a plain-text sibling file next to the save mirroring co-save's SCOPING without its binary format. A shared key-value surface (SetValue/GetValue) any registered mod's page can use. A debug test harness on the Framework Settings page exercises the full round trip (set, save, quit, reload, confirm) without a Papyrus compiler.
 - Papyrus native-function binding (decisions doc S3, Path A): AMF_Ping/AMF_SetTestValue/AMF_GetTestValue registered against the game's own Papyrus VM via RE::BSScript::IVirtualMachine::RegisterFunction, proving the native-binding path this project will use for AMF-hosted scripted events instead of embedding a second language.
@@ -215,6 +224,7 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 ## 1.2.1 - 2026-08-27 - untested
 
 ### Added
+- IN-PROCESS CAPTURE: amf.process op=capture saves the backbuffer to Data\SKSE\Plugins\ApocryphaMenuFramework\captures\<name>.png right after the overlay is rendered (DirectXTK ScreenGrab), so a capture shows exactly what the player sees including every ImGui element - the game's own screenshot is taken before the Present hook and never can. Enables headless VISUAL verification (rule 64 for pixels).
 - M3 second half: the SMF-compatible export surface is LIVE - all 39 exports from the project's own export inventory (3. analyze mods\AMF export inventory\inventory.md), sized exactly to what this project's 11 SMF-integrated mods actually resolve, no more. AddSectionItem maps SMF's "Section/Item" path onto the native page registry (section = mod entry, item = page/tab). RegisterInpoutEvent/RegisterEventPriority (+ their Unregister siblings) implemented as real callback registries, wired into the input hook (SMF-compat input callbacks get first look at an event, ahead of ImGui) and a new compat::FireMenuEvent hook point for open/close/render events. Full cimgui text/layout/widget/query/draw-list forwarding to the embedded ImGui, including the one pOut case (igGetCursorScreenPos). GetMenuFrameworkVersion reports 1.2.
 
 ### Notes
@@ -223,6 +233,7 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 ## 1.2.0 - 2026-08-27 - untested
 
 ### Added
+- IN-PROCESS CAPTURE: amf.process op=capture saves the backbuffer to Data\SKSE\Plugins\ApocryphaMenuFramework\captures\<name>.png right after the overlay is rendered (DirectXTK ScreenGrab), so a capture shows exactly what the player sees including every ImGui element - the game's own screenshot is taken before the Present hook and never can. Enables headless VISUAL verification (rule 64 for pixels).
 - M3 first half: the page registry is LIVE. AMF_RegisterPage accepts registrations (was an honest refusal since M0); the left pane lists one entry per registered mod; a mod with several pages renders them as TABS inside its one menu - the one-menu-per-mod rule implemented at the framework level. Thread-safe registration, render-thread snapshot iteration, duplicate and null-argument refusals logged.
 - AMF API Demo menu (two pages, toggles/slider/button) registered through the public AMF_RegisterPage path itself - proves the registry end to end and gives gamepad navigation real content to select (the author, 1.1.2: nothing to select yet). Controlled by bShowApiDemo (INI, default 1).
 - Second half of M3 (the SMF-compatible ig* export surface + dual-resolve client header) follows in the next versions, driven by the export inventory now being compiled.
@@ -245,6 +256,7 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 ## 1.1.0 - 2026-08-27 - untested
 
 ### Added
+- IN-PROCESS CAPTURE: amf.process op=capture saves the backbuffer to Data\SKSE\Plugins\ApocryphaMenuFramework\captures\<name>.png right after the overlay is rendered (DirectXTK ScreenGrab), so a capture shows exactly what the player sees including every ImGui element - the game's own screenshot is taken before the Present hook and never can. Enables headless VISUAL verification (rule 64 for pixels).
 - M2 input capture (the user-validated top priority). One pattern-guarded call-hook at BSInputDeviceManager::PollInputDevices (SE 67315 / AE 68617 + 0x7B, twice-corroborated MIT prior art). While the menu is open: mouse movement, wheel, presses and thumbsticks are consumed - halting the camera, the scroll-zoom and movement - while button RELEASES pass through so a key held across the open transition can never stick down. Events are queued on the input thread and translated to ImGui on the render thread (1.87+ io.Add*Event API), with a software cursor integrated from mouse deltas. Escape closes the menu; the toggle key is handled inside the hook (the M1 event sink is retired).
 - Framework settings page - the window's first real content, in the SMF two-pane structure the author specified (left pane lists menus - the framework itself is the only entry until M3's registry - right pane shows the selected page). Settings: explicit keyboard/controller input-mode toggle switch (the standing first-setting decision; wired live to ImGui nav flags), a Text size slider (live-applied), and the toggle-key readout. Settings persist to Data/SKSE/Plugins/ApocryphaMenuFramework.ini via plain file I/O (never the profile API); compiled defaults match the shipped INI exactly; uLogLevel honoured (trace default).
 - Window now displays its own version string, sourced from the single CMake-declared version (the author read 1.0.2's version-less status text as a stale build; AMF_GetVersionString also stops hand-maintaining a literal, which had already drifted).
@@ -263,6 +275,7 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 ## 1.0.0 - 2026-08-27 - untested
 
 ### Added
+- IN-PROCESS CAPTURE: amf.process op=capture saves the backbuffer to Data\SKSE\Plugins\ApocryphaMenuFramework\captures\<name>.png right after the overlay is rendered (DirectXTK ScreenGrab), so a capture shows exactly what the player sees including every ImGui element - the game's own screenshot is taken before the Present hook and never can. Enables headless VISUAL verification (rule 64 for pixels).
 - M1 render loop: ImGui embedded via the vcpkg port (dx11+win32 binding features), present hook on the 18-repo-corroborated site, and the DISPUTED D3D-init offset resolved by probing both candidates behind byte-pattern guards at runtime - the winner is logged per runtime. Full theme applied (true black, #F5F2E9, borders on every element, readable TextDisabled); game HUD opacity re-read per frame as one global multiplier; K toggles a display-only window. Every guard fails toward loaded-but-inert with the reason logged, never toward a crash. Corrections this milestone: vcpkg installs imgui backend headers FLAT (not backends/); CommonLibSSE-NG renamed BSRenderManager to BSGraphics::Renderer leaving a zero-byte tombstone header.
 - M0 scaffold: original framework (not an SMF fork - licence rails in plan.md), CommonLibSSE-NG dual-runtime plugin skeleton, public C API with SMF_GetReservedKeyCodes as the first export, theme constants (true black / #F5F2E9 / borders everywhere) and the in-game-proven fHUDOpacity resolver ported from DEM. Rendering, input and the page registry are M1-M3.
 

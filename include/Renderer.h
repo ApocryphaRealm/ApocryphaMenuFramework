@@ -40,6 +40,13 @@ namespace renderer
 	// primitives are the C exports' implementation and only draw while a callback is running on
 	// the render thread (called anywhere else they log once and do nothing).
 	void  DrawHudWidgets();
+
+	// In-process CAPTURE (1.4.4): saves the backbuffer to a PNG right after the framework's overlay
+	// is rendered, so the image contains what the player sees INCLUDING every ImGui element. The
+	// game's own screenshot is taken before the Present hook and can never show the overlay.
+	// Callable from any thread; blocks until the render thread has written the file or the timeout
+	// passes. Returns an empty string on success, otherwise the reason.
+	std::string CaptureBlocking(const std::wstring& a_path, unsigned a_timeoutMs);
 	void  HudScreenSize(float* a_w, float* a_h);
 	void  HudLine(float x1, float y1, float x2, float y2, std::uint32_t c, float t);
 	void  HudCircle(float cx, float cy, float r, std::uint32_t c, float t, int seg);
