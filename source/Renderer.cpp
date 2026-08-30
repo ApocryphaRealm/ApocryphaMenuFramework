@@ -11,7 +11,6 @@
 #include "utils/ToggleSwitch.h"
 #include "utils/Logger.h"
 
-#include <cfloat>
 #include <filesystem>
 #include <functional>
 #include <mutex>
@@ -23,27 +22,14 @@
 #include <d3d11.h>
 #include <imgui_impl_dx11.h>
 #include <imgui_impl_win32.h>
-#include <dxgi.h>
-#include <directxtk/ScreenGrab.h>
-#include <wincodec.h>
-#include <condition_variable>
 
 #include <atomic>
-#include <chrono>
 
 namespace renderer
 {
 	namespace
 	{
 		std::atomic<bool> g_d3dReady{ false };
-		// Kept for the in-process capture (1.4.4). Owned by the game; never released here.
-		IDXGISwapChain* g_swapChain = nullptr;
-		ID3D11DeviceContext* g_captureContext = nullptr;
-		std::mutex g_captureLock;
-		std::condition_variable g_captureCv;
-		std::wstring g_capturePath;      // non-empty = a capture is pending
-		bool g_captureDone = false;
-		std::string g_captureError;
 		std::atomic<bool> g_windowVisible{ false };
 		std::atomic<bool> g_justOpened{ false };  // set on the input thread, consumed on the render thread
 
@@ -55,8 +41,8 @@ namespace renderer
 		// it from the listener thread (see DevBenchTool.cpp). Guarded by g_selLock; the render loop
 		// copies in at frame start and out at frame end.
 		std::mutex g_selLock;
-		std::string g_selTab  = "system";          // top tab: quests|general|stats|system
-		std::string g_selNode = "system/settings"; // side-list entry within the active tab
+		std::string g_selTab  = "mods";            // kept for the DevBench state JSON; the SMF shape has one list
+		std::string g_selNode = "settings";        // side-list entry: settings|controls|help|mod
 		int g_selMod = 0;
 		// Set when the selection is changed from OUTSIDE the UI (the amf.menu DevBench tool).
 		// Without this the render loop copied its own state back every frame and ImGui's tab bar,
@@ -285,8 +271,6 @@ namespace renderer
 
 				ImGui_ImplWin32_Init(hwnd);
 				ImGui_ImplDX11_Init(device, context);
-				g_swapChain = reinterpret_cast<IDXGISwapChain*>(window.swapChain);
-				g_captureContext = context;
 
 				// Upload the embedded knotwork frame to a texture on the game's device, once.
 				// Failure is non-fatal: DrawKnotworkFrame no-ops and the theme still applies its
@@ -495,121 +479,6 @@ namespace renderer
 
 		// ---- nested game-menu leaf panes (the author's game-menu-replacement model, 2026-08-28) ----
 
-		// Placeholder for a System action (Save/Load/Quit/Save and Quit). The button is disabled:
-		// this build ships the menu MODEL and navigation; wiring the real game action - and
-		// intercepting Skyrim's own pause/journal menu to show AMF instead - is the next milestone.
-		// Runs a console command on the MAIN thread via RE::Script CompileAndRun - the standard,
-		// well-worn modder path, marshalled off the render thread. Worst case for an unsupported
-		// command is a no-op, never a crash. Used by the wired System actions.
-		void RunConsoleCommand(std::string a_cmd)
-		{
-			SKSE::GetTaskInterface()->AddTask([cmd = std::move(a_cmd)]() {
-				const auto factory = RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>();
-				if (auto* script = factory ? factory->Create() : nullptr)
-				{
-					script->SetCommand(cmd);
-					script->CompileAndRun(nullptr);
-					delete script;
-				}
-			});
-		}
-
-		// A System action pane. With an action set, the button runs it (behind a confirm popup when
-		// a_confirm, for destructive actions like Quit). With no action it is a disabled placeholder
-		// - Load and Save and Quit need save enumeration / flush-before-quit sequencing (logged).
-		void DrawSystemActionPane(const char* a_title, const char* a_desc, const char* a_button,
-								  const std::function<void()>& a_action, bool a_confirm)
-		{
-			ImGui::TextUnformatted(a_title);
-			ImGui::Separator();
-			ImGui::TextWrapped("%s", a_desc);
-			ImGui::Spacing();
-			const float w = ImGui::GetContentRegionAvail().x * 0.4f;
-
-			if (!a_action)
-			{
-				ImGui::BeginDisabled(true);
-				ImGui::Button(a_button, ImVec2(w, 0.0f));
-				ImGui::EndDisabled();
-				ImGui::Spacing();
-				ImGui::TextDisabled("Not yet wired - needs save enumeration / flush-before-quit; logged.");
-				return;
-			}
-
-			if (a_confirm)
-			{
-				if (ImGui::Button(a_button, ImVec2(w, 0.0f)))
-				{
-					ImGui::OpenPopup("##amf_confirm");
-				}
-				if (ImGui::BeginPopupModal("##amf_confirm", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
-				{
-					ImGui::Text("%s?", a_title);
-					ImGui::TextDisabled("Unsaved progress may be lost.");
-					ImGui::Spacing();
-					if (ImGui::Button("Yes", ImVec2(120.0f, 0.0f)))
-					{
-						a_action();
-						ImGui::CloseCurrentPopup();
-					}
-					ImGui::SameLine();
-					if (ImGui::Button("Cancel", ImVec2(120.0f, 0.0f)))
-					{
-						ImGui::CloseCurrentPopup();
-					}
-					ImGui::EndPopup();
-				}
-			}
-			else
-			{
-				if (ImGui::Button(a_button, ImVec2(w, 0.0f)))
-				{
-					a_action();
-				}
-			}
-		}
-
-		// A live read of player state - proof the nested categories can host real game data, not
-		// just settings. Guarded: null before a save is loaded.
-		void DrawStatsPane()
-		{
-			ImGui::TextUnformatted("Stats");
-			ImGui::Separator();
-			auto* player = RE::PlayerCharacter::GetSingleton();
-			if (!player)
-			{
-				ImGui::TextWrapped("Load a save to see character stats.");
-				return;
-			}
-			ImGui::Text("Level: %u", static_cast<unsigned>(player->GetLevel()));
-			if (auto* avo = player->AsActorValueOwner())
-			{
-				ImGui::Text("Health:  %.0f", avo->GetActorValue(RE::ActorValue::kHealth));
-				ImGui::Text("Magicka: %.0f", avo->GetActorValue(RE::ActorValue::kMagicka));
-				ImGui::Text("Stamina: %.0f", avo->GetActorValue(RE::ActorValue::kStamina));
-			}
-		}
-
-		void DrawQuestPane()
-		{
-			ImGui::TextUnformatted("Quest");
-			ImGui::Separator();
-			ImGui::TextWrapped("Active quest objectives will list here. Enumerating the journal is the "
-							   "next step for this category.");
-		}
-
-		void DrawGeneralPane()
-		{
-			ImGui::TextUnformatted("General");
-			ImGui::Separator();
-			static const std::string version =
-				SKSE::PluginDeclaration::GetSingleton()->GetVersion().string(".");
-			ImGui::Text("Apocrypha Menu Framework v%s", version.c_str());
-			ImGui::TextWrapped("An original, Dear ImGui-based menu framework. This nested layout is the "
-							   "start of a full game-menu replacement: the categories mirror the vanilla "
-							   "menu, and mod settings live under System -> Mods (the MCM equivalent).");
-		}
-
 		// Controls: the vanilla System tab has a Controls entry; ours documents the framework's
 		// own bindings and hosts the toggle-key rebind (the same control as on Settings).
 		void DrawControlsPane()
@@ -623,41 +492,15 @@ namespace renderer
 			}
 			else
 			{
-				if (values.toggleKey == 0) { ImGui::TextUnformatted("Menu toggle key: OFF (no mapping)"); }
-				else if (values.toggleKey == 0x3B) { ImGui::TextUnformatted("Menu toggle key: F1"); }
+				if (values.toggleKey == 0x3B) { ImGui::TextUnformatted("Menu toggle key: F1"); }
 				else { ImGui::Text("Menu toggle key: scan code %d", values.toggleKey); }
 				ImGui::SameLine();
 				if (ImGui::Button("Rebind##controls")) { input::BeginRebindToggleKey(); }
-				ImGui::SameLine();
-				if (values.toggleKey != 0 && ImGui::Button("Unbind##controls"))
-				{
-					// Every control releasable (design decision, 2026-08-30): Off means the framework listens for
-					// no key. The menu can still be opened by the gamepad button (if enabled), by
-					// editing uToggleKey in the INI, or by the amf.menu DevBench tool.
-					values.toggleKey = 0;
-					settings::Save();
-					logger::info("menu toggle key unbound (OFF) from the Controls pane");
-				}
-			}
-			ImGui::TextWrapped("Unbind releases the key entirely - the game or another mod can use it. To bind again, set uToggleKey in ApocryphaMenuFramework.ini or use the gamepad menu button.");
-			ImGui::Spacing();
-			if (widgets::Toggle("Gamepad menu button", &values.gamepadMenuButtonEnabled))
-			{
-				settings::Save();
-				logger::info("gamepad menu button {}", values.gamepadMenuButtonEnabled ? "enabled" : "disabled");
-			}
-			ImGui::TextWrapped("Off by default: controller buttons are used for other things, and Steam Input can remap them. On: the button below opens and closes this menu.");
-			if (values.gamepadMenuButtonEnabled)
-			{
-				int mask = values.gamepadMenuButton;
-				ImGui::SetNextItemWidth(160.0f);
-				if (ImGui::InputInt("Button (XInput mask)", &mask)) { values.gamepadMenuButton = mask < 0 ? 0 : mask; settings::Save(); }
-				ImGui::TextUnformatted("16 = START, 32 = BACK, 64 = L3, 128 = R3, 256 = LB, 512 = RB, 4096 A, 8192 B, 16384 X, 32768 Y");
 			}
 			ImGui::Spacing();
 			ImGui::TextUnformatted("Keyboard:  arrow keys move, Enter activates, Escape closes.");
 			ImGui::TextUnformatted("Controller (controller mode on):  D-pad or left stick moves,");
-			ImGui::TextUnformatted("A activates, B cancels; the gamepad menu button (if enabled) opens and closes.");
+			ImGui::TextUnformatted("A activates, B cancels, START closes the menu.");
 		}
 
 		void DrawHelpPane()
@@ -671,27 +514,6 @@ namespace renderer
 			ImGui::TextWrapped("Mod settings live under System -> Mod menus, the same place SkyUI puts Mod "
 							   "Configuration. Framework options are under System -> Settings, and key "
 							   "bindings under System -> Controls.");
-		}
-
-		// The "Mod menus" index - what is registered, and how many pages each mod has.
-		void DrawModsIndexPane(const std::vector<registry::Entry>& a_entries)
-		{
-			ImGui::TextUnformatted("Mod menus");
-			ImGui::Separator();
-			if (a_entries.empty())
-			{
-				ImGui::TextWrapped("No mod has registered a menu yet. Mods register through the framework's "
-								   "public API (or the SMF-compatible one) and appear in the side list here.");
-				return;
-			}
-			ImGui::TextWrapped("%d mod(s) registered. Pick one in the side list to open its settings.",
-							   static_cast<int>(a_entries.size()));
-			ImGui::Spacing();
-			for (const registry::Entry& e : a_entries)
-			{
-				ImGui::BulletText("%s  (%d page%s)", e.modName.c_str(), static_cast<int>(e.pages.size()),
-								  e.pages.size() == 1 ? "" : "s");
-			}
 		}
 
 		void DrawFrameworkWindow()
@@ -727,86 +549,42 @@ namespace renderer
 
 				const float leftWidth = ImGui::GetContentRegionAvail().x * 0.30f;
 
-				// VANILLA GAME-MENU MODEL, corrected from the author's screenshots (2026-08-28): THREE
-				// levels, not one tree - TOP TABS (Quests|General|Stats|System) -> a SIDE LIST that
-				// belongs to the active tab -> a CONTENT pane for the selected side entry. The per-mod
-				// settings pages (the SkyUI/MCM equivalent) live in the System tab's side list under
-				// "Mod menus". See PLANNED-MODS for the reference layout.
-				std::string tab, sel;
+				// SMF SHAPE (design decision, 2026-08-30): a one-for-one replacement of SKSE Menu Framework's
+				// window - a SIDE LIST of the registered mods (plus the framework's own entries) and a
+				// CONTENT pane for the selected mod's pages (tabs when it has several). No game-menu
+				// tabs, no Save/Load/Quit: the game's own menus are not this framework's job.
+				std::string sel;
 				int selMod = 0;
-				bool external = false;
 				{
 					std::scoped_lock l(g_selLock);
-					tab = g_selTab; sel = g_selNode; selMod = g_selMod;
-					external = g_selExternal; g_selExternal = false;
+					sel = g_selNode; selMod = g_selMod;
+					g_selExternal = false;
 				}
 				bool changed = false;  // set only by a real UI interaction this frame
 				const std::vector<registry::Entry> entries = registry::Snapshot();
 				if (selMod >= static_cast<int>(entries.size())) { selMod = 0; }
 
-				// ---- TOP TABS ----------------------------------------------------------------
-				if (ImGui::BeginTabBar("##topTabs", ImGuiTabBarFlags_None))
-				{
-					auto tabItem = [&](const char* label, const char* id, const char* defaultNode) {
-						// On a frame where the tab was set externally, FORCE ImGui to that tab and
-						// do not let the tab bar's own state write back; otherwise the tab bar is
-						// the user's input and we adopt whatever it reports open.
-						const ImGuiTabItemFlags f = (external && tab == id) ? ImGuiTabItemFlags_SetSelected : 0;
-						if (ImGui::BeginTabItem(label, nullptr, f))
-						{
-							if (!external && tab != id)
-							{
-								tab = id;
-								sel = defaultNode;
-								changed = true;
-							}
-							ImGui::EndTabItem();
-						}
-					};
-					tabItem("Quests",  "quests",  "quests");
-					tabItem("General", "general", "general");
-					tabItem("Stats",   "stats",   "stats");
-					tabItem("System",  "system",  "system/settings");
-					ImGui::EndTabBar();
-				}
-
-				// ---- SIDE LIST (belongs to the active tab) -----------------------------------
+				// ---- SIDE LIST -------------------------------------------------------------------
 				ImGui::BeginChild("##side", ImVec2(leftWidth, 0.0f), true);
-				auto sideItem = [&](const char* label, const char* id, bool enabled = true) {
-					if (!enabled) { ImGui::BeginDisabled(true); }
-					if (ImGui::Selectable(label, sel == id) && enabled) { sel = id; changed = true; }
-					if (!enabled) { ImGui::EndDisabled(); }
+				auto sideItem = [&](const char* label, const char* id) {
+					if (ImGui::Selectable(label, sel == id)) { sel = id; changed = true; }
 				};
-				if (tab == "system")
+				ImGui::TextDisabled("Framework");
+				sideItem("Settings", "settings");
+				sideItem("Controls", "controls");
+				sideItem("Help",     "help");
+				ImGui::Separator();
+				ImGui::TextDisabled("Mods");
+				for (int i = 0; i < static_cast<int>(entries.size()); ++i)
 				{
-					sideItem("Save", "system/save");
-					sideItem("Load", "system/load");
-					ImGui::Separator();
-					sideItem("Mod menus", "system/mods");
-					// The registered mods sit directly under "Mod menus", indented - this is the
-					// MCM equivalent's home.
-					ImGui::Indent();
-					for (int i = 0; i < static_cast<int>(entries.size()); ++i)
+					if (ImGui::Selectable(entries[i].modName.c_str(), sel == "mod" && selMod == i))
 					{
-						if (ImGui::Selectable(entries[i].modName.c_str(), sel == "mod" && selMod == i))
-						{
-							sel = "mod";
-							selMod = i;
-							changed = true;
-						}
+						sel = "mod";
+						selMod = i;
+						changed = true;
 					}
-					if (entries.empty()) { ImGui::TextDisabled("none registered"); }
-					ImGui::Unindent();
-					ImGui::Separator();
-					sideItem("Settings", "system/settings");
-					sideItem("Controls", "system/controls");
-					sideItem("Help",     "system/help");
-					sideItem("Save and Quit", "system/savequit");
-					sideItem("Quit",     "system/quit");
 				}
-				else if (tab == "quests")  { sideItem("Active", "quests"); }
-				else if (tab == "stats")   { sideItem("Character", "stats"); }
-				else                       { sideItem("Overview", "general"); }
+				if (entries.empty()) { ImGui::TextDisabled("none registered"); }
 				ImGui::EndChild();
 				if (knot)
 				{
@@ -817,17 +595,9 @@ namespace renderer
 
 				// ---- CONTENT PANE -------------------------------------------------------------
 				ImGui::BeginChild("##content", ImVec2(0.0f, 0.0f), true);
-				if (sel == "system/settings")      { DrawFrameworkSettingsPane(); }
-				else if (sel == "stats")           { DrawStatsPane(); }
-				else if (sel == "quests")          { DrawQuestPane(); }
-				else if (sel == "general")         { DrawGeneralPane(); }
-				else if (sel == "system/controls") { DrawControlsPane(); }
-				else if (sel == "system/help")     { DrawHelpPane(); }
-				else if (sel == "system/mods")     { DrawModsIndexPane(entries); }
-				else if (sel == "system/save")     { DrawSystemActionPane("Save", "Saves the game to a named AMF save.", "Save", []{ RunConsoleCommand("save AMF_Save"); }, false); }
-				else if (sel == "system/load")     { DrawSystemActionPane("Load", "Loading from a save list arrives with save enumeration.", "Load", {}, false); }
-				else if (sel == "system/savequit") { DrawSystemActionPane("Save and Quit", "Save-then-quit needs flush-before-quit sequencing; arriving next.", "Save and Quit", {}, false); }
-				else if (sel == "system/quit")     { DrawSystemActionPane("Quit", "Quits to desktop. Unsaved progress is lost.", "Quit to Desktop", []{ RunConsoleCommand("qqq"); }, true); }
+				if (sel == "settings")      { DrawFrameworkSettingsPane(); }
+				else if (sel == "controls") { DrawControlsPane(); }
+				else if (sel == "help")     { DrawHelpPane(); }
 				else if (sel == "mod" && !entries.empty())
 				{
 					const registry::Entry& entry = entries[selMod];
@@ -869,7 +639,7 @@ namespace renderer
 				if (changed)
 				{
 					std::scoped_lock l(g_selLock);
-					g_selTab = tab; g_selNode = sel; g_selMod = selMod;
+					g_selNode = sel; g_selMod = selMod;
 				}
 			}
 			ImGui::End();
@@ -950,9 +720,6 @@ namespace renderer
 				// followed live (theme spec point 3), applied as the ONE global multiplier.
 				ImGui::GetStyle().Alpha = theme::GetGameHUDOpacity();
 
-				// HUD widgets (1.4.4): always-on overlays from registered mods, menu open or not.
-				DrawHudWidgets();
-
 				if (visible)
 				{
 					// Escape closes. The keypress was consumed input-side, so the game does
@@ -969,30 +736,6 @@ namespace renderer
 
 				ImGui::Render();
 				ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
-
-				// In-process capture: the backbuffer now holds the frame WITH the overlay.
-				{
-					std::wstring path;
-					{ std::scoped_lock l(g_captureLock); path = g_capturePath; }
-					if (!path.empty())
-					{
-						std::string err;
-						ID3D11Texture2D* back = nullptr;
-						if (!g_swapChain || !g_captureContext) { err = "no swapchain"; }
-						else if (FAILED(g_swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&back))) || !back) { err = "GetBuffer failed"; }
-						else
-						{
-							const HRESULT hr = DirectX::SaveWICTextureToFile(g_captureContext, back, GUID_ContainerFormatPng, path.c_str());
-							if (FAILED(hr)) { err = "SaveWICTextureToFile hr=" + std::to_string(static_cast<long>(hr)); }
-							back->Release();
-						}
-						{
-							std::scoped_lock l(g_captureLock);
-							g_captureError = err; g_captureDone = true; g_capturePath.clear();
-						}
-						g_captureCv.notify_all();
-					}
-				}
 			}
 		};
 
@@ -1085,26 +828,15 @@ namespace renderer
 	{
 		std::scoped_lock l(g_selLock);
 		g_selExternal = true;
-		if (a_node.rfind("tab:", 0) == 0)
-		{
-			// "tab:<quests|general|stats|system>" switches the TOP tab.
-			g_selTab = a_node.substr(4);
-			if (g_selTab == "system") { g_selNode = "system/settings"; }
-			else { g_selNode = g_selTab; }
-			return;
-		}
 		if (a_node.rfind("mod:", 0) == 0)
 		{
-			// "mod:<index>" selects a mod under System -> Mod menus.
-			g_selTab = "system";
 			g_selNode = "mod";
 			try { g_selMod = std::stoi(a_node.substr(4)); } catch (...) {}
 			return;
 		}
-		// A side-list path implies its tab.
-		if (a_node.rfind("system/", 0) == 0) { g_selTab = "system"; }
-		else if (a_node == "quests" || a_node == "stats" || a_node == "general") { g_selTab = a_node; }
-		g_selNode = a_node;
+		std::string n = a_node;
+		if (n.rfind("system/", 0) == 0) { n = n.substr(7); }  // pre-1.4.4 paths still accepted
+		if (n == "settings" || n == "controls" || n == "help" || n == "mod") { g_selNode = n; }
 	}
 
 	std::string GetSelectedNode()
@@ -1118,115 +850,11 @@ namespace renderer
 	// marshals to the main thread).
 	void ActivateSelectedNode()
 	{
-		std::string node;
-		{ std::scoped_lock l(g_selLock); node = g_selNode; }
-		if (node == "system/save") { RunConsoleCommand("save AMF_Save"); }
-		else if (node == "system/quit") { RunConsoleCommand("qqq"); }
+		// SMF shape: no node carries an action - selecting a mod or a framework page IS the interaction.
 	}
 
 	// JSON snapshot of the menu for DevBench: visibility, the selected node, and every registered
 	// mod + its pages. Read-only; safe from the listener thread (registry::Snapshot is thread-safe).
-	// ---------------------------------------------------------------------------------------
-	// HUD widgets (1.4.4)
-	// ---------------------------------------------------------------------------------------
-	namespace
-	{
-		std::atomic<bool> g_inHudCallback{ false };
-
-		ImDrawList* HudList()
-		{
-			if (!g_inHudCallback.load(std::memory_order_relaxed))
-			{
-				static bool warned = false;
-				if (!warned)
-				{
-					logger::warn("AMF_Hud* primitive called outside a HUD callback - ignored (draw only from the registered callback)");
-					warned = true;
-				}
-				return nullptr;
-			}
-			return ImGui::GetForegroundDrawList();
-		}
-	}
-
-	void DrawHudWidgets()
-	{
-		const auto widgets = registry::HudSnapshot();
-		if (widgets.empty())
-		{
-			return;
-		}
-		g_inHudCallback.store(true, std::memory_order_relaxed);
-		for (const auto& w : widgets)
-		{
-			if (w.draw)
-			{
-				w.draw();
-			}
-		}
-		g_inHudCallback.store(false, std::memory_order_relaxed);
-	}
-
-	void HudScreenSize(float* a_w, float* a_h)
-	{
-		const ImVec2 sz = ImGui::GetCurrentContext() ? ImGui::GetIO().DisplaySize : ImVec2{ 0.0F, 0.0F };
-		if (a_w) { *a_w = sz.x; }
-		if (a_h) { *a_h = sz.y; }
-	}
-
-	void HudLine(float x1, float y1, float x2, float y2, std::uint32_t c, float t)
-	{
-		if (auto* dl = HudList()) { dl->AddLine({ x1, y1 }, { x2, y2 }, c, t > 0.0F ? t : 1.0F); }
-	}
-
-	void HudCircle(float cx, float cy, float r, std::uint32_t c, float t, int seg)
-	{
-		if (auto* dl = HudList()) { dl->AddCircle({ cx, cy }, r, c, seg, t > 0.0F ? t : 1.0F); }
-	}
-
-	void HudCircleFilled(float cx, float cy, float r, std::uint32_t c, int seg)
-	{
-		if (auto* dl = HudList()) { dl->AddCircleFilled({ cx, cy }, r, c, seg); }
-	}
-
-	void HudTriangleFilled(float x1, float y1, float x2, float y2, float x3, float y3, std::uint32_t c)
-	{
-		if (auto* dl = HudList()) { dl->AddTriangleFilled({ x1, y1 }, { x2, y2 }, { x3, y3 }, c); }
-	}
-
-	void HudRect(float x1, float y1, float x2, float y2, std::uint32_t c, float t)
-	{
-		if (auto* dl = HudList()) { dl->AddRect({ x1, y1 }, { x2, y2 }, c, 0.0F, 0, t > 0.0F ? t : 1.0F); }
-	}
-
-	void HudText(float x, float y, std::uint32_t c, const char* text, float size)
-	{
-		if (!text) { return; }
-		if (auto* dl = HudList())
-		{
-			ImFont* font = ImGui::GetFont();
-			dl->AddText(font, size > 0.0F ? size : font->FontSize, { x, y }, c, text);
-		}
-	}
-
-	float HudTextWidth(const char* text, float size)
-	{
-		if (!text || !ImGui::GetCurrentContext()) { return 0.0F; }
-		ImFont* font = ImGui::GetFont();
-		return font->CalcTextSizeA(size > 0.0F ? size : font->FontSize, FLT_MAX, 0.0F, text).x;
-	}
-
-	std::string CaptureBlocking(const std::wstring& a_path, unsigned a_timeoutMs)
-	{
-		if (!g_d3dReady.load(std::memory_order_acquire)) { return "renderer not ready"; }
-		std::unique_lock l(g_captureLock);
-		if (!g_capturePath.empty()) { return "a capture is already pending"; }
-		g_capturePath = a_path; g_captureDone = false; g_captureError.clear();
-		const bool ok = g_captureCv.wait_for(l, std::chrono::milliseconds(a_timeoutMs), [] { return g_captureDone; });
-		if (!ok) { g_capturePath.clear(); return "timed out waiting for a frame (is the game presenting?)"; }
-		return g_captureError;
-	}
-
 	std::string GetMenuStateJson()
 	{
 		std::string node, tab; int selMod;
@@ -1234,15 +862,6 @@ namespace renderer
 		const bool visible = g_windowVisible.load(std::memory_order_relaxed);
 		const auto entries = registry::Snapshot();
 		auto esc = [](const std::string& v) { std::string o; for (char c : v) { if (c == '"' || c == '\x5C') { o += '\x5C'; } o += c; } return o; };
-		std::string hud;
-		{
-			const auto widgets = registry::HudSnapshot();
-			for (std::size_t i = 0; i < widgets.size(); ++i)
-			{
-				if (i) { hud += ","; }
-				hud += "{\"mod\":\"" + esc(widgets[i].modName) + "\",\"widget\":\"" + esc(widgets[i].widgetName) + "\"}";
-			}
-		}
 		std::string mods;
 		for (std::size_t i = 0; i < entries.size(); ++i)
 		{
@@ -1257,6 +876,6 @@ namespace renderer
 		}
 		return std::string("{\"visible\":") + (visible ? "true" : "false") +
 			   ",\"tab\":\"" + esc(tab) + "\",\"selected\":\"" + esc(node) + "\",\"selectedMod\":" + std::to_string(selMod) +
-			   ",\"mods\":[" + mods + "]" + ",\"hud\":[" + hud + "]}";
+			   ",\"mods\":[" + mods + "]}";
 	}
 }

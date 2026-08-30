@@ -1,4 +1,4 @@
-# Apocrypha Menu Framework 1.4.3
+# Apocrypha Menu Framework 1.4.4
 
 An original SKSE menu framework that embeds Dear ImGui and exposes an API compatible with the
 public consumer header of SKSE Menu Framework - so mods written for that API register with this
@@ -14,15 +14,16 @@ Licence: MIT (see `LICENSE`). Not a fork: contains no SKSE Menu Framework code.
 
 ## What it does
 
-- **One in-game menu for every registered mod**, shaped like the game's own menu: top tabs
-  (Quests / General / Stats / System), a side list per tab, a content pane. Each mod's settings
-  pages live under System -> Mod menus; a mod with several pages gets tabs.
+- **One in-game menu for every registered mod**, in the SKSE Menu Framework shape: a side list of
+  the registered mods (plus the framework's own Settings / Controls / Help entries) and a content
+  pane for the selected mod's pages; a mod with several pages gets tabs. No game-menu takeover -
+  that is the separate Apocrypha Framework Overhaul project.
 - **Themes and fonts, separately.** A theme sets the colours (Vanilla, Untarnished, MO2 Skyrim
   with its knotwork frame); the font picker lists the Windows faces present plus any `.ttf`/`.otf`
   dropped into `Data\SKSE\Plugins\ApocryphaMenuFramework\fonts`. Text is rasterised from a real
   TrueType face at native size, never scaled from a bitmap.
 - **Keyboard and controller navigation.** D-pad and left stick move the selection, START closes
-  the menu; the toggle key is rebindable from System -> Controls (default F1).
+  the menu; the toggle key is rebindable from Framework -> Controls (default F1).
 - **Per-save persistence for registered mods** - a plain-text `<save>.amf-state.ini` beside each
   save, restored when that save loads, scoped exactly like the co-save.
 - **Toggles render as sliding switches**, sliders can be nudged with the arrow keys, and
@@ -44,7 +45,7 @@ Licence: MIT (see `LICENSE`). Not a fork: contains no SKSE Menu Framework code.
 
 `Data\SKSE\Plugins\ApocryphaMenuFramework.ini` - toggle key, controller mode, text scale, window
 preset, log level (`uLogLevel=0` = trace, the shipped default), watchdog window, API demo page.
-Everything is editable from System -> Settings in game and written back to the INI.
+Everything is editable from Framework -> Settings in game and written back to the INI.
 
 ## For mod authors
 

@@ -4,10 +4,6 @@
 #include "MainMenuDriver.h"
 #include "Renderer.h"
 #include "Watchdog.h"
-
-#include <cctype>
-#include <ctime>
-#include <filesystem>
 #include "utils/Logger.h"
 
 #include <string>
@@ -113,25 +109,6 @@ namespace devbenchtool
 				watchdog::KillNow("amf.process kill requested over DevBench");
 			}
 
-			if (op == "capture")
-			{
-				// Saves the current frame WITH the framework overlay to
-				// Data\\SKSE\\Plugins\\ApocryphaMenuFramework\\captures\\<name>.png (name from args, default a timestamp).
-				std::string name = JsonStr(args, "name");
-				if (name.empty()) { name = "capture-" + std::to_string(static_cast<long long>(std::time(nullptr))); }
-				for (char& c : name) { if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '-' || c == '_')) { c = '_'; } }
-				std::filesystem::path dir = std::filesystem::path("Data") / "SKSE" / "Plugins" / "ApocryphaMenuFramework" / "captures";
-				std::error_code ec; std::filesystem::create_directories(dir, ec);
-				const std::filesystem::path file = std::filesystem::absolute(dir / (name + ".png"), ec);
-				const std::string err = renderer::CaptureBlocking(file.wstring(), 3000);
-				std::string esc; for (char c : file.string()) { if (c == '\\' || c == '"') { esc += '\\'; } esc += c; }
-				std::string reply = std::string("{\"ok\":") + (err.empty() ? "true" : "false") + ",\"op\":\"capture\",\"path\":\"" + esc + "\"";
-				if (!err.empty()) { reply += ",\"error\":\"" + err + "\""; }
-				reply += "}";
-				a_write(a_sink, reply.c_str());
-				return;
-			}
-
 			const std::string status = watchdog::StatusJson();
 			if (op == "status" || op.empty())
 			{
@@ -169,9 +146,9 @@ namespace devbenchtool
 		constexpr const char* descriptor =
 			"{"
 			"\"description\":\"Drive and inspect the Apocrypha Menu Framework window for testing. "
-			"op: open|close|select|activate|state. For select, node is a path: game-settings, stats, "
-			"quest, general, system/save, system/load, system/savequit, system/quit, or mod:<index>. "
-			"activate runs the selected node's action (Save/Quit). state returns visibility, the "
+			"op: open|close|select|activate|state. For select, node is a path: settings, controls, help "
+			"(pre-1.4.4 system/... paths are still accepted) or mod:<index>. "
+			"activate is a no-op in the SMF shape (kept for compatibility). state returns visibility, the "
 			"selected node and every registered mod + its pages.\","
 			"\"inputSchema\":{\"type\":\"object\",\"properties\":{"
 			"\"op\":{\"type\":\"string\"},\"node\":{\"type\":\"string\"}}},"

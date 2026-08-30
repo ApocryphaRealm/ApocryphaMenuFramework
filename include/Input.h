@@ -34,7 +34,7 @@ namespace input
 	// clears any stale queued events from a previous open.
 	void OnMenuOpened();
 
-	// Menu-toggle-key rebinding (design decision, 2026-08-28 - "a key binding function on the framework
+	// Menu-toggle-key rebinding (the author, 2026-08-28 - "a key binding function on the framework
 	// settings menu to change the key that opens and closes the menu"). BeginRebindToggleKey()
 	// arms capture; the next keyboard key pressed (except Escape, which cancels) becomes the new
 	// toggle key, is saved, and capture disarms. IsAwaitingRebind() drives the "press any key..."

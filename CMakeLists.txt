@@ -98,7 +98,6 @@ target_link_libraries(
 		CommonLibSSE::CommonLibSSE
 		spdlog::spdlog_header_only
 		imgui::imgui
-		Microsoft::DirectXTK   # ScreenGrab - in-process capture (Renderer.cpp)
 		Shell32.lib   # SHGetKnownFolderPath (Persistence.cpp)
 		Ole32.lib     # CoTaskMemFree (Persistence.cpp)
 )

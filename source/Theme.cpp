@@ -266,7 +266,7 @@ namespace theme
 			// always safe to call standalone (e.g. from a test/DevBench path).
 			//
 			// "Untarnished" - the ORIGINAL identity (solid black, #F5F2E9 warm off-white),
-			// shipped as a selectable theme per design instruction, no longer the only option.
+			// shipped as a selectable theme per the author's instruction, no longer the only option.
 			RegisterTheme({ "untarnished", "Untarnished", 0xFF000000, 0xFFE9F2F5, 1.0f });
 
 			// "MO2 Skyrim" - REBUILT 2026-08-28 from the real Trosski Skyrim style

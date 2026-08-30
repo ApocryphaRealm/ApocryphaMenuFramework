@@ -19,12 +19,18 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   `rules-version.ps1 -Action bump`. If a number was typed by hand, it is wrong until the tool
 >   agrees.
 
-## 1.4.4 - 2026-08-29 - untested
-
-### Added
-- EVERY CONTROL RELEASABLE (design decision, 2026-08-30 - AFO requirement): the menu toggle key can be UNBOUND (uToggleKey=0 = the framework listens for no key; Unbind button on the Controls pane; rebind via the INI, the gamepad button, or the amf.menu DevBench tool). The gamepad menu button is now a setting - OFF by default (bGamepadMenuButton), XInput mask editable (uGamepadMenuButton, 16 = START) - and opens as well as closes the menu when enabled; the hard-coded START handler is gone.
-- IN-PROCESS CAPTURE: amf.process op=capture saves the backbuffer to Data\SKSE\Plugins\ApocryphaMenuFramework\captures\<name>.png right after the overlay is rendered (DirectXTK ScreenGrab), so a capture shows exactly what the player sees including every ImGui element - the game's own screenshot is taken before the Present hook and never can. Enables headless VISUAL verification (rule 64 for pixels).
-- HUD WIDGET API (for the Dragon's Eye Minimap pointer add-on, the author 2026-08-29): AMF_RegisterHudWidget registers a callback the renderer runs EVERY frame, menu open or not; AMF_Hud* primitives (line, circle, filled circle, triangle, rect, text, text width, screen size) draw on the foreground list under the game HUD-opacity alpha. A widget takes no input and decides its own visibility. amf.menu state now lists registered HUD widgets.
+## 1.4.4 - 2026-08-30 - untested
+### Changed
+- REVERTED TO THE SMF SHAPE (design decision, 2026-08-30): AMF is a one-for-one replacement of
+  SKSE Menu Framework plus user-friendly features that do not overhaul the game. The window is
+  again a SIDE LIST (the framework's Settings / Controls / Help, then the registered mods) and a
+  CONTENT pane for the selected mod's pages. The nested game menu - Quests / General / Stats /
+  System top tabs, the Save / Load / Save and Quit / Quit actions, the live Stats page, the
+  Mod-menus index - is gone from this project; it continues in the Apocrypha Framework Overhaul.
+- `amf.menu select` paths are now `settings`, `controls`, `help` and `mod:<index>`; the old
+  `system/...` paths are still accepted. `activate` is a no-op (no node carries an action).
+### Removed
+- Game-menu takeover code (console-command runner, system action panes, Stats/Quest/General panes).
 
 ## 1.4.3 - 2026-08-28 - working
 ### Added

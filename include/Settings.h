@@ -16,15 +16,8 @@ namespace settings
 	struct Values
 	{
 		// [Input]
-		std::int32_t toggleKey = 0x3B;   // DirectInput scan code; 0x3B = F1 (framework convention, the author 2026-08-27).
-		                                 // 0 = OFF / no mapping: the framework listens for no toggle key at all
-		                                 // (design decision, 2026-08-30: every control must be releasable). Reopen via the
-		                                 // gamepad button, the INI, or the amf.menu DevBench tool.
+		std::int32_t toggleKey = 0x3B;   // DirectInput scan code; 0x3B = F1 (framework convention, the author 2026-08-27)
 		bool controllerMode = false;     // false = keyboard nav, true = gamepad nav (explicit, never auto-detected)
-		// Gamepad menu button (opens AND closes). OFF by default and behind a switch, because every
-		// controller button already does something and players remap through Steam Input (the author).
-		bool gamepadMenuButtonEnabled = false;
-		std::int32_t gamepadMenuButton = 0x0010;  // XInput mask; 0x0010 = START
 
 		// [Display]
 		float textScale = 1.30f;         // extra font multiplier on top of the resolution scale (the author, 1.0.2 feedback round)
@@ -32,7 +25,7 @@ namespace settings
 		// face automatically. Set it to use any font, e.g. one that matches Skyrim's own lettering.
 		std::string fontPath;
 
-		// Hang watchdog (design decision, 2026-08-28): if the renderer stops producing frames for this many
+		// Hang watchdog (the author, 2026-08-28): if the renderer stops producing frames for this many
 		// seconds the game is treated as hung and the process terminates itself, so a wedged game
 		// never needs Task Manager. Generous by default - a slow cell load still animates frames.
 		bool watchdogEnabled = true;

@@ -123,8 +123,6 @@ namespace settings
 
 			ReadNumber(entries, "Input.uToggleKey", g_values.toggleKey);
 			ReadBool(entries, "Input.bControllerMode", g_values.controllerMode);
-			ReadBool(entries, "Input.bGamepadMenuButton", g_values.gamepadMenuButtonEnabled);
-			ReadNumber(entries, "Input.uGamepadMenuButton", g_values.gamepadMenuButton);
 			ReadNumber(entries, "Display.fTextScale", g_values.textScale);
 			{
 				auto it = entries.find("Display.sFontPath");
@@ -170,16 +168,11 @@ namespace settings
 				"; edits made here while the game is closed are honoured on the next load.\n"
 				"\n"
 				"[Input]\n"
-				"; DirectInput scan code that toggles the framework menu. 59 (0x3B) = F1. 0 = OFF (no mapping -\n"
-				"; the framework listens for no key; reopen with the gamepad button, this file, or DevBench).\n"
+				"; DirectInput scan code that toggles the framework menu. 59 (0x3B) = F1.\n"
 				"uToggleKey=" << g_values.toggleKey << "\n"
 				"; 0 = keyboard navigation, 1 = controller navigation. Explicit by design - never\n"
 				"; auto-detected from the last-used device, which is what causes nav focus drift.\n"
 				"bControllerMode=" << (g_values.controllerMode ? 1 : 0) << "\n"
-				"; Gamepad button that opens/closes the menu. OFF by default (controller buttons are\n"
-				"; contested; remap through Steam Input). XInput mask: 16 = START, 32 = BACK, 128 = R3, 64 = L3.\n"
-				"bGamepadMenuButton=" << (g_values.gamepadMenuButtonEnabled ? 1 : 0) << "\n"
-				"uGamepadMenuButton=" << g_values.gamepadMenuButton << "\n"
 				"\n"
 				"[Display]\n"
 				"; Extra text scale on top of the automatic resolution scaling.\n"

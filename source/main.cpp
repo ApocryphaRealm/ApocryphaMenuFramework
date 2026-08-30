@@ -174,20 +174,6 @@ AMF_API std::uint32_t AMF_GetInputMode()
 	return settings::Get().controllerMode ? 1u : 0u;
 }
 
-// HUD widgets (1.4.4) - see API.h. Thin forwards; the renderer owns the draw list and the guard.
-AMF_API bool AMF_RegisterHudWidget(const char* a_modName, const char* a_widgetName, AMF_HudCallback a_draw)
-{
-	return registry::RegisterHud(a_modName, a_widgetName, a_draw);
-}
-AMF_API void AMF_HudScreenSize(float* a_width, float* a_height) { renderer::HudScreenSize(a_width, a_height); }
-AMF_API void AMF_HudLine(float a_x1, float a_y1, float a_x2, float a_y2, std::uint32_t a_rgba, float a_thickness) { renderer::HudLine(a_x1, a_y1, a_x2, a_y2, a_rgba, a_thickness); }
-AMF_API void AMF_HudCircle(float a_cx, float a_cy, float a_radius, std::uint32_t a_rgba, float a_thickness, std::int32_t a_segments) { renderer::HudCircle(a_cx, a_cy, a_radius, a_rgba, a_thickness, a_segments); }
-AMF_API void AMF_HudCircleFilled(float a_cx, float a_cy, float a_radius, std::uint32_t a_rgba, std::int32_t a_segments) { renderer::HudCircleFilled(a_cx, a_cy, a_radius, a_rgba, a_segments); }
-AMF_API void AMF_HudTriangleFilled(float a_x1, float a_y1, float a_x2, float a_y2, float a_x3, float a_y3, std::uint32_t a_rgba) { renderer::HudTriangleFilled(a_x1, a_y1, a_x2, a_y2, a_x3, a_y3, a_rgba); }
-AMF_API void AMF_HudRect(float a_x1, float a_y1, float a_x2, float a_y2, std::uint32_t a_rgba, float a_thickness) { renderer::HudRect(a_x1, a_y1, a_x2, a_y2, a_rgba, a_thickness); }
-AMF_API void AMF_HudText(float a_x, float a_y, std::uint32_t a_rgba, const char* a_text, float a_size) { renderer::HudText(a_x, a_y, a_rgba, a_text, a_size); }
-AMF_API float AMF_HudTextWidth(const char* a_text, float a_size) { return renderer::HudTextWidth(a_text, a_size); }
-
 SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 {
 	// ONCE-ONLY GUARD (1.3.3; replaces the 1.3.2 filename check, which refused BOTH loads).

@@ -233,9 +233,6 @@ namespace input
 				const bool menuOpen = renderer::IsMainWindowVisible();
 				const auto toggleKey = static_cast<std::uint32_t>(settings::Get().toggleKey);
 				const bool controllerMode = settings::Get().controllerMode;
-				const bool gamepadMenuEnabled = settings::Get().gamepadMenuButtonEnabled;
-				const auto gamepadMenuButton = static_cast<std::uint32_t>(settings::Get().gamepadMenuButton);
-				(void)controllerMode;
 				const bool awaitingRebind = g_awaitingRebind.load(std::memory_order_acquire);
 
 				RE::InputEvent* head = *a_events;
@@ -268,20 +265,20 @@ namespace input
 						g_awaitingRebind.store(false, std::memory_order_release);
 						passThrough = false;
 					}
-					else if (toggleKey != 0 && button && button->GetDevice() == RE::INPUT_DEVICE::kKeyboard &&
+					else if (button && button->GetDevice() == RE::INPUT_DEVICE::kKeyboard &&
 						button->GetIDCode() == toggleKey && button->IsDown())
 					{
 						renderer::ToggleMainWindow();
 						passThrough = false;  // the game never sees the framework's own key
 					}
-					else if (gamepadMenuEnabled && button &&
+					else if (menuOpen && controllerMode && button &&
 						button->GetDevice() == RE::INPUT_DEVICE::kGamepad &&
-						button->GetIDCode() == gamepadMenuButton && button->IsDown())
+						button->GetIDCode() == kGamepadStart && button->IsDown())
 					{
-						// The gamepad menu button (opt-in, default OFF; mask from settings, START by
-						// default) opens AND closes the menu. When the switch is off the framework
-						// listens for no gamepad button at all - the game keeps every one of them
-						// (design decision, 2026-08-30: every control releasable, controllers remapped via Steam).
+						// Gamepad Start CLOSES the menu in controller mode - the way out with a
+						// controller (the author: "no way to use the controller to leave the menu"). It
+						// only closes, never opens, so the game keeps its own Start/pause button
+						// when the menu is down.
 						renderer::ToggleMainWindow();
 						passThrough = false;
 					}

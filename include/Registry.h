@@ -37,14 +37,4 @@ namespace registry
 	std::vector<Entry> Snapshot();
 
 	std::size_t Count();
-
-	// HUD widgets (1.4.4): always-on overlay callbacks, drawn every frame by the renderer.
-	struct HudWidget
-	{
-		std::string modName;
-		std::string widgetName;
-		AMF_HudCallback draw = nullptr;
-	};
-	bool RegisterHud(const char* a_modName, const char* a_widgetName, AMF_HudCallback a_draw);
-	std::vector<HudWidget> HudSnapshot();
 }
