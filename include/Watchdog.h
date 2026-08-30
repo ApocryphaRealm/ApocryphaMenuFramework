@@ -4,7 +4,7 @@
 #include <string>
 
 // ============================================================================================
-// HANG WATCHDOG + forced exit (the author, 2026-08-28: "there should be a way that it auto closes under
+// HANG WATCHDOG + forced exit (design decision, 2026-08-28: "there should be a way that it auto closes under
 // hung conditions, or you have a control hook somewhere that can close the game, even if it is
 // hung" - so testing never depends on him reaching for Task Manager).
 //

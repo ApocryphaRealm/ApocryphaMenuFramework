@@ -1,7 +1,7 @@
 #pragma once
 
 // ============================================================================================
-// Main-menu DevBench driver (rule 64 applied to the GAME's start menu - the author, 2026-08-28:
+// Main-menu DevBench driver (rule 64 applied to the GAME's start menu - design decision, 2026-08-28:
 // "alter the start menu with the DevBench hooks so that you could press it with DevBench").
 //
 // Registers `amf.mainmenu` so the vanilla Main Menu can be driven and inspected headlessly:

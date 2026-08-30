@@ -5,13 +5,13 @@
 
 // ============================================================================================
 // M-adjacent: an AMF-owned, per-save persistence channel mirroring co-save's SCOPING (not its
-// binary format) - the author, 2026-08-27 (decisions doc S10). SKSE's kSaveGame/kLoadGame messages
+// binary format) - design decision, 2026-08-27 (decisions doc S10). SKSE's kSaveGame/kLoadGame messages
 // carry the save's own filename as their payload; this module uses that to write/read a plain
 // text sibling file matching whichever save is active, so the value that comes back is always
 // the one belonging to the save that was actually loaded - same logic as the real .skse
 // co-save, self-owned format.
 //
-// Functionally testable without visual judgement (the author, 2026-08-27): save, quit, reload,
+// Functionally testable without visual judgement (design decision, 2026-08-27): save, quit, reload,
 // confirm via the log that the round-tripped value matches what was written.
 // ============================================================================================
 

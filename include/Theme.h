@@ -5,7 +5,7 @@
 #include <vector>
 
 // ============================================================================================
-// Theme REGISTRY (the author, 2026-08-27) - supersedes the original "no theme-customisation UI by
+// Theme REGISTRY (design decision, 2026-08-27) - supersedes the original "no theme-customisation UI by
 // design" stance recorded below, the same way a rule gets amended rather than left standing
 // alongside its own contradiction (project convention: fold the update into the decision).
 //
@@ -19,7 +19,7 @@
 // Original spec this supersedes, kept for provenance:
 //   "the same build philosophy as the Untarnished UI minimap edit - solid black at full
 //    opacity, affected by the game's opacity setting, and the white framing around all the
-//    buttons and menus." That look now SHIPS AS the "Untarnished" theme (the author's instruction),
+//    buttons and menus." That look now SHIPS AS the "Untarnished" theme (design instruction),
 //    one entry in the registry rather than the only possible one.
 // ============================================================================================
 
