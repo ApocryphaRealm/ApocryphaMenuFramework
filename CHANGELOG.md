@@ -19,7 +19,7 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   `rules-version.ps1 -Action bump`. If a number was typed by hand, it is wrong until the tool
 >   agrees.
 
-## 1.4.4 - 2026-08-30 - untested
+## 1.4.4 - 2026-08-30 - working
 ### Changed
 - REVERTED TO THE SMF SHAPE (design decision, 2026-08-30): AMF is a one-for-one replacement of
   SKSE Menu Framework plus user-friendly features that do not overhaul the game. The window is
@@ -31,6 +31,10 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
   `system/...` paths are still accepted. `activate` is a no-op (no node carries an action).
 ### Removed
 - Game-menu takeover code (console-command runner, system action panes, Stats/Quest/General panes).
+### Known
+- Observed on the Test Build (2026-08-30, headless): the menu opens, both registered mods list, every
+  `select` path lands and holds - but on the FIRST open after a load the reported selection was one
+  entry off (settings -> controls) once; repeated probes were stable. Watch for it with a mouse.
 
 ## 1.4.3 - 2026-08-28 - working
 ### Added
