@@ -69,3 +69,24 @@ AMF_API std::uint32_t AMF_GetInputMode();
 // "igSliderFloat", "igTextDisabledV" keep working by resolving the same names from this DLL.
 // Not declared here one-by-one - the generator owns that surface; this comment records intent.
 // --------------------------------------------------------------------------------------------
+
+// --------------------------------------------------------------------------------------------
+// HUD widgets (1.4.4). A registered HUD callback runs EVERY frame inside the framework's ImGui
+// frame, whether or not the menu is open - this is how a mod draws an always-on overlay element
+// (a pointer, a ring, a readout) with the framework's renderer and theme alpha instead of its own
+// D3D hook. Inside the callback, draw ONLY through the AMF_Hud* primitives below (or the ig*
+// surface); never touch ImGui windows from a HUD callback - a HUD widget takes no input.
+// Coordinates are screen pixels, origin top-left; colours are 0xAABBGGRR (ImGui's IM_COL32).
+// The callback decides for itself whether to draw (its own enable setting, the game's HUD state).
+// --------------------------------------------------------------------------------------------
+using AMF_HudCallback = void (*)();
+
+AMF_API bool  AMF_RegisterHudWidget(const char* a_modName, const char* a_widgetName, AMF_HudCallback a_draw);
+AMF_API void  AMF_HudScreenSize(float* a_width, float* a_height);  // valid any time after D3D init
+AMF_API void  AMF_HudLine(float a_x1, float a_y1, float a_x2, float a_y2, std::uint32_t a_rgba, float a_thickness);
+AMF_API void  AMF_HudCircle(float a_cx, float a_cy, float a_radius, std::uint32_t a_rgba, float a_thickness, std::int32_t a_segments);
+AMF_API void  AMF_HudCircleFilled(float a_cx, float a_cy, float a_radius, std::uint32_t a_rgba, std::int32_t a_segments);
+AMF_API void  AMF_HudTriangleFilled(float a_x1, float a_y1, float a_x2, float a_y2, float a_x3, float a_y3, std::uint32_t a_rgba);
+AMF_API void  AMF_HudRect(float a_x1, float a_y1, float a_x2, float a_y2, std::uint32_t a_rgba, float a_thickness);
+AMF_API void  AMF_HudText(float a_x, float a_y, std::uint32_t a_rgba, const char* a_text, float a_size);  // a_size 0 = default
+AMF_API float AMF_HudTextWidth(const char* a_text, float a_size);

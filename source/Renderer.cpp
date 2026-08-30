@@ -11,6 +11,7 @@
 #include "utils/ToggleSwitch.h"
 #include "utils/Logger.h"
 
+#include <cfloat>
 #include <filesystem>
 #include <functional>
 #include <mutex>
@@ -908,6 +909,9 @@ namespace renderer
 				// followed live (theme spec point 3), applied as the ONE global multiplier.
 				ImGui::GetStyle().Alpha = theme::GetGameHUDOpacity();
 
+				// HUD widgets (1.4.4): always-on overlays from registered mods, menu open or not.
+				DrawHudWidgets();
+
 				if (visible)
 				{
 					// Escape closes. The keypress was consumed input-side, so the game does
@@ -1057,6 +1061,96 @@ namespace renderer
 
 	// JSON snapshot of the menu for DevBench: visibility, the selected node, and every registered
 	// mod + its pages. Read-only; safe from the listener thread (registry::Snapshot is thread-safe).
+	// ---------------------------------------------------------------------------------------
+	// HUD widgets (1.4.4)
+	// ---------------------------------------------------------------------------------------
+	namespace
+	{
+		std::atomic<bool> g_inHudCallback{ false };
+
+		ImDrawList* HudList()
+		{
+			if (!g_inHudCallback.load(std::memory_order_relaxed))
+			{
+				static bool warned = false;
+				if (!warned)
+				{
+					logger::warn("AMF_Hud* primitive called outside a HUD callback - ignored (draw only from the registered callback)");
+					warned = true;
+				}
+				return nullptr;
+			}
+			return ImGui::GetForegroundDrawList();
+		}
+	}
+
+	void DrawHudWidgets()
+	{
+		const auto widgets = registry::HudSnapshot();
+		if (widgets.empty())
+		{
+			return;
+		}
+		g_inHudCallback.store(true, std::memory_order_relaxed);
+		for (const auto& w : widgets)
+		{
+			if (w.draw)
+			{
+				w.draw();
+			}
+		}
+		g_inHudCallback.store(false, std::memory_order_relaxed);
+	}
+
+	void HudScreenSize(float* a_w, float* a_h)
+	{
+		const ImVec2 sz = ImGui::GetCurrentContext() ? ImGui::GetIO().DisplaySize : ImVec2{ 0.0F, 0.0F };
+		if (a_w) { *a_w = sz.x; }
+		if (a_h) { *a_h = sz.y; }
+	}
+
+	void HudLine(float x1, float y1, float x2, float y2, std::uint32_t c, float t)
+	{
+		if (auto* dl = HudList()) { dl->AddLine({ x1, y1 }, { x2, y2 }, c, t > 0.0F ? t : 1.0F); }
+	}
+
+	void HudCircle(float cx, float cy, float r, std::uint32_t c, float t, int seg)
+	{
+		if (auto* dl = HudList()) { dl->AddCircle({ cx, cy }, r, c, seg, t > 0.0F ? t : 1.0F); }
+	}
+
+	void HudCircleFilled(float cx, float cy, float r, std::uint32_t c, int seg)
+	{
+		if (auto* dl = HudList()) { dl->AddCircleFilled({ cx, cy }, r, c, seg); }
+	}
+
+	void HudTriangleFilled(float x1, float y1, float x2, float y2, float x3, float y3, std::uint32_t c)
+	{
+		if (auto* dl = HudList()) { dl->AddTriangleFilled({ x1, y1 }, { x2, y2 }, { x3, y3 }, c); }
+	}
+
+	void HudRect(float x1, float y1, float x2, float y2, std::uint32_t c, float t)
+	{
+		if (auto* dl = HudList()) { dl->AddRect({ x1, y1 }, { x2, y2 }, c, 0.0F, 0, t > 0.0F ? t : 1.0F); }
+	}
+
+	void HudText(float x, float y, std::uint32_t c, const char* text, float size)
+	{
+		if (!text) { return; }
+		if (auto* dl = HudList())
+		{
+			ImFont* font = ImGui::GetFont();
+			dl->AddText(font, size > 0.0F ? size : font->FontSize, { x, y }, c, text);
+		}
+	}
+
+	float HudTextWidth(const char* text, float size)
+	{
+		if (!text || !ImGui::GetCurrentContext()) { return 0.0F; }
+		ImFont* font = ImGui::GetFont();
+		return font->CalcTextSizeA(size > 0.0F ? size : font->FontSize, FLT_MAX, 0.0F, text).x;
+	}
+
 	std::string GetMenuStateJson()
 	{
 		std::string node, tab; int selMod;
@@ -1064,6 +1158,15 @@ namespace renderer
 		const bool visible = g_windowVisible.load(std::memory_order_relaxed);
 		const auto entries = registry::Snapshot();
 		auto esc = [](const std::string& v) { std::string o; for (char c : v) { if (c == '"' || c == '\x5C') { o += '\x5C'; } o += c; } return o; };
+		std::string hud;
+		{
+			const auto widgets = registry::HudSnapshot();
+			for (std::size_t i = 0; i < widgets.size(); ++i)
+			{
+				if (i) { hud += ","; }
+				hud += "{\"mod\":\"" + esc(widgets[i].modName) + "\",\"widget\":\"" + esc(widgets[i].widgetName) + "\"}";
+			}
+		}
 		std::string mods;
 		for (std::size_t i = 0; i < entries.size(); ++i)
 		{
@@ -1078,6 +1181,6 @@ namespace renderer
 		}
 		return std::string("{\"visible\":") + (visible ? "true" : "false") +
 			   ",\"tab\":\"" + esc(tab) + "\",\"selected\":\"" + esc(node) + "\",\"selectedMod\":" + std::to_string(selMod) +
-			   ",\"mods\":[" + mods + "]}";
+			   ",\"mods\":[" + mods + "]" + ",\"hud\":[" + hud + "]}";
 	}
 }

@@ -8,6 +8,11 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 * **failed** - built but crashed or malfunctioned; the number was reclaimed
 * **scratch** - a hypothesis-test build that never held a real number
 
+## 1.4.4 - 2026-08-29 - untested
+
+### Added
+- HUD WIDGET API (for the Dragon's Eye Minimap pointer add-on, the author 2026-08-29): AMF_RegisterHudWidget registers a callback the renderer runs EVERY frame, menu open or not; AMF_Hud* primitives (line, circle, filled circle, triangle, rect, text, text width, screen size) draw on the foreground list under the game HUD-opacity alpha. A widget takes no input and decides its own visibility. amf.menu state now lists registered HUD widgets.
+
 ## 1.4.3 - 2026-08-28 - working
 ### Added
 - HANG WATCHDOG + forced exit (the author: the game must be closable without Task Manager, even hung).

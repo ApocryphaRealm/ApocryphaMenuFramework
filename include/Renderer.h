@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 
 // ============================================================================================
@@ -34,4 +35,17 @@ namespace renderer
 	std::string GetSelectedNode();
 	void ActivateSelectedNode();
 	std::string GetMenuStateJson();
+
+	// HUD widgets (1.4.4). DrawHudWidgets runs every registered callback once per frame; the Hud*
+	// primitives are the C exports' implementation and only draw while a callback is running on
+	// the render thread (called anywhere else they log once and do nothing).
+	void  DrawHudWidgets();
+	void  HudScreenSize(float* a_w, float* a_h);
+	void  HudLine(float x1, float y1, float x2, float y2, std::uint32_t c, float t);
+	void  HudCircle(float cx, float cy, float r, std::uint32_t c, float t, int seg);
+	void  HudCircleFilled(float cx, float cy, float r, std::uint32_t c, int seg);
+	void  HudTriangleFilled(float x1, float y1, float x2, float y2, float x3, float y3, std::uint32_t c);
+	void  HudRect(float x1, float y1, float x2, float y2, std::uint32_t c, float t);
+	void  HudText(float x, float y, std::uint32_t c, const char* text, float size);
+	float HudTextWidth(const char* text, float size);
 }
