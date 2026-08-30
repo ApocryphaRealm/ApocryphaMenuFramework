@@ -8,6 +8,17 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 * **failed** - built but crashed or malfunctioned; the number was reclaimed
 * **scratch** - a hypothesis-test build that never held a real number
 
+<!-- VERSIONING-RULES -->
+> **Versioning rules (CLAUDE.md rules 6 and 48 - identical for mods and documents):**
+> * `X.Y.Z`. A change increments the THIRD number. At `.9` the MINOR rolls: `1.0.9 -> 1.1.0`;
+>   `1.0.10` never exists.
+> * The next number is **LAST WORKING + 1**. A failed, scratch or untested test build does NOT
+>   consume its number - the next attempt at the same step REUSES it.
+> * Numbers are assigned by the tooling, never by hand: mods via `version-ledger.ps1 -Action next`
+>   then `set-version.ps1`; governed documents via `docs-pipeline.ps1 -Action bump`; the rules via
+>   `rules-version.ps1 -Action bump`. If a number was typed by hand, it is wrong until the tool
+>   agrees.
+
 ## 1.4.4 - 2026-08-29 - untested
 
 ### Added
