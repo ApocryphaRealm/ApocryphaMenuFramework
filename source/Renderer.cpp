@@ -623,15 +623,41 @@ namespace renderer
 			}
 			else
 			{
-				if (values.toggleKey == 0x3B) { ImGui::TextUnformatted("Menu toggle key: F1"); }
+				if (values.toggleKey == 0) { ImGui::TextUnformatted("Menu toggle key: OFF (no mapping)"); }
+				else if (values.toggleKey == 0x3B) { ImGui::TextUnformatted("Menu toggle key: F1"); }
 				else { ImGui::Text("Menu toggle key: scan code %d", values.toggleKey); }
 				ImGui::SameLine();
 				if (ImGui::Button("Rebind##controls")) { input::BeginRebindToggleKey(); }
+				ImGui::SameLine();
+				if (values.toggleKey != 0 && ImGui::Button("Unbind##controls"))
+				{
+					// Every control releasable (design decision, 2026-08-30): Off means the framework listens for
+					// no key. The menu can still be opened by the gamepad button (if enabled), by
+					// editing uToggleKey in the INI, or by the amf.menu DevBench tool.
+					values.toggleKey = 0;
+					settings::Save();
+					logger::info("menu toggle key unbound (OFF) from the Controls pane");
+				}
+			}
+			ImGui::TextWrapped("Unbind releases the key entirely - the game or another mod can use it. To bind again, set uToggleKey in ApocryphaMenuFramework.ini or use the gamepad menu button.");
+			ImGui::Spacing();
+			if (widgets::Toggle("Gamepad menu button", &values.gamepadMenuButtonEnabled))
+			{
+				settings::Save();
+				logger::info("gamepad menu button {}", values.gamepadMenuButtonEnabled ? "enabled" : "disabled");
+			}
+			ImGui::TextWrapped("Off by default: controller buttons are used for other things, and Steam Input can remap them. On: the button below opens and closes this menu.");
+			if (values.gamepadMenuButtonEnabled)
+			{
+				int mask = values.gamepadMenuButton;
+				ImGui::SetNextItemWidth(160.0f);
+				if (ImGui::InputInt("Button (XInput mask)", &mask)) { values.gamepadMenuButton = mask < 0 ? 0 : mask; settings::Save(); }
+				ImGui::TextUnformatted("16 = START, 32 = BACK, 64 = L3, 128 = R3, 256 = LB, 512 = RB, 4096 A, 8192 B, 16384 X, 32768 Y");
 			}
 			ImGui::Spacing();
 			ImGui::TextUnformatted("Keyboard:  arrow keys move, Enter activates, Escape closes.");
 			ImGui::TextUnformatted("Controller (controller mode on):  D-pad or left stick moves,");
-			ImGui::TextUnformatted("A activates, B cancels, START closes the menu.");
+			ImGui::TextUnformatted("A activates, B cancels; the gamepad menu button (if enabled) opens and closes.");
 		}
 
 		void DrawHelpPane()

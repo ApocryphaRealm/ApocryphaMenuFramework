@@ -16,8 +16,15 @@ namespace settings
 	struct Values
 	{
 		// [Input]
-		std::int32_t toggleKey = 0x3B;   // DirectInput scan code; 0x3B = F1 (framework convention, the author 2026-08-27)
+		std::int32_t toggleKey = 0x3B;   // DirectInput scan code; 0x3B = F1 (framework convention, the author 2026-08-27).
+		                                 // 0 = OFF / no mapping: the framework listens for no toggle key at all
+		                                 // (the author, 2026-08-30: every control must be releasable). Reopen via the
+		                                 // gamepad button, the INI, or the amf.menu DevBench tool.
 		bool controllerMode = false;     // false = keyboard nav, true = gamepad nav (explicit, never auto-detected)
+		// Gamepad menu button (opens AND closes). OFF by default and behind a switch, because every
+		// controller button already does something and players remap through Steam Input (the author).
+		bool gamepadMenuButtonEnabled = false;
+		std::int32_t gamepadMenuButton = 0x0010;  // XInput mask; 0x0010 = START
 
 		// [Display]
 		float textScale = 1.30f;         // extra font multiplier on top of the resolution scale (the author, 1.0.2 feedback round)
