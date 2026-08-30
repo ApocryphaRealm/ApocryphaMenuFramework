@@ -19,6 +19,13 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   `rules-version.ps1 -Action bump`. If a number was typed by hand, it is wrong until the tool
 >   agrees.
 
+## 1.4.6 - 2026-08-30 - untested
+### Added
+- IN-PROCESS CAPTURE ported from the Overhaul line: `amf.process op=capture` saves the presented
+  frame WITH the menu overlay to Data\SKSE\Plugins\ApocryphaMenuFramework\captures\<name>.png.
+  Needed because native screenshots are pre-overlay; first use: real in-game pictures inside the
+  Nexus banners (design decision, 2026-08-30).
+
 ## 1.4.5 - 2026-08-30 - working
 ### Removed
 - Papyrus native-function scaffolding (AMF_Ping / AMF_SetTestValue / AMF_GetTestValue and the

@@ -34,4 +34,9 @@ namespace renderer
 	std::string GetSelectedNode();
 	void ActivateSelectedNode();
 	std::string GetMenuStateJson();
+
+	// In-process capture (ported from the Overhaul line, 2026-08-30): saves the NEXT presented
+	// frame - WITH the ImGui overlay - as a PNG at a_path. Blocks the calling (DevBench listener)
+	// thread until the render thread serviced it or a_timeoutMs passed. Empty return = success.
+	std::string CaptureBlocking(const std::wstring& a_path, unsigned a_timeoutMs);
 }
