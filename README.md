@@ -6,6 +6,12 @@ framework unchanged. Skyrim SE 1.5.97 and AE 1.6.x from one DLL (CommonLibSSE-NG
 
 Licence: MIT (see `LICENSE`). Not a fork: contains no SKSE Menu Framework code.
 
+
+> **Scope note (2026-08-30):** this repository is **AMF**, the SKSE-Menu-Framework replacement released as
+> 1.4.3. The comprehensive build line - game-menu takeover, HUD widgets, capture, the theme standard - is the
+> **Apocrypha Framework Overhaul (AFO)** and continues in its own repository from here; commits after
+> v1.4.3 in this history are the AFO seed and are not part of the AMF release.
+
 ## What it does
 
 - **One in-game menu for every registered mod**, shaped like the game's own menu: top tabs
