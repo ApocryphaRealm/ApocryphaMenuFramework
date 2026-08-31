@@ -1,14 +1,21 @@
 #include "DevBenchTool.h"
 
 #include "DevBench/DevBenchAPI.h"
+#include "Input.h"
 #include "MainMenuDriver.h"
 #include "Renderer.h"
+#include "Settings.h"
 #include <ctime>
 #include <filesystem>
 #include "Watchdog.h"
 #include "utils/Logger.h"
 
+#include <iterator>
 #include <string>
+
+// Exported from main.cpp (the consumer-header surface DEM resolves via GetProcAddress); called
+// in-process here for the keybind widget's reserved-key verdict.
+extern "C" std::uint32_t SMF_GetReservedKeyCodes(std::int32_t* a_buffer, std::uint32_t a_capacity);
 
 namespace devbenchtool
 {
@@ -139,6 +146,104 @@ namespace devbenchtool
 			const std::string err = "{\"ok\":false,\"error\":\"unknown op\",\"status\":" + status + "}";
 			a_write(a_sink, err.c_str());
 		}
+
+		// Human-readable names for the common DirectInput scan codes the widget reports.
+		// Unknown codes fall back to "scan <n>" - the code number is always in the reply too.
+		const char* DikName(std::uint32_t a_code)
+		{
+			switch (a_code)
+			{
+			case 0x01: return "Escape"; case 0x0F: return "Tab"; case 0x1C: return "Enter";
+			case 0x1D: return "Left Ctrl"; case 0x2A: return "Left Shift"; case 0x36: return "Right Shift";
+			case 0x38: return "Left Alt"; case 0x39: return "Space"; case 0x3A: return "Caps Lock";
+			case 0x0E: return "Backspace"; case 0xC8: return "Up Arrow"; case 0xD0: return "Down Arrow";
+			case 0xCB: return "Left Arrow"; case 0xCD: return "Right Arrow";
+			case 0x10: return "Q"; case 0x11: return "W"; case 0x12: return "E"; case 0x13: return "R";
+			case 0x14: return "T"; case 0x15: return "Y"; case 0x16: return "U"; case 0x17: return "I";
+			case 0x18: return "O"; case 0x19: return "P"; case 0x1E: return "A"; case 0x1F: return "S";
+			case 0x20: return "D"; case 0x21: return "F"; case 0x22: return "G"; case 0x23: return "H";
+			case 0x24: return "J"; case 0x25: return "K"; case 0x26: return "L"; case 0x2C: return "Z";
+			case 0x2D: return "X"; case 0x2E: return "C"; case 0x2F: return "V"; case 0x30: return "B";
+			case 0x31: return "N"; case 0x32: return "M";
+			case 0x02: return "1"; case 0x03: return "2"; case 0x04: return "3"; case 0x05: return "4";
+			case 0x06: return "5"; case 0x07: return "6"; case 0x08: return "7"; case 0x09: return "8";
+			case 0x0A: return "9"; case 0x0B: return "0";
+			case 0x3B: return "F1"; case 0x3C: return "F2"; case 0x3D: return "F3"; case 0x3E: return "F4";
+			case 0x3F: return "F5"; case 0x40: return "F6"; case 0x41: return "F7"; case 0x42: return "F8";
+			case 0x43: return "F9"; case 0x44: return "F10"; case 0x57: return "F11"; case 0x58: return "F12";
+			default: return nullptr;
+			}
+		}
+
+		// The framework's own reserved-key report, called in-process (same DLL, same export
+		// consumers like DEM use through GetProcAddress).
+		bool IsReservedKey(std::uint32_t a_code)
+		{
+			std::int32_t buffer[32]{};
+			const auto count = SMF_GetReservedKeyCodes(buffer, static_cast<std::uint32_t>(std::size(buffer)));
+			for (std::uint32_t i = 0; i < count && i < std::size(buffer); ++i)
+			{
+				if (static_cast<std::uint32_t>(buffer[i]) == a_code) { return true; }
+			}
+			return false;
+		}
+
+		// The keybind-capture widget (queue L26): a reusable capture surface for testing binds
+		// without going through a mod's own settings page. arm -> the next real (or InputBench-
+		// spliced) keyboard/gamepad press is recorded WITHOUT being consumed; state -> what got
+		// captured, with a name, the device, and whether the framework reserves that key;
+		// rebind -> arms the REAL menu toggle-key rebind (the consuming settings-page path);
+		// cancel -> disarms both.
+		void KeybindTool(void*, const char* a_argsJson, void* a_sink, DevBenchAPI::WriteFn a_write)
+		{
+			const std::string args = a_argsJson ? a_argsJson : "{}";
+			const std::string op = JsonStr(args, "op");
+
+			if (op == "arm")
+			{
+				input::ArmKeyCapture();
+				a_write(a_sink, "{\"ok\":true,\"op\":\"arm\",\"note\":\"next keyboard/gamepad press is recorded, not consumed\"}");
+				return;
+			}
+			if (op == "rebind")
+			{
+				input::BeginRebindToggleKey();
+				a_write(a_sink, "{\"ok\":true,\"op\":\"rebind\",\"note\":\"next keyboard key becomes the menu toggle key; Escape cancels\"}");
+				return;
+			}
+			if (op == "cancel")
+			{
+				input::CancelKeyCapture();
+				a_write(a_sink, "{\"ok\":true,\"op\":\"cancel\"}");
+				return;
+			}
+			if (op == "state" || op.empty())
+			{
+				const auto packed = input::LastCapturedKey();
+				std::string captured = "null";
+				if (packed >= 0)
+				{
+					const auto device = static_cast<std::uint32_t>(packed >> 32);
+					const auto code = static_cast<std::uint32_t>(packed & 0xFFFFFFFF);
+					const char* name = device == 0 ? DikName(code) : nullptr;
+					const char* deviceName = device == 0 ? "keyboard" : (device == 2 ? "gamepad" : "other");
+					const std::string nameStr = name ? std::string{ name } : ("scan " + std::to_string(code));
+					captured = "{\"code\":" + std::to_string(code) +
+							   ",\"device\":\"" + deviceName + "\"" +
+							   ",\"name\":\"" + nameStr + "\"" +
+							   ",\"reserved\":" + (device == 0 && IsReservedKey(code) ? "true" : "false") + "}";
+				}
+				const std::string reply =
+					std::string("{\"ok\":true") +
+					",\"armed\":" + (input::IsKeyCaptureArmed() ? "true" : "false") +
+					",\"rebindArmed\":" + (input::IsAwaitingRebind() ? "true" : "false") +
+					",\"toggleKey\":" + std::to_string(settings::Get().toggleKey) +
+					",\"captured\":" + captured + "}";
+				a_write(a_sink, reply.c_str());
+				return;
+			}
+			a_write(a_sink, "{\"ok\":false,\"error\":\"op must be arm|state|rebind|cancel\"}");
+		}
 	}
 
 	void Init(bool a_lastAttempt)
@@ -197,6 +302,20 @@ namespace devbenchtool
 		if (dev->RegisterTool("amf.process", procDescriptor, &ProcessTool, nullptr))
 		{
 			logger::info("Registered \"amf.process\" (status/kill) with DevBench");
+		}
+
+		constexpr const char* keybindDescriptor =
+			"{"
+			"\"description\":\"Keybind-capture widget for testing binds. op: arm (record the next "
+			"keyboard/gamepad press WITHOUT consuming it) | state (armed flags, current toggle key, last "
+			"captured key with name/device/reserved verdict) | rebind (arm the real menu toggle-key "
+			"rebind; Escape cancels) | cancel.\","
+			"\"inputSchema\":{\"type\":\"object\",\"properties\":{\"op\":{\"type\":\"string\"}}},"
+			"\"readOnly\":false"
+			"}";
+		if (dev->RegisterTool("amf.keybind", keybindDescriptor, &KeybindTool, nullptr))
+		{
+			logger::info("Registered \"amf.keybind\" (capture widget) with DevBench");
 		}
 
 		// Rule 64's start-menu extension: the vanilla Main Menu driver (amf.mainmenu).

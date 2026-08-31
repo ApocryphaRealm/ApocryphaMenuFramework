@@ -48,6 +48,11 @@ namespace input
 		// key (Escape cancels). Atomic - set on the render thread, consumed on the input thread.
 		std::atomic<bool> g_awaitingRebind{ false };
 
+		// Observe-only keybind capture (amf.keybind, L26): armed over DevBench, records the next
+		// keyboard/gamepad press without consuming it, then disarms. -1 = nothing captured yet.
+		std::atomic<bool> g_captureArmed{ false };
+		std::atomic<std::int64_t> g_lastCaptured{ -1 };
+
 		// XInput Start button mask (RE::BSWin32GamepadDevice::kStart) - closes the menu in
 		// controller mode, since there is otherwise no gamepad way out (design decision, 2026-08-28).
 		constexpr std::uint32_t kGamepadStart = 0x0010;
@@ -245,6 +250,24 @@ namespace input
 					bool passThrough = true;
 
 					const RE::ButtonEvent* button = current->AsButtonEvent();
+
+					// Observe-only keybind capture: record the next keyboard/gamepad PRESS and
+					// disarm. Never consumes and never touches settings - purely a witness, so it
+					// composes with every branch below (including the rebind, which stays first
+					// in precedence for the consuming path).
+					if (button && button->IsDown() &&
+						(button->GetDevice() == RE::INPUT_DEVICE::kKeyboard ||
+							button->GetDevice() == RE::INPUT_DEVICE::kGamepad) &&
+						g_captureArmed.load(std::memory_order_acquire))
+					{
+						const auto packed =
+							(static_cast<std::int64_t>(button->GetDevice()) << 32) |
+							static_cast<std::int64_t>(button->GetIDCode());
+						g_lastCaptured.store(packed, std::memory_order_release);
+						g_captureArmed.store(false, std::memory_order_release);
+						logger::info("keybind capture: observed device {} code {}",
+							static_cast<std::uint32_t>(button->GetDevice()), button->GetIDCode());
+					}
 
 					if (awaitingRebind && button && button->GetDevice() == RE::INPUT_DEVICE::kKeyboard &&
 						button->IsDown())
@@ -503,5 +526,27 @@ namespace input
 	bool IsAwaitingRebind()
 	{
 		return g_awaitingRebind.load(std::memory_order_acquire);
+	}
+
+	void ArmKeyCapture()
+	{
+		g_lastCaptured.store(-1, std::memory_order_release);
+		g_captureArmed.store(true, std::memory_order_release);
+		logger::info("keybind capture armed - next keyboard/gamepad press will be recorded (not consumed)");
+	}
+
+	void CancelKeyCapture()
+	{
+		g_captureArmed.store(false, std::memory_order_release);
+	}
+
+	bool IsKeyCaptureArmed()
+	{
+		return g_captureArmed.load(std::memory_order_acquire);
+	}
+
+	std::int64_t LastCapturedKey()
+	{
+		return g_lastCaptured.load(std::memory_order_acquire);
 	}
 }

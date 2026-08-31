@@ -41,4 +41,16 @@ namespace input
 	// prompt on the settings page. Thread-safe (an atomic flag); capture runs in the input hook.
 	void BeginRebindToggleKey();
 	bool IsAwaitingRebind();
+
+	// Keybind-capture widget (queue L26, the author's green light 2026-08-31): OBSERVE-ONLY
+	// capture of the next keyboard or gamepad button PRESS, for testing binds over DevBench
+	// (`amf.keybind`) without going through a mod's own settings page. Unlike the toggle-key
+	// rebind above it consumes nothing and changes no settings - the game and menu still see
+	// the event; the hook just records it and disarms.
+	void ArmKeyCapture();
+	void CancelKeyCapture();
+	bool IsKeyCaptureArmed();
+	// Packed last capture: -1 = none yet, else (device << 32) | scan code
+	// (device: RE::INPUT_DEVICE - 0 keyboard, 1 mouse, 2 gamepad).
+	std::int64_t LastCapturedKey();
 }

@@ -19,12 +19,21 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   `rules-version.ps1 -Action bump`. If a number was typed by hand, it is wrong until the tool
 >   agrees.
 
-## 1.4.6 - 2026-08-30 - untested
+## 1.4.6 - 2026-08-30 - working
+(capture observed in game 2026-08-30 - the Nexus banner pictures; keybind widget observed in
+game 2026-08-31 - gate `amf-keybind-test.ps1` PASS: spliced K captured un-reserved, Tab
+captured reserved, observe-only confirmed at the main menu)
 ### Added
 - IN-PROCESS CAPTURE ported from the Overhaul line: `amf.process op=capture` saves the presented
   frame WITH the menu overlay to Data\SKSE\Plugins\ApocryphaMenuFramework\captures\<name>.png.
   Needed because native screenshots are pre-overlay; first use: real in-game pictures inside the
   Nexus banners (design decision, 2026-08-30).
+- KEYBIND-CAPTURE WIDGET (`amf.keybind`, design decision 2026-08-31, queue L26): a reusable
+  DevBench surface for testing binds without a mod's own settings page. `arm` records the next
+  keyboard/gamepad press WITHOUT consuming it (observe-only - the game and menu still see it);
+  `state` reports the captured key with its name, device and the framework's reserved-key
+  verdict plus the current toggle key; `rebind` arms the real toggle-key rebind path; `cancel`
+  disarms. Reuses the existing input-hook capture design and `SMF_GetReservedKeyCodes`.
 
 ## 1.4.5 - 2026-08-30 - working
 ### Removed
