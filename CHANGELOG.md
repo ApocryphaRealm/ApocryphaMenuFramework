@@ -19,7 +19,7 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   `rules-version.ps1 -Action bump`. If a number was typed by hand, it is wrong until the tool
 >   agrees.
 
-## 1.4.7 - 2026-08-31 - untested
+## 1.4.7 - 2026-09-01 - working
 
 ### Fixed
 - CRASH changing the font or the text size (author playtest, 2026-08-31): the font-atlas

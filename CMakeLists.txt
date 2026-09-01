@@ -15,7 +15,7 @@
 
 project(
 	ApocryphaMenuFramework
-	VERSION 1.4.6
+	VERSION 1.4.7
 	LANGUAGES CXX
 )
 
@@ -116,3 +116,5 @@ target_precompile_headers(
 	PRIVATE
 		include/PCH.h
 )
+
+target_sources(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/version.rc)
