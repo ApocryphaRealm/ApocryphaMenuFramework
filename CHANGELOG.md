@@ -19,6 +19,16 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   `rules-version.ps1 -Action bump`. If a number was typed by hand, it is wrong until the tool
 >   agrees.
 
+## 1.4.7 - 2026-08-31 - untested
+
+### Fixed
+- CRASH changing the font or the text size (author playtest, 2026-08-31): the font-atlas
+  rebuild ran AFTER ImGui_ImplDX11_NewFrame - the only place the DX11 backend recreates its
+  device objects - so the rebuild destroyed the font texture with nothing left in the frame
+  to recreate it, and the frame then rendered its draw data against a dead texture. The
+  rebuild (invalidate + BuildFonts) now runs BEFORE the backend NewFrame, so the backend
+  recreates the font texture in the same frame.
+
 ## 1.4.6 - 2026-08-30 - working
 (capture observed in game 2026-08-30 - the Nexus banner pictures; keybind widget observed in
 game 2026-08-31 - gate `amf-keybind-test.ps1` PASS: spliced K captured un-reserved, Tab

@@ -675,6 +675,19 @@ namespace renderer
 					return;
 				}
 
+				// A font or text-size change rebuilds the atlas. This MUST happen before
+				// ImGui_ImplDX11_NewFrame: that call is where the DX11 backend recreates its
+				// device objects (font texture included) when they are missing. The old order -
+				// invalidating AFTER the backend NewFrame had already run - destroyed the font
+				// texture with nothing left in the frame to recreate it, so the frame rendered
+				// its draw data against a dead texture and crashed the moment the font or the
+				// text-size slider changed (author playtest, 2026-08-31).
+				if (g_fontRebuildPending.exchange(false))
+				{
+					ImGui_ImplDX11_InvalidateDeviceObjects();
+					BuildFonts();
+				}
+
 				ImGui_ImplDX11_NewFrame();
 				ImGui_ImplWin32_NewFrame();
 
@@ -716,15 +729,6 @@ namespace renderer
 				{
 					io.ConfigFlags = (io.ConfigFlags | ImGuiConfigFlags_NavEnableKeyboard) & ~ImGuiConfigFlags_NavEnableGamepad;
 					io.BackendFlags &= ~ImGuiBackendFlags_HasGamepad;
-				}
-
-				// A text-size change rebuilds the atlas at the new native size (crisp at any
-				// scale). Done here, before NewFrame, which is the safe point to touch fonts; the
-				// DX11 backend recreates its font texture on the next frame.
-				if (g_fontRebuildPending.exchange(false))
-				{
-					ImGui_ImplDX11_InvalidateDeviceObjects();
-					BuildFonts();
 				}
 
 				watchdog::Tick();  // liveness signal for the hang watchdog
