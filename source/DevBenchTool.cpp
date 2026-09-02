@@ -91,6 +91,12 @@ namespace devbenchtool
 				result = std::string("{\"ok\":true,\"op\":\"activate\",\"selected\":\"") +
 						 renderer::GetSelectedNode() + "\"}";
 			}
+			else if (op == "theme")
+			{
+				const std::string id = JsonStr(args, "id");
+				const bool ok = renderer::SetTheme(id);
+				result = std::string("{\"ok\":") + (ok ? "true" : "false") + ",\"op\":\"theme\",\"id\":\"" + id + "\"}";
+			}
 			else if (op == "alias")
 			{
 				// Menu-shell personalization: rename a mod's entry (empty name clears the alias).
@@ -296,15 +302,17 @@ namespace devbenchtool
 		constexpr const char* descriptor =
 			"{"
 			"\"description\":\"Drive and inspect the Apocrypha Menu Framework window for testing. "
-			"op: open|close|select|activate|state|alias|move|resetorder. For select, node is a path: settings, controls, help "
+			"op: open|close|select|activate|state|alias|move|resetorder|theme. For select, node is a path: settings, controls, help "
 			"(pre-1.4.4 system/... paths are still accepted) or mod:<index>. "
 			"activate is a no-op in the SMF shape (kept for compatibility). alias renames a mod's menu entry "
 			"(args mod, name; empty name clears it); move sends it to a 1-based position (args mod, position) and "
-			"re-flows the rest; resetorder returns the list to alphabetical. state returns visibility, the "
+			"re-flows the rest; resetorder returns the list to alphabetical; theme switches the active theme by "
+			"registry id (arg id: vanilla, untarnished, mo2-skyrim). state returns visibility, the "
 			"selected node, every registered mod + its pages, and the player-facing displayOrder.\","
 			"\"inputSchema\":{\"type\":\"object\",\"properties\":{"
 			"\"op\":{\"type\":\"string\"},\"node\":{\"type\":\"string\"},"
-			"\"mod\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"position\":{\"type\":\"string\"}}},"
+			"\"mod\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"position\":{\"type\":\"string\"},"
+			"\"id\":{\"type\":\"string\"}}},"
 			"\"readOnly\":false"
 			"}";
 

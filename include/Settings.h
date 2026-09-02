@@ -17,7 +17,13 @@ namespace settings
 	{
 		// [Input]
 		std::int32_t toggleKey = 0x3B;   // DirectInput scan code; 0x3B = F1 (framework convention, the author 2026-08-27)
-		bool controllerMode = false;     // false = keyboard nav, true = gamepad nav (explicit, never auto-detected)
+		bool controllerMode = false;     // false = keyboard nav, true = gamepad nav
+		// Follow whatever the player last actually used (author, 2026-09-01: "a toggle for auto
+		// input switch so it detects whenever you're using either a mouse and keyboard or a
+		// controller, to see how accurate it is"). OFF by default: the explicit toggle above stays
+		// the rule, because auto-detection is what causes nav-focus drift when it guesses wrong.
+		// While this is on, controllerMode is steered by real input and the toggle shows the result.
+		bool autoInputMode = false;      // bAutoInputMode:Input
 
 		// [Display]
 		float textScale = 1.30f;         // extra font multiplier on top of the resolution scale (the author, 1.0.2 feedback round)

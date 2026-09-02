@@ -124,6 +124,7 @@ namespace settings
 
 			ReadNumber(entries, "Input.uToggleKey", g_values.toggleKey);
 			ReadBool(entries, "Input.bControllerMode", g_values.controllerMode);
+			ReadBool(entries, "Input.bAutoInputMode", g_values.autoInputMode);
 			ReadNumber(entries, "Display.fTextScale", g_values.textScale);
 			{
 				auto it = entries.find("Display.sFontPath");
@@ -176,6 +177,10 @@ namespace settings
 				"; 0 = keyboard navigation, 1 = controller navigation. Explicit by design - never\n"
 				"; auto-detected from the last-used device, which is what causes nav focus drift.\n"
 				"bControllerMode=" << (g_values.controllerMode ? 1 : 0) << "\n"
+				"; 1 = follow whatever you last used: press a key or move the mouse and the menu\n"
+				"; switches to keyboard navigation; touch the pad and it switches to controller\n"
+				"; navigation. 0 = the setting above is obeyed exactly.\n"
+				"bAutoInputMode=" << (g_values.autoInputMode ? 1 : 0) << "\n"
 				"\n"
 				"[Display]\n"
 				"; Extra text scale on top of the automatic resolution scaling.\n"

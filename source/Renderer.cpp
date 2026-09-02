@@ -111,6 +111,19 @@ namespace renderer
 			slice(x2, y1, x3, y2, u2, v1, u3, v2);  // right
 		}
 
+		// The knotwork frames a rect from just OUTSIDE it (author, 2026-09-01): drawn exactly on a
+		// pane's rect, the art's own hairlines land on the pane's 1px border and the two read as one
+		// smudged double line. Pushed out by a few pixels it reads as a frame AROUND the box, and the
+		// box's own border and corners stay legible - which is what the Untarnished theme gets for
+		// free by having no art at all.
+		constexpr float kKnotOutset = 4.0f;
+
+		void DrawKnotworkAround(ImDrawList* dl, ImVec2 p0, ImVec2 p1)
+		{
+			DrawKnotworkFrame(dl, ImVec2(p0.x - kKnotOutset, p0.y - kKnotOutset),
+							  ImVec2(p1.x + kKnotOutset, p1.y + kKnotOutset));
+		}
+
 		// M1.1 (the author's smoke-test feedback): at 3200x1800 the stock ImGui font and a fixed
 		// 520x340 window are "far too small". One scale factor, derived from the real display
 		// height against 1080p as the baseline, applied to the font, the style metrics and the
@@ -359,6 +372,12 @@ namespace renderer
 		// inside it (the first one, or the one it was last on).
 		int g_focusPane = 0;
 
+		// When nav returns to the mod list, put the cursor back on the entry whose page is open -
+		// not wherever the list's cursor happened to be left (author, 2026-09-01: "if I select
+		// settings and go right and I scroll to the bottom and then I go back left then it should
+		// take me back to the settings menu selector not to the bottom of the left pane").
+		bool g_navToSelected = false;
+
 		void DrawMenuListSection();  // defined below, next to the other leaf panes
 
 		void DrawFrameworkSettingsPane()
@@ -435,6 +454,26 @@ namespace renderer
 			}
 			ImGui::TextWrapped("Off: keyboard navigation (arrow keys, Enter, Escape). "
 							   "On: gamepad navigation (D-pad moves, A activates, B cancels).");
+
+			// AUTO SWITCH (the author, 2026-09-01) - opt-in, with the detector's own reading shown
+			// underneath so its accuracy can be judged while playing rather than guessed at.
+			if (widgets::Toggle("Detect input automatically", &values.autoInputMode))
+			{
+				logger::info("settings page: auto input mode -> {}", values.autoInputMode);
+				settings::Save();
+			}
+			ImGui::TextWrapped("On: the toggle above follows whatever you last used - press a key or "
+							   "move the mouse and the menu switches to keyboard navigation, touch the "
+							   "pad and it switches to controller navigation.");
+			{
+				const input::Device device = input::LastDevice();
+				const float since = input::SecondsSinceLastDevice();
+				const char* name = device == input::Device::kGamepad ? "controller"
+								 : device == input::Device::kKeyboardMouse ? "keyboard and mouse"
+								 : "nothing yet";
+				if (since < 0.0f) { ImGui::TextDisabled("Detected: %s", name); }
+				else { ImGui::TextDisabled("Detected: %s (%.1fs ago)", name, since); }
+			}
 			ImGui::Spacing();
 			ImGui::Spacing();
 
@@ -685,7 +724,13 @@ namespace renderer
 				if (g_focusPane == 1) { ImGui::SetNextWindowFocus(); g_focusPane = 0; }
 				ImGui::BeginChild("##side", ImVec2(leftWidth, 0.0f), true);
 				auto sideItem = [&](const char* label, const char* id) {
-					if (ImGui::Selectable(label, sel == id)) { sel = id; changed = true; }
+					const bool isOpen = (sel == id);
+					if (isOpen && g_navToSelected)
+					{
+						ImGui::SetKeyboardFocusHere();  // the next item submitted takes the nav cursor
+						g_navToSelected = false;
+					}
+					if (ImGui::Selectable(label, isOpen)) { sel = id; changed = true; }
 				};
 				ImGui::TextDisabled("Framework");
 				sideItem("Settings", "settings");
@@ -697,7 +742,13 @@ namespace renderer
 				// REGISTRY index, so selection, the C API and DevBench addressing are unaffected.
 				for (const personalization::DisplayEntry& row : personalization::Order(entries))
 				{
-					if (ImGui::Selectable(row.displayName.c_str(), sel == "mod" && selMod == row.registryIndex))
+					const bool isOpen = (sel == "mod" && selMod == row.registryIndex);
+					if (isOpen && g_navToSelected)
+					{
+						ImGui::SetKeyboardFocusHere();
+						g_navToSelected = false;
+					}
+					if (ImGui::Selectable(row.displayName.c_str(), isOpen))
 					{
 						sel = "mod";
 						selMod = row.registryIndex;
@@ -709,10 +760,11 @@ namespace renderer
 				ImGui::EndChild();
 				if (knot)
 				{
-					DrawKnotworkFrame(ImGui::GetWindowDrawList(), ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
+					DrawKnotworkAround(ImGui::GetWindowDrawList(), ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
 				}
 
-				ImGui::SameLine();
+				// Room between the panes for both knotwork frames plus a breath of air.
+				ImGui::SameLine(0.0f, knot ? kKnotOutset * 4.0f : -1.0f);
 
 				// ---- CONTENT PANE -------------------------------------------------------------
 				if (g_focusPane == 2) { ImGui::SetNextWindowFocus(); g_focusPane = 0; }
@@ -750,7 +802,7 @@ namespace renderer
 				ImGui::EndChild();
 				if (knot)
 				{
-					DrawKnotworkFrame(ImGui::GetWindowDrawList(), ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
+					DrawKnotworkAround(ImGui::GetWindowDrawList(), ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
 				}
 
 				// Draw the OUTER window's knotwork frame LAST, on the window's own draw list so it
@@ -786,7 +838,8 @@ namespace renderer
 					else if (contentHasNav && wantsLeft && !editing)
 					{
 						g_focusPane = 1;
-						logger::debug("nav: options -> list");
+						g_navToSelected = true;  // land on the open entry, not the last cursor position
+						logger::debug("nav: options -> list (returning to the open entry)");
 					}
 				}
 
@@ -1047,6 +1100,24 @@ namespace renderer
 		return g_captureError;
 	}
 
+	bool SetTheme(const std::string& a_themeId)
+	{
+		for (const theme::Palette& palette : theme::ListThemes())
+		{
+			if (palette.id == a_themeId)
+			{
+				theme::SetActiveTheme(a_themeId);
+				theme::Apply();
+				settings::Get().themeId = a_themeId;
+				settings::Save();
+				logger::info("theme switched to \"{}\" (DevBench)", a_themeId);
+				return true;
+			}
+		}
+		logger::warn("theme \"{}\" is not registered", a_themeId);
+		return false;
+	}
+
 	bool SetModAlias(const std::string& a_modName, const std::string& a_alias)
 	{
 		const auto entries = registry::Snapshot();
@@ -1116,6 +1187,10 @@ namespace renderer
 		}
 		return std::string("{\"visible\":") + (visible ? "true" : "false") +
 			   ",\"tab\":\"" + esc(tab) + "\",\"selected\":\"" + esc(node) + "\",\"selectedMod\":" + std::to_string(selMod) +
+			   ",\"controllerMode\":" + (settings::Get().controllerMode ? "true" : "false") +
+			   ",\"autoInputMode\":" + (settings::Get().autoInputMode ? "true" : "false") +
+			   ",\"lastDevice\":\"" + (input::LastDevice() == input::Device::kGamepad ? "gamepad" :
+										   input::LastDevice() == input::Device::kKeyboardMouse ? "keyboard" : "none") + "\"" +
 			   ",\"customOrder\":" + (personalization::IsCustomOrder() ? "true" : "false") +
 			   ",\"displayOrder\":[" + order + "]" +
 			   ",\"mods\":[" + mods + "]}";

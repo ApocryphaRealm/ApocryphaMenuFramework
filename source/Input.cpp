@@ -1,5 +1,8 @@
 #include "Input.h"
 
+#include <chrono>
+#include <cmath>
+
 #include "Compat.h"
 #include "Offsets.h"
 #include "Renderer.h"
@@ -50,6 +53,38 @@ namespace input
 
 		// Observe-only keybind capture (amf.keybind, L26): armed over DevBench, records the next
 		// keyboard/gamepad press without consuming it, then disarms. -1 = nothing captured yet.
+		// AUTO INPUT MODE (the author, 2026-09-01). What the player last really used, and when.
+		// Only DELIBERATE input counts: a key or gamepad button going down, a mouse button, real
+		// mouse movement, or a stick pushed past the navigation deadzone. Idle noise - a resting
+		// stick, a nudged mouse - must never flip the mode, which is the whole reason the framework
+		// refused to auto-detect before this was asked for.
+		std::atomic<Device> g_lastDevice{ Device::kUnknown };
+		std::atomic<std::chrono::steady_clock::time_point> g_lastDeviceAt{ std::chrono::steady_clock::time_point{} };
+		constexpr float kMouseMoveThreshold = 2.0f;   // pixels in one event
+		constexpr float kStickThreshold = 0.35f;      // same as the nav deadzone
+
+		void NoteDevice(Device a_device)
+		{
+			const Device was = g_lastDevice.exchange(a_device, std::memory_order_relaxed);
+			g_lastDeviceAt.store(std::chrono::steady_clock::now(), std::memory_order_relaxed);
+			if (was == a_device) { return; }
+
+			const bool wantsController = (a_device == Device::kGamepad);
+			if (settings::Get().autoInputMode && settings::Get().controllerMode != wantsController)
+			{
+				settings::Get().controllerMode = wantsController;
+				logger::info("auto input mode: {} used -> {} navigation",
+							 wantsController ? "controller" : "keyboard/mouse",
+							 wantsController ? "controller" : "keyboard");
+			}
+			else
+			{
+				logger::debug("input device now {} (auto switch {})",
+							  wantsController ? "gamepad" : "keyboard/mouse",
+							  settings::Get().autoInputMode ? "on, already matching" : "off");
+			}
+		}
+
 		// Set by the renderer each frame: an item is being edited, so the right stick drives it.
 		std::atomic<bool> g_itemActive{ false };
 
@@ -429,12 +464,17 @@ namespace input
 			switch (record.kind)
 			{
 			case Record::Kind::kMouseMove:
+				if (std::fabs(record.x) > kMouseMoveThreshold || std::fabs(record.y) > kMouseMoveThreshold)
+				{
+					NoteDevice(Device::kKeyboardMouse);
+				}
 				g_cursorX += record.x;
 				g_cursorY += record.y;
 				g_cursorX = g_cursorX < 0.0f ? 0.0f : (g_cursorX > display.x - 1.0f ? display.x - 1.0f : g_cursorX);
 				g_cursorY = g_cursorY < 0.0f ? 0.0f : (g_cursorY > display.y - 1.0f ? display.y - 1.0f : g_cursorY);
 				break;
 			case Record::Kind::kMouseButton:
+				if (record.down) { NoteDevice(Device::kKeyboardMouse); }
 				if (record.code < ImGuiMouseButton_COUNT)
 				{
 					io.AddMouseButtonEvent(static_cast<int>(record.code), record.down);
@@ -445,6 +485,7 @@ namespace input
 				break;
 			case Record::Kind::kKeyboard:
 				{
+					if (record.down) { NoteDevice(Device::kKeyboardMouse); }
 					const ImGuiKey key = ScancodeToImGuiKey(record.code);
 					if (key != ImGuiKey_None)
 					{
@@ -472,6 +513,7 @@ namespace input
 					const ImGuiKey key = GamepadMaskToImGuiKey(record.code);
 					logger::debug("gamepad event: code=0x{:04X} down={} controllerMode={} -> imguiKey={}",
 								  record.code, record.down, controllerMode, static_cast<int>(key));
+					if (record.down) { NoteDevice(Device::kGamepad); }
 					if (controllerMode && key != ImGuiKey_None)
 					{
 						io.AddKeyEvent(key, record.down);
@@ -479,6 +521,10 @@ namespace input
 				}
 				break;
 			case Record::Kind::kThumbstick:
+				if (std::fabs(record.x) > kStickThreshold || std::fabs(record.y) > kStickThreshold)
+				{
+					NoteDevice(Device::kGamepad);
+				}
 				// Left stick -> ImGui gamepad-nav analog axes, so the stick moves the menu
 				// selection like the D-pad (the author used the stick to "switch menus"; it was not
 				// captured). Deadzone stops a resting stick drifting nav. y>0 = up in Skyrim's
@@ -543,6 +589,18 @@ namespace input
 	bool IsAwaitingRebind()
 	{
 		return g_awaitingRebind.load(std::memory_order_acquire);
+	}
+
+	Device LastDevice()
+	{
+		return g_lastDevice.load(std::memory_order_relaxed);
+	}
+
+	float SecondsSinceLastDevice()
+	{
+		const auto at = g_lastDeviceAt.load(std::memory_order_relaxed);
+		if (at == std::chrono::steady_clock::time_point{}) { return -1.0f; }
+		return std::chrono::duration<float>(std::chrono::steady_clock::now() - at).count();
 	}
 
 	void SetItemActive(bool a_active)

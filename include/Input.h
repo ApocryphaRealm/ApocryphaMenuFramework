@@ -26,6 +26,18 @@ namespace input
 	// instruction; the framework then runs render-only, exactly as M1 did.
 	bool Install();
 
+	// What the player last actually used. Fed by the input hook, read by the settings page (so
+	// the detection can be watched for accuracy) and by the auto-switch itself.
+	enum class Device
+	{
+		kUnknown,
+		kKeyboardMouse,
+		kGamepad
+	};
+	Device LastDevice();
+	// Seconds since the last device event, for the settings page's readout. -1 when nothing yet.
+	float SecondsSinceLastDevice();
+
 	// Render-thread notification, sampled inside the frame: is an ImGui item currently being
 	// edited (a slider taken hold of with A, a text field, an open drop-down)? While one is, the
 	// controller scheme routes the RIGHT stick to it and holds the left stick off, so moving a

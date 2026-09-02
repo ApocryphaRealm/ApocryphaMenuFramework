@@ -35,6 +35,11 @@ namespace renderer
 	void ActivateSelectedNode();
 	// Menu-shell personalization, driven from DevBench for testing (the settings page drives the
 	// same personalization:: calls directly). Return false when no such mod is registered.
+	// Switch the active theme by registry id (e.g. "vanilla", "untarnished", "mo2-skyrim") and
+	// save it. Exposed for DevBench so a visual comparison of two themes can be photographed in
+	// ONE game session instead of one launch per theme. Returns false for an unknown id.
+	bool SetTheme(const std::string& a_themeId);
+
 	bool SetModAlias(const std::string& a_modName, const std::string& a_alias);
 	bool MoveModTo(const std::string& a_modName, int a_position);
 	void ResetModOrder();

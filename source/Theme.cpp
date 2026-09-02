@@ -1,5 +1,7 @@
 #include "Theme.h"
 
+#include "KnotworkBorder.h"
+
 #include "Settings.h"
 #include "utils/Logger.h"
 
@@ -316,6 +318,19 @@ namespace theme
 		style.FrameBorderSize = active.borderThickness;
 		style.PopupBorderSize = active.borderThickness;
 		style.ChildBorderSize = active.borderThickness;
+
+		// MARGINS FOR THE KNOTWORK ART (author, 2026-09-01, comparing Vanilla against Untarnished:
+		// "the Skyrim theme doesn't let them fully see all the corners and lines of a box with a
+		// border ... you might have to change the margin between those areas and the edge of the
+		// menu frame"). The knotwork frame is a 9-slice drawn ON a rect, and its corner ornament is
+		// a FIXED 26px regardless of UI scale, so it occupies a 26px band just inside whatever rect
+		// it frames. With ImGui's default padding (8px, ~13px after the resolution scale) the
+		// window's band lay over the panes inside it and each pane's band lay over its own first
+		// line of text - which is why the version line read "pocrypha Menu Framework". Themes
+		// WITHOUT the art keep ImGui's normal padding; themes with it get the band's width plus a
+		// few pixels of air, so every box's border and all four corners stay visible.
+		constexpr float kKnotBand = static_cast<float>(knotwork::kCorner);
+		style.WindowPadding = active.knotwork ? ImVec2(kKnotBand + 8.0f, kKnotBand + 8.0f) : ImVec2(8.0f, 8.0f);
 		style.TabBorderSize = active.borderThickness;
 		style.WindowRounding = 0.0f;
 		style.FrameRounding = 0.0f;

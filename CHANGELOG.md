@@ -20,19 +20,41 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   agrees.
 
 ## 1.4.9 - 2026-09-01 - untested
-(personalization regression-gated PASS 22:13; the pane-crossing fix itself needs a pad/keyboard
+(personalization regression-gated PASS 22:13; everything below needs the author's pad/keyboard
 confirm - a controller cannot be driven headlessly)
 
 ### Fixed
-- Controller/keyboard navigation could not cross from the mod list INTO the options - only back
-  the other way (author playtest: "neither the d-pad the left or the right stick will let me go
-  from the left to the right pane"). ImGuiWindowFlags_NavFlattened, used in 1.4.8 to let
-  navigation cross the pane border, is documented for child windows with NO scrolling; the
-  options pane scrolls, and flattening it produced exactly that one-way behaviour. Navigation is
-  now contained in each pane again and the crossing is done explicitly: pushing RIGHT in the mod
-  list moves into the options, pushing LEFT in the options moves back, from the left stick, the
-  D-pad or the arrow keys alike. It is ignored while a slider is being adjusted, so pushing left
-  inside a slider changes the value instead of leaving the pane.
+- Navigation could not cross from the mod list INTO the options - only back the other way
+  (author playtest: "neither the d-pad the left or the right stick will let me go from the left
+  to the right pane"). ImGuiWindowFlags_NavFlattened, used in 1.4.8 to let navigation cross the
+  pane border, is documented for child windows with NO scrolling; the options pane scrolls, and
+  flattening it produced exactly that asymmetry. Navigation is contained in each pane again and
+  the crossing is explicit: right in the list enters the options, left in the options returns,
+  from the left stick, the D-pad or the arrow keys alike. It is ignored while a slider is being
+  adjusted, so pushing left inside a slider changes the value instead of leaving the pane.
+- Coming back from the options now lands on the entry whose page is open, not wherever the
+  list's cursor was left (the author: "if I select settings and go right and I scroll to the
+  bottom and then I go back left then it should take me back to the settings menu selector not
+  to the bottom of the left pane").
+- The knotwork themes (Vanilla, MO2 Skyrim) drew their frame art directly ON each box's rect,
+  so the art's own hairlines landed on the pane borders and its 26px corner ornaments covered
+  the first line of text - the window's version line read "pocrypha Menu Framework". The art is
+  now drawn just OUTSIDE each box so it frames the border instead of covering it, the window's
+  padding clears the ornament's width, and the two panes have room between them. Themes without
+  the art (Untarnished) are unchanged. Author, comparing the two: "the Skyrim theme doesn't let
+  them fully see all the corners and lines of a box with a border ... you might have to change
+  the margin between those areas and the edge of the menu frame".
+
+### Added
+- "Detect input automatically" (bAutoInputMode, OFF by default): the menu follows whatever you
+  last really used - a key press, a mouse button, real mouse movement or a stick past the
+  navigation deadzone - and switches between keyboard and controller navigation on its own. Idle
+  noise is ignored by design, because a mode that guesses wrong is what drives nav focus astray;
+  the explicit toggle remains the rule and this simply steers it. The settings page shows what
+  the detector currently reads, and how long ago, so its accuracy can be judged while playing.
+- `amf.menu` gains a theme op (switch theme by id at runtime) and reports controllerMode,
+  autoInputMode and lastDevice - so a two-theme visual comparison, and the auto-switch itself,
+  can be tested in ONE game session.
 
 ## 1.4.8 - 2026-09-01 - working
 
