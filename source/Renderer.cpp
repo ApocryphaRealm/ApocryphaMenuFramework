@@ -4,6 +4,7 @@
 #include "Offsets.h"
 #include "Persistence.h"
 #include "KnotworkBorder.h"
+#include "Personalization.h"
 #include "Registry.h"
 #include "Settings.h"
 #include "Theme.h"
@@ -11,9 +12,12 @@
 #include "utils/ToggleSwitch.h"
 #include "utils/Logger.h"
 
+#include <array>
+#include <cstdio>
 #include <filesystem>
 #include <functional>
 #include <mutex>
+#include <unordered_map>
 
 #include <imgui.h>
 #include <vector>
@@ -349,6 +353,8 @@ namespace renderer
 		// the mods' menus, right pane shows the selected menu's settings). M3's registry fills
 		// the left pane; until then the framework's own settings page is the only entry.
 		// -----------------------------------------------------------------------------------
+		void DrawMenuListSection();  // defined below, next to the other leaf panes
+
 		void DrawFrameworkSettingsPane()
 		{
 			auto& values = settings::Get();
@@ -477,6 +483,9 @@ namespace renderer
 			// compiler involved. Debug-only surface; not a real setting.
 			ImGui::Spacing();
 			ImGui::Separator();
+			DrawMenuListSection();
+			ImGui::Spacing();
+
 			ImGui::TextUnformatted("Persistence test (S10)");
 			static char testBuffer[128] = "";
 			ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.7f);
@@ -489,6 +498,85 @@ namespace renderer
 			ImGui::Text("Currently stored: \"%s\"", persistence::GetValue("test-value", "<unset>").c_str());
 			ImGui::TextWrapped("Set a value, save the game, quit, reload the same save - the "
 							   "value should still be here. A DIFFERENT save should show <unset>.");
+		}
+
+		// ---- Menu list: rename and reorder (author verdict 2026-09-01) ----------------------
+		// Presentation only - the registry and the mods themselves are untouched. Numbering is
+		// insert-and-shift: type a position and every other entry re-flows around it, so nobody
+		// has to number the whole list by hand.
+		void DrawMenuListSection()
+		{
+			const std::vector<registry::Entry> entries = registry::Snapshot();
+			ImGui::SeparatorText("Menu list");
+			ImGui::TextWrapped("Rename any mod's entry, and set the order of the list. Type a position "
+							   "number to move an entry there - every other entry re-flows around it.");
+
+			ImGui::Text("Order: %s", personalization::IsCustomOrder() ? "custom" : "alphabetical");
+			ImGui::SameLine();
+			if (ImGui::Button("Reset to alphabetical"))
+			{
+				personalization::ResetToAlphabetical();
+				settings::Save();
+			}
+
+			if (entries.empty())
+			{
+				ImGui::TextDisabled("No mods have registered a page yet.");
+				return;
+			}
+
+			const std::vector<personalization::DisplayEntry> rows = personalization::Order(entries);
+			static std::unordered_map<std::string, std::array<char, 64>> aliasBuffers;
+
+			if (ImGui::BeginTable("##menulist", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
+			{
+				ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFontSize() * 3.2f);
+				ImGui::TableSetupColumn("Mod");
+				ImGui::TableSetupColumn("Shows as");
+				ImGui::TableHeadersRow();
+
+				for (int i = 0; i < static_cast<int>(rows.size()); ++i)
+				{
+					const personalization::DisplayEntry& row = rows[i];
+					ImGui::TableNextRow();
+					ImGui::PushID(row.modName.c_str());
+
+					ImGui::TableSetColumnIndex(0);
+					int position = i + 1;
+					ImGui::SetNextItemWidth(-FLT_MIN);
+					if (ImGui::InputInt("##pos", &position, 0, 0, ImGuiInputTextFlags_EnterReturnsTrue) &&
+						position != i + 1)
+					{
+						personalization::MoveTo(entries, row.modName, position);
+						settings::Save();
+					}
+
+					ImGui::TableSetColumnIndex(1);
+					ImGui::TextUnformatted(row.modName.c_str());
+
+					ImGui::TableSetColumnIndex(2);
+					auto buffer = aliasBuffers.find(row.modName);
+					if (buffer == aliasBuffers.end())
+					{
+						std::array<char, 64> fresh{};
+						const std::string alias = personalization::GetAlias(row.modName);
+						std::snprintf(fresh.data(), fresh.size(), "%s", alias.c_str());
+						buffer = aliasBuffers.emplace(row.modName, fresh).first;
+					}
+					ImGui::SetNextItemWidth(-FLT_MIN);
+					const bool committed =
+						ImGui::InputTextWithHint("##alias", row.modName.c_str(), buffer->second.data(),
+												 buffer->second.size(), ImGuiInputTextFlags_EnterReturnsTrue);
+					if (committed || ImGui::IsItemDeactivatedAfterEdit())
+					{
+						personalization::SetAlias(row.modName, buffer->second.data());
+						settings::Save();
+					}
+
+					ImGui::PopID();
+				}
+				ImGui::EndTable();
+			}
 		}
 
 		// ---- nested game-menu leaf panes (the author's game-menu-replacement model, 2026-08-28) ----
@@ -513,8 +601,11 @@ namespace renderer
 			}
 			ImGui::Spacing();
 			ImGui::TextUnformatted("Keyboard:  arrow keys move, Enter activates, Escape closes.");
-			ImGui::TextUnformatted("Controller (controller mode on):  D-pad or left stick moves,");
-			ImGui::TextUnformatted("A activates, B cancels, START closes the menu.");
+			ImGui::TextUnformatted("Controller (controller mode on):");
+			ImGui::BulletText("Left stick moves through the list and across to the options - no button needed.");
+			ImGui::BulletText("A takes hold of a slider; the RIGHT stick then moves it. A again lets go.");
+			ImGui::BulletText("A on a drop-down opens it; the sticks choose; A confirms.");
+			ImGui::BulletText("B cancels, START closes the menu. The D-pad does everything the left stick does.");
 		}
 
 		void DrawHelpPane()
@@ -579,7 +670,7 @@ namespace renderer
 				if (selMod >= static_cast<int>(entries.size())) { selMod = 0; }
 
 				// ---- SIDE LIST -------------------------------------------------------------------
-				ImGui::BeginChild("##side", ImVec2(leftWidth, 0.0f), true);
+				ImGui::BeginChild("##side", ImVec2(leftWidth, 0.0f), true, ImGuiWindowFlags_NavFlattened);
 				auto sideItem = [&](const char* label, const char* id) {
 					if (ImGui::Selectable(label, sel == id)) { sel = id; changed = true; }
 				};
@@ -589,12 +680,14 @@ namespace renderer
 				sideItem("Help",     "help");
 				ImGui::Separator();
 				ImGui::TextDisabled("Mods");
-				for (int i = 0; i < static_cast<int>(entries.size()); ++i)
+				// Player-facing order and names (menu-shell personalization). The rows carry the
+				// REGISTRY index, so selection, the C API and DevBench addressing are unaffected.
+				for (const personalization::DisplayEntry& row : personalization::Order(entries))
 				{
-					if (ImGui::Selectable(entries[i].modName.c_str(), sel == "mod" && selMod == i))
+					if (ImGui::Selectable(row.displayName.c_str(), sel == "mod" && selMod == row.registryIndex))
 					{
 						sel = "mod";
-						selMod = i;
+						selMod = row.registryIndex;
 						changed = true;
 					}
 				}
@@ -608,14 +701,17 @@ namespace renderer
 				ImGui::SameLine();
 
 				// ---- CONTENT PANE -------------------------------------------------------------
-				ImGui::BeginChild("##content", ImVec2(0.0f, 0.0f), true);
+				ImGui::BeginChild("##content", ImVec2(0.0f, 0.0f), true, ImGuiWindowFlags_NavFlattened);
 				if (sel == "settings")      { DrawFrameworkSettingsPane(); }
 				else if (sel == "controls") { DrawControlsPane(); }
 				else if (sel == "help")     { DrawHelpPane(); }
 				else if (sel == "mod" && !entries.empty())
 				{
 					const registry::Entry& entry = entries[selMod];
-					ImGui::TextUnformatted(entry.modName.c_str());
+					{
+						const std::string alias = personalization::GetAlias(entry.modName);
+						ImGui::TextUnformatted(alias.empty() ? entry.modName.c_str() : alias.c_str());
+					}
 					ImGui::Separator();
 					if (entry.pages.size() == 1)
 					{
@@ -655,6 +751,10 @@ namespace renderer
 					std::scoped_lock l(g_selLock);
 					g_selNode = sel; g_selMod = selMod;
 				}
+				// Controller scheme: while a slider/drag is ACTIVE the right stick moves it and the
+				// left stick is held off, so navigation and adjustment never fight. Sampled here,
+				// inside the frame, and read by the input thread's translation step.
+				input::SetItemActive(ImGui::IsAnyItemActive());
 			}
 			ImGui::End();
 		}
@@ -908,6 +1008,42 @@ namespace renderer
 		return g_captureError;
 	}
 
+	bool SetModAlias(const std::string& a_modName, const std::string& a_alias)
+	{
+		const auto entries = registry::Snapshot();
+		for (const registry::Entry& entry : entries)
+		{
+			if (entry.modName == a_modName)
+			{
+				personalization::SetAlias(a_modName, a_alias);
+				settings::Save();
+				return true;
+			}
+		}
+		return false;
+	}
+
+	bool MoveModTo(const std::string& a_modName, int a_position)
+	{
+		const auto entries = registry::Snapshot();
+		for (const registry::Entry& entry : entries)
+		{
+			if (entry.modName == a_modName)
+			{
+				personalization::MoveTo(entries, a_modName, a_position);
+				settings::Save();
+				return true;
+			}
+		}
+		return false;
+	}
+
+	void ResetModOrder()
+	{
+		personalization::ResetToAlphabetical();
+		settings::Save();
+	}
+
 	std::string GetMenuStateJson()
 	{
 		std::string node, tab; int selMod;
@@ -925,10 +1061,24 @@ namespace renderer
 				if (j) { pages += ","; }
 				pages += "\"" + esc(entries[i].pages[j].pageName) + "\"";
 			}
-			mods += "{\"index\":" + std::to_string(i) + ",\"name\":\"" + esc(entries[i].modName) + "\",\"pages\":[" + pages + "]}";
+				mods += "{\"index\":" + std::to_string(i) + ",\"name\":\"" + esc(entries[i].modName) + "\",\"pages\":[" + pages + "]}";
+		}
+		// Menu-shell personalization: the list AS THE PLAYER SEES IT (position, identity, shown
+		// name), so a driving tool can assert the order and the aliases without reading pixels.
+		std::string order;
+		{
+			const auto rows = personalization::Order(entries);
+			for (std::size_t i = 0; i < rows.size(); ++i)
+			{
+				if (i) { order += ","; }
+				order += "{\"pos\":" + std::to_string(i + 1) + ",\"index\":" + std::to_string(rows[i].registryIndex) +
+						 ",\"mod\":\"" + esc(rows[i].modName) + "\",\"shows\":\"" + esc(rows[i].displayName) + "\"}";
+			}
 		}
 		return std::string("{\"visible\":") + (visible ? "true" : "false") +
 			   ",\"tab\":\"" + esc(tab) + "\",\"selected\":\"" + esc(node) + "\",\"selectedMod\":" + std::to_string(selMod) +
+			   ",\"customOrder\":" + (personalization::IsCustomOrder() ? "true" : "false") +
+			   ",\"displayOrder\":[" + order + "]" +
 			   ",\"mods\":[" + mods + "]}";
 	}
 }

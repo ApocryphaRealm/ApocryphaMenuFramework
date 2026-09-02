@@ -26,6 +26,12 @@ namespace input
 	// instruction; the framework then runs render-only, exactly as M1 did.
 	bool Install();
 
+	// Render-thread notification, sampled inside the frame: is an ImGui item currently being
+	// edited (a slider taken hold of with A, a text field, an open drop-down)? While one is, the
+	// controller scheme routes the RIGHT stick to it and holds the left stick off, so moving a
+	// value can never also move the selection (author's spec, 2026-08-31).
+	void SetItemActive(bool a_active);
+
 	// Drains the event queue into ImGui's input queue. Render thread only, called between the
 	// backend NewFrame calls and ImGui::NewFrame().
 	void ProcessQueuedEvents();

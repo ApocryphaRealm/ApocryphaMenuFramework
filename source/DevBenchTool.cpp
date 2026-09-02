@@ -91,6 +91,30 @@ namespace devbenchtool
 				result = std::string("{\"ok\":true,\"op\":\"activate\",\"selected\":\"") +
 						 renderer::GetSelectedNode() + "\"}";
 			}
+			else if (op == "alias")
+			{
+				// Menu-shell personalization: rename a mod's entry (empty name clears the alias).
+				const std::string mod = JsonStr(args, "mod");
+				const std::string name = JsonStr(args, "name");
+				const bool ok = renderer::SetModAlias(mod, name);
+				result = std::string("{\"ok\":") + (ok ? "true" : "false") +
+						 ",\"op\":\"alias\",\"mod\":\"" + mod + "\",\"name\":\"" + name + "\"}";
+			}
+			else if (op == "move")
+			{
+				// 1-based position; every other entry re-flows around it.
+				const std::string mod = JsonStr(args, "mod");
+				int position = 0;
+				try { position = std::stoi(JsonStr(args, "position")); } catch (...) { position = 0; }
+				const bool ok = position > 0 && renderer::MoveModTo(mod, position);
+				result = std::string("{\"ok\":") + (ok ? "true" : "false") +
+						 ",\"op\":\"move\",\"mod\":\"" + mod + "\",\"position\":" + std::to_string(position) + "}";
+			}
+			else if (op == "resetorder")
+			{
+				renderer::ResetModOrder();
+				result = "{\"ok\":true,\"op\":\"resetorder\"}";
+			}
 			else if (op == "state" || op.empty())
 			{
 				result = renderer::GetMenuStateJson();
@@ -272,12 +296,15 @@ namespace devbenchtool
 		constexpr const char* descriptor =
 			"{"
 			"\"description\":\"Drive and inspect the Apocrypha Menu Framework window for testing. "
-			"op: open|close|select|activate|state. For select, node is a path: settings, controls, help "
+			"op: open|close|select|activate|state|alias|move|resetorder. For select, node is a path: settings, controls, help "
 			"(pre-1.4.4 system/... paths are still accepted) or mod:<index>. "
-			"activate is a no-op in the SMF shape (kept for compatibility). state returns visibility, the "
-			"selected node and every registered mod + its pages.\","
+			"activate is a no-op in the SMF shape (kept for compatibility). alias renames a mod's menu entry "
+			"(args mod, name; empty name clears it); move sends it to a 1-based position (args mod, position) and "
+			"re-flows the rest; resetorder returns the list to alphabetical. state returns visibility, the "
+			"selected node, every registered mod + its pages, and the player-facing displayOrder.\","
 			"\"inputSchema\":{\"type\":\"object\",\"properties\":{"
-			"\"op\":{\"type\":\"string\"},\"node\":{\"type\":\"string\"}}},"
+			"\"op\":{\"type\":\"string\"},\"node\":{\"type\":\"string\"},"
+			"\"mod\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"position\":{\"type\":\"string\"}}},"
 			"\"readOnly\":false"
 			"}";
 

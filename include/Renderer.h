@@ -33,6 +33,12 @@ namespace renderer
 	void SetSelectedNode(const std::string& a_node);
 	std::string GetSelectedNode();
 	void ActivateSelectedNode();
+	// Menu-shell personalization, driven from DevBench for testing (the settings page drives the
+	// same personalization:: calls directly). Return false when no such mod is registered.
+	bool SetModAlias(const std::string& a_modName, const std::string& a_alias);
+	bool MoveModTo(const std::string& a_modName, int a_position);
+	void ResetModOrder();
+
 	std::string GetMenuStateJson();
 
 	// In-process capture (ported from the Overhaul line, 2026-08-30): saves the NEXT presented

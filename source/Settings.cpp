@@ -1,5 +1,6 @@
 #include "Settings.h"
 
+#include "Personalization.h"
 #include "utils/Logger.h"
 
 #include <charconv>
@@ -137,6 +138,8 @@ namespace settings
 				g_values.themeId = it->second;
 			}
 			ReadNumber(entries, "Log.uLogLevel", g_values.logLevel);
+			// Menu-shell personalization (aliases + custom order) lives in the same file.
+			personalization::LoadFrom(entries);
 
 			logger::info("settings loaded: uToggleKey=0x{:X}, bControllerMode={}, fTextScale={:.2f}, uLogLevel={}",
 						 g_values.toggleKey, g_values.controllerMode, g_values.textScale, g_values.logLevel);
@@ -199,6 +202,9 @@ namespace settings
 				"[Log]\n"
 				"; 0 = trace (most comprehensive, the project default) ... 6 = off.\n"
 				"uLogLevel=" << g_values.logLevel << "\n";
+
+		// Menu-shell personalization writes its own two sections (aliases, custom order).
+		file << personalization::IniBlock();
 
 		logger::debug("settings: saved to {}", kIniPath);
 	}

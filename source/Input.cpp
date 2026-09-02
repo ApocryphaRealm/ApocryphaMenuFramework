@@ -50,6 +50,9 @@ namespace input
 
 		// Observe-only keybind capture (amf.keybind, L26): armed over DevBench, records the next
 		// keyboard/gamepad press without consuming it, then disarms. -1 = nothing captured yet.
+		// Set by the renderer each frame: an item is being edited, so the right stick drives it.
+		std::atomic<bool> g_itemActive{ false };
+
 		std::atomic<bool> g_captureArmed{ false };
 		std::atomic<std::int64_t> g_lastCaptured{ -1 };
 
@@ -215,11 +218,13 @@ namespace input
 						// LEFT stick drives ImGui menu nav in controller mode (the author could not
 						// switch menus - the D-pad is mapped but he used the stick, which was not
 						// captured). Right stick is left to the game (camera). x,y in [-1,1].
+						// BOTH sticks are captured while the menu is open (they are consumed anyway,
+						// so the camera is already still). Which one drives ImGui is decided on the
+						// render thread: left = navigation, right = moving whatever the player has
+						// taken hold of with A. code: 0 = left, 1 = right.
 						const auto* thumb = static_cast<const RE::ThumbstickEvent*>(a_event);
-						if (thumb->IsLeft())
-						{
-							Enqueue({ Record::Kind::kThumbstick, 0, false, thumb->xValue, thumb->yValue });
-						}
+						Enqueue({ Record::Kind::kThumbstick, thumb->IsLeft() ? 0u : 1u, false,
+								  thumb->xValue, thumb->yValue });
 						break;
 					}
 				default:
@@ -478,15 +483,27 @@ namespace input
 				// selection like the D-pad (the author used the stick to "switch menus"; it was not
 				// captured). Deadzone stops a resting stick drifting nav. y>0 = up in Skyrim's
 				// thumbstick convention; if the live test shows it inverted, flip Up/Down.
+				// The controller scheme (author's spec, 2026-08-31): the LEFT stick moves through
+				// the list and across to the options with no button press; A takes hold of a slider;
+				// the RIGHT stick then moves it. ImGui drives BOTH navigation and value tweaking from
+				// the same LStick nav axes, so exactly one stick is wired to them per frame - whichever
+				// the scheme says is in charge:  nothing being edited -> LEFT (navigate);  an item
+				// taken hold of -> RIGHT (move the value). The idle stick is explicitly released so a
+				// resting-but-off-centre stick cannot leave a nav axis stuck down.
 				if (controllerMode)
 				{
+					const bool editing = g_itemActive.load(std::memory_order_relaxed);
+					const bool isLeftStick = record.code == 0;
+					const bool inCharge = editing ? !isLeftStick : isLeftStick;
 					constexpr float dz = 0.35f;
-					const float sx = record.x, sy = record.y;
+					const float sx = inCharge ? record.x : 0.0f, sy = inCharge ? record.y : 0.0f;
 					io.AddKeyAnalogEvent(ImGuiKey_GamepadLStickLeft,  sx < -dz, sx < -dz ? -sx : 0.0f);
 					io.AddKeyAnalogEvent(ImGuiKey_GamepadLStickRight, sx >  dz, sx >  dz ?  sx : 0.0f);
 					io.AddKeyAnalogEvent(ImGuiKey_GamepadLStickUp,    sy >  dz, sy >  dz ?  sy : 0.0f);
 					io.AddKeyAnalogEvent(ImGuiKey_GamepadLStickDown,  sy < -dz, sy < -dz ? -sy : 0.0f);
-					logger::debug("thumbstick(L): x={:.2f} y={:.2f}", sx, sy);
+					logger::debug("thumbstick({}): x={:.2f} y={:.2f} {} (editing={})",
+								  isLeftStick ? "L" : "R", record.x, record.y,
+								  inCharge ? "-> nav" : "(idle this frame)", editing);
 				}
 				break;
 			case Record::Kind::kCharacter:
@@ -526,6 +543,11 @@ namespace input
 	bool IsAwaitingRebind()
 	{
 		return g_awaitingRebind.load(std::memory_order_acquire);
+	}
+
+	void SetItemActive(bool a_active)
+	{
+		g_itemActive.store(a_active, std::memory_order_relaxed);
 	}
 
 	void ArmKeyCapture()

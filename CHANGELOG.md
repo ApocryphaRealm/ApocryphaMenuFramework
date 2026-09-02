@@ -19,6 +19,30 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   `rules-version.ps1 -Action bump`. If a number was typed by hand, it is wrong until the tool
 >   agrees.
 
+## 1.4.8 - 2026-09-01 - working
+
+### Added
+- MENU-SHELL personalization (author verdict 2026-09-01), a presentation layer over the page
+  registry - registered mods are untouched and know nothing about it:
+  - ALIAS: rename any mod's menu entry from the Framework Settings page. The alias replaces the
+    mod's name in the list and in the content pane's heading, and it is what alphabetical
+    sorting uses.
+  - ORDER: the list is alphabetical by default and EVERY entry always shows its position
+    number. Typing a new number moves that entry there and every other number re-flows
+    (insert-and-shift), so nobody has to number the whole list by hand. A mod installed later
+    inserts at its alphabetical position within the existing sequence. "Reset to alphabetical"
+    is one button. Repositioning/floating per-mod windows are deliberately NOT included.
+  - Both live in AMF's own INI, in new [MenuAlias] and [MenuOrder] sections.
+- CONTROLLER NAVIGATION scheme (author spec, 2026-08-31): the left stick moves through the list
+  AND across into the options with no button press (both panes are nav-flattened, so ImGui's
+  navigation is no longer trapped inside each child window); A takes hold of a slider and the
+  RIGHT stick then moves it; A opens a drop-down, the sticks choose, A confirms. Both sticks are
+  captured while the menu is open and exactly one is wired to ImGui's navigation axes per frame -
+  the left while nothing is being edited, the right while something is - so adjusting a value can
+  never also move the selection, and the idle stick is released so it cannot leave an axis stuck.
+- `amf.menu` gains alias / move / resetorder ops and reports `customOrder` plus the player-facing
+  `displayOrder` (position, mod, shown name), so the shell is drivable and assertable headlessly.
+
 ## 1.4.7 - 2026-09-01 - working
 
 ### Fixed
