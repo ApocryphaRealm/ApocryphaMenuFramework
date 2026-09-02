@@ -19,9 +19,10 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   `rules-version.ps1 -Action bump`. If a number was typed by hand, it is wrong until the tool
 >   agrees.
 
-## 1.4.9 - 2026-09-01 - untested
-(personalization regression-gated PASS 22:13; everything below needs the author's pad/keyboard
-confirm - a controller cannot be driven headlessly)
+## 1.4.9 - 2026-09-01 - working
+(author pad confirm 22:36: "the controller nav works properly including selecting a slider with
+a"; pane crossing both ways, the return landing and three auto-input switches all observed live
+over DevBench)
 
 ### Fixed
 - Navigation could not cross from the mod list INTO the options - only back the other way
@@ -44,6 +45,19 @@ confirm - a controller cannot be driven headlessly)
   the art (Untarnished) are unchanged. Author, comparing the two: "the Skyrim theme doesn't let
   them fully see all the corners and lines of a box with a border ... you might have to change
   the margin between those areas and the edge of the menu frame".
+
+### Changed
+- THE THEMES ARE NOW TWO (author, 2026-09-01: "we don't need the mo2 Skyrim or the vanilla
+  versions anymore as they're extremely similar in colour and design"). "Vanilla" and
+  "MO2 Skyrim" differed only in the tone of their text; they are merged into ONE theme named
+  "Skyrim" - the knotwork frame, silver and gold lines, and the crisper warm off-white text -
+  which is the default. "Untarnished", the framework's original identity, stays as the plain
+  alternative. An INI naming a retired id ("vanilla", "mo2-skyrim") is migrated to "skyrim"
+  rather than dropped, so nobody's saved choice is lost.
+- EVERY theme now uses the same padding, so the two look alike in spacing and switching theme
+  changes the colours and the art but never the geometry (the author: "edit the untarnished
+  theme to have the same margin edits so they look similar in spacing"). The figure comes from
+  the knotwork ornament's fixed 26px band; the plain theme simply shares it.
 
 ### Added
 - "Detect input automatically" (bAutoInputMode, OFF by default): the menu follows whatever you

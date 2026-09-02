@@ -61,6 +61,10 @@ namespace theme
 	std::vector<Palette> ListThemes();
 
 	// Empty/unknown id is a no-op (current theme stays active); logs either way.
+	// Maps the ids retired in the 2026-09-01 theme merge ("vanilla", "mo2-skyrim") onto "skyrim";
+	// anything else is returned unchanged. Called when reading a theme id out of the INI.
+	std::string MigrateThemeId(const std::string& a_id);
+
 	void SetActiveTheme(const std::string& a_id);
 	const Palette& GetActiveTheme();
 

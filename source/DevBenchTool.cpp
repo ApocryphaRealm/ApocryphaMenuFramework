@@ -307,7 +307,7 @@ namespace devbenchtool
 			"activate is a no-op in the SMF shape (kept for compatibility). alias renames a mod's menu entry "
 			"(args mod, name; empty name clears it); move sends it to a 1-based position (args mod, position) and "
 			"re-flows the rest; resetorder returns the list to alphabetical; theme switches the active theme by "
-			"registry id (arg id: vanilla, untarnished, mo2-skyrim). state returns visibility, the "
+			"registry id (arg id: skyrim, untarnished). state returns visibility, the "
 			"selected node, every registered mod + its pages, and the player-facing displayOrder.\","
 			"\"inputSchema\":{\"type\":\"object\",\"properties\":{"
 			"\"op\":{\"type\":\"string\"},\"node\":{\"type\":\"string\"},"

@@ -1,6 +1,7 @@
 #include "Settings.h"
 
 #include "Personalization.h"
+#include "Theme.h"
 #include "utils/Logger.h"
 
 #include <charconv>
@@ -136,7 +137,8 @@ namespace settings
 			ReadBool(entries, "Debug.bShowApiDemo", g_values.showApiDemo);
 			if (const auto it = entries.find("Theme.sThemeId"); it != entries.end() && !it->second.empty())
 			{
-				g_values.themeId = it->second;
+				// Retired ids from the 2026-09-01 theme merge are mapped, not dropped.
+				g_values.themeId = theme::MigrateThemeId(it->second);
 			}
 			ReadNumber(entries, "Log.uLogLevel", g_values.logLevel);
 			// Menu-shell personalization (aliases + custom order) lives in the same file.

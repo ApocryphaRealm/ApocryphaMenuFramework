@@ -210,6 +210,15 @@ namespace theme
 		return g_themes;
 	}
 
+	// The 2026-09-01 merge: "vanilla" and "mo2-skyrim" both became "skyrim". An INI written
+	// before that names a theme that no longer exists, so map the retired ids rather than
+	// silently falling back and losing the player's choice.
+	std::string MigrateThemeId(const std::string& a_id)
+	{
+		if (a_id == "vanilla" || a_id == "mo2-skyrim") { return "skyrim"; }
+		return a_id;
+	}
+
 	void SetActiveTheme(const std::string& a_id)
 	{
 		if (a_id.empty())
@@ -271,33 +280,20 @@ namespace theme
 			// shipped as a selectable theme per the author's instruction, no longer the only option.
 			RegisterTheme({ "untarnished", "Untarnished", 0xFF000000, 0xFFE9F2F5, 1.0f });
 
-			// "MO2 Skyrim" - REBUILT 2026-08-28 from the real Trosski Skyrim style
-			// (C:\Modlists\Apostasy\stylesheets\Transparent-Style-Skyrim-Trosski.qss + its
-			// SkyrimTP/border-image.png), matched against a live MO2 screenshot. The first port
-			// collapsed the whole style onto one grey (#b0b0b0); the actual style is a layered
-			// palette: silver frame lines #b0b0b0 (41 uses), brighter text #dddddd, a dim
-			// secondary #717171, and a GOLD accent #a1912b for selection/checkmarks - plus the
-			// defining Nordic KNOTWORK frame at the panel corners (border-image.png, now embedded
-			// and drawn by Renderer). ABGR packing (0xAABBGGRR): #a1912b -> 0xFF2B91A1. Background
-			// stays solid black - the project's full-opacity rule holds over live gameplay,
-			// unlike MO2's near-transparent desktop look.
-			RegisterTheme({ "mo2-skyrim", "MO2 Skyrim",
-				/*background*/ 0xFF000000, /*frame*/ 0xFFB0B0B0, /*borderThickness*/ 1.0f,
-				/*border*/ 0xFFB0B0B0, /*text*/ 0xFFDDDDDD, /*textDim*/ 0xFF717171,
-				/*accent*/ 0xFF2B91A1, /*knotwork*/ true });
-
-			// "Vanilla" - design decision, 2026-08-28: the MO2 Skyrim look (knotwork + silver/gold) but with
-			// the CLEANER text from the original Untarnished theme. He found MO2 Skyrim's #dddddd
-			// text muddier than Untarnished's brighter warm off-white #F5F2E9 (0xFFE9F2F5), which
-			// reads crisper on solid black. So this theme = mo2-skyrim's border/accent/knotwork
-			// with Untarnished's text. Set as the default, since it is the refinement he asked for.
-			RegisterTheme({ "vanilla", "Vanilla",
+			// "Skyrim" - the knotwork look: the Nordic frame art and silver/gold lines rebuilt from
+			// the real Trosski Skyrim style (its border-image.png and stylesheet), with the crisper
+			// warm off-white text of the Untarnished palette. It replaces the old "Vanilla" and
+			// "MO2 Skyrim" entries, which the author retired on 2026-09-01 as "extremely similar in
+			// colour and design" - they differed only in the text tone, and this keeps the better one.
+			// Silver frame lines #b0b0b0, dim secondary #717171, GOLD accent #a1912b for selection,
+			// text #F5F2E9. ABGR packing (0xAABBGGRR). Background stays solid black: the project's
+			// full-opacity rule holds over live gameplay, unlike MO2's near-transparent desktop look.
+			RegisterTheme({ "skyrim", "Skyrim",
 				/*background*/ 0xFF000000, /*frame*/ 0xFFB0B0B0, /*borderThickness*/ 1.0f,
 				/*border*/ 0xFFB0B0B0, /*text*/ 0xFFE9F2F5, /*textDim*/ 0xFF717171,
 				/*accent*/ 0xFF2B91A1, /*knotwork*/ true });
 
-			// DEFAULT is now Vanilla (design decision, 2026-08-28) - the MO2 Skyrim look with the cleaner text.
-			g_activeId = "vanilla";
+			g_activeId = "skyrim";
 
 			ScanUserThemes();
 
@@ -329,8 +325,13 @@ namespace theme
 		// line of text - which is why the version line read "pocrypha Menu Framework". Themes
 		// WITHOUT the art keep ImGui's normal padding; themes with it get the band's width plus a
 		// few pixels of air, so every box's border and all four corners stay visible.
-		constexpr float kKnotBand = static_cast<float>(knotwork::kCorner);
-		style.WindowPadding = active.knotwork ? ImVec2(kKnotBand + 8.0f, kKnotBand + 8.0f) : ImVec2(8.0f, 8.0f);
+		// EVERY theme gets the same padding (author, 2026-09-01: "edit the untarnished theme to have
+		// the same margin edits so they look similar in spacing"). The knotwork art is what forced
+		// the figure - its corner ornament is a fixed 26px band inside whatever rect it frames - but
+		// applying it to the plain themes too keeps the layout identical whichever theme is picked,
+		// so switching theme changes the colours and the art, never the geometry.
+		constexpr float kFramePadding = static_cast<float>(knotwork::kCorner) + 8.0f;
+		style.WindowPadding = ImVec2(kFramePadding, kFramePadding);
 		style.TabBorderSize = active.borderThickness;
 		style.WindowRounding = 0.0f;
 		style.FrameRounding = 0.0f;

@@ -18,7 +18,7 @@ Licence: MIT (see `LICENSE`). Not a fork: contains no SKSE Menu Framework code.
   the registered mods (plus the framework's own Settings / Controls / Help entries) and a content
   pane for the selected mod's pages; a mod with several pages gets tabs. No game-menu takeover -
   that is the separate Apocrypha Framework Overhaul project.
-- **Themes and fonts, separately.** A theme sets the colours (Vanilla, Untarnished, MO2 Skyrim
+- **Themes and fonts, separately.** A theme sets the colours (Skyrim, Untarnished
   with its knotwork frame); the font picker lists the Windows faces present plus any `.ttf`/`.otf`
   dropped into `Data\SKSE\Plugins\ApocryphaMenuFramework\fonts`. Text is rasterised from a real
   TrueType face at native size, never scaled from a bitmap.

@@ -414,8 +414,9 @@ namespace renderer
 					values.themeId = themes[currentIndex].id;
 					settings::Save();
 				}
-				ImGui::TextWrapped("\"Untarnished\" is the framework's original identity; \"MO2 Skyrim\" "
-								   "is ported from Mod Organizer 2's own real stylesheet.");
+				ImGui::TextWrapped("\"Skyrim\" is the knotwork look - the Nordic frame with silver and gold "
+								   "lines. \"Untarnished\" is the framework's original identity: the same "
+								   "layout with clean lines and no frame art.");
 			}
 			ImGui::Spacing();
 
