@@ -40,7 +40,7 @@ namespace settings
 		                                 // the author 2026-08-27, same anchor philosophy as the minimap; more presets later.
 
 		// [Theme]
-		std::string themeId = "skyrim";     // registry id (theme::Palette::id). Default is Vanilla (the author)
+		std::string themeId = "skyrim";     // registry id (theme::Palette::id). Default is Skyrim, the knotwork look
 		                                     // own Skyrim theme for the current test (the author,
 		                                     // 2026-08-27) - "Untarnished" (the original identity)
 		                                     // is still registered and selectable, just not default.
