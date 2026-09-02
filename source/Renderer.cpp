@@ -353,6 +353,12 @@ namespace renderer
 		// the mods' menus, right pane shows the selected menu's settings). M3's registry fills
 		// the left pane; until then the framework's own settings page is the only entry.
 		// -----------------------------------------------------------------------------------
+		// Which pane nav should be moved into on the NEXT frame (0 = leave it alone, 1 = the mod
+		// list, 2 = the options). Set when the player pushes across the border; applied by
+		// SetNextWindowFocus before that child begins, which also makes ImGui pick a sensible item
+		// inside it (the first one, or the one it was last on).
+		int g_focusPane = 0;
+
 		void DrawMenuListSection();  // defined below, next to the other leaf panes
 
 		void DrawFrameworkSettingsPane()
@@ -670,7 +676,14 @@ namespace renderer
 				if (selMod >= static_cast<int>(entries.size())) { selMod = 0; }
 
 				// ---- SIDE LIST -------------------------------------------------------------------
-				ImGui::BeginChild("##side", ImVec2(leftWidth, 0.0f), true, ImGuiWindowFlags_NavFlattened);
+				// PANE CROSSING (author playtest 2026-09-01: "neither the d-pad the left or the right stick
+				// will let me go from the left to the right pane"). ImGuiWindowFlags_NavFlattened is
+				// documented for children with NO scrolling; the content pane scrolls, and flattening it
+				// gave asymmetric crossing - content->list worked, list->content never did. So nav stays
+				// contained in each pane and the crossing is done explicitly below, which is also exactly
+				// what the controller spec asks for.
+				if (g_focusPane == 1) { ImGui::SetNextWindowFocus(); g_focusPane = 0; }
+				ImGui::BeginChild("##side", ImVec2(leftWidth, 0.0f), true);
 				auto sideItem = [&](const char* label, const char* id) {
 					if (ImGui::Selectable(label, sel == id)) { sel = id; changed = true; }
 				};
@@ -692,6 +705,7 @@ namespace renderer
 					}
 				}
 				if (entries.empty()) { ImGui::TextDisabled("none registered"); }
+				const bool sideHasNav = ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows);
 				ImGui::EndChild();
 				if (knot)
 				{
@@ -701,7 +715,8 @@ namespace renderer
 				ImGui::SameLine();
 
 				// ---- CONTENT PANE -------------------------------------------------------------
-				ImGui::BeginChild("##content", ImVec2(0.0f, 0.0f), true, ImGuiWindowFlags_NavFlattened);
+				if (g_focusPane == 2) { ImGui::SetNextWindowFocus(); g_focusPane = 0; }
+				ImGui::BeginChild("##content", ImVec2(0.0f, 0.0f), true);
 				if (sel == "settings")      { DrawFrameworkSettingsPane(); }
 				else if (sel == "controls") { DrawControlsPane(); }
 				else if (sel == "help")     { DrawHelpPane(); }
@@ -731,6 +746,7 @@ namespace renderer
 					}
 				}
 				else { DrawFrameworkSettingsPane(); }
+				const bool contentHasNav = ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows);
 				ImGui::EndChild();
 				if (knot)
 				{
@@ -751,6 +767,29 @@ namespace renderer
 					std::scoped_lock l(g_selLock);
 					g_selNode = sel; g_selMod = selMod;
 				}
+				// Right out of the list, left back into it. Only when nothing is being edited, so
+				// pushing left inside a slider adjusts the value instead of leaving the pane. Both
+				// sticks and the D-pad and the arrow keys all count as the same "move across".
+				{
+					const bool wantsRight = ImGui::IsKeyPressed(ImGuiKey_GamepadDpadRight, false) ||
+											ImGui::IsKeyPressed(ImGuiKey_GamepadLStickRight, false) ||
+											ImGui::IsKeyPressed(ImGuiKey_RightArrow, false);
+					const bool wantsLeft = ImGui::IsKeyPressed(ImGuiKey_GamepadDpadLeft, false) ||
+										   ImGui::IsKeyPressed(ImGuiKey_GamepadLStickLeft, false) ||
+										   ImGui::IsKeyPressed(ImGuiKey_LeftArrow, false);
+					const bool editing = ImGui::IsAnyItemActive();
+					if (sideHasNav && wantsRight && !editing)
+					{
+						g_focusPane = 2;
+						logger::debug("nav: list -> options");
+					}
+					else if (contentHasNav && wantsLeft && !editing)
+					{
+						g_focusPane = 1;
+						logger::debug("nav: options -> list");
+					}
+				}
+
 				// Controller scheme: while a slider/drag is ACTIVE the right stick moves it and the
 				// left stick is held off, so navigation and adjustment never fight. Sampled here,
 				// inside the frame, and read by the input thread's translation step.

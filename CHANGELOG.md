@@ -19,6 +19,21 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   `rules-version.ps1 -Action bump`. If a number was typed by hand, it is wrong until the tool
 >   agrees.
 
+## 1.4.9 - 2026-09-01 - untested
+(personalization regression-gated PASS 22:13; the pane-crossing fix itself needs a pad/keyboard
+confirm - a controller cannot be driven headlessly)
+
+### Fixed
+- Controller/keyboard navigation could not cross from the mod list INTO the options - only back
+  the other way (author playtest: "neither the d-pad the left or the right stick will let me go
+  from the left to the right pane"). ImGuiWindowFlags_NavFlattened, used in 1.4.8 to let
+  navigation cross the pane border, is documented for child windows with NO scrolling; the
+  options pane scrolls, and flattening it produced exactly that one-way behaviour. Navigation is
+  now contained in each pane again and the crossing is done explicitly: pushing RIGHT in the mod
+  list moves into the options, pushing LEFT in the options moves back, from the left stick, the
+  D-pad or the arrow keys alike. It is ignored while a slider is being adjusted, so pushing left
+  inside a slider changes the value instead of leaving the pane.
+
 ## 1.4.8 - 2026-09-01 - working
 
 ### Added
