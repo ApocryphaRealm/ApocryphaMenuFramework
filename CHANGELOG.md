@@ -19,6 +19,46 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   `rules-version.ps1 -Action bump`. If a number was typed by hand, it is wrong until the tool
 >   agrees.
 
+## 1.5.0 - 2026-09-03 - working
+
+### Added
+- THE LAUNCHER-CONTROL API. A menu-launcher mod - one that gathers other mods' menus behind a
+  single key - drives a menu framework through three exports rather than a consumer header:
+  `GetMainWindow`, `IsAnyBlockingWindowOpened` and `SetHotkeyEnabled`. None of the three existed
+  here, so a launcher that reached this framework could do nothing with it. All three are now
+  exported with the signatures and semantics those launchers already expect.
+- `GetMainWindow` returns a static object whose LAYOUT is the contract, not just its address:
+  `std::atomic<bool> IsOpen` then `std::atomic<bool> BlockUserInput`, nothing before them. The
+  caller stores into `IsOpen` directly to show or hide the menu. It has static storage duration,
+  so a caller holding the pointer across a save load cannot end up writing into freed memory.
+- A once-per-frame reconcile on the render thread keeps that object and the framework's own
+  visibility agreeing in BOTH directions: a menu opened from outside appears, and a menu closed
+  in game - by the toggle key, by a DevBench call, by anything - stops reporting itself as open.
+- `SetHotkeyEnabled(false)` hands the framework's own toggle key to the launcher for the session.
+  Runtime only: it is never written to the INI, so the player's own binding comes back if the
+  launcher is uninstalled.
+
+### Fixed
+- The aliased second `SKSEPlugin_Load` returned false, and SKSE calls `FreeLibrary` on any plugin
+  whose load reports incompatible. It now returns true and does nothing else - the once-guard
+  still refuses to initialise twice, it just no longer asks for the module to be thrown away. In
+  the shipped configuration both names resolve to one module, so nothing was actually lost; this
+  removes a misleading "reported as incompatible" line from every SKSE log and makes the
+  behaviour correct if the alias is ever a distinct file.
+
+### Known limitation, stated rather than papered over
+- These exports are NOT yet reachable through the MO2 companion plugin's virtual
+  `SKSEMenuFramework.dll` name. That alias is a usvfs PATH mapping, so the loader opens the same
+  real file and dedupes it into one module named `ApocryphaMenuFramework.dll` - read from a
+  running game's module list, no module of the SMF name exists in the process at all. A launcher
+  that resolves the framework with `GetModuleHandleW(L"SKSEMenuFramework.dll")` therefore finds
+  nothing, and no amount of exporting on this side can change that.
+- Found while checking this framework against Risa's All In One Menu 4.9 (2026-09-03), whose
+  framework button logged `GetMainWindow returned null`. The route chosen is to ask that mod to
+  probe `ApocryphaMenuFramework.dll` as a second module name - one line on their side, and
+  everything after it already works. Nothing here waits on it: the exports ship either way, and
+  any launcher that reaches this framework by a working route can drive it today.
+
 ## 1.4.9 - 2026-09-01 - working
 (author pad confirm 22:36: "the controller nav works properly including selecting a slider with
 a"; pane crossing both ways, the return landing and three auto-input switches all observed live
