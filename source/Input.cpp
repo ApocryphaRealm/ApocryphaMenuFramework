@@ -329,7 +329,8 @@ namespace input
 						passThrough = false;
 					}
 					else if (button && button->GetDevice() == RE::INPUT_DEVICE::kKeyboard &&
-						button->GetIDCode() == toggleKey && button->IsDown())
+						button->GetIDCode() == toggleKey && button->IsDown() &&
+						compat::IsHotkeyEnabled())
 					{
 						renderer::ToggleMainWindow();
 						passThrough = false;  // the game never sees the framework's own key

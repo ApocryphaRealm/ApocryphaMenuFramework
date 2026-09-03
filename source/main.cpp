@@ -192,7 +192,16 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 		if (once && GetLastError() == ERROR_ALREADY_EXISTS)
 		{
 			CloseHandle(once);
-			return false;  // second SKSEPlugin_Load (the SKSEMenuFramework.dll alias): import target only
+
+			// TRUE, not false - and the difference is load-bearing (1.5.0). SKSE calls
+			// FreeLibrary on any plugin whose Load returns false, so returning false here
+			// UNLOADED the alias module: GetModuleHandleW(L"SKSEMenuFramework.dll") then found
+			// nothing, and a launcher mod resolving the framework by that name got null. Proven
+			// against Risa's All In One Menu 4.9 on 2026-09-03 - its button logged
+			// "GetMainWindow returned null" even though the exports were present. Returning true
+			// keeps the module resident and reachable while this call still does nothing else:
+			// no logger, no messaging listener, no hook, no second initialisation.
+			return true;  // second SKSEPlugin_Load (the SKSEMenuFramework.dll alias): import target only
 		}
 		// deliberately leaked: the event must outlive this call for the lifetime of the process
 	}

@@ -34,4 +34,29 @@ namespace compat
 	// true if any registered input callback consumed the event (the caller then skips feeding
 	// it to ImGui; the game does not see it either way).
 	bool DispatchInputEvent(RE::InputEvent* a_event);
+
+	// ----------------------------------------------------------------------------------------
+	// LAUNCHER CONTROL (1.4.10). A menu-launcher mod - one that gathers other mods' menus behind
+	// a single key - drives a menu framework through three exports rather than an API header:
+	// it takes GetMainWindow's object and writes IsOpen on it, asks IsAnyBlockingWindowOpened
+	// whether a menu is already up, and calls SetHotkeyEnabled to silence the framework's own
+	// key while it manages the binding. Those three are exported from Compat.cpp; the two below
+	// are the inside half that makes them mean something.
+	//
+	// Found by testing against Risa's All In One Menu 4.9 (2026-09-03): it already finds AMF,
+	// because AMF answers to the SKSEMenuFramework.dll alias, and then its button did nothing -
+	// GetMainWindow was not exported, so it got null and logged an error. Nothing about the
+	// launcher needed to change; the missing half was ours.
+	// ----------------------------------------------------------------------------------------
+
+	// Render thread, once per frame. Reconciles the exported window object with the framework's
+	// own visibility in BOTH directions: an outside writer's change opens or closes the menu,
+	// and a change made in game (the toggle key, a DevBench call) is published back so the
+	// launcher's idea of "is it open" stays true.
+	void PumpExternalWindow();
+
+	// False while a launcher has taken the key over via SetHotkeyEnabled(false). Runtime only -
+	// it is never written to the INI, so the player's own binding survives the launcher being
+	// uninstalled.
+	bool IsHotkeyEnabled();
 }

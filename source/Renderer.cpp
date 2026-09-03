@@ -1,5 +1,6 @@
 #include "Renderer.h"
 
+#include "Compat.h"
 #include "Input.h"
 #include "Offsets.h"
 #include "Persistence.h"
@@ -883,6 +884,10 @@ namespace renderer
 
 				ImGui_ImplDX11_NewFrame();
 				ImGui_ImplWin32_NewFrame();
+
+				// Give an external launcher its say before this frame's visibility is read, so a
+				// menu it just asked for opens on the same frame rather than the next one.
+				compat::PumpExternalWindow();
 
 				const bool visible = g_windowVisible.load(std::memory_order_acquire);
 

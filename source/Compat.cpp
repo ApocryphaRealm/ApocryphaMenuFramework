@@ -1,11 +1,13 @@
 #include "Compat.h"
 
 #include "Registry.h"
+#include "Renderer.h"
 #include "utils/Logger.h"
 
 #include <imgui.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdarg>
 #include <cstdint>
 #include <mutex>
@@ -157,6 +159,91 @@ AMF_EXPORT float GetMenuFrameworkVersion()
 {
 	// Probed optionally by the vendored header. AMF reports its own major.minor as a float.
 	return 1.2f;
+}
+
+// --------------------------------------------------------------------------------------------
+// LAUNCHER CONTROL - the three names a menu-launcher mod resolves out of the framework module.
+//
+// The object handed back by GetMainWindow is written to DIRECTLY by the caller: it stores true
+// into IsOpen to show the menu and false to hide it. So its LAYOUT is the contract, not just its
+// address - two std::atomic<bool> in this order, with nothing before them. It has static storage
+// duration, so the pointer stays valid for the life of the process and a caller that holds it
+// across a save load cannot end up writing into freed memory.
+//
+// Nothing here acts on the flags itself; PumpExternalWindow does that on the render thread, once
+// per frame, which keeps every visibility change on the one thread that owns the menu's state.
+// --------------------------------------------------------------------------------------------
+
+namespace
+{
+	struct ExternalWindow
+	{
+		std::atomic<bool> IsOpen{ false };
+		std::atomic<bool> BlockUserInput{ true };
+	};
+
+	ExternalWindow g_externalWindow;
+
+	// What the flag read as last frame, so an outside write can be told apart from our own.
+	bool g_externalWindowLast = false;
+
+	std::atomic<bool> g_hotkeyEnabled{ true };
+}
+
+AMF_EXPORT void* GetMainWindow()
+{
+	return &g_externalWindow;
+}
+
+AMF_EXPORT bool IsAnyBlockingWindowOpened()
+{
+	// "Blocking" in the launcher's sense: a window is up and taking the player's input, which is
+	// exactly what the framework menu does whenever it is visible.
+	return renderer::IsMainWindowVisible();
+}
+
+AMF_EXPORT void SetHotkeyEnabled(bool a_enabled)
+{
+	const bool was = g_hotkeyEnabled.exchange(a_enabled, std::memory_order_acq_rel);
+	if (was != a_enabled)
+	{
+		logger::info("menu toggle key {} by an external launcher (runtime only - the INI is untouched)",
+			a_enabled ? "handed back" : "taken over");
+	}
+}
+
+namespace compat
+{
+	void PumpExternalWindow()
+	{
+		const bool external = g_externalWindow.IsOpen.load(std::memory_order_acquire);
+		const bool internal = renderer::IsMainWindowVisible();
+
+		if (external != g_externalWindowLast)
+		{
+			// Somebody outside wrote the flag: that is a request to open or close.
+			g_externalWindowLast = external;
+			if (external != internal)
+			{
+				logger::info("external launcher {} the framework window", external ? "opened" : "closed");
+				renderer::SetMenuVisible(external);
+			}
+			return;
+		}
+
+		if (internal != external)
+		{
+			// The menu changed from the inside - the toggle key, the DevBench tool, a mod closing
+			// it. Publish that so the launcher does not go on believing the menu is still up.
+			g_externalWindow.IsOpen.store(internal, std::memory_order_release);
+			g_externalWindowLast = internal;
+		}
+	}
+
+	bool IsHotkeyEnabled()
+	{
+		return g_hotkeyEnabled.load(std::memory_order_acquire);
+	}
 }
 
 // --------------------------------------------------------------------------------------------
