@@ -1,5 +1,6 @@
 #include "Compat.h"
 
+#include "ConsumerSurface.h"
 #include "Registry.h"
 #include "Renderer.h"
 #include "utils/Logger.h"
@@ -198,8 +199,10 @@ AMF_EXPORT void* GetMainWindow()
 AMF_EXPORT bool IsAnyBlockingWindowOpened()
 {
 	// "Blocking" in the launcher's sense: a window is up and taking the player's input, which is
-	// exactly what the framework menu does whenever it is visible.
-	return renderer::IsMainWindowVisible();
+	// exactly what the framework menu does whenever it is visible - AND now also what a consumer
+	// window does, since AddWindow exists. A launcher asking this question wants one truthful
+	// answer for the whole process, not just for our own menu.
+	return renderer::IsMainWindowVisible() || consumer::AnyBlockingWindowOpen();
 }
 
 AMF_EXPORT void SetHotkeyEnabled(bool a_enabled)
@@ -211,6 +214,65 @@ AMF_EXPORT void SetHotkeyEnabled(bool a_enabled)
 			a_enabled ? "handed back" : "taken over");
 	}
 }
+
+AMF_EXPORT bool IsHotkeyEnabled()
+{
+	return g_hotkeyEnabled.load(std::memory_order_acquire);
+}
+
+// --------------------------------------------------------------------------------------------
+// CONSUMER SURFACE (1.5.3) - the exports a mod uses when it wants its OWN window, a HUD element,
+// a named font or an image, rather than a page inside our menu.
+//
+// These were absent until now, and absence is invisible from the consumer's side: the stock
+// header's wrappers read `static auto func = GetFunction<...>(name); if (func) { ... }` with no
+// else, so a missing export makes the call a silent no-op. Five third-party mods were measured
+// resolving AMF correctly and registering nothing for exactly this reason - they call AddWindow,
+// not AddSectionItem. The bodies live in ConsumerSurface.cpp; these are the ABI edge.
+// --------------------------------------------------------------------------------------------
+
+AMF_EXPORT void* AddWindow(RenderFunction a_render)
+{
+	return consumer::AddWindow(a_render, nullptr);
+}
+
+AMF_EXPORT void* AddWindowWithView(RenderFunction a_render, const char* a_view)
+{
+	return consumer::AddWindow(a_render, a_view);
+}
+
+AMF_EXPORT std::int64_t RegisterHudElement(void (*a_callback)())
+{
+	return consumer::RegisterHudElement(a_callback);
+}
+
+AMF_EXPORT void UnregisterHudElement(std::uint64_t a_id)
+{
+	consumer::UnregisterHudElement(static_cast<std::int64_t>(a_id));
+}
+
+AMF_EXPORT void* LoadTexture(const char* a_path, ImVec2* a_outSize)
+{
+	return consumer::LoadTexture(a_path, a_outSize);
+}
+
+AMF_EXPORT void DisposeTexture(const char* a_path)
+{
+	consumer::DisposeTexture(a_path);
+}
+
+AMF_EXPORT void PushFont(const char* a_name)
+{
+	consumer::PushNamedFont(a_name);
+}
+
+AMF_EXPORT void PushRegular() { consumer::PushRegular(); }
+AMF_EXPORT void PushSolid() { consumer::PushSolid(); }
+AMF_EXPORT void PushBrands() { consumer::PushBrands(); }
+
+// Named "Pop" because that is the name the consumer header resolves - it is the pop half of the
+// four pushes above, not a general-purpose stack pop.
+AMF_EXPORT void Pop() { consumer::PopFont(); }
 
 namespace compat
 {

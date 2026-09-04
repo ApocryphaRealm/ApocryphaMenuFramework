@@ -1,5 +1,7 @@
 #include "Renderer.h"
 
+#include "ConsumerSurface.h"
+
 #include "Compat.h"
 #include "Input.h"
 #include "Offsets.h"
@@ -290,6 +292,10 @@ namespace renderer
 
 				auto* device = reinterpret_cast<ID3D11Device*>(data.forwarder);
 				auto* context = reinterpret_cast<ID3D11DeviceContext*>(data.context);
+
+				// The consumer surface needs the device to decode textures for LoadTexture.
+				// Handed over here, at the one moment it is known to be valid.
+				consumer::SetDevice(device);
 				const HWND hwnd = reinterpret_cast<HWND>(window.hWnd);
 
 				if (!device || !context || !hwnd || !window.swapChain)
@@ -1104,6 +1110,13 @@ namespace renderer
 				// The game's own HUD opacity, re-read every frame so the options slider is
 				// followed live (theme spec point 3), applied as the ONE global multiplier.
 				ImGui::GetStyle().Alpha = theme::GetGameHUDOpacity();
+
+				// The consumer surface draws EVERY frame, whether or not our own menu is up.
+				// A HUD element that only appeared while the framework menu was open would not
+				// be a HUD element, and a consumer window's visibility is the consumer's to
+				// decide through the IsOpen flag it was handed - not ours.
+				consumer::DrawHudElements();
+				consumer::DrawWindows();
 
 				if (visible)
 				{

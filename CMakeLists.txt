@@ -15,7 +15,7 @@
 
 project(
 	ApocryphaMenuFramework
-	VERSION 1.5.2
+	VERSION 1.5.3
 	LANGUAGES CXX
 )
 
@@ -100,6 +100,7 @@ target_link_libraries(
 		imgui::imgui
 		Shell32.lib   # SHGetKnownFolderPath (Persistence.cpp)
 		Ole32.lib     # CoTaskMemFree (Persistence.cpp)
+		Psapi.lib     # EnumProcessModules (SmfAlias.cpp)
 )
 
 if (MSVC)

@@ -5,6 +5,7 @@
 #include "Registry.h"
 #include "Renderer.h"
 #include "Settings.h"
+#include "SmfAlias.h"
 #include "SystemRow.h"
 #include "Theme.h"
 
@@ -82,6 +83,12 @@ namespace
 			persistence::OnPostLoadGame(a_msg->data != nullptr);
 			break;
 		case SKSE::MessagingInterface::kPostLoad:
+			// Re-run the SMF module-name alias. It was installed during our own load, but every
+			// plugin that loads AFTER us imports an unpatched GetModuleHandleW, and a consumer
+			// caches whatever it resolves on its FIRST call - so the patch has to be in place
+			// before that call, not merely before the mod registers.
+			smf_alias::Install();
+
 			// Earliest point DevBench's cross-plugin interface can be requested (its own
 			// contract). Register the amf.menu driving tool; retried at kDataLoaded since
 			// DevBench's server can still be finishing startup here.
@@ -89,6 +96,7 @@ namespace
 			break;
 		case SKSE::MessagingInterface::kDataLoaded:
 			logger::debug("kDataLoaded received");
+			smf_alias::Install();  // last sweep: anything that loaded during the message phase
 			devbenchtool::Init(true);  // retry / last attempt, once registration has had its chance
 
 			// The row in the GAME's own System menu. Installed here because the UI singleton is
@@ -198,6 +206,13 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 
 	SKSE::Init(a_skse);
 	logger::debug("SKSE core APIs initialized");
+
+	// SMF module-name alias, as early as we can manage. Third-party mods built against the stock
+	// SKSE Menu Framework consumer header find the framework with
+	// GetModuleHandleW(L"SKSEMenuFramework") and cache the result on the first call; without this
+	// they resolve null, register nothing, and - because their success logging is unconditional -
+	// report success anyway. See SmfAlias.h for why the MO2 virtual alias cannot cover this.
+	smf_alias::Install();
 
 	if (!SKSE::GetMessagingInterface()->RegisterListener("SKSE", SKSEMessageListener))
 	{

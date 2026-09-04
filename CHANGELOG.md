@@ -19,6 +19,18 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   `rules-version.ps1 -Action bump`. If a number was typed by hand, it is wrong until the tool
 >   agrees.
 
+## 1.5.3 - 2026-09-04 - untested
+
+### Added
+- MODS BUILT FOR SKSE MENU FRAMEWORK NOW FIND THIS FRAMEWORK. The stock SMF consumer header resolves the framework by module name - `GetModuleHandleW(L"SKSEMenuFramework")` - which returned null against AMF, so every such mod registered nothing. AMF now answers that name: it redirects the `GetModuleHandleW`/`A` imports of SKSE plugin modules so a lookup of `SKSEMenuFramework` resolves to this module, and everything else passes through untouched. No second binary ships, nothing is renamed, and no system code is patched - an import-table entry is a data pointer. Measured in game: four mods that had never registered (Carry Weight Per Level, Remember Lockpick Angle, Sure of Stealing, Wait Your Turn Redux) now appear, taking the menu from eight sections to twelve.
+- THE CONSUMER SURFACE beyond settings pages, which was missing entirely: `AddWindow`, `AddWindowWithView`, `RegisterHudElement`, `UnregisterHudElement`, `LoadTexture`, `DisposeTexture`, `PushFont`, `PushRegular`, `PushSolid`, `PushBrands`, `Pop` and `IsHotkeyEnabled`. A mod that wants its own window or a HUD element calls these rather than `AddSectionItem`, and their absence was invisible from its side - the header's wrappers are `if (func) { ... }` with no else, so a missing export is a silent no-op rather than an error. Consumer windows and HUD elements draw every frame, independent of whether this framework's own menu is open; textures are decoded once and cached by path.
+
+### Changed
+- `IsAnyBlockingWindowOpened` now also reports a consumer window that is open and taking input, not just this framework's own menu, so a menu launcher gets one truthful answer for the whole process.
+
+### Fixed
+- The import redirect is confined to modules under `SKSE\Plugins`. The first build applied it process-wide and the game died a few seconds after load with no crash log at all: MO2's usvfs virtualises the file system by hooking this same call family, so redirecting its imports breaks the thing every file access depends on.
+
 ## 1.5.2 - 2026-09-04 - working
 
 ### Changed
