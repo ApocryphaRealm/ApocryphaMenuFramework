@@ -394,54 +394,43 @@ namespace renderer
 			ImGui::Separator();
 			ImGui::Spacing();
 
-			// APPEARANCE IS HIDDEN WHEN NESTED (design decision, 2026-09-04). Installed as a row in
-			// the game's own System menu, this surface deliberately wears whatever menu artwork the
-			// player already has, so that it is not distinct from the rest of their game. Theme,
-			// font and text size have nothing to act on in that mode, and offering settings that do
-			// nothing is worse than offering none: the INI keys stay readable and defaulted, they
-			// simply are not drawn.
-			const bool nested = values.systemMenuRow;
-			if (nested)
-			{
-				ImGui::TextDisabled("Appearance follows your game's menus in this install.");
-				ImGui::TextWrapped("This menu is a row inside the game's own System menu, so it takes "
-								   "the look of whatever menu artwork you have installed. Install the "
-								   "standalone option instead if you want it themed separately.");
-				ImGui::Spacing();
-				ImGui::Spacing();
-			}
+			// APPEARANCE ALWAYS APPLIES, in both installs (corrected 2026-09-04). These settings
+			// used to be hidden whenever the System row was on, under the belief that a nested
+			// surface would wear the game's own menu artwork and so have nothing to theme. It does
+			// not: nesting changes GEOMETRY only - the window is fitted to the journal panel around
+			// it - and every pixel inside that rectangle is still drawn by this framework, in this
+			// theme. Hiding the controls left the one install that most needs them unable to reach
+			// them, and told the player something untrue about their own menu while doing it.
 
 			// Theme picker (design decision, 2026-08-27) - supersedes the original "no theme UI by design"
 			// stance; the registry is additive (theme::Theme.h), never overwriting an entry.
-			if (!nested)
+			const std::vector<theme::Palette> themes = theme::ListThemes();
+			const theme::Palette& active = theme::GetActiveTheme();
+
+			int currentIndex = 0;
+			std::vector<const char*> names;
+			names.reserve(themes.size());
+			for (std::size_t i = 0; i < themes.size(); ++i)
 			{
-				const std::vector<theme::Palette> themes = theme::ListThemes();
-				const theme::Palette& active = theme::GetActiveTheme();
-
-				int currentIndex = 0;
-				std::vector<const char*> names;
-				names.reserve(themes.size());
-				for (std::size_t i = 0; i < themes.size(); ++i)
+				names.push_back(themes[i].name.c_str());
+				if (themes[i].id == active.id)
 				{
-					names.push_back(themes[i].name.c_str());
-					if (themes[i].id == active.id)
-					{
-						currentIndex = static_cast<int>(i);
-					}
+					currentIndex = static_cast<int>(i);
 				}
-
-				ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
-				if (ImGui::Combo("Theme", &currentIndex, names.data(), static_cast<int>(names.size())))
-				{
-					theme::SetActiveTheme(themes[currentIndex].id);
-					theme::Apply();
-					values.themeId = themes[currentIndex].id;
-					settings::Save();
-				}
-				ImGui::TextWrapped("\"Skyrim\" is the knotwork look - the Nordic frame with silver and gold "
-								   "lines. \"Untarnished\" is the framework's original identity: the same "
-								   "layout with clean lines and no frame art.");
 			}
+
+			ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
+			if (ImGui::Combo("Theme", &currentIndex, names.data(), static_cast<int>(names.size())))
+			{
+				theme::SetActiveTheme(themes[currentIndex].id);
+				theme::Apply();
+				values.themeId = themes[currentIndex].id;
+				settings::Save();
+			}
+			ImGui::TextWrapped("\"Skyrim\" is the knotwork look - the Nordic frame with silver and gold "
+							   "lines. \"Untarnished\" is the framework's original identity: the same "
+							   "layout with clean lines and no frame art.");
+		
 			ImGui::Spacing();
 
 			// FONT picker - separate from the theme on purpose (the author): the theme decides colours,
@@ -502,23 +491,21 @@ namespace renderer
 			ImGui::Spacing();
 			ImGui::Spacing();
 
-			if (!nested)
+			ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
+			if (ImGui::SliderFloat("Text size", &values.textScale, 1.0f, 2.0f, "%.2f"))
 			{
-				ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
-				if (ImGui::SliderFloat("Text size", &values.textScale, 1.0f, 2.0f, "%.2f"))
-				{
-					// applied live via FontGlobalScale each frame
-				}
-				if (ImGui::IsItemDeactivatedAfterEdit())
-				{
-					logger::info("settings page: text scale -> {:.2f}", values.textScale);
-					settings::Save();
-					g_fontRebuildPending = true;  // re-rasterise at the new size rather than stretch
-				}
-				ImGui::TextWrapped("Extra text scaling on top of the automatic resolution scale.");
-				ImGui::Spacing();
-				ImGui::Spacing();
+				// applied live via FontGlobalScale each frame
 			}
+			if (ImGui::IsItemDeactivatedAfterEdit())
+			{
+				logger::info("settings page: text scale -> {:.2f}", values.textScale);
+				settings::Save();
+				g_fontRebuildPending = true;  // re-rasterise at the new size rather than stretch
+			}
+			ImGui::TextWrapped("Extra text scaling on top of the automatic resolution scale.");
+			ImGui::Spacing();
+			ImGui::Spacing();
+		
 
 			// Menu toggle-key rebinding, live (design decision, 2026-08-28: "a key binding function ...
 			// to change the key that opens and closes the menu"). Click Rebind, then the next

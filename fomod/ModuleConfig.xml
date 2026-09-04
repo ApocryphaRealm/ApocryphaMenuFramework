@@ -10,7 +10,7 @@
           <plugins order="Explicit">
 
             <plugin name="Inside the game's own menu (recommended)">
-              <description>Adds a SKSE MENUS row to the game's System menu, next to SAVE, LOAD and SETTINGS. Open the journal, go to System, and pick it - there is no hotkey to remember and no separate window.
+              <description>Adds a SKSE MENUS row to the game's System menu, next to SAVE, LOAD and SETTINGS. Open the journal, go to System, and pick it - no hotkey to remember, and the framework is sized to the journal panel so it reads as a page of that menu. F1 still opens it as its own window when you already know where you are going.
 
 The row is added to the menu as it opens rather than by replacing any of the game's files, so it works alongside menu-artwork mods instead of fighting them, and it takes on whatever look your menus already have. Because it wears your own artwork, the appearance settings (theme, font, text size) are not used and are hidden.
 

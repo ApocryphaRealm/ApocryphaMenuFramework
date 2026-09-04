@@ -27,6 +27,8 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 - This is GEOMETRY ONLY, and it applies to the nested row ALONE. Opened by the hotkey, or by a menu launcher such as Risa's All In One Menu through the API, the framework keeps its own window exactly as before. What it draws is identical either way.
 
 ### Fixed
+- THE NESTED INSTALL NOW KEEPS F1. It shipped with the key unbound, on the reasoning that the row is the thing you are meant to find; that left the journal as the only way in, so reaching mod settings always meant pausing first. Both work now - the row opens the framework fitted to the journal, F1 opens it as its own centred window - and `uToggleKey=0` still gives the key back to the game for anyone who wants that. A menu launcher that takes the key over, such as Risa's All In One Menu, continues to do so.
+- APPEARANCE SETTINGS ARE NO LONGER HIDDEN in the nested install. They were hidden on the belief that a nested surface would wear the game's own menu artwork and so have nothing to theme. It does not - nesting changes geometry only, and everything inside that rectangle is still drawn by this framework in this theme - so the install that most needs the controls was the one that could not reach them, and was told something untrue about its own menu while it happened.
 - SystemRow.h described a handler-wrapping approach that was tried, does not work, and is not what the code does. `GetVariable` does not return an AS2 function - not off the page instance and not off the class prototype - so there is nothing to read out and stash. The file now documents the second listener that is actually installed, and why leaving the game's own handler untouched is the safer shape.
 
 ## 1.5.1 - 2026-09-04 - working
