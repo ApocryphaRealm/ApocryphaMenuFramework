@@ -19,6 +19,17 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   `rules-version.ps1 -Action bump`. If a number was typed by hand, it is wrong until the tool
 >   agrees.
 
+## 1.5.1 - 2026-09-04 - working
+
+### Added
+- MOD SETTINGS ARE NOW REACHED FROM THE GAME'S OWN PAUSE MENU. The journal's System tab carries a new row, SKSE MENUS, below QUIT and beside SAVE, LOAD and SETTINGS. Selecting it opens this framework, so settings are found where a player already looks for settings instead of behind a hotkey they have to be told about.
+- The row is added to the menu AS IT OPENS rather than by shipping a replacement for any of the game's files. That matters for compatibility: the journal's artwork is one file, and every menu-replacement mod ships its own copy of it, so a framework that shipped one too would collide with all of them. This one collides with none, and takes on whatever look the installed artwork gives it.
+- A listener is added BESIDE the menu's own handler rather than replacing it, so save, load, installed content, settings, controls, help and quit keep behaving exactly as they did. In the worst case the new row does nothing; it cannot break the menu it lives in.
+- A FOMOD installer with two choices. Nested puts the row in the game's menu, unbinds the hotkey, and hides the appearance settings because the surface wears your own menu artwork. Standalone keeps the framework as its own window on its own key with the full settings, which is also what menu launchers expect to find. The binary is the same either way - only the settings it starts with differ - and `bSystemMenuRow` switches between them at any time.
+
+### Notes
+- Checked against Risa's All In One Menu 5.0: it detects this framework, lists it in its launcher, reads the nested build's unbound key correctly, and edits none of our settings. The two run together with no errors on either side.
+
 ## 1.5.0 - 2026-09-03 - working
 
 ### Added

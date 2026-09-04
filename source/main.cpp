@@ -5,6 +5,7 @@
 #include "Registry.h"
 #include "Renderer.h"
 #include "Settings.h"
+#include "SystemRow.h"
 #include "Theme.h"
 
 #include "utils/Logger.h"
@@ -89,6 +90,10 @@ namespace
 		case SKSE::MessagingInterface::kDataLoaded:
 			logger::debug("kDataLoaded received");
 			devbenchtool::Init(true);  // retry / last attempt, after the demo page has registered
+
+			// The row in the GAME's own System menu. Installed here because the UI singleton is
+			// reliably up by kDataLoaded; a first failed lookup is never treated as permanent.
+			systemrow::Install();
 
 			// Dogfood the public API: the demo menu registers through AMF_RegisterPage exactly
 			// as an external mod would, proving the registry + tab rendering end to end - and

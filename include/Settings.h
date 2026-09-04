@@ -34,6 +34,11 @@ namespace settings
 		// Hang watchdog (the author, 2026-08-28): if the renderer stops producing frames for this many
 		// seconds the game is treated as hung and the process terminates itself, so a wedged game
 		// never needs Task Manager. Generous by default - a slow cell load still animates frames.
+		// The row this framework adds to the GAME's own System menu, so mod settings are reached
+		// where a player already looks for configuration rather than from a private hotkey.
+		// Injected into the live menu at runtime, so it works over whatever menu artwork is
+		// installed and collides with none of it.
+		bool systemMenuRow = true;
 		bool watchdogEnabled = true;
 		std::uint32_t watchdogSeconds = 120;
 		std::int32_t windowPreset = 0;   // 0 = centre (the standard). Preset positions, never free placement -

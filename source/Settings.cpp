@@ -124,6 +124,7 @@ namespace settings
 			const auto entries = ParseFile(file);
 
 			ReadNumber(entries, "Input.uToggleKey", g_values.toggleKey);
+			ReadBool(entries, "Menus.bSystemMenuRow", g_values.systemMenuRow);
 			ReadBool(entries, "Input.bControllerMode", g_values.controllerMode);
 			ReadBool(entries, "Input.bAutoInputMode", g_values.autoInputMode);
 			ReadNumber(entries, "Display.fTextScale", g_values.textScale);
@@ -172,6 +173,13 @@ namespace settings
 
 		file << "; Apocrypha Menu Framework - settings. Rewritten by the in-game settings page;\n"
 				"; edits made here while the game is closed are honoured on the next load.\n"
+				"\n"
+				"[Menus]\n"
+				"; 1 = add a MOD MENUS row to the game's own System menu, next to SAVE, LOAD and\n"
+				"; SETTINGS. Added as the menu opens rather than by replacing any game file, so it\n"
+				"; works alongside menu-artwork mods instead of fighting them for the same file.\n"
+				"; 0 leaves the game's menu completely untouched.\n"
+				"bSystemMenuRow=" << (g_values.systemMenuRow ? 1 : 0) << "\n"
 				"\n"
 				"[Input]\n"
 				"; DirectInput scan code that toggles the framework menu. 59 (0x3B) = F1.\n"

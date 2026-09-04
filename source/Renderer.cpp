@@ -389,8 +389,26 @@ namespace renderer
 			ImGui::Separator();
 			ImGui::Spacing();
 
+			// APPEARANCE IS HIDDEN WHEN NESTED (design decision, 2026-09-04). Installed as a row in
+			// the game's own System menu, this surface deliberately wears whatever menu artwork the
+			// player already has, so that it is not distinct from the rest of their game. Theme,
+			// font and text size have nothing to act on in that mode, and offering settings that do
+			// nothing is worse than offering none: the INI keys stay readable and defaulted, they
+			// simply are not drawn.
+			const bool nested = values.systemMenuRow;
+			if (nested)
+			{
+				ImGui::TextDisabled("Appearance follows your game's menus in this install.");
+				ImGui::TextWrapped("This menu is a row inside the game's own System menu, so it takes "
+								   "the look of whatever menu artwork you have installed. Install the "
+								   "standalone option instead if you want it themed separately.");
+				ImGui::Spacing();
+				ImGui::Spacing();
+			}
+
 			// Theme picker (design decision, 2026-08-27) - supersedes the original "no theme UI by design"
 			// stance; the registry is additive (theme::Theme.h), never overwriting an entry.
+			if (!nested)
 			{
 				const std::vector<theme::Palette> themes = theme::ListThemes();
 				const theme::Palette& active = theme::GetActiveTheme();
@@ -479,20 +497,23 @@ namespace renderer
 			ImGui::Spacing();
 			ImGui::Spacing();
 
-			ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
-			if (ImGui::SliderFloat("Text size", &values.textScale, 1.0f, 2.0f, "%.2f"))
+			if (!nested)
 			{
-				// applied live via FontGlobalScale each frame
+				ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
+				if (ImGui::SliderFloat("Text size", &values.textScale, 1.0f, 2.0f, "%.2f"))
+				{
+					// applied live via FontGlobalScale each frame
+				}
+				if (ImGui::IsItemDeactivatedAfterEdit())
+				{
+					logger::info("settings page: text scale -> {:.2f}", values.textScale);
+					settings::Save();
+					g_fontRebuildPending = true;  // re-rasterise at the new size rather than stretch
+				}
+				ImGui::TextWrapped("Extra text scaling on top of the automatic resolution scale.");
+				ImGui::Spacing();
+				ImGui::Spacing();
 			}
-			if (ImGui::IsItemDeactivatedAfterEdit())
-			{
-				logger::info("settings page: text scale -> {:.2f}", values.textScale);
-				settings::Save();
-				g_fontRebuildPending = true;  // re-rasterise at the new size rather than stretch
-			}
-			ImGui::TextWrapped("Extra text scaling on top of the automatic resolution scale.");
-			ImGui::Spacing();
-			ImGui::Spacing();
 
 			// Menu toggle-key rebinding, live (design decision, 2026-08-28: "a key binding function ...
 			// to change the key that opens and closes the menu"). Click Rebind, then the next
