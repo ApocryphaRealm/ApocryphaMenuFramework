@@ -70,7 +70,6 @@ namespace settings
 		                                     // is still registered and selectable, just not default.
 
 		// [Debug]
-		bool showApiDemo = true;         // the AMF API Demo menu (registered via the public API); ships on until real mods populate the registry
 
 		// [Log]
 		std::int32_t logLevel = 0;       // spdlog level: 0 = trace (project rule: ship the most comprehensive level)

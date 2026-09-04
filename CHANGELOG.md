@@ -26,6 +26,9 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 - The panel is MEASURED off the live movie, every frame, rather than assumed. Its size differs under every art replacer - which is the same reason the row is injected instead of shipped - so a measured rectangle fits Untarnished UI, Dear Diary and vanilla alike with no patch for any of them. The last good measurement is kept while the journal fades its panel in and out, so the window never flickers between two sizes.
 - This is GEOMETRY ONLY, and it applies to the nested row ALONE. Opened by the hotkey, or by a menu launcher such as Risa's All In One Menu through the API, the framework keeps its own window exactly as before. What it draws is identical either way.
 
+### Removed
+- THE AMF API DEMO IS GONE, along with its `bShowApiDemo` setting and the `[Debug]` section that held it. It existed to dogfood the public API and to give the window enough selectable content to judge gamepad navigation while the registry was empty; the registry is not empty any more, and a demo entry sitting among a player's real mods is a development artifact showing up in a shipped product.
+
 ### Changed
 - THE WINDOW REMEMBERS WHERE YOU LEAVE IT, SEPARATELY FOR EACH WAY OF OPENING IT. These are profiles rather than fixed presets: one for the System menu row, one for the key. Each starts at a sensible default - the journal panel it is hosted in, and the centre of the screen - and the first time you move or resize either, that is what it opens at from then on. A menu replacer whose panel sits somewhere else therefore needs dragging once rather than a patch.
 - Both windows can now be moved and resized. This supersedes the earlier "preset positions, never free placement" rule for this window; that rule existed so the window could not be left somewhere useless, and a remembered position with a reset button gives the same safety while letting people fix a layout we cannot predict.

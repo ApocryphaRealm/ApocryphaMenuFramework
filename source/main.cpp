@@ -89,43 +89,12 @@ namespace
 			break;
 		case SKSE::MessagingInterface::kDataLoaded:
 			logger::debug("kDataLoaded received");
-			devbenchtool::Init(true);  // retry / last attempt, after the demo page has registered
+			devbenchtool::Init(true);  // retry / last attempt, once registration has had its chance
 
 			// The row in the GAME's own System menu. Installed here because the UI singleton is
 			// reliably up by kDataLoaded; a first failed lookup is never treated as permanent.
 			systemrow::Install();
 
-			// Dogfood the public API: the demo menu registers through AMF_RegisterPage exactly
-			// as an external mod would, proving the registry + tab rendering end to end - and
-			// giving the window enough selectable content to actually judge gamepad navigation
-			// (the author, 1.1.2: "hard to tell whether it's working... there's not anything to
-			// select yet"). Two pages -> renders as tabs (one-menu-per-mod rule).
-			if (settings::Get().showApiDemo)
-			{
-				AMF_RegisterPage("AMF API Demo", "Widgets", +[]() {
-					static bool toggleA = true;
-					static bool toggleB = false;
-					static float slider = 0.5f;
-					static int counter = 0;
-					widgets::Toggle("Demo toggle A", &toggleA);
-					widgets::Toggle("Demo toggle B", &toggleB);
-					ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
-					ImGui::SliderFloat("Demo slider", &slider, 0.0f, 1.0f, "%.2f");
-					if (ImGui::Button("Demo button"))
-					{
-						++counter;
-					}
-					ImGui::SameLine();
-					ImGui::Text("pressed %d time(s)", counter);
-					ImGui::TextWrapped("This menu registered itself through AMF_RegisterPage - "
-									   "the same path every mod uses. Disable it with "
-									   "bShowApiDemo=0 in ApocryphaMenuFramework.ini.");
-				});
-				AMF_RegisterPage("AMF API Demo", "Second Tab", +[]() {
-					ImGui::TextWrapped("A second page from the same mod renders as a TAB inside "
-									   "the one menu - never as a second menu (project rule).");
-				});
-			}
 			break;
 		default:
 			break;
