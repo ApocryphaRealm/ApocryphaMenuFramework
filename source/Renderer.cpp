@@ -8,6 +8,7 @@
 #include "Personalization.h"
 #include "Registry.h"
 #include "Settings.h"
+#include "SystemRow.h"
 #include "Theme.h"
 #include "Watchdog.h"
 #include "utils/ToggleSwitch.h"
@@ -49,6 +50,10 @@ namespace renderer
 		std::string g_captureError;
 		std::atomic<bool> g_windowVisible{ false };
 		std::atomic<bool> g_justOpened{ false };  // set on the input thread, consumed on the render thread
+
+		// Opened from the row in the game's own System menu, rather than from the hotkey or a menu
+		// launcher. Geometry only - see SetMenuVisible.
+		std::atomic<bool> g_nested{ false };
 
 		// Knotwork frame texture (the embedded MO2-Skyrim border-image.png). Created once at
 		// D3DInit on the game's own device; used by DrawKnotworkFrame as an ImGui texture id.
@@ -704,8 +709,36 @@ namespace renderer
 			default:
 				break;  // 0 (and any unknown value) = centre
 			}
-			ImGui::SetNextWindowPos(ImVec2(display.x * anchor.x, display.y * anchor.y), ImGuiCond_Always, anchor);
-			ImGui::SetNextWindowSize(ImVec2(display.x * 0.55f, display.y * 0.70f), ImGuiCond_FirstUseEver);
+			// NESTED: fit the journal panel that is hosting us, so the surface reads as a page of
+			// that menu rather than a larger window sitting on top of it (author, 2026-09-04).
+			// The panel is MEASURED off the live movie every frame rather than assumed, because
+			// its size is different under every art replacer - which is the same reason the row
+			// itself is injected instead of shipped.
+			//
+			// The last good rectangle is kept: the journal fades its panel in and out, and a frame
+			// where the measurement fails must not snap the window to a different size and back.
+			bool fitted = false;
+			if (g_nested.load(std::memory_order_acquire))
+			{
+				static float px = 0.0f, py = 0.0f, pw = 0.0f, ph = 0.0f;
+				float x = 0.0f, y = 0.0f, w = 0.0f, h = 0.0f;
+				if (systemrow::GetPanelRect(x, y, w, h))
+				{
+					px = x; py = y; pw = w; ph = h;
+				}
+				if (pw > 0.0f && ph > 0.0f)
+				{
+					ImGui::SetNextWindowPos(ImVec2(display.x * px, display.y * py), ImGuiCond_Always);
+					ImGui::SetNextWindowSize(ImVec2(display.x * pw, display.y * ph), ImGuiCond_Always);
+					fitted = true;
+				}
+			}
+
+			if (!fitted)
+			{
+				ImGui::SetNextWindowPos(ImVec2(display.x * anchor.x, display.y * anchor.y), ImGuiCond_Always, anchor);
+				ImGui::SetNextWindowSize(ImVec2(display.x * 0.55f, display.y * 0.70f), ImGuiCond_FirstUseEver);
+			}
 
 			if (ImGui::Begin("Apocrypha Menu Framework##m2", nullptr, ImGuiWindowFlags_NoMove))
 			{
@@ -1063,6 +1096,7 @@ namespace renderer
 	void ToggleMainWindow()
 	{
 		const bool now = !g_windowVisible.load(std::memory_order_relaxed);
+		g_nested.store(false, std::memory_order_release);   // the hotkey opens our own window
 		g_windowVisible.store(now, std::memory_order_release);
 
 		if (now)
@@ -1078,11 +1112,13 @@ namespace renderer
 		return g_windowVisible.load(std::memory_order_relaxed);
 	}
 
-	void SetMenuVisible(bool a_visible)
+	void SetMenuVisible(bool a_visible, bool a_nested)
 	{
+		g_nested.store(a_visible && a_nested, std::memory_order_release);
 		g_windowVisible.store(a_visible, std::memory_order_release);
 		if (a_visible) { g_justOpened.store(true, std::memory_order_release); }
-		logger::info("Framework window {} (external/DevBench)", a_visible ? "shown" : "hidden");
+		logger::info("Framework window {} ({})", a_visible ? "shown" : "hidden",
+			a_nested ? "nested in the game's System menu" : "external/DevBench");
 	}
 
 	void SetSelectedNode(const std::string& a_node)

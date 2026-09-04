@@ -29,7 +29,11 @@ namespace renderer
 	// be driven and inspected headlessly for testing (rule 31): open/close, move the selection to a
 	// node path (e.g. "system/quit", "mod" with the mod set via the tool, "stats"), run the
 	// selected node's action, and read the whole menu as JSON. Thread-safe.
-	void SetMenuVisible(bool a_visible);
+	// a_nested says the surface was opened from the row in the GAME's own System menu rather than
+	// from the hotkey or a menu launcher. It only affects GEOMETRY: a nested window is sized and
+	// placed to the journal panel hosting it, so it reads as a page of that menu instead of a
+	// larger window on top of it. Everything it draws is identical either way.
+	void SetMenuVisible(bool a_visible, bool a_nested = false);
 	void SetSelectedNode(const std::string& a_node);
 	std::string GetSelectedNode();
 	void ActivateSelectedNode();

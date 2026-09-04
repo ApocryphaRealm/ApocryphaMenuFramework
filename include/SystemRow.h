@@ -24,10 +24,14 @@
 //
 // Making it DO something is not, because `onCategoryListItemPress` is a compiled switch inside the
 // SWF: a row added at runtime falls straight through to its `default:` branch, so it draws, plays
-// the cancel sound, and does nothing at all. The handler is therefore WRAPPED - the original is
-// read out and stashed under a backup name, ours is installed in its place, and every index except
-// our own row's is delegated straight back to the original. Delegating by path keeps `this` bound
-// to the page, which is what the original expects.
+// the cancel sound, and does nothing at all.
+//
+// WRAPPING that handler was tried twice and does not work: `GetVariable` does not return an AS2
+// function, neither off the page instance nor off `_global.SystemPage.prototype`, so there is
+// nothing to read out and stash. What works instead is ADDING A SECOND LISTENER beside the menu's
+// own - `addEventListener("itemPress", ...)` - and ignoring every index but our row's. That turned
+// out to be the better shape anyway: the game's handler is never touched, so save, load, settings,
+// controls and quit cannot be broken by anything here. Worst case our row does nothing.
 //
 // Everything here is best-effort and loudly logged. A menu whose structure we do not recognise
 // (a replacer that rebuilt the hierarchy, or a future game patch) gets no row and a warning - it
@@ -47,4 +51,17 @@ namespace systemrow
 	// The path the row was found under, or "" if it has not been found yet. Logged and reported
 	// rather than assumed, because it is the thing that differs between art replacers.
 	const char* FoundPath();
+
+	// The journal PANEL's rectangle, as fractions of the screen (0..1), read off the live movie.
+	//
+	// Used to size the framework's window to the journal it is hosted in, so the nested surface
+	// reads as a page of that menu instead of a larger window sitting on top of it (author,
+	// 2026-09-04: "make the nested version fit into the journals shape so it doesn't look bigger
+	// than the main menu in the nested version only").
+	//
+	// Measured rather than assumed, and measured EVERY time, because the number is different for
+	// every art replacer - the whole reason the row is injected instead of shipped. Returns false
+	// when the journal is not open or its panel cannot be measured; the caller then keeps whatever
+	// it had rather than snapping to a default mid-frame.
+	bool GetPanelRect(float& a_x, float& a_y, float& a_w, float& a_h);
 }

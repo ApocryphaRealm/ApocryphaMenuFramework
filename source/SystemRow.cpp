@@ -89,7 +89,7 @@ namespace systemrow
 				{
 					logger::info("System row: selected (index {}); opening the mod menus", index);
 					renderer::SetSelectedNode("system/mods");
-					renderer::SetMenuVisible(true);
+					renderer::SetMenuVisible(true, /*a_nested=*/true);
 					return;
 				}
 
@@ -254,5 +254,91 @@ namespace systemrow
 	const char* FoundPath()
 	{
 		return g_foundPath.c_str();
+	}
+
+	bool GetPanelRect(float& a_x, float& a_y, float& a_w, float& a_h)
+	{
+		RE::GPtr<RE::IMenu> menu = JournalMenu();
+		if (!menu || !menu->uiMovie)
+		{
+			return false;   // journal not open - nothing to measure, and nothing to report
+		}
+		RE::GFxMovieView* movie = menu->uiMovie.get();
+
+		// getBounds() reports in the coordinate space of whatever clip it is handed, so it is
+		// handed _root: that is the one space the visible frame rect below is also expressed in,
+		// and mixing the two spaces is the easy way to get a rectangle that is right in shape and
+		// wrong in place.
+		RE::GFxValue root;
+		if (!movie->GetVariable(&root, "_root") || !root.IsObject())
+		{
+			return false;
+		}
+
+		// The whole journal PANEL first, then narrower fallbacks. Fitting the outer panel is what
+		// makes the surface read as a page of the journal; the System page alone is the next best
+		// thing when a replacer has rebuilt the hierarchy above it.
+		const char* const kPanelCandidates[] = {
+			"_root.QuestJournalFader.Menu_mc",
+			"_root.Menu_mc",
+			"_level0.QuestJournalFader.Menu_mc",
+		};
+
+		const RE::GRectF visible = movie->GetVisibleFrameRect();
+		const float visW = visible.right - visible.left;
+		const float visH = visible.bottom - visible.top;
+		if (visW <= 1.0f || visH <= 1.0f)
+		{
+			return false;   // a degenerate stage would divide the fractions below into nonsense
+		}
+
+		for (const char* path : kPanelCandidates)
+		{
+			RE::GFxValue bounds;
+			RE::GFxValue args[1]{ root };
+			const std::string fn = std::string(path) + ".getBounds";
+			if (!movie->Invoke(fn.c_str(), &bounds, args, 1) || !bounds.IsObject())
+			{
+				continue;
+			}
+
+			RE::GFxValue xMin, xMax, yMin, yMax;
+			if (!bounds.GetMember("xMin", &xMin) || !bounds.GetMember("xMax", &xMax) ||
+				!bounds.GetMember("yMin", &yMin) || !bounds.GetMember("yMax", &yMax) ||
+				!xMin.IsNumber() || !xMax.IsNumber() || !yMin.IsNumber() || !yMax.IsNumber())
+			{
+				continue;
+			}
+
+			const float left = static_cast<float>(xMin.GetNumber());
+			const float top = static_cast<float>(yMin.GetNumber());
+			const float width = static_cast<float>(xMax.GetNumber()) - left;
+			const float height = static_cast<float>(yMax.GetNumber()) - top;
+
+			// A clip that is faded out or not yet built measures as a point or as the 6710886.4
+			// AS2 reports for an empty clip. Neither is a panel, and accepting either would size
+			// the window to a sliver or to nothing.
+			if (width < 1.0f || height < 1.0f || width > visW * 4.0f || height > visH * 4.0f)
+			{
+				continue;
+			}
+
+			a_x = (left - visible.left) / visW;
+			a_y = (top - visible.top) / visH;
+			a_w = width / visW;
+			a_h = height / visH;
+
+			static std::string reported;
+			if (reported != path)
+			{
+				reported = path;
+				logger::info("System row: journal panel measured at {} -> x={:.3f} y={:.3f} w={:.3f} h={:.3f} of the screen",
+					path, a_x, a_y, a_w, a_h);
+			}
+			return true;
+		}
+
+		logger::warn("System row: journal is open but no panel clip could be measured; the window keeps its own size");
+		return false;
 	}
 }

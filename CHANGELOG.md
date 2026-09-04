@@ -19,6 +19,16 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   `rules-version.ps1 -Action bump`. If a number was typed by hand, it is wrong until the tool
 >   agrees.
 
+## 1.5.2 - 2026-09-04 - untested
+
+### Changed
+- THE NESTED SURFACE NOW FITS THE JOURNAL IT IS HOSTED IN. Opened from the SKSE MENUS row, the framework is sized and placed to the journal panel around it instead of to its own default proportions, so it reads as a page of that menu rather than a larger window sitting on top of it.
+- The panel is MEASURED off the live movie, every frame, rather than assumed. Its size differs under every art replacer - which is the same reason the row is injected instead of shipped - so a measured rectangle fits Untarnished UI, Dear Diary and vanilla alike with no patch for any of them. The last good measurement is kept while the journal fades its panel in and out, so the window never flickers between two sizes.
+- This is GEOMETRY ONLY, and it applies to the nested row ALONE. Opened by the hotkey, or by a menu launcher such as Risa's All In One Menu through the API, the framework keeps its own window exactly as before. What it draws is identical either way.
+
+### Fixed
+- SystemRow.h described a handler-wrapping approach that was tried, does not work, and is not what the code does. `GetVariable` does not return an AS2 function - not off the page instance and not off the class prototype - so there is nothing to read out and stash. The file now documents the second listener that is actually installed, and why leaving the game's own handler untouched is the safer shape.
+
 ## 1.5.1 - 2026-09-04 - working
 
 ### Added
