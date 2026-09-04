@@ -275,15 +275,9 @@ namespace systemrow
 			return false;
 		}
 
-		// The whole journal PANEL first, then narrower fallbacks. Fitting the outer panel is what
-		// makes the surface read as a page of the journal; the System page alone is the next best
-		// thing when a replacer has rebuilt the hierarchy above it.
-		const char* const kPanelCandidates[] = {
-			"_root.QuestJournalFader.Menu_mc",
-			"_root.Menu_mc",
-			"_level0.QuestJournalFader.Menu_mc",
-		};
-
+		// The stage, in the same _root space getBounds reports in. Every rectangle below is turned
+		// into a FRACTION of this, so the caller can multiply by the real display size and never has
+		// to know anything about Scaleform's coordinate space.
 		const RE::GRectF visible = movie->GetVisibleFrameRect();
 		const float visW = visible.right - visible.left;
 		const float visH = visible.bottom - visible.top;
@@ -292,11 +286,36 @@ namespace systemrow
 			return false;   // a degenerate stage would divide the fractions below into nonsense
 		}
 
-		for (const char* path : kPanelCandidates)
+		// WHICH CLIP TO MEASURE, and why not the obvious one.
+		//
+		// Menu_mc was measured first and produced x=-0.063 y=0.064 w=1.127 h=1.254 - a rectangle
+		// larger than the screen, which is exactly what the window then became. getBounds() returns
+		// the union of a clip and ALL its children, visible or not, and the journal keeps its
+		// Save/Load, Creations, Help and Confirm panels parented and hidden rather than removed. So
+		// the honest bounds of Menu_mc really are bigger than the panel you can see. There is no
+		// visible-only variant of getBounds in ActionScript 2 to ask instead.
+		//
+		// PanelRect is the answer, and it is not a guess: the page carries an invisible rectangle
+		// instance for precisely this purpose (shape 138, placed as PanelRect inside the System
+		// page - the same shape the menu reuses as QuestsPageRect, StatsPageRect, SaveLoadRect and
+		// so on). It has no children, so its bounds are its own, and it is the rectangle the page
+		// itself lays its content out against - which is the rectangle we want to fill.
+		const std::string page = g_foundPath.empty() ? std::string() : g_foundPath;
+		std::string candidates[] = {
+			page + ".PanelRect",         // the page's own content rectangle - the right answer
+			page + ".SystemPageRect",    // same idea, the whole page including its margins
+			page,                        // the page itself: has hidden children, so a last resort
+		};
+
+		for (const std::string& path : candidates)
 		{
+			if (path.empty() || path == ".")
+			{
+				continue;
+			}
 			RE::GFxValue bounds;
 			RE::GFxValue args[1]{ root };
-			const std::string fn = std::string(path) + ".getBounds";
+			const std::string fn = path + ".getBounds";
 			if (!movie->Invoke(fn.c_str(), &bounds, args, 1) || !bounds.IsObject())
 			{
 				continue;
@@ -315,11 +334,23 @@ namespace systemrow
 			const float width = static_cast<float>(xMax.GetNumber()) - left;
 			const float height = static_cast<float>(yMax.GetNumber()) - top;
 
-			// A clip that is faded out or not yet built measures as a point or as the 6710886.4
-			// AS2 reports for an empty clip. Neither is a panel, and accepting either would size
-			// the window to a sliver or to nothing.
-			if (width < 1.0f || height < 1.0f || width > visW * 4.0f || height > visH * 4.0f)
+			// A clip that is faded out or not yet built measures as a point, or as the 6710886.4
+			// AS2 reports for an empty one. Neither is a panel.
+			if (width < 1.0f || height < 1.0f)
 			{
+				continue;
+			}
+
+			// AND IT MUST FIT ON THE SCREEN. This is the guard that was too loose the first time -
+			// it allowed four times the stage, so a 1.25x rectangle sailed through and the window
+			// was drawn off the edge of the display. A panel is a panel: if a candidate measures
+			// larger than the stage it is a union of hidden children, not the thing we want, so it
+			// is rejected outright and the next candidate is tried.
+			if (width > visW * 1.02f || height > visH * 1.02f)
+			{
+				logger::debug("System row: {} measures {:.0f}x{:.0f} against a {:.0f}x{:.0f} stage - "
+					"bigger than the screen, so it is a union of hidden children; trying the next candidate",
+					path, width, height, visW, visH);
 				continue;
 			}
 
@@ -327,6 +358,17 @@ namespace systemrow
 			a_y = (top - visible.top) / visH;
 			a_w = width / visW;
 			a_h = height / visH;
+
+			// Clamp into the stage even now. A panel can legitimately sit a hair off the edge, and
+			// a window placed there is one the player cannot reach the far side of.
+			if (a_x < 0.0f) { a_w += a_x; a_x = 0.0f; }
+			if (a_y < 0.0f) { a_h += a_y; a_y = 0.0f; }
+			if (a_x + a_w > 1.0f) { a_w = 1.0f - a_x; }
+			if (a_y + a_h > 1.0f) { a_h = 1.0f - a_y; }
+			if (a_w <= 0.0f || a_h <= 0.0f)
+			{
+				continue;
+			}
 
 			static std::string reported;
 			if (reported != path)
