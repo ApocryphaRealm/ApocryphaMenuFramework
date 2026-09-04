@@ -13,14 +13,36 @@
 
 namespace settings
 {
+	// A REMEMBERED WINDOW GEOMETRY, held as FRACTIONS of the display so it survives a resolution
+	// change, a different monitor, or borderless-to-fullscreen.
+	//
+	// There is one of these per way of opening the framework, and they are PROFILES rather than
+	// presets (author, 2026-09-04: "lets have it treat them as profiles to save the users settings
+	// to so that we set the default to vanilla positioning and size and if their ui mod does
+	// different then they can change it and it will remember"). Each starts unset, which means
+	// "use this profile's default" - the measured journal panel when nested, the centre anchor
+	// otherwise. The moment the player moves or resizes the window, the result is stored here and
+	// that profile stops taking the default. Vanilla's geometry is therefore a starting point, not
+	// a cage: a menu replacer whose panel sits somewhere else only needs dragging once.
+	struct WindowGeometry
+	{
+		float x = -1.0f;   // -1 on any field = never set by the player
+		float y = -1.0f;
+		float w = -1.0f;
+		float h = -1.0f;
+
+		bool IsSet() const { return x >= 0.0f && y >= 0.0f && w > 0.0f && h > 0.0f; }
+		void Clear() { x = y = w = h = -1.0f; }
+	};
+
 	struct Values
 	{
+		// [Window] - one profile per way in; see WindowGeometry above.
+		WindowGeometry nestedWindow;   // opened from the row in the game's System menu
+		WindowGeometry hotkeyWindow;   // opened by the hotkey, or by a menu launcher through the API
+
 		// [Input]
 		std::int32_t toggleKey = 0x3B;   // DirectInput scan code; 0x3B = F1 (framework convention, the author 2026-08-27)
-		// Follow whatever the player last actually used (author, 2026-09-01: "a toggle for auto
-		// input switch so it detects whenever you're using either a mouse and keyboard or a
-		// controller, to see how accurate it is"). OFF by default: the explicit toggle above stays
-		// the rule, because auto-detection is what causes nav-focus drift when it guesses wrong.
 
 		// [Display]
 		float textScale = 1.30f;         // extra font multiplier on top of the resolution scale (the author, 1.0.2 feedback round)

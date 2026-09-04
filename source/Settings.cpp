@@ -125,6 +125,18 @@ namespace settings
 
 			ReadNumber(entries, "Input.uToggleKey", g_values.toggleKey);
 			ReadBool(entries, "Menus.bSystemMenuRow", g_values.systemMenuRow);
+
+			// Window profiles. Each field defaults to -1, which the renderer reads as "this profile
+			// has never been moved, so use its default geometry"; a missing key therefore behaves
+			// exactly like a fresh install rather than pinning the window at 0,0.
+			ReadNumber(entries, "Window.fNestedX", g_values.nestedWindow.x);
+			ReadNumber(entries, "Window.fNestedY", g_values.nestedWindow.y);
+			ReadNumber(entries, "Window.fNestedW", g_values.nestedWindow.w);
+			ReadNumber(entries, "Window.fNestedH", g_values.nestedWindow.h);
+			ReadNumber(entries, "Window.fHotkeyX", g_values.hotkeyWindow.x);
+			ReadNumber(entries, "Window.fHotkeyY", g_values.hotkeyWindow.y);
+			ReadNumber(entries, "Window.fHotkeyW", g_values.hotkeyWindow.w);
+			ReadNumber(entries, "Window.fHotkeyH", g_values.hotkeyWindow.h);
 			ReadNumber(entries, "Display.fTextScale", g_values.textScale);
 			{
 				auto it = entries.find("Display.sFontPath");
@@ -173,7 +185,7 @@ namespace settings
 				"; edits made here while the game is closed are honoured on the next load.\n"
 				"\n"
 				"[Menus]\n"
-				"; 1 = add a MOD MENUS row to the game's own System menu, next to SAVE, LOAD and\n"
+				"; 1 = add a SKSE MENUS row to the game's own System menu, next to SAVE, LOAD and\n"
 				"; SETTINGS. Added as the menu opens rather than by replacing any game file, so it\n"
 				"; works alongside menu-artwork mods instead of fighting them for the same file.\n"
 				"; 0 leaves the game's menu completely untouched.\n"
@@ -194,6 +206,21 @@ namespace settings
 				"sFontPath=" << g_values.fontPath << "\n"
 				"; Window position preset. 0 = centre. Preset anchors, not free placement.\n"
 				"uWindowPreset=" << g_values.windowPreset << "\n"
+				"\n"
+				"[Window]\n"
+				"; Where each way of opening the menu leaves it, as FRACTIONS of the screen so the\n"
+				"; numbers stay right at any resolution. -1 means the player has never moved that\n"
+				"; window, so it takes its default: the journal panel it is hosted in when opened\n"
+				"; from the System row, and the centre of the screen when opened by the key. Move or\n"
+				"; resize either one and it is remembered here; the settings page can reset it.\n"
+				"fNestedX=" << g_values.nestedWindow.x << "\n"
+				"fNestedY=" << g_values.nestedWindow.y << "\n"
+				"fNestedW=" << g_values.nestedWindow.w << "\n"
+				"fNestedH=" << g_values.nestedWindow.h << "\n"
+				"fHotkeyX=" << g_values.hotkeyWindow.x << "\n"
+				"fHotkeyY=" << g_values.hotkeyWindow.y << "\n"
+				"fHotkeyW=" << g_values.hotkeyWindow.w << "\n"
+				"fHotkeyH=" << g_values.hotkeyWindow.h << "\n"
 				"\n"
 				"[Watchdog]\n"
 				"; If the menu renderer stops producing frames for uSeconds the game is treated as\n"

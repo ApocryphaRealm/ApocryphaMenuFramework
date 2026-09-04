@@ -15,6 +15,7 @@
 #include "utils/Logger.h"
 
 #include <array>
+#include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <functional>
@@ -54,6 +55,11 @@ namespace renderer
 		// Opened from the row in the game's own System menu, rather than from the hotkey or a menu
 		// launcher. Geometry only - see SetMenuVisible.
 		std::atomic<bool> g_nested{ false };
+
+		// Set whenever the window is opened; consumed by the draw once it has placed the window at
+		// its profile's geometry. Separate from g_justOpened, which is consumed elsewhere for the
+		// focus grab - two consumers of one exchange() flag would race to see it.
+		std::atomic<bool> g_applyGeometry{ false };
 
 		// Knotwork frame texture (the embedded MO2-Skyrim border-image.png). Created once at
 		// D3DInit on the game's own device; used by DrawKnotworkFrame as an ImGui texture id.
@@ -412,6 +418,35 @@ namespace renderer
 							   "reached by its key alone.");
 			ImGui::TextDisabled("Takes effect the next time the journal is opened.");
 			ImGui::Spacing();
+
+			// WINDOW PROFILES. Each way in remembers where it was left; this is the way back to the
+			// starting geometry, which matters because the default for the nested window is the
+			// journal panel measured live - something the player cannot reproduce by dragging.
+			{
+				auto& v = settings::Get();
+				const bool anySet = v.nestedWindow.IsSet() || v.hotkeyWindow.IsSet();
+				ImGui::TextUnformatted("Window position and size");
+				ImGui::TextWrapped("Each way of opening this menu remembers where you leave it: one for the "
+								   "System menu row, one for the key. They start fitted to the journal panel "
+								   "and centred on the screen respectively - move or resize either and it "
+								   "keeps what you chose.");
+				ImGui::BeginDisabled(!anySet);
+				if (ImGui::Button("Reset both to default"))
+				{
+					v.nestedWindow.Clear();
+					v.hotkeyWindow.Clear();
+					settings::Save();
+					g_applyGeometry.store(true, std::memory_order_release);
+					logger::info("settings page: window profiles reset to their defaults");
+				}
+				ImGui::EndDisabled();
+				if (!anySet)
+				{
+					ImGui::SameLine();
+					ImGui::TextDisabled("(both are at their defaults)");
+				}
+			}
+			ImGui::Spacing();
 			ImGui::Spacing();
 
 			// APPEARANCE ALWAYS APPLIES, in both installs (corrected 2026-09-04). These settings
@@ -697,45 +732,51 @@ namespace renderer
 		{
 			const ImVec2 display = ImGui::GetIO().DisplaySize;
 
-			// PRESET positions, never free placement (design decision, 2026-08-27) - the same anchor
-			// philosophy as the minimap's corner presets, computed from the display centre so
-			// it is correct at any resolution. Preset 0 = centre is the standard; further
-			// presets become a settings-page dropdown once worked out. Position is therefore
-			// ImGuiCond_Always + NoMove; only the SIZE belongs to the user.
+			// TWO PROFILES, NOT TWO PRESETS (author, 2026-09-04: "lets have it treat them as
+			// profiles to save the users settings to so that we set the default to vanilla
+			// positioning and size and if their ui mod does different then they can change it and
+			// it will remember").
+			//
+			// Each way of opening the framework has its own saved geometry. Until the player moves
+			// or resizes that window, the profile is unset and takes its DEFAULT - the measured
+			// journal panel when nested, the centred proportions otherwise. The first drag or
+			// resize fills the profile in, and from then on that is what the window opens at.
+			//
+			// This supersedes the 2026-08-27 "preset positions, never free placement" decision for
+			// this window. That rule existed so the window could not be lost off-screen or left
+			// somewhere useless; a REMEMBERED position with a reset button gives the same safety
+			// while letting someone whose menu replacer puts its panel elsewhere fix it once. The
+			// preset below still decides where an unset profile centres itself.
+			//
+			// Geometry is kept as fractions of the display, so the numbers stay correct if the
+			// resolution changes between sessions.
 			ImVec2 anchor{ 0.5f, 0.5f };
 			switch (settings::Get().windowPreset)
 			{
 			default:
 				break;  // 0 (and any unknown value) = centre
 			}
-			// NESTED: fit the journal panel that is hosting us, so the surface reads as a page of
-			// that menu rather than a larger window sitting on top of it (author, 2026-09-04).
-			// The panel is MEASURED off the live movie every frame rather than assumed, because
-			// its size is different under every art replacer - which is the same reason the row
-			// itself is injected instead of shipped.
-			//
-			// The last good rectangle is kept: the journal fades its panel in and out, and a frame
-			// where the measurement fails must not snap the window to a different size and back.
-			// TWO WINDOW IDENTITIES, ONE SURFACE - and this is what makes the sizes stick.
-			//
-			// Both modes used to Begin() the same window name, so ImGui kept ONE saved geometry for
-			// them in ApocryphaMenuFramework_layout.ini. The nested mode writes its size every frame
-			// with ImGuiCond_Always, so it overwrote that shared entry - and a size the player set by
-			// hand on the hotkey window was gone the next time the row was used, which read as the
-			// window "snapping back" (author, 2026-09-04). Giving each mode its own ImGui id gives
-			// each its own remembered geometry, and neither can now overwrite the other's.
-			//
-			// The text after ## is the identity and is not displayed, so both still read
-			// "Apocrypha Menu Framework" in the title bar. ##m2 is kept for the hotkey window so
-			// anyone's existing saved size survives the change.
+
+			// Each mode Begin()s a DIFFERENT ImGui id, so ImGui also keeps their layout entries
+			// apart. Sharing one id is what let the nested mode's forced size overwrite a size the
+			// player had set by hand on the hotkey window. The text after ## is not displayed, so
+			// both still read "Apocrypha Menu Framework"; ##m2 is kept for the hotkey window so an
+			// existing saved size survives the change.
 			const bool nested = g_nested.load(std::memory_order_acquire);
 			const char* windowId = nested ? "Apocrypha Menu Framework##nested"
 										  : "Apocrypha Menu Framework##m2";
-			ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoMove;
+			settings::WindowGeometry& profile =
+				nested ? settings::Get().nestedWindow : settings::Get().hotkeyWindow;
 
-			bool fitted = false;
+			// ---- this profile's default, in screen fractions ----
+			float dx = 0.0f, dy = 0.0f, dw = 0.55f, dh = 0.70f;
+			bool haveDefault = false;
 			if (nested)
 			{
+				// The panel is measured off the LIVE movie rather than assumed: its size differs
+				// under every art replacer, which is the same reason the row is injected rather
+				// than shipped. The last good measurement is kept, because the journal fades its
+				// panel in and a frame where the read fails must not move the window.
 				static float px = 0.0f, py = 0.0f, pw = 0.0f, ph = 0.0f;
 				float x = 0.0f, y = 0.0f, w = 0.0f, h = 0.0f;
 				if (systemrow::GetPanelRect(x, y, w, h))
@@ -744,37 +785,76 @@ namespace renderer
 				}
 				if (pw > 0.0f && ph > 0.0f)
 				{
-					// Inset by the window padding. ImGui strokes its border ON the rectangle it is
-					// given, and the journal strokes its panel border on the same line, so a window
-					// filling the rect exactly puts two borders flush against each other and reads
-					// as one thick misaligned rule. Padding is the right unit for it rather than a
-					// number picked off a screenshot: it comes from the active style, so it tracks
-					// the theme and the text size instead of being correct at one of them.
+					// Inset by the window padding: ImGui strokes its border ON the rect it is given
+					// and the journal strokes its panel border on the same line, so filling the rect
+					// exactly puts two borders flush together and reads as one thick misaligned
+					// rule. Padding comes from the active style, so it tracks the theme and the text
+					// size rather than being right at one of them only.
 					const ImVec2 pad = ImGui::GetStyle().WindowPadding;
-					ImGui::SetNextWindowPos(ImVec2(display.x * px + pad.x, display.y * py + pad.y),
-						ImGuiCond_Always);
-					ImGui::SetNextWindowSize(ImVec2(display.x * pw - pad.x * 2.0f,
-						display.y * ph - pad.y * 2.0f), ImGuiCond_Always);
+					dx = px + pad.x / display.x;
+					dy = py + pad.y / display.y;
+					dw = pw - (pad.x * 2.0f) / display.x;
+					dh = ph - (pad.y * 2.0f) / display.y;
+					haveDefault = dw > 0.0f && dh > 0.0f;
+				}
+			}
+			else
+			{
+				dx = anchor.x - dw * 0.5f;
+				dy = anchor.y - dh * 0.5f;
+				haveDefault = true;
+			}
 
-					// No resize handle when nested. The size is the journal's to decide, so a handle
-					// here would be an affordance that visibly does nothing - which is what the
-					// snapping looked like from the outside.
-					windowFlags |= ImGuiWindowFlags_NoResize;
-					fitted = true;
+			// ---- apply, ONCE per opening ----
+			// Only on the frame the window is opened, so a drag afterwards is not undone the next
+			// frame. If the nested measurement is not ready yet the flag is left set and the next
+			// frame tries again, rather than falling back to the centre and jumping later.
+			bool appliedThisFrame = false;
+			if (g_applyGeometry.load(std::memory_order_acquire))
+			{
+				const bool useProfile = profile.IsSet();
+				if (useProfile || haveDefault)
+				{
+					const float gx = useProfile ? profile.x : dx;
+					const float gy = useProfile ? profile.y : dy;
+					const float gw = useProfile ? profile.w : dw;
+					const float gh = useProfile ? profile.h : dh;
+					ImGui::SetNextWindowPos(ImVec2(display.x * gx, display.y * gy), ImGuiCond_Always);
+					ImGui::SetNextWindowSize(ImVec2(display.x * gw, display.y * gh), ImGuiCond_Always);
+					g_applyGeometry.store(false, std::memory_order_release);
+					appliedThisFrame = true;
 				}
 			}
 
-			if (!fitted)
+			if (ImGui::Begin(windowId, nullptr, ImGuiWindowFlags_None))
 			{
-				// The hotkey window: anchored, but the SIZE is the player's. ImGuiCond_FirstUseEver
-				// sets it once and then never again, so a resize is kept in the layout file and
-				// comes back on the next launch.
-				ImGui::SetNextWindowPos(ImVec2(display.x * anchor.x, display.y * anchor.y), ImGuiCond_Always, anchor);
-				ImGui::SetNextWindowSize(ImVec2(display.x * 0.55f, display.y * 0.70f), ImGuiCond_FirstUseEver);
-			}
+				// REMEMBER WHERE THE PLAYER LEAVES IT. Written back as fractions of the display, so
+				// the profile stays correct if the resolution changes between sessions.
+				//
+				// Not on the frame we just placed the window - that would record our own default as
+				// though the player had chosen it, and the profile would never be "unset" again, so
+				// Reset could not restore the journal fit. And not mid-drag either: the settings
+				// file is rewritten on each save, and a drag would rewrite it every frame. Waiting
+				// for the mouse to come up saves once, when the player has finished.
+				if (!appliedThisFrame && !ImGui::IsMouseDown(ImGuiMouseButton_Left))
+				{
+					const ImVec2 wpos = ImGui::GetWindowPos();
+					const ImVec2 wsize = ImGui::GetWindowSize();
+					const float nx = wpos.x / display.x;
+					const float ny = wpos.y / display.y;
+					const float nw = wsize.x / display.x;
+					const float nh = wsize.y / display.y;
+					const auto moved = [](float a, float b) { return std::fabs(a - b) > 0.001f; };
+					if (moved(nx, profile.x) || moved(ny, profile.y) ||
+						moved(nw, profile.w) || moved(nh, profile.h))
+					{
+						profile.x = nx; profile.y = ny; profile.w = nw; profile.h = nh;
+						settings::Save();
+						logger::debug("window profile ({}) saved: x={:.3f} y={:.3f} w={:.3f} h={:.3f}",
+							nested ? "nested" : "hotkey", nx, ny, nw, nh);
+					}
+				}
 
-			if (ImGui::Begin(windowId, nullptr, windowFlags))
-			{
 				// Version always on show - a version-less status line reads as a stale build
 				// (the author, third smoke test).
 				static const std::string version =
@@ -1135,6 +1215,7 @@ namespace renderer
 		if (now)
 		{
 			g_justOpened.store(true, std::memory_order_release);
+			g_applyGeometry.store(true, std::memory_order_release);
 		}
 
 		logger::info("Framework window {}", now ? "shown" : "hidden");
@@ -1149,7 +1230,11 @@ namespace renderer
 	{
 		g_nested.store(a_visible && a_nested, std::memory_order_release);
 		g_windowVisible.store(a_visible, std::memory_order_release);
-		if (a_visible) { g_justOpened.store(true, std::memory_order_release); }
+		if (a_visible)
+		{
+			g_justOpened.store(true, std::memory_order_release);
+			g_applyGeometry.store(true, std::memory_order_release);
+		}
 		logger::info("Framework window {} ({})", a_visible ? "shown" : "hidden",
 			a_nested ? "nested in the game's System menu" : "external/DevBench");
 	}
