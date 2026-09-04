@@ -716,8 +716,25 @@ namespace renderer
 			//
 			// The last good rectangle is kept: the journal fades its panel in and out, and a frame
 			// where the measurement fails must not snap the window to a different size and back.
+			// TWO WINDOW IDENTITIES, ONE SURFACE - and this is what makes the sizes stick.
+			//
+			// Both modes used to Begin() the same window name, so ImGui kept ONE saved geometry for
+			// them in ApocryphaMenuFramework_layout.ini. The nested mode writes its size every frame
+			// with ImGuiCond_Always, so it overwrote that shared entry - and a size the player set by
+			// hand on the hotkey window was gone the next time the row was used, which read as the
+			// window "snapping back" (author, 2026-09-04). Giving each mode its own ImGui id gives
+			// each its own remembered geometry, and neither can now overwrite the other's.
+			//
+			// The text after ## is the identity and is not displayed, so both still read
+			// "Apocrypha Menu Framework" in the title bar. ##m2 is kept for the hotkey window so
+			// anyone's existing saved size survives the change.
+			const bool nested = g_nested.load(std::memory_order_acquire);
+			const char* windowId = nested ? "Apocrypha Menu Framework##nested"
+										  : "Apocrypha Menu Framework##m2";
+			ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoMove;
+
 			bool fitted = false;
-			if (g_nested.load(std::memory_order_acquire))
+			if (nested)
 			{
 				static float px = 0.0f, py = 0.0f, pw = 0.0f, ph = 0.0f;
 				float x = 0.0f, y = 0.0f, w = 0.0f, h = 0.0f;
@@ -727,19 +744,36 @@ namespace renderer
 				}
 				if (pw > 0.0f && ph > 0.0f)
 				{
-					ImGui::SetNextWindowPos(ImVec2(display.x * px, display.y * py), ImGuiCond_Always);
-					ImGui::SetNextWindowSize(ImVec2(display.x * pw, display.y * ph), ImGuiCond_Always);
+					// Inset by the window padding. ImGui strokes its border ON the rectangle it is
+					// given, and the journal strokes its panel border on the same line, so a window
+					// filling the rect exactly puts two borders flush against each other and reads
+					// as one thick misaligned rule. Padding is the right unit for it rather than a
+					// number picked off a screenshot: it comes from the active style, so it tracks
+					// the theme and the text size instead of being correct at one of them.
+					const ImVec2 pad = ImGui::GetStyle().WindowPadding;
+					ImGui::SetNextWindowPos(ImVec2(display.x * px + pad.x, display.y * py + pad.y),
+						ImGuiCond_Always);
+					ImGui::SetNextWindowSize(ImVec2(display.x * pw - pad.x * 2.0f,
+						display.y * ph - pad.y * 2.0f), ImGuiCond_Always);
+
+					// No resize handle when nested. The size is the journal's to decide, so a handle
+					// here would be an affordance that visibly does nothing - which is what the
+					// snapping looked like from the outside.
+					windowFlags |= ImGuiWindowFlags_NoResize;
 					fitted = true;
 				}
 			}
 
 			if (!fitted)
 			{
+				// The hotkey window: anchored, but the SIZE is the player's. ImGuiCond_FirstUseEver
+				// sets it once and then never again, so a resize is kept in the layout file and
+				// comes back on the next launch.
 				ImGui::SetNextWindowPos(ImVec2(display.x * anchor.x, display.y * anchor.y), ImGuiCond_Always, anchor);
 				ImGui::SetNextWindowSize(ImVec2(display.x * 0.55f, display.y * 0.70f), ImGuiCond_FirstUseEver);
 			}
 
-			if (ImGui::Begin("Apocrypha Menu Framework##m2", nullptr, ImGuiWindowFlags_NoMove))
+			if (ImGui::Begin(windowId, nullptr, windowFlags))
 			{
 				// Version always on show - a version-less status line reads as a stale build
 				// (the author, third smoke test).
