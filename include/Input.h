@@ -38,6 +38,18 @@ namespace input
 	// Seconds since the last device event, for the settings page's readout. -1 when nothing yet.
 	float SecondsSinceLastDevice();
 
+	// TRUE while the player is on a controller. This is DERIVED from what was last really used,
+	// never stored and never configured (author, 2026-09-04: "I want the auto detection feature
+	// built-in with no toggle and there doesn't need to be a controller toggle anymore").
+	//
+	// It used to be a saved setting that a second setting decided whether to overwrite. That is
+	// two switches to describe one fact the game already knows, and it could be left contradicting
+	// reality - a player who picked up a pad still driving keyboard navigation until they found the
+	// toggle. Asking the detector directly cannot disagree with itself. Only DELIBERATE input moves
+	// it: a button down, a mouse click, real mouse movement, or a stick past the nav deadzone, so a
+	// resting stick or a nudged mouse never flips navigation mid-menu.
+	bool UsingController();
+
 	// Render-thread notification, sampled inside the frame: is an ImGui item currently being
 	// edited (a slider taken hold of with A, a text field, an open drop-down)? While one is, the
 	// controller scheme routes the RIGHT stick to it and holds the left stick off, so moving a

@@ -125,8 +125,6 @@ namespace settings
 
 			ReadNumber(entries, "Input.uToggleKey", g_values.toggleKey);
 			ReadBool(entries, "Menus.bSystemMenuRow", g_values.systemMenuRow);
-			ReadBool(entries, "Input.bControllerMode", g_values.controllerMode);
-			ReadBool(entries, "Input.bAutoInputMode", g_values.autoInputMode);
 			ReadNumber(entries, "Display.fTextScale", g_values.textScale);
 			{
 				auto it = entries.find("Display.sFontPath");
@@ -145,8 +143,8 @@ namespace settings
 			// Menu-shell personalization (aliases + custom order) lives in the same file.
 			personalization::LoadFrom(entries);
 
-			logger::info("settings loaded: uToggleKey=0x{:X}, bControllerMode={}, fTextScale={:.2f}, uLogLevel={}",
-						 g_values.toggleKey, g_values.controllerMode, g_values.textScale, g_values.logLevel);
+			logger::info("settings loaded: uToggleKey=0x{:X}, bSystemMenuRow={}, fTextScale={:.2f}, uLogLevel={}",
+						 g_values.toggleKey, g_values.systemMenuRow, g_values.textScale, g_values.logLevel);
 		}
 
 		if (g_values.textScale < 1.0f || g_values.textScale > 2.5f)
@@ -183,14 +181,11 @@ namespace settings
 				"\n"
 				"[Input]\n"
 				"; DirectInput scan code that toggles the framework menu. 59 (0x3B) = F1.\n"
+				"; 0 = no key at all, which is the way to leave F1 entirely to the game.\n"
 				"uToggleKey=" << g_values.toggleKey << "\n"
-				"; 0 = keyboard navigation, 1 = controller navigation. Explicit by design - never\n"
-				"; auto-detected from the last-used device, which is what causes nav focus drift.\n"
-				"bControllerMode=" << (g_values.controllerMode ? 1 : 0) << "\n"
-				"; 1 = follow whatever you last used: press a key or move the mouse and the menu\n"
-				"; switches to keyboard navigation; touch the pad and it switches to controller\n"
-				"; navigation. 0 = the setting above is obeyed exactly.\n"
-				"bAutoInputMode=" << (g_values.autoInputMode ? 1 : 0) << "\n"
+				"; Keyboard or controller navigation is DETECTED from whatever you last used, and is\n"
+				"; not a setting: press a key or move the mouse for keyboard navigation, touch the\n"
+				"; pad for controller navigation. The menu shows which one it is reading.\n"
 				"\n"
 				"[Display]\n"
 				"; Extra text scale on top of the automatic resolution scaling.\n"

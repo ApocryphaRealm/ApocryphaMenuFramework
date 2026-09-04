@@ -70,19 +70,9 @@ namespace input
 			if (was == a_device) { return; }
 
 			const bool wantsController = (a_device == Device::kGamepad);
-			if (settings::Get().autoInputMode && settings::Get().controllerMode != wantsController)
-			{
-				settings::Get().controllerMode = wantsController;
-				logger::info("auto input mode: {} used -> {} navigation",
-							 wantsController ? "controller" : "keyboard/mouse",
-							 wantsController ? "controller" : "keyboard");
-			}
-			else
-			{
-				logger::debug("input device now {} (auto switch {})",
-							  wantsController ? "gamepad" : "keyboard/mouse",
-							  settings::Get().autoInputMode ? "on, already matching" : "off");
-			}
+			logger::info("input: {} used -> {} navigation",
+						 wantsController ? "controller" : "keyboard/mouse",
+						 wantsController ? "controller" : "keyboard");
 		}
 
 		// Set by the renderer each frame: an item is being edited, so the right stick drives it.
@@ -277,7 +267,7 @@ namespace input
 
 				const bool menuOpen = renderer::IsMainWindowVisible();
 				const auto toggleKey = static_cast<std::uint32_t>(settings::Get().toggleKey);
-				const bool controllerMode = settings::Get().controllerMode;
+				const bool controllerMode = UsingController();
 				const bool awaitingRebind = g_awaitingRebind.load(std::memory_order_acquire);
 
 				RE::InputEvent* head = *a_events;
@@ -458,7 +448,7 @@ namespace input
 
 		ImGuiIO& io = ImGui::GetIO();
 		const ImVec2 display = io.DisplaySize;
-		const bool controllerMode = settings::Get().controllerMode;
+		const bool controllerMode = UsingController();
 
 		for (const Record& record : drained)
 		{
@@ -595,6 +585,14 @@ namespace input
 	Device LastDevice()
 	{
 		return g_lastDevice.load(std::memory_order_relaxed);
+	}
+
+	bool UsingController()
+	{
+		// Unknown means nothing deliberate has happened yet, and that resolves to KEYBOARD: this
+		// is a PC framework, the menu is opened with a key, and guessing "controller" for a player
+		// who has not touched one would hand them prompts for a device they may not own.
+		return g_lastDevice.load(std::memory_order_relaxed) == Device::kGamepad;
 	}
 
 	float SecondsSinceLastDevice()

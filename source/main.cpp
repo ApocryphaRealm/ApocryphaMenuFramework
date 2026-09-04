@@ -175,7 +175,10 @@ AMF_API bool AMF_RegisterPage(const char* a_modName, const char* a_pageName, AMF
 
 AMF_API std::uint32_t AMF_GetInputMode()
 {
-	return settings::Get().controllerMode ? 1u : 0u;
+	// The LIVE mode, not a stored one. Consumers use this to word their own prompts, so it has to
+	// track the pad being picked up mid-session; a saved setting could sit there saying "keyboard"
+	// while the player is on a controller.
+	return input::UsingController() ? 1u : 0u;
 }
 
 SKSEPluginLoad(const SKSE::LoadInterface* a_skse)

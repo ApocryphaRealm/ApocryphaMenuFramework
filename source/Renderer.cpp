@@ -480,25 +480,17 @@ namespace renderer
 			ImGui::Spacing();
 			ImGui::Spacing();
 
-			// First setting by standing decision: the explicit input-mode toggle.
-			if (widgets::Toggle("Controller input mode", &values.controllerMode))
-			{
-				logger::info("settings page: controller input mode -> {}", values.controllerMode);
-				settings::Save();
-			}
-			ImGui::TextWrapped("Off: keyboard navigation (arrow keys, Enter, Escape). "
-							   "On: gamepad navigation (D-pad moves, A activates, B cancels).");
-
-			// AUTO SWITCH (the author, 2026-09-01) - opt-in, with the detector's own reading shown
-			// underneath so its accuracy can be judged while playing rather than guessed at.
-			if (widgets::Toggle("Detect input automatically", &values.autoInputMode))
-			{
-				logger::info("settings page: auto input mode -> {}", values.autoInputMode);
-				settings::Save();
-			}
-			ImGui::TextWrapped("On: the toggle above follows whatever you last used - press a key or "
-							   "move the mouse and the menu switches to keyboard navigation, touch the "
-							   "pad and it switches to controller navigation.");
+			// INPUT MODE IS DETECTED, AND IS NOT A SETTING (author, 2026-09-04: "I want the auto
+			// detection feature built-in with no toggle and there doesn't need to be a controller
+			// toggle anymore"). There were two switches here - one holding the mode, one deciding
+			// whether the detector was allowed to write it - which is two controls describing one
+			// fact the game already knows, and they could be left disagreeing with reality. The
+			// detector's reading is now simply used, and shown, so it can still be judged while
+			// playing rather than taken on trust.
+			ImGui::TextUnformatted("Navigation");
+			ImGui::TextWrapped("Follows whatever you last used: press a key or move the mouse for "
+							   "keyboard navigation (arrow keys, Enter, Escape), touch the pad for "
+							   "controller navigation (D-pad moves, A activates, B cancels).");
 			{
 				const input::Device device = input::LastDevice();
 				const float since = input::SecondsSinceLastDevice();
@@ -975,7 +967,7 @@ namespace renderer
 
 				// Nav mode follows the EXPLICIT setting live (the toggle sits on the settings
 				// page itself). Never auto-detected - that is the nav-focus-drift bug.
-				if (settings::Get().controllerMode)
+				if (input::UsingController())
 				{
 					io.ConfigFlags = (io.ConfigFlags | ImGuiConfigFlags_NavEnableGamepad) & ~ImGuiConfigFlags_NavEnableKeyboard;
 					// REQUIRED for gamepad nav to respond at all: ImGui only processes the
@@ -1257,8 +1249,7 @@ namespace renderer
 		}
 		return std::string("{\"visible\":") + (visible ? "true" : "false") +
 			   ",\"tab\":\"" + esc(tab) + "\",\"selected\":\"" + esc(node) + "\",\"selectedMod\":" + std::to_string(selMod) +
-			   ",\"controllerMode\":" + (settings::Get().controllerMode ? "true" : "false") +
-			   ",\"autoInputMode\":" + (settings::Get().autoInputMode ? "true" : "false") +
+			   ",\"controllerMode\":" + (input::UsingController() ? "true" : "false") +
 			   ",\"lastDevice\":\"" + (input::LastDevice() == input::Device::kGamepad ? "gamepad" :
 										   input::LastDevice() == input::Device::kKeyboardMouse ? "keyboard" : "none") + "\"" +
 			   ",\"customOrder\":" + (personalization::IsCustomOrder() ? "true" : "false") +
