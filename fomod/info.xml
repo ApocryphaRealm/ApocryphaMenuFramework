@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<fomod>
-  <Name>Apocrypha Menu Framework</Name>
-  <Author>ApocryphaRealm</Author>
-  <Description>A settings menu for SKSE mods. Install it either as a row inside the game's own System menu, so mod settings sit where you already look for settings, or as a standalone window on a hotkey.</Description>
-  <Groups>
-    <element>User Interface</element>
-  </Groups>
-</fomod>

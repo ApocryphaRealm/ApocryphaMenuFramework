@@ -2,5 +2,4 @@
 build/
 swf/HUDMenu/
 # Packaging outputs - built from fomod/ + fomod-options/ + the compiled DLL, never sources
-fomod-package/
 *.zip

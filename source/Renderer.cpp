@@ -394,6 +394,26 @@ namespace renderer
 			ImGui::Separator();
 			ImGui::Spacing();
 
+			// THE SYSTEM ROW IS A SETTING, NOT AN INSTALL-TIME CHOICE (author, 2026-09-04: "we can
+			// just have one version and not a fomod"). It shipped briefly as a FOMOD fork, which
+			// made a reversible preference into something you had to reinstall to change - and
+			// forked the documentation, the INI and the support answers along with it. One build,
+			// one INI, and the choice lives here where it can be changed and changed back.
+			if (widgets::Toggle("Mod settings in the game's System menu", &values.systemMenuRow))
+			{
+				logger::info("settings page: system menu row -> {}", values.systemMenuRow);
+				settings::Save();
+			}
+			ImGui::TextWrapped("On: a SKSE MENUS row is added to the journal's System tab, beside SAVE, "
+							   "LOAD and SETTINGS, and opens this menu sized to the journal around it. "
+							   "The row is added to the menu as it opens rather than by replacing any "
+							   "game file, so it works with whatever menu artwork you have installed. "
+							   "Off: the game's menu is left completely untouched and this menu is "
+							   "reached by its key alone.");
+			ImGui::TextDisabled("Takes effect the next time the journal is opened.");
+			ImGui::Spacing();
+			ImGui::Spacing();
+
 			// APPEARANCE ALWAYS APPLIES, in both installs (corrected 2026-09-04). These settings
 			// used to be hidden whenever the System row was on, under the belief that a nested
 			// surface would wear the game's own menu artwork and so have nothing to theme. It does
