@@ -719,7 +719,7 @@ namespace renderer
 		{
 			ImGui::TextUnformatted("Help");
 			ImGui::Separator();
-			ImGui::TextWrapped("Apocrypha Menu Framework presents mod settings in one menu, laid out like "
+			ImGui::TextWrapped("ApocryphaRealm Menu Framework presents mod settings in one menu, laid out like "
 							   "the game's own: tabs across the top, a list down the side, and the "
 							   "selected entry's options here.");
 			ImGui::Spacing();
@@ -759,12 +759,14 @@ namespace renderer
 
 			// Each mode Begin()s a DIFFERENT ImGui id, so ImGui also keeps their layout entries
 			// apart. Sharing one id is what let the nested mode's forced size overwrite a size the
-			// player had set by hand on the hotkey window. The text after ## is not displayed, so
-			// both still read "Apocrypha Menu Framework"; ##m2 is kept for the hotkey window so an
-			// existing saved size survives the change.
+			// apart. The text after ### is the identity and is not displayed. ### rather than ##
+			// on purpose: with ##, ImGui hashes the WHOLE label, so changing the visible name
+			// would silently orphan that saved entry - exactly what renaming this to
+			// "ApocryphaRealm" would otherwise have done. With ###, the id is the id and the
+			// shown text is free to change.
 			const bool nested = g_nested.load(std::memory_order_acquire);
-			const char* windowId = nested ? "Apocrypha Menu Framework##nested"
-										  : "Apocrypha Menu Framework##m2";
+			const char* windowId = nested ? "ApocryphaRealm Menu Framework###amf-nested"
+										  : "ApocryphaRealm Menu Framework###amf-main";
 			settings::WindowGeometry& profile =
 				nested ? settings::Get().nestedWindow : settings::Get().hotkeyWindow;
 
@@ -859,7 +861,7 @@ namespace renderer
 				// (the author, third smoke test).
 				static const std::string version =
 					SKSE::PluginDeclaration::GetSingleton()->GetVersion().string(".");
-				ImGui::Text("Apocrypha Menu Framework  v%s", version.c_str());
+				ImGui::Text("ApocryphaRealm Menu Framework  v%s", version.c_str());
 				ImGui::Separator();
 
 				// Whether this theme wants the knotwork frame - captured once, applied to every

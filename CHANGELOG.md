@@ -19,7 +19,7 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   `rules-version.ps1 -Action bump`. If a number was typed by hand, it is wrong until the tool
 >   agrees.
 
-## 1.5.2 - 2026-09-04 - untested
+## 1.5.2 - 2026-09-04 - working
 
 ### Changed
 - THE NESTED SURFACE NOW FITS THE JOURNAL IT IS HOSTED IN. Opened from the SKSE MENUS row, the framework is sized and placed to the journal panel around it instead of to its own default proportions, so it reads as a page of that menu rather than a larger window sitting on top of it.
@@ -42,6 +42,8 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 - The System row is now ON THE SETTINGS PAGE, where the installer question used to be. It was previously reachable only by editing the INI by hand, which was tolerable while the installer asked about it and is not now that nothing else does.
 
 ### Fixed
+- THE MENU NOW CALLS ITSELF BY THE PRODUCT'S NAME. The window title, the version line, the help text and the INI header read "ApocryphaRealm Menu Framework"; they had been showing "Apocrypha Menu Framework", which is the form reserved for the repository, the DLL and the INI filename rather than for anything a player reads. The banner has said ApocryphaRealm since 1.4.x, so the menu was the odd one out.
+- The window identities moved from `##` to `###`. ImGui hashes the whole label when the separator is `##`, so renaming the visible part would have silently orphaned each window's saved layout entry; with `###` the identity is fixed and the displayed name can change freely.
 - A SIZE SET BY HAND ON THE HOTKEY WINDOW NO LONGER GETS OVERWRITTEN BY THE NESTED ONE. Both modes drew the same ImGui window name, so both shared one saved geometry in the layout file - and the nested mode rewrites its size every frame, so it clobbered the entry and the hotkey window came back the wrong size. Each mode now has its own window identity and its own remembered geometry. The hotkey window's identity is unchanged, so a size already saved survives the update.
 - The nested window is inset by the window padding rather than filling the panel rectangle exactly, so its border no longer sits flush on top of the journal's own and read as one thick misaligned rule. It also no longer offers a resize handle, because the size there belongs to the journal - a handle that visibly does nothing is what the snapping looked like from the outside.
 - THE NESTED WINDOW WAS BIGGER THAN THE SCREEN. It was measured from `Menu_mc`, and `getBounds` returns the union of a clip and ALL its children whether or not they are visible - the journal keeps its Save/Load, Creations, Help and Confirm panels parented and hidden rather than removed, so the honest bounds of `Menu_mc` really are larger than the panel you can see. In game it measured 113% of the screen wide and 125% tall. It now measures `PanelRect`, the invisible rectangle the page already carries for exactly this purpose and which has no children of its own, and any candidate that comes back larger than the stage is rejected rather than used.

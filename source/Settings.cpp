@@ -180,7 +180,7 @@ namespace settings
 			return;
 		}
 
-		file << "; Apocrypha Menu Framework - settings. Rewritten by the in-game settings page;\n"
+		file << "; ApocryphaRealm Menu Framework - settings. Rewritten by the in-game settings page;\n"
 				"; edits made here while the game is closed are honoured on the next load.\n"
 				"\n"
 				"[Menus]\n"
