@@ -19,6 +19,11 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   `rules-version.ps1 -Action bump`. If a number was typed by hand, it is wrong until the tool
 >   agrees.
 
+## 1.6.0 - 2026-09-05 - untested
+
+### Changed
+- The log now names WHICH mod asked for the framework. Every line the alias writes when it answers a module-name or file-name lookup carries the asking DLL's name, so a mod that reaches the framework and still shows no page can be told apart from one that never reached it (Ammo Patcher and Critical Hit Tweaks, 2026-09-05).
+
 ## 1.5.9 - 2026-09-05 - untested
 
 ### Fixed

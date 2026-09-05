@@ -3,6 +3,7 @@
 
 #include "utils/Logger.h"
 
+#include <intrin.h>
 #include <psapi.h>
 #include <winternl.h>
 
@@ -159,37 +160,64 @@ namespace
 		return a_path && IsSmfFileName(Widen(a_path));
 	}
 
-	void NoteHit(const std::wstring& a_name)
+	// WHO asked. The return address of the alias call sits in the consumer's own image, so the
+	// module containing it names the consumer. (1.6.0 - added so a consumer that reaches the
+	// alias but never registers can be told apart from one that never reached it; Ammo Patcher
+	// logged "Registered" with no page on 2026-09-05 and nothing in the log said which.)
+	std::string CallerName(void* a_returnAddress)
+	{
+		HMODULE mod = nullptr;
+		if (!a_returnAddress ||
+			!::GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+								  reinterpret_cast<LPCWSTR>(a_returnAddress), &mod) ||
+			!mod) {
+			return "?";
+		}
+		wchar_t path[MAX_PATH]{};
+		const auto len = ::GetModuleFileNameW(mod, path, static_cast<DWORD>(std::size(path)));
+		if (len == 0) {
+			return "?";
+		}
+		std::wstring_view base(path, len);
+		if (const auto slash = base.find_last_of(L"\\/"); slash != std::wstring_view::npos) {
+			base.remove_prefix(slash + 1);
+		}
+		return std::string(base.begin(), base.end());
+	}
+
+	void NoteHit(const std::wstring& a_name, void* a_caller = nullptr)
 	{
 		g_hits.fetch_add(1, std::memory_order_relaxed);
 
 		std::scoped_lock lock(g_logLock);
-		if (g_loggedNames.insert(a_name).second) {
-			// Once per distinct name. A consumer caches the handle, so this fires a handful of
-			// times per session at most - but it is the line that proves the alias did its job,
-			// so it is info, not debug.
-			logger::info("SMF module-name alias: answered a lookup of \"{}\" with our own module",
-						 std::string(a_name.begin(), a_name.end()));
+		const std::string who = CallerName(a_caller);
+		if (g_loggedNames.insert(a_name + L"|" + std::wstring(who.begin(), who.end())).second) {
+			// Once per distinct name and caller. A consumer caches the handle, so this fires a
+			// handful of times per session at most - but it is the line that proves the alias did
+			// its job, so it is info, not debug.
+			logger::info("SMF module-name alias: answered a lookup of \"{}\" from {} with our own module",
+						 std::string(a_name.begin(), a_name.end()), who);
 		}
 	}
 
-	// The file-alias counterpart. Keyed by API + path so each distinct question is logged once;
-	// CreateFileW in particular can be hot, and this must never log per call.
-	void NoteFileHit(const wchar_t* a_api, const std::wstring& a_path)
+	// The file-alias counterpart. Keyed by API + path + caller so each distinct question is
+	// logged once; CreateFileW in particular can be hot, and this must never log per call.
+	void NoteFileHit(const wchar_t* a_api, const std::wstring& a_path, void* a_caller = nullptr)
 	{
 		g_fileHits.fetch_add(1, std::memory_order_relaxed);
 
 		std::scoped_lock lock(g_logLock);
-		if (g_loggedNames.insert(std::wstring(a_api) + L"|" + a_path).second) {
-			logger::info("SMF file alias: answered {}(\"{}\") with our own file - the stock consumer header's IsInstalled() looks for that file, and this is what makes it pass",
-						 std::string(a_api, a_api + ::wcslen(a_api)), std::string(a_path.begin(), a_path.end()));
+		const std::string who = CallerName(a_caller);
+		if (g_loggedNames.insert(std::wstring(a_api) + L"|" + a_path + L"|" + std::wstring(who.begin(), who.end())).second) {
+			logger::info("SMF file alias: answered {}(\"{}\") from {} with our own file - the stock consumer header's IsInstalled() looks for that file, and this is what makes it pass",
+						 std::string(a_api, a_api + ::wcslen(a_api)), std::string(a_path.begin(), a_path.end()), who);
 		}
 	}
 
 	HMODULE WINAPI GetModuleHandleW_Alias(LPCWSTR a_name)
 	{
 		if (a_name && IsSmfName(a_name)) {
-			NoteHit(a_name);
+			NoteHit(a_name, _ReturnAddress());
 			return g_self;
 		}
 		return g_realW ? g_realW(a_name) : nullptr;
@@ -200,7 +228,7 @@ namespace
 		if (a_name) {
 			const auto wide = Widen(a_name);
 			if (IsSmfName(wide)) {
-				NoteHit(wide);
+				NoteHit(wide, _ReturnAddress());
 				return g_self;
 			}
 		}
@@ -216,7 +244,7 @@ namespace
 			return FALSE;
 		}
 		if (a_name && !(a_flags & GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS) && IsSmfName(a_name)) {
-			NoteHit(a_name);
+			NoteHit(a_name, _ReturnAddress());
 			return g_realExW(a_flags, g_selfPathW.c_str(), a_out);
 		}
 		return g_realExW(a_flags, a_name, a_out);
@@ -230,7 +258,7 @@ namespace
 		if (a_name && !(a_flags & GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS)) {
 			const auto wide = Widen(a_name);
 			if (IsSmfName(wide)) {
-				NoteHit(wide);
+				NoteHit(wide, _ReturnAddress());
 				return g_realExA(a_flags, g_selfPathA.c_str(), a_out);
 			}
 		}
@@ -246,7 +274,7 @@ namespace
 			return nullptr;
 		}
 		if (a_name && IsSmfName(a_name)) {
-			NoteHit(a_name);
+			NoteHit(a_name, _ReturnAddress());
 			return g_realLoadW(g_selfPathW.c_str());
 		}
 		return g_realLoadW(a_name);
@@ -260,7 +288,7 @@ namespace
 		if (a_name) {
 			const auto wide = Widen(a_name);
 			if (IsSmfName(wide)) {
-				NoteHit(wide);
+				NoteHit(wide, _ReturnAddress());
 				return g_realLoadA(g_selfPathA.c_str());
 			}
 		}
@@ -273,7 +301,7 @@ namespace
 			return nullptr;
 		}
 		if (a_name && IsSmfName(a_name)) {
-			NoteHit(a_name);
+			NoteHit(a_name, _ReturnAddress());
 			return g_realLoadExW(g_selfPathW.c_str(), a_file, a_flags);
 		}
 		return g_realLoadExW(a_name, a_file, a_flags);
@@ -287,7 +315,7 @@ namespace
 		if (a_name) {
 			const auto wide = Widen(a_name);
 			if (IsSmfName(wide)) {
-				NoteHit(wide);
+				NoteHit(wide, _ReturnAddress());
 				return g_realLoadExA(g_selfPathA.c_str(), a_file, a_flags);
 			}
 		}
@@ -320,7 +348,7 @@ namespace
 			return INVALID_FILE_ATTRIBUTES;
 		}
 		if (a_path && IsSmfFileName(a_path)) {
-			NoteFileHit(L"GetFileAttributesW", a_path);
+			NoteFileHit(L"GetFileAttributesW", a_path, _ReturnAddress());
 			return g_realAttrW(g_selfPathW.c_str());
 		}
 		return g_realAttrW(a_path);
@@ -332,7 +360,7 @@ namespace
 			return INVALID_FILE_ATTRIBUTES;
 		}
 		if (IsSmfFileNameA(a_path)) {
-			NoteFileHit(L"GetFileAttributesA", Widen(a_path));
+			NoteFileHit(L"GetFileAttributesA", Widen(a_path), _ReturnAddress());
 			return g_realAttrA(g_selfPathA.c_str());
 		}
 		return g_realAttrA(a_path);
@@ -344,7 +372,7 @@ namespace
 			return FALSE;
 		}
 		if (a_path && IsSmfFileName(a_path)) {
-			NoteFileHit(L"GetFileAttributesExW", a_path);
+			NoteFileHit(L"GetFileAttributesExW", a_path, _ReturnAddress());
 			return g_realAttrExW(g_selfPathW.c_str(), a_level, a_info);
 		}
 		return g_realAttrExW(a_path, a_level, a_info);
@@ -356,7 +384,7 @@ namespace
 			return FALSE;
 		}
 		if (IsSmfFileNameA(a_path)) {
-			NoteFileHit(L"GetFileAttributesExA", Widen(a_path));
+			NoteFileHit(L"GetFileAttributesExA", Widen(a_path), _ReturnAddress());
 			return g_realAttrExA(g_selfPathA.c_str(), a_level, a_info);
 		}
 		return g_realAttrExA(a_path, a_level, a_info);
@@ -368,7 +396,7 @@ namespace
 			return INVALID_HANDLE_VALUE;
 		}
 		if (a_path && IsSmfFileName(a_path)) {
-			NoteFileHit(L"FindFirstFileW", a_path);
+			NoteFileHit(L"FindFirstFileW", a_path, _ReturnAddress());
 			return g_realFindW(g_selfPathW.c_str(), a_data);
 		}
 		return g_realFindW(a_path, a_data);
@@ -380,7 +408,7 @@ namespace
 			return INVALID_HANDLE_VALUE;
 		}
 		if (IsSmfFileNameA(a_path)) {
-			NoteFileHit(L"FindFirstFileA", Widen(a_path));
+			NoteFileHit(L"FindFirstFileA", Widen(a_path), _ReturnAddress());
 			return g_realFindA(g_selfPathA.c_str(), a_data);
 		}
 		return g_realFindA(a_path, a_data);
@@ -392,7 +420,7 @@ namespace
 			return INVALID_HANDLE_VALUE;
 		}
 		if (a_path && IsSmfFileName(a_path)) {
-			NoteFileHit(L"FindFirstFileExW", a_path);
+			NoteFileHit(L"FindFirstFileExW", a_path, _ReturnAddress());
 			return g_realFindExW(g_selfPathW.c_str(), a_level, a_data, a_op, a_filter, a_flags);
 		}
 		return g_realFindExW(a_path, a_level, a_data, a_op, a_filter, a_flags);
@@ -404,7 +432,7 @@ namespace
 			return INVALID_HANDLE_VALUE;
 		}
 		if (IsSmfFileNameA(a_path)) {
-			NoteFileHit(L"FindFirstFileExA", Widen(a_path));
+			NoteFileHit(L"FindFirstFileExA", Widen(a_path), _ReturnAddress());
 			return g_realFindExA(g_selfPathA.c_str(), a_level, a_data, a_op, a_filter, a_flags);
 		}
 		return g_realFindExA(a_path, a_level, a_data, a_op, a_filter, a_flags);
@@ -416,7 +444,7 @@ namespace
 			return INVALID_HANDLE_VALUE;
 		}
 		if (a_path && IsSmfFileName(a_path)) {
-			NoteFileHit(L"CreateFileW", a_path);
+			NoteFileHit(L"CreateFileW", a_path, _ReturnAddress());
 			return g_realCreateW(g_selfPathW.c_str(), a_access, a_share, a_sec, a_disp, a_flags, a_template);
 		}
 		return g_realCreateW(a_path, a_access, a_share, a_sec, a_disp, a_flags, a_template);
@@ -428,7 +456,7 @@ namespace
 			return INVALID_HANDLE_VALUE;
 		}
 		if (IsSmfFileNameA(a_path)) {
-			NoteFileHit(L"CreateFileA", Widen(a_path));
+			NoteFileHit(L"CreateFileA", Widen(a_path), _ReturnAddress());
 			return g_realCreateA(g_selfPathA.c_str(), a_access, a_share, a_sec, a_disp, a_flags, a_template);
 		}
 		return g_realCreateA(a_path, a_access, a_share, a_sec, a_disp, a_flags, a_template);
