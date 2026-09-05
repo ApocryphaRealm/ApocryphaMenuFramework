@@ -19,21 +19,101 @@ namespace
 {
 	using GetModuleHandleW_t = HMODULE(WINAPI*)(LPCWSTR);
 	using GetModuleHandleA_t = HMODULE(WINAPI*)(LPCSTR);
+	using GetModuleHandleExW_t = BOOL(WINAPI*)(DWORD, LPCWSTR, HMODULE*);
+	using GetModuleHandleExA_t = BOOL(WINAPI*)(DWORD, LPCSTR, HMODULE*);
+	using LoadLibraryW_t = HMODULE(WINAPI*)(LPCWSTR);
+	using LoadLibraryA_t = HMODULE(WINAPI*)(LPCSTR);
+	using LoadLibraryExW_t = HMODULE(WINAPI*)(LPCWSTR, HANDLE, DWORD);
+	using LoadLibraryExA_t = HMODULE(WINAPI*)(LPCSTR, HANDLE, DWORD);
+	using GetProcAddress_t = FARPROC(WINAPI*)(HMODULE, LPCSTR);
+
+	using GetFileAttributesW_t = DWORD(WINAPI*)(LPCWSTR);
+	using GetFileAttributesA_t = DWORD(WINAPI*)(LPCSTR);
+	using GetFileAttributesExW_t = BOOL(WINAPI*)(LPCWSTR, GET_FILEEX_INFO_LEVELS, LPVOID);
+	using GetFileAttributesExA_t = BOOL(WINAPI*)(LPCSTR, GET_FILEEX_INFO_LEVELS, LPVOID);
+	using FindFirstFileW_t = HANDLE(WINAPI*)(LPCWSTR, LPWIN32_FIND_DATAW);
+	using FindFirstFileA_t = HANDLE(WINAPI*)(LPCSTR, LPWIN32_FIND_DATAA);
+	using FindFirstFileExW_t = HANDLE(WINAPI*)(LPCWSTR, FINDEX_INFO_LEVELS, LPVOID, FINDEX_SEARCH_OPS, LPVOID, DWORD);
+	using FindFirstFileExA_t = HANDLE(WINAPI*)(LPCSTR, FINDEX_INFO_LEVELS, LPVOID, FINDEX_SEARCH_OPS, LPVOID, DWORD);
+	using CreateFileW_t = HANDLE(WINAPI*)(LPCWSTR, DWORD, DWORD, LPSECURITY_ATTRIBUTES, DWORD, DWORD, HANDLE);
+	using CreateFileA_t = HANDLE(WINAPI*)(LPCSTR, DWORD, DWORD, LPSECURITY_ATTRIBUTES, DWORD, DWORD, HANDLE);
 
 	HMODULE g_self = nullptr;
+	std::wstring g_selfPathW;   // full path of our own DLL - what a file query for SKSEMenuFramework.dll is answered with
+	std::string g_selfPathA;
 
 	// Resolved from kernel32 DIRECTLY, never through our own import table - our own imports get
 	// patched too, and calling through them would recurse forever.
 	GetModuleHandleW_t g_realW = nullptr;
 	GetModuleHandleA_t g_realA = nullptr;
+	GetModuleHandleExW_t g_realExW = nullptr;
+	GetModuleHandleExA_t g_realExA = nullptr;
+	LoadLibraryW_t g_realLoadW = nullptr;
+	LoadLibraryA_t g_realLoadA = nullptr;
+	LoadLibraryExW_t g_realLoadExW = nullptr;
+	LoadLibraryExA_t g_realLoadExA = nullptr;
+	GetProcAddress_t g_realGetProc = nullptr;
+
+	GetFileAttributesW_t g_realAttrW = nullptr;
+	GetFileAttributesA_t g_realAttrA = nullptr;
+	GetFileAttributesExW_t g_realAttrExW = nullptr;
+	GetFileAttributesExA_t g_realAttrExA = nullptr;
+	FindFirstFileW_t g_realFindW = nullptr;
+	FindFirstFileA_t g_realFindA = nullptr;
+	FindFirstFileExW_t g_realFindExW = nullptr;
+	FindFirstFileExA_t g_realFindExA = nullptr;
+	CreateFileW_t g_realCreateW = nullptr;
+	CreateFileA_t g_realCreateA = nullptr;
 
 	std::atomic<std::size_t> g_patched{ 0 };
 	std::atomic<std::size_t> g_hits{ 0 };
+	std::atomic<std::size_t> g_fileHits{ 0 };
 
 	std::mutex g_logLock;
 	std::set<std::wstring> g_loggedNames;   // one log line per distinct name, not per call
 
 	constexpr std::wstring_view kSmf = L"sksemenuframework";
+	constexpr std::wstring_view kSmfDll = L"sksemenuframework.dll";
+
+	std::wstring Lowered(std::wstring_view a_text)
+	{
+		std::wstring lowered;
+		lowered.reserve(a_text.size());
+		for (const auto c : a_text) {
+			lowered.push_back(static_cast<wchar_t>(::towlower(c)));
+		}
+		return lowered;
+	}
+
+	std::wstring Widen(const char* a_text)
+	{
+		if (!a_text || !*a_text) {
+			return {};
+		}
+		const int len = ::MultiByteToWideChar(CP_ACP, 0, a_text, -1, nullptr, 0);
+		if (len <= 0) {
+			return {};
+		}
+		std::wstring wide(static_cast<std::size_t>(len), L'\0');
+		::MultiByteToWideChar(CP_ACP, 0, a_text, -1, wide.data(), len);
+		wide.resize(static_cast<std::size_t>(len) - 1);   // drop the terminator
+		return wide;
+	}
+
+	std::string Narrow(const std::wstring& a_text)
+	{
+		if (a_text.empty()) {
+			return {};
+		}
+		const int len = ::WideCharToMultiByte(CP_ACP, 0, a_text.c_str(), -1, nullptr, 0, nullptr, nullptr);
+		if (len <= 0) {
+			return {};
+		}
+		std::string narrow(static_cast<std::size_t>(len), '\0');
+		::WideCharToMultiByte(CP_ACP, 0, a_text.c_str(), -1, narrow.data(), len, nullptr, nullptr);
+		narrow.resize(static_cast<std::size_t>(len) - 1);
+		return narrow;
+	}
 
 	// Matches "SKSEMenuFramework", "SKSEMenuFramework.dll", and either of those with a path in
 	// front, case-insensitively. GetModuleHandle accepts all of those spellings, so a consumer
@@ -48,17 +128,35 @@ namespace
 			a_name.remove_prefix(slash + 1);
 		}
 
-		std::wstring lowered;
-		lowered.reserve(a_name.size());
-		for (const auto c : a_name) {
-			lowered.push_back(static_cast<wchar_t>(::towlower(c)));
-		}
-
+		auto lowered = Lowered(a_name);
 		if (lowered.ends_with(L".dll")) {
 			lowered.resize(lowered.size() - 4);
 		}
 
 		return lowered == kSmf;
+	}
+
+	// The FILE the stock consumer header looks for: exactly "SKSEMenuFramework.dll" as the last
+	// path component, any directory in front, case-insensitively. Deliberately narrower than
+	// IsSmfName - a query for SKSEMenuFramework.ini or .pdb must get the honest answer, because
+	// those files really are absent and a consumer reading them should find that out.
+	bool IsSmfFileName(std::wstring_view a_path)
+	{
+		if (a_path.empty()) {
+			return false;
+		}
+		if (const auto slash = a_path.find_last_of(L"\\/"); slash != std::wstring_view::npos) {
+			a_path.remove_prefix(slash + 1);
+		}
+		if (a_path.size() != kSmfDll.size()) {
+			return false;
+		}
+		return Lowered(a_path) == kSmfDll;
+	}
+
+	bool IsSmfFileNameA(const char* a_path)
+	{
+		return a_path && IsSmfFileName(Widen(a_path));
 	}
 
 	void NoteHit(const std::wstring& a_name)
@@ -75,6 +173,19 @@ namespace
 		}
 	}
 
+	// The file-alias counterpart. Keyed by API + path so each distinct question is logged once;
+	// CreateFileW in particular can be hot, and this must never log per call.
+	void NoteFileHit(const wchar_t* a_api, const std::wstring& a_path)
+	{
+		g_fileHits.fetch_add(1, std::memory_order_relaxed);
+
+		std::scoped_lock lock(g_logLock);
+		if (g_loggedNames.insert(std::wstring(a_api) + L"|" + a_path).second) {
+			logger::info("SMF file alias: answered {}(\"{}\") with our own file - the stock consumer header's IsInstalled() looks for that file, and this is what makes it pass",
+						 std::string(a_api, a_api + ::wcslen(a_api)), std::string(a_path.begin(), a_path.end()));
+		}
+	}
+
 	HMODULE WINAPI GetModuleHandleW_Alias(LPCWSTR a_name)
 	{
 		if (a_name && IsSmfName(a_name)) {
@@ -82,6 +193,245 @@ namespace
 			return g_self;
 		}
 		return g_realW ? g_realW(a_name) : nullptr;
+	}
+
+	HMODULE WINAPI GetModuleHandleA_Alias(LPCSTR a_name)
+	{
+		if (a_name) {
+			const auto wide = Widen(a_name);
+			if (IsSmfName(wide)) {
+				NoteHit(wide);
+				return g_self;
+			}
+		}
+		return g_realA ? g_realA(a_name) : nullptr;
+	}
+
+	// GetModuleHandleEx: only when the second argument really is a name (the FROM_ADDRESS flag
+	// makes it an address instead). Answered by calling the real API on our own path, so the
+	// reference-count semantics the caller asked for are exactly preserved.
+	BOOL WINAPI GetModuleHandleExW_Alias(DWORD a_flags, LPCWSTR a_name, HMODULE* a_out)
+	{
+		if (!g_realExW) {
+			return FALSE;
+		}
+		if (a_name && !(a_flags & GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS) && IsSmfName(a_name)) {
+			NoteHit(a_name);
+			return g_realExW(a_flags, g_selfPathW.c_str(), a_out);
+		}
+		return g_realExW(a_flags, a_name, a_out);
+	}
+
+	BOOL WINAPI GetModuleHandleExA_Alias(DWORD a_flags, LPCSTR a_name, HMODULE* a_out)
+	{
+		if (!g_realExA) {
+			return FALSE;
+		}
+		if (a_name && !(a_flags & GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS)) {
+			const auto wide = Widen(a_name);
+			if (IsSmfName(wide)) {
+				NoteHit(wide);
+				return g_realExA(a_flags, g_selfPathA.c_str(), a_out);
+			}
+		}
+		return g_realExA(a_flags, a_name, a_out);
+	}
+
+	// LoadLibrary of the framework's name loads US - by our real path, through the real API, so
+	// the loader's reference count on this module goes up exactly as the caller expects and a
+	// matching FreeLibrary later cannot unload a module it never loaded.
+	HMODULE WINAPI LoadLibraryW_Alias(LPCWSTR a_name)
+	{
+		if (!g_realLoadW) {
+			return nullptr;
+		}
+		if (a_name && IsSmfName(a_name)) {
+			NoteHit(a_name);
+			return g_realLoadW(g_selfPathW.c_str());
+		}
+		return g_realLoadW(a_name);
+	}
+
+	HMODULE WINAPI LoadLibraryA_Alias(LPCSTR a_name)
+	{
+		if (!g_realLoadA) {
+			return nullptr;
+		}
+		if (a_name) {
+			const auto wide = Widen(a_name);
+			if (IsSmfName(wide)) {
+				NoteHit(wide);
+				return g_realLoadA(g_selfPathA.c_str());
+			}
+		}
+		return g_realLoadA(a_name);
+	}
+
+	HMODULE WINAPI LoadLibraryExW_Alias(LPCWSTR a_name, HANDLE a_file, DWORD a_flags)
+	{
+		if (!g_realLoadExW) {
+			return nullptr;
+		}
+		if (a_name && IsSmfName(a_name)) {
+			NoteHit(a_name);
+			return g_realLoadExW(g_selfPathW.c_str(), a_file, a_flags);
+		}
+		return g_realLoadExW(a_name, a_file, a_flags);
+	}
+
+	HMODULE WINAPI LoadLibraryExA_Alias(LPCSTR a_name, HANDLE a_file, DWORD a_flags)
+	{
+		if (!g_realLoadExA) {
+			return nullptr;
+		}
+		if (a_name) {
+			const auto wide = Widen(a_name);
+			if (IsSmfName(wide)) {
+				NoteHit(wide);
+				return g_realLoadExA(g_selfPathA.c_str(), a_file, a_flags);
+			}
+		}
+		return g_realLoadExA(a_name, a_file, a_flags);
+	}
+
+	// ----------------------------------------------------------------------------------------
+	// FILE-NAME ALIAS - the half the module alias could not reach.
+	//
+	// Measured 2026-09-05, from three Nexus reports and one Discord list, then reproduced here
+	// with the MO2 virtual alias switched off: the stock consumer header's IsInstalled() is
+	//
+	//     std::filesystem::exists("Data/SKSE/Plugins/SKSEMenuFramework.dll")
+	//
+	// and every third-party consumer surveyed (ten of ten DLLs) gates its registration on it -
+	// "SKSEMenuFramework not installed, in-game menu disabled" - BEFORE ever asking for the
+	// module. No file of that name exists on a player's install, because this framework ships
+	// no second binary. So the file question is answered the same way the module question is:
+	// a query naming exactly SKSEMenuFramework.dll is redirected to our own DLL's real path and
+	// handed to the real API. exists() sees a file, a stat sees our real size and dates, an open
+	// reads our own bytes. Nothing is written to disk, nothing is named SKSEMenuFramework.dll.
+	//
+	// Every function std::filesystem::exists can reach is covered (GetFileAttributesExW first,
+	// FindFirstFileExW and CreateFileW as its fallbacks) plus the plain A/W spellings, because
+	// which one a given STL build uses is not ours to know.
+	// ----------------------------------------------------------------------------------------
+	DWORD WINAPI GetFileAttributesW_Alias(LPCWSTR a_path)
+	{
+		if (!g_realAttrW) {
+			return INVALID_FILE_ATTRIBUTES;
+		}
+		if (a_path && IsSmfFileName(a_path)) {
+			NoteFileHit(L"GetFileAttributesW", a_path);
+			return g_realAttrW(g_selfPathW.c_str());
+		}
+		return g_realAttrW(a_path);
+	}
+
+	DWORD WINAPI GetFileAttributesA_Alias(LPCSTR a_path)
+	{
+		if (!g_realAttrA) {
+			return INVALID_FILE_ATTRIBUTES;
+		}
+		if (IsSmfFileNameA(a_path)) {
+			NoteFileHit(L"GetFileAttributesA", Widen(a_path));
+			return g_realAttrA(g_selfPathA.c_str());
+		}
+		return g_realAttrA(a_path);
+	}
+
+	BOOL WINAPI GetFileAttributesExW_Alias(LPCWSTR a_path, GET_FILEEX_INFO_LEVELS a_level, LPVOID a_info)
+	{
+		if (!g_realAttrExW) {
+			return FALSE;
+		}
+		if (a_path && IsSmfFileName(a_path)) {
+			NoteFileHit(L"GetFileAttributesExW", a_path);
+			return g_realAttrExW(g_selfPathW.c_str(), a_level, a_info);
+		}
+		return g_realAttrExW(a_path, a_level, a_info);
+	}
+
+	BOOL WINAPI GetFileAttributesExA_Alias(LPCSTR a_path, GET_FILEEX_INFO_LEVELS a_level, LPVOID a_info)
+	{
+		if (!g_realAttrExA) {
+			return FALSE;
+		}
+		if (IsSmfFileNameA(a_path)) {
+			NoteFileHit(L"GetFileAttributesExA", Widen(a_path));
+			return g_realAttrExA(g_selfPathA.c_str(), a_level, a_info);
+		}
+		return g_realAttrExA(a_path, a_level, a_info);
+	}
+
+	HANDLE WINAPI FindFirstFileW_Alias(LPCWSTR a_path, LPWIN32_FIND_DATAW a_data)
+	{
+		if (!g_realFindW) {
+			return INVALID_HANDLE_VALUE;
+		}
+		if (a_path && IsSmfFileName(a_path)) {
+			NoteFileHit(L"FindFirstFileW", a_path);
+			return g_realFindW(g_selfPathW.c_str(), a_data);
+		}
+		return g_realFindW(a_path, a_data);
+	}
+
+	HANDLE WINAPI FindFirstFileA_Alias(LPCSTR a_path, LPWIN32_FIND_DATAA a_data)
+	{
+		if (!g_realFindA) {
+			return INVALID_HANDLE_VALUE;
+		}
+		if (IsSmfFileNameA(a_path)) {
+			NoteFileHit(L"FindFirstFileA", Widen(a_path));
+			return g_realFindA(g_selfPathA.c_str(), a_data);
+		}
+		return g_realFindA(a_path, a_data);
+	}
+
+	HANDLE WINAPI FindFirstFileExW_Alias(LPCWSTR a_path, FINDEX_INFO_LEVELS a_level, LPVOID a_data, FINDEX_SEARCH_OPS a_op, LPVOID a_filter, DWORD a_flags)
+	{
+		if (!g_realFindExW) {
+			return INVALID_HANDLE_VALUE;
+		}
+		if (a_path && IsSmfFileName(a_path)) {
+			NoteFileHit(L"FindFirstFileExW", a_path);
+			return g_realFindExW(g_selfPathW.c_str(), a_level, a_data, a_op, a_filter, a_flags);
+		}
+		return g_realFindExW(a_path, a_level, a_data, a_op, a_filter, a_flags);
+	}
+
+	HANDLE WINAPI FindFirstFileExA_Alias(LPCSTR a_path, FINDEX_INFO_LEVELS a_level, LPVOID a_data, FINDEX_SEARCH_OPS a_op, LPVOID a_filter, DWORD a_flags)
+	{
+		if (!g_realFindExA) {
+			return INVALID_HANDLE_VALUE;
+		}
+		if (IsSmfFileNameA(a_path)) {
+			NoteFileHit(L"FindFirstFileExA", Widen(a_path));
+			return g_realFindExA(g_selfPathA.c_str(), a_level, a_data, a_op, a_filter, a_flags);
+		}
+		return g_realFindExA(a_path, a_level, a_data, a_op, a_filter, a_flags);
+	}
+
+	HANDLE WINAPI CreateFileW_Alias(LPCWSTR a_path, DWORD a_access, DWORD a_share, LPSECURITY_ATTRIBUTES a_sec, DWORD a_disp, DWORD a_flags, HANDLE a_template)
+	{
+		if (!g_realCreateW) {
+			return INVALID_HANDLE_VALUE;
+		}
+		if (a_path && IsSmfFileName(a_path)) {
+			NoteFileHit(L"CreateFileW", a_path);
+			return g_realCreateW(g_selfPathW.c_str(), a_access, a_share, a_sec, a_disp, a_flags, a_template);
+		}
+		return g_realCreateW(a_path, a_access, a_share, a_sec, a_disp, a_flags, a_template);
+	}
+
+	HANDLE WINAPI CreateFileA_Alias(LPCSTR a_path, DWORD a_access, DWORD a_share, LPSECURITY_ATTRIBUTES a_sec, DWORD a_disp, DWORD a_flags, HANDLE a_template)
+	{
+		if (!g_realCreateA) {
+			return INVALID_HANDLE_VALUE;
+		}
+		if (IsSmfFileNameA(a_path)) {
+			NoteFileHit(L"CreateFileA", Widen(a_path));
+			return g_realCreateA(g_selfPathA.c_str(), a_access, a_share, a_sec, a_disp, a_flags, a_template);
+		}
+		return g_realCreateA(a_path, a_access, a_share, a_sec, a_disp, a_flags, a_template);
 	}
 
 	// The consumer API's name shapes: cimgui's ig* / Im*_* wrappers and the framework's own
@@ -112,9 +462,6 @@ namespace
 		return false;
 	}
 
-	using GetProcAddress_t = FARPROC(WINAPI*)(HMODULE, LPCSTR);
-	GetProcAddress_t g_realGetProc = nullptr;
-
 	// GetProcAddress aimed at OUR module: a name we export resolves normally (and is noted by
 	// the listener); a name we lack gets a logging no-op stub instead of null, because the stock
 	// consumer header calls whatever it got back without checking it. Everything aimed at any
@@ -143,41 +490,74 @@ namespace
 		return nullptr;
 	}
 
-	HMODULE WINAPI GetModuleHandleA_Alias(LPCSTR a_name)
+	// The import names we redirect and what each becomes. Matched on the FUNCTION name, never
+	// the DLL name: these APIs are imported from kernel32.dll by some binaries and from an
+	// api-ms-win-core-* apiset by others, and a DLL-name filter silently misses the second kind.
+	struct Redirect
 	{
-		if (a_name) {
-			const std::string narrow(a_name);
-			const std::wstring wide(narrow.begin(), narrow.end());
-			if (IsSmfName(wide)) {
-				NoteHit(wide);
-				return g_self;
-			}
+		const char* name;
+		void* replacement;
+	};
+
+	const Redirect kRedirects[] = {
+		{ "GetModuleHandleW", reinterpret_cast<void*>(&GetModuleHandleW_Alias) },
+		{ "GetModuleHandleA", reinterpret_cast<void*>(&GetModuleHandleA_Alias) },
+		{ "GetModuleHandleExW", reinterpret_cast<void*>(&GetModuleHandleExW_Alias) },
+		{ "GetModuleHandleExA", reinterpret_cast<void*>(&GetModuleHandleExA_Alias) },
+		{ "LoadLibraryW", reinterpret_cast<void*>(&LoadLibraryW_Alias) },
+		{ "LoadLibraryA", reinterpret_cast<void*>(&LoadLibraryA_Alias) },
+		{ "LoadLibraryExW", reinterpret_cast<void*>(&LoadLibraryExW_Alias) },
+		{ "LoadLibraryExA", reinterpret_cast<void*>(&LoadLibraryExA_Alias) },
+		{ "GetProcAddress", reinterpret_cast<void*>(&GetProcAddress_Alias) },
+		{ "GetFileAttributesW", reinterpret_cast<void*>(&GetFileAttributesW_Alias) },
+		{ "GetFileAttributesA", reinterpret_cast<void*>(&GetFileAttributesA_Alias) },
+		{ "GetFileAttributesExW", reinterpret_cast<void*>(&GetFileAttributesExW_Alias) },
+		{ "GetFileAttributesExA", reinterpret_cast<void*>(&GetFileAttributesExA_Alias) },
+		{ "FindFirstFileW", reinterpret_cast<void*>(&FindFirstFileW_Alias) },
+		{ "FindFirstFileA", reinterpret_cast<void*>(&FindFirstFileA_Alias) },
+		{ "FindFirstFileExW", reinterpret_cast<void*>(&FindFirstFileExW_Alias) },
+		{ "FindFirstFileExA", reinterpret_cast<void*>(&FindFirstFileExA_Alias) },
+		{ "CreateFileW", reinterpret_cast<void*>(&CreateFileW_Alias) },
+		{ "CreateFileA", reinterpret_cast<void*>(&CreateFileA_Alias) },
+	};
+
+	// ONLY SKSE plugins and the MSVC C++ runtime get patched, and this restriction is
+	// load-bearing rather than tidiness. The first build of this patched the import table of
+	// EVERY loaded module - the game itself, ntdll, kernel32, and MO2's usvfs hook DLL among
+	// them - and the game died a few seconds after load with no crash log at all. usvfs
+	// virtualises the file system by hooking exactly this family of calls, so redirecting its
+	// own imports is not a compatibility fix, it is sawing the branch off.
+	//
+	// The mods that need the alias are all SKSE plugins, so the search space is SKSE\Plugins -
+	// PLUS msvcp140.dll (1.5.9): a consumer built against the dynamic C++ runtime does not run
+	// std::filesystem::exists in its own image at all. The call lands in msvcp140's
+	// __std_fs_get_stats, and it is msvcp140's import of GetFileAttributesExW that has to be
+	// answered. Every alias passes any other name straight through, so patching the runtime
+	// changes nothing for its other users.
+	bool IsPatchTarget(const wchar_t* a_path, std::size_t a_len)
+	{
+		if (!a_path || a_len == 0) {
+			return false;
 		}
-		return g_realA ? g_realA(a_name) : nullptr;
+		const auto lowered = Lowered(std::wstring_view(a_path, a_len));
+		if (lowered.find(L"\\skse\\plugins\\") != std::wstring::npos) {
+			return true;
+		}
+		std::wstring_view base(lowered);
+		if (const auto slash = base.find_last_of(L"\\/"); slash != std::wstring_view::npos) {
+			base.remove_prefix(slash + 1);
+		}
+		return base.starts_with(L"msvcp140");
 	}
 
-	// ONLY SKSE plugins get patched, and this restriction is load-bearing rather than tidiness.
-	// The first build of this patched the import table of EVERY loaded module - the game itself,
-	// ntdll, kernel32, and MO2's usvfs hook DLL among them - and the game died a few seconds
-	// after load with no crash log at all. usvfs virtualises the file system by hooking exactly
-	// this family of calls, so redirecting its own imports is not a compatibility fix, it is
-	// sawing the branch off. The mods that need the alias are all SKSE plugins, so the search
-	// space is exactly SKSE\Plugins - nothing outside it has any reason to ask for
-	// SKSEMenuFramework, and nothing outside it is ours to touch.
-	bool IsSksePlugin(HMODULE a_module)
+	bool IsPatchTarget(HMODULE a_module)
 	{
 		wchar_t path[MAX_PATH]{};
 		const auto len = ::GetModuleFileNameW(a_module, path, static_cast<DWORD>(std::size(path)));
 		if (len == 0 || len >= std::size(path)) {
 			return false;
 		}
-
-		std::wstring lowered(path, len);
-		for (auto& c : lowered) {
-			c = static_cast<wchar_t>(::towlower(c));
-		}
-
-		return lowered.find(L"\\skse\\plugins\\") != std::wstring::npos;
+		return IsPatchTarget(path, len);
 	}
 
 	// ----------------------------------------------------------------------------------------
@@ -217,20 +597,8 @@ namespace
 	using LdrRegisterDllNotification_t = NTSTATUS(NTAPI*)(ULONG, LdrDllNotificationFn, PVOID, PVOID*);
 
 	PVOID g_ldrCookie = nullptr;
-	std::atomic<std::size_t> g_loadTimePatched{ 0 };   // plugins patched from the callback
+	std::atomic<std::size_t> g_loadTimePatched{ 0 };   // modules patched from the callback
 	std::atomic<std::size_t> g_loadTimeEntries{ 0 };
-
-	bool IsSksePluginPath(const wchar_t* a_path, std::size_t a_len)
-	{
-		if (!a_path || a_len == 0) {
-			return false;
-		}
-		std::wstring lowered(a_path, a_len);
-		for (auto& c : lowered) {
-			c = static_cast<wchar_t>(::towlower(c));
-		}
-		return lowered.find(L"\\skse\\plugins\\") != std::wstring::npos;
-	}
 
 	std::size_t PatchModuleImports(HMODULE a_module);   // defined below
 
@@ -243,7 +611,7 @@ namespace
 		if (!name || !name->Buffer) {
 			return;
 		}
-		if (!IsSksePluginPath(name->Buffer, name->Length / sizeof(wchar_t))) {
+		if (!IsPatchTarget(name->Buffer, name->Length / sizeof(wchar_t))) {
 			return;
 		}
 
@@ -311,9 +679,6 @@ namespace
 			for (auto* desc = reinterpret_cast<IMAGE_IMPORT_DESCRIPTOR*>(base + dir.VirtualAddress);
 				 desc->Name != 0;
 				 ++desc) {
-				// Match on the FUNCTION name, never the DLL name: these APIs are imported from
-				// kernel32.dll by some binaries and from an api-ms-win-core-libraryloader apiset
-				// by others, and a DLL-name filter silently misses the second kind.
 				if (desc->OriginalFirstThunk == 0) {
 					continue;
 				}
@@ -328,15 +693,12 @@ namespace
 
 					auto* const byName = reinterpret_cast<IMAGE_IMPORT_BY_NAME*>(base + names->u1.AddressOfData);
 
-					if (std::strcmp(byName->Name, "GetModuleHandleW") == 0) {
-						PatchThunk(addrs, reinterpret_cast<void*>(&GetModuleHandleW_Alias));
-						++patched;
-					} else if (std::strcmp(byName->Name, "GetModuleHandleA") == 0) {
-						PatchThunk(addrs, reinterpret_cast<void*>(&GetModuleHandleA_Alias));
-						++patched;
-					} else if (std::strcmp(byName->Name, "GetProcAddress") == 0) {
-						PatchThunk(addrs, reinterpret_cast<void*>(&GetProcAddress_Alias));
-						++patched;
+					for (const auto& r : kRedirects) {
+						if (std::strcmp(byName->Name, r.name) == 0) {
+							PatchThunk(addrs, r.replacement);
+							++patched;
+							break;
+						}
 					}
 				}
 			}
@@ -345,6 +707,17 @@ namespace
 		}
 
 		return patched;
+	}
+
+	template <class T>
+	bool Resolve(HMODULE a_k32, const char* a_name, T& a_out)
+	{
+		a_out = reinterpret_cast<T>(::GetProcAddress(a_k32, a_name));
+		if (!a_out) {
+			logger::error("SMF alias: kernel32 has no \"{}\"; alias NOT installed", a_name);
+			return false;
+		}
+		return true;
 	}
 }
 
@@ -363,6 +736,18 @@ namespace smf_alias
 				logger::error("SMF module-name alias: could not resolve our own module handle; alias NOT installed");
 				return 0;
 			}
+
+			// Our own full path - the answer to every file query for SKSEMenuFramework.dll.
+			wchar_t path[MAX_PATH]{};
+			const auto len = ::GetModuleFileNameW(g_self, path, static_cast<DWORD>(std::size(path)));
+			if (len == 0 || len >= std::size(path)) {
+				logger::error("SMF file alias: could not read our own module path ({}); alias NOT installed", ::GetLastError());
+				g_self = nullptr;
+				return 0;
+			}
+			g_selfPathW.assign(path, len);
+			g_selfPathA = Narrow(g_selfPathW);
+			logger::debug("SMF file alias: file queries for SKSEMenuFramework.dll will be answered with \"{}\"", g_selfPathA);
 		}
 
 		if (!g_realW || !g_realA) {
@@ -373,11 +758,18 @@ namespace smf_alias
 				logger::error("SMF module-name alias: kernel32 handle is null; alias NOT installed");
 				return 0;
 			}
-			g_realW = reinterpret_cast<GetModuleHandleW_t>(::GetProcAddress(k32, "GetModuleHandleW"));
-			g_realA = reinterpret_cast<GetModuleHandleA_t>(::GetProcAddress(k32, "GetModuleHandleA"));
-			g_realGetProc = reinterpret_cast<GetProcAddress_t>(::GetProcAddress(k32, "GetProcAddress"));
-			if (!g_realW || !g_realA || !g_realGetProc) {
-				logger::error("SMF module-name alias: could not resolve the real GetModuleHandleW/A; alias NOT installed");
+			const bool ok =
+				Resolve(k32, "GetModuleHandleW", g_realW) && Resolve(k32, "GetModuleHandleA", g_realA) &&
+				Resolve(k32, "GetModuleHandleExW", g_realExW) && Resolve(k32, "GetModuleHandleExA", g_realExA) &&
+				Resolve(k32, "LoadLibraryW", g_realLoadW) && Resolve(k32, "LoadLibraryA", g_realLoadA) &&
+				Resolve(k32, "LoadLibraryExW", g_realLoadExW) && Resolve(k32, "LoadLibraryExA", g_realLoadExA) &&
+				Resolve(k32, "GetProcAddress", g_realGetProc) &&
+				Resolve(k32, "GetFileAttributesW", g_realAttrW) && Resolve(k32, "GetFileAttributesA", g_realAttrA) &&
+				Resolve(k32, "GetFileAttributesExW", g_realAttrExW) && Resolve(k32, "GetFileAttributesExA", g_realAttrExA) &&
+				Resolve(k32, "FindFirstFileW", g_realFindW) && Resolve(k32, "FindFirstFileA", g_realFindA) &&
+				Resolve(k32, "FindFirstFileExW", g_realFindExW) && Resolve(k32, "FindFirstFileExA", g_realFindExA) &&
+				Resolve(k32, "CreateFileW", g_realCreateW) && Resolve(k32, "CreateFileA", g_realCreateA);
+			if (!ok) {
 				g_realW = nullptr;
 				g_realA = nullptr;
 				return 0;
@@ -412,20 +804,22 @@ namespace smf_alias
 			if (modules[i] == g_self) {
 				continue;
 			}
-			if (!IsSksePlugin(modules[i])) {
+			if (!IsPatchTarget(modules[i])) {
 				continue;
 			}
 			patchedNow += PatchModuleImports(modules[i]);
 			++scanned;
 		}
 
-		logger::info("SMF module-name alias: scanned {} SKSE plugin(s), redirected {} import entr(ies) this pass ({} total; {} plugin(s) / {} entr(ies) patched at load time)",
+		logger::info("SMF alias: scanned {} module(s) (SKSE plugins + msvcp140), redirected {} import entr(ies) this pass ({} total; {} module(s) / {} entr(ies) patched at load time; {} module-name hit(s), {} file-name hit(s) so far)",
 					  scanned, patchedNow, g_patched.load(std::memory_order_relaxed),
-					  g_loadTimePatched.load(std::memory_order_relaxed), g_loadTimeEntries.load(std::memory_order_relaxed));
+					  g_loadTimePatched.load(std::memory_order_relaxed), g_loadTimeEntries.load(std::memory_order_relaxed),
+					  g_hits.load(std::memory_order_relaxed), g_fileHits.load(std::memory_order_relaxed));
 
 		return patchedNow;
 	}
 
 	std::size_t PatchedEntries() { return g_patched.load(std::memory_order_relaxed); }
 	std::size_t AliasHits() { return g_hits.load(std::memory_order_relaxed); }
+	std::size_t FileAliasHits() { return g_fileHits.load(std::memory_order_relaxed); }
 }

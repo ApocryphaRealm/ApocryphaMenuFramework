@@ -19,6 +19,12 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   `rules-version.ps1 -Action bump`. If a number was typed by hand, it is wrong until the tool
 >   agrees.
 
+## 1.5.9 - 2026-09-05 - untested
+
+### Fixed
+- PAGES FROM THOSE MODS NO LONGER CRASH THE GAME, AND THEIR COLOURS AND SPACING COME OUT RIGHT. Once the pages above could reach this framework, the first one opened (Simple Follower Framework) crashed the game: it asked for the style object (igGetStyle), which this framework did not provide, and read from the null it got back. Eighteen framework calls the ten mods on hand use were missing (igGetStyle, igBeginGroup, igEndGroup, igRadioButton_Bool, igPushStyleVar_Float/Vec2, igPopStyleVar, igPushItemFlag, igPopItemFlag, igPushStyleColor_U32, igAlignTextToFramePadding, igCalcTextSize, igIsItemDeactivatedAfterEdit, igInputFloat3, igSliderFloat3, igSliderFloat4, igSetNextItemOpen, igTreeNode_Str) and are now provided. Underneath that: the shared consumer header numbers colours, style variables and item flags the way the Dear ImGui 1.90 docking branch does, which is not how either of this framework's build lines number them, so every such index is now translated by name, and igGetStyle hands back the style laid out the way the consumer reads it. Verified by driving all 30 registered pages in game without a crash or a missing-call warning.
+- THIRD-PARTY SKSE MENU FRAMEWORK MODS NOW APPEAR. Since release, most mods built against SKSE Menu Framework registered nothing with this framework and showed no page (Nexus reports 2026-09-05; Discord list: Bobbing Framework, Casting Bar, Cinematic Conversation Camera, First Person FOV SKSE, HorsePower, Mesh Rendering Framework, Simple Follower Framework, Tears of Kyne, True Flasks). Their shared consumer header first checks that a file named Data/SKSE/Plugins/SKSEMenuFramework.dll exists and skips registration when it does not - and this framework ships no file under that name. A file-system query for exactly that name is now answered with this framework's own DLL, the same way a module-name lookup already was, so the check passes and the mod goes on to register. The C++ runtime DLL is covered too, since a mod built against the dynamic runtime performs that check inside it. Found by reproducing on this machine with the MO2 alias plugin removed: only the framework's own mods registered, every third-party mod logged 'SKSE Menu Framework not installed'.
+
 ## 1.5.8 - 2026-09-05 - untested
 
 ### Added

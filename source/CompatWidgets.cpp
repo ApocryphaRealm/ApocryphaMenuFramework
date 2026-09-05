@@ -93,7 +93,10 @@ AMF_EXPORT bool igTreeNodeEx_Str(const char* a_label, int a_flags) { return ImGu
 AMF_EXPORT void igTreePop() { ImGui::TreePop(); }
 
 // ---- style / io / input -----------------------------------------------------------------------
-AMF_EXPORT void igPushStyleColor_Vec4(int a_idx, const ImVec4 a_col) { ImGui::PushStyleColor(a_idx, a_col); }
+// Colour indices arrive numbered by the consumer header's ImGuiCol_ enum (Dear ImGui 1.90
+// docking), not ours - CompatEnums.cpp owns the translation table. (1.5.9)
+namespace compat_enums { int MapColour(int a_consumerIdx); }
+AMF_EXPORT void igPushStyleColor_Vec4(int a_idx, const ImVec4 a_col) { ImGui::PushStyleColor(compat_enums::MapColour(a_idx), a_col); }
 AMF_EXPORT void igPopStyleColor(int a_count) { ImGui::PopStyleColor(a_count); }
 AMF_EXPORT ImU32 igGetColorU32_Vec4(const ImVec4 a_col) { return ImGui::GetColorU32(a_col); }
 AMF_EXPORT float igGetFontSize() { return ImGui::GetFontSize(); }
