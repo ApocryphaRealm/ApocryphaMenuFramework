@@ -3,6 +3,7 @@
 #include "utils/Logger.h"
 
 #include <psapi.h>
+#include <winternl.h>
 
 #include <atomic>
 #include <cstring>
@@ -117,6 +118,96 @@ namespace
 		return lowered.find(L"\\skse\\plugins\\") != std::wstring::npos;
 	}
 
+	// ----------------------------------------------------------------------------------------
+	// LOAD-TIME PATCHING - the half that makes the alias arrive in time.
+	//
+	// Measured 2026-09-04 (real-SMF reference run mirrored against AMF 1.5.3): two consumers
+	// resolve the framework INSIDE their own SKSEPlugin_Load, about 100 ms after AMF loaded and
+	// before any SKSE message exists - and the stock header caches whatever that first call
+	// returns, forever. A pass over "every loaded module" at our own load sees two plugins; the
+	// pass at kPostLoad sees them all but is already too late for anything that looked during
+	// Load. So the patch has to land on each plugin BETWEEN its imports being resolved and its
+	// entry point running. That window is exactly what the loader's DLL-load notification is.
+	//
+	// LdrRegisterDllNotification is ntdll, not kernel32, and is not in the SDK headers, so the
+	// structures are stated here from the documented layout. The callback runs under the loader
+	// lock: it must not load libraries or wait on anything that might, which is why it only
+	// walks the new module's import table and touches a couple of atomics.
+	// ----------------------------------------------------------------------------------------
+	struct LDR_DLL_LOADED_NOTIFICATION_DATA
+	{
+		ULONG Flags;
+		const UNICODE_STRING* FullDllName;
+		const UNICODE_STRING* BaseDllName;
+		PVOID DllBase;
+		ULONG SizeOfImage;
+	};
+
+	union LDR_DLL_NOTIFICATION_DATA
+	{
+		LDR_DLL_LOADED_NOTIFICATION_DATA Loaded;
+		LDR_DLL_LOADED_NOTIFICATION_DATA Unloaded;   // same layout for the unloaded case
+	};
+
+	constexpr ULONG LDR_DLL_NOTIFICATION_REASON_LOADED = 1;
+
+	using LdrDllNotificationFn = VOID(CALLBACK*)(ULONG, const LDR_DLL_NOTIFICATION_DATA*, PVOID);
+	using LdrRegisterDllNotification_t = NTSTATUS(NTAPI*)(ULONG, LdrDllNotificationFn, PVOID, PVOID*);
+
+	PVOID g_ldrCookie = nullptr;
+	std::atomic<std::size_t> g_loadTimePatched{ 0 };   // plugins patched from the callback
+	std::atomic<std::size_t> g_loadTimeEntries{ 0 };
+
+	bool IsSksePluginPath(const wchar_t* a_path, std::size_t a_len)
+	{
+		if (!a_path || a_len == 0) {
+			return false;
+		}
+		std::wstring lowered(a_path, a_len);
+		for (auto& c : lowered) {
+			c = static_cast<wchar_t>(::towlower(c));
+		}
+		return lowered.find(L"\\skse\\plugins\\") != std::wstring::npos;
+	}
+
+	std::size_t PatchModuleImports(HMODULE a_module);   // defined below
+
+	VOID CALLBACK OnDllNotification(ULONG a_reason, const LDR_DLL_NOTIFICATION_DATA* a_data, PVOID)
+	{
+		if (a_reason != LDR_DLL_NOTIFICATION_REASON_LOADED || !a_data) {
+			return;
+		}
+		const auto* name = a_data->Loaded.FullDllName;
+		if (!name || !name->Buffer) {
+			return;
+		}
+		if (!IsSksePluginPath(name->Buffer, name->Length / sizeof(wchar_t))) {
+			return;
+		}
+
+		const auto n = PatchModuleImports(static_cast<HMODULE>(a_data->Loaded.DllBase));
+		if (n > 0) {
+			g_loadTimePatched.fetch_add(1, std::memory_order_relaxed);
+			g_loadTimeEntries.fetch_add(n, std::memory_order_relaxed);
+		}
+	}
+
+	bool RegisterLoadNotification()
+	{
+		if (g_ldrCookie) {
+			return true;
+		}
+		const auto ntdll = ::GetModuleHandleW(L"ntdll.dll");
+		if (!ntdll) {
+			return false;
+		}
+		const auto reg = reinterpret_cast<LdrRegisterDllNotification_t>(::GetProcAddress(ntdll, "LdrRegisterDllNotification"));
+		if (!reg) {
+			return false;
+		}
+		return reg(0, &OnDllNotification, nullptr, &g_ldrCookie) == 0 && g_ldrCookie != nullptr;
+	}
+
 	void PatchThunk(IMAGE_THUNK_DATA* a_thunk, void* a_replacement)
 	{
 		if (reinterpret_cast<void*>(a_thunk->u1.Function) == a_replacement) {
@@ -227,6 +318,18 @@ namespace smf_alias
 			}
 		}
 
+		// Registered once, at the first Install() - which is AMF's own SKSEPlugin_Load, so every
+		// plugin that loads after us is patched before its own Load can look the framework up.
+		static bool s_notified = false;
+		if (!s_notified) {
+			s_notified = true;
+			if (RegisterLoadNotification()) {
+				logger::info("SMF module-name alias: load-time patching armed (LdrRegisterDllNotification) - plugins loading after this point are patched before their entry point runs");
+			} else {
+				logger::warn("SMF module-name alias: LdrRegisterDllNotification unavailable - falling back to the message-phase sweeps only, which arrive too late for consumers that resolve during their own load");
+			}
+		}
+
 		HMODULE modules[1024]{};
 		DWORD needed = 0;
 		if (!::EnumProcessModules(::GetCurrentProcess(), modules, sizeof(modules), &needed)) {
@@ -250,8 +353,9 @@ namespace smf_alias
 			++scanned;
 		}
 
-		logger::info("SMF module-name alias: scanned {} SKSE plugin(s), redirected {} import entr(ies) this pass ({} total)",
-					  scanned, patchedNow, g_patched.load(std::memory_order_relaxed));
+		logger::info("SMF module-name alias: scanned {} SKSE plugin(s), redirected {} import entr(ies) this pass ({} total; {} plugin(s) / {} entr(ies) patched at load time)",
+					  scanned, patchedNow, g_patched.load(std::memory_order_relaxed),
+					  g_loadTimePatched.load(std::memory_order_relaxed), g_loadTimeEntries.load(std::memory_order_relaxed));
 
 		return patchedNow;
 	}

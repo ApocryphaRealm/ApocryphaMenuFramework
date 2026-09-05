@@ -19,6 +19,12 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   `rules-version.ps1 -Action bump`. If a number was typed by hand, it is wrong until the tool
 >   agrees.
 
+## 1.5.4 - 2026-09-04 - untested
+
+### Fixed
+- MODS BUILT FOR SKSE MENU FRAMEWORK NOW ACTUALLY REGISTER. 1.5.3's module-name alias was right and arrived too late: measured against a real-SMF reference run, two third-party consumers resolve the framework inside their own `SKSEPlugin_Load` - about 100 ms after this framework loaded, before any SKSE message exists - and the stock header caches whatever that first call returns. Our sweeps at load and `kPostLoad` could not reach an import table that did not exist yet. The alias is now applied from a loader DLL-load notification (`LdrRegisterDllNotification`), which fires for each plugin after its imports are resolved and before its entry point runs, so it precedes every possible first lookup. Verified: nine third-party SMF mods plus DevBench registered - Block Overhaul, Dynamic Wind, Input Manager, Quick Commands, STB Widgets, Show Player In Inventory, StepUpOnto, Typing Mode, devbench - taking the menu from 12 sections to 21, and DevBench reports the framework version it resolved (`v1.2`) instead of `v0.0`.
+- OPENING A THIRD-PARTY PAGE NO LONGER CRASHES THE GAME. With registration working, the first page opened (Block Overhaul) called an ImGui widget export this framework did not have; the stock header's widget wrappers are not null-guarded, so a missing export is a call to address zero. Added the 61 widget exports the installed consumers reference and this framework lacked - windows, popups, combos, tab bars, tables, tooltips, drag/input floats, tree nodes, style colours, text wrap, `igGetIO`, `ImDrawList_AddLine` and the rest - with the public consumer header's signatures verbatim. Every third-party page was then opened in turn with the game surviving each one, and Input Manager's and STB Widgets' pages photographed rendering their tabs, sliders, combos and tables.
+
 ## 1.5.3 - 2026-09-04 - untested
 
 ### Added
