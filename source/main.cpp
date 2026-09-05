@@ -1,3 +1,4 @@
+#include <fstream>
 #include "AMF/API.h"
 #include "DevBenchTool.h"
 #include "Input.h"
@@ -196,26 +197,42 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 	// Workaround for static initialization order bug of CommonLibSSE-NG
 	REL::Module::reset();
 
-	// ADDRESS LIBRARY PRE-CHECK (1.5.6). Every address this plugin touches resolves through
-	// Address Library, and CommonLibSSE opens the database on the FIRST lookup - with the error
-	// "REL/ID.h(223): failed to open address library file", naming a build-directory hash and
-	// nothing a player can act on (bug report filed 2026-09-04). Check for the file ourselves,
-	// before any relocation, and fail with the instruction instead. SE names the file
-	// version-X-Y-Z-0.bin; AE (1.6+) names it versionlib-X-Y-Z-0.bin.
+	// ADDRESS LIBRARY PRE-CHECK (1.5.6, tightened 1.5.7). Every address this plugin touches
+	// resolves through Address Library, and CommonLibSSE opens the database on the FIRST lookup -
+	// with errors that name a build-directory hash and nothing a player can act on (bug reports
+	// 2026-08-27 and 2026-09-04). Check the file ourselves, before any relocation, and fail with
+	// an instruction instead. SE names the file version-X-Y-Z-0.bin (format 1); AE 1.6.x names it
+	// versionlib-X-Y-Z-0.bin (format 2). Skyrim 1.7.x ships a NEW database format (5) that the
+	// CommonLibSSE-NG this build links cannot read, so a 1.7.x game is refused up front with the
+	// truth - "install the newer library" would only move the player to a different error box.
 	{
 		const auto ver = REL::Module::get().version();
 		const bool ae = ver[1] >= 6;
 		const auto file = std::format("Data/SKSE/Plugins/{}-{}-{}-{}-0.bin", ae ? "versionlib" : "version", ver[0], ver[1], ver[2]);
+		constexpr auto kHub = "Still stuck? The Apocrypha Realm Modding Hub on Discord - post in the bug reports forum with your skse64.log.";
 		std::error_code ec;
 		if (!std::filesystem::exists(file, ec)) {
 			const auto msg = std::format(
 				"Apocrypha Menu Framework cannot start: no Address Library database for Skyrim {}.{}.{}.\n\n"
 				"Missing file: {}\n\n"
-				"Install \"Address Library for SKSE Plugins - All in One\" from Nexus (mod 32444). The plain "
-				"SE-only download does not include databases for newer game versions.\n\n"
-				"Still stuck? The Apocrypha Realm Modding Hub on Discord - post in the bug reports forum "
-				"with your skse64.log.",
-				ver[0], ver[1], ver[2], file);
+				"Install \"Address Library for SKSE Plugins\" (Nexus mod 32444) - the \"All in One\" file, "
+				"which carries the database for every game version this build supports.\n\n{}",
+				ver[0], ver[1], ver[2], file, kHub);
+			logger::critical("{}", msg);
+			SKSE::stl::report_and_fail(msg);
+		}
+		const std::int32_t expectedFormat = ae ? 2 : 1;
+		std::int32_t format = 0;
+		if (std::ifstream in(file, std::ios::binary); in) {
+			in.read(reinterpret_cast<char*>(&format), sizeof(format));
+		}
+		if (ver[1] >= 7 || format != expectedFormat) {
+			const auto msg = std::format(
+				"Apocrypha Menu Framework cannot start: Skyrim {}.{}.{} is not supported by this build.\n\n"
+				"Supported: Skyrim SE 1.5.97 and AE 1.6.x. Its Address Library database ({}) is format {}; "
+				"this build reads format {}. Updating the library will not change that - the mod itself "
+				"needs a build for this game version.\n\n{}",
+				ver[0], ver[1], ver[2], file, format, expectedFormat, kHub);
 			logger::critical("{}", msg);
 			SKSE::stl::report_and_fail(msg);
 		}

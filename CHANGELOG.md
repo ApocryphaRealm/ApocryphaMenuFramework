@@ -19,6 +19,18 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   `rules-version.ps1 -Action bump`. If a number was typed by hand, it is wrong until the tool
 >   agrees.
 
+## 1.5.7 - 2026-09-04 - untested
+
+### Changed
+- THE ADDRESS LIBRARY CHECK NOW TELLS THE TRUTH ABOUT SKYRIM 1.7.x. Skyrim 1.7.99 and 1.7.104
+  ship their Address Library databases in a new file format (5) that the CommonLibSSE-NG this
+  build links cannot read, so on those games the mod could never get past its first address
+  lookup - and 1.5.6's message would have sent the player to install a library that changes
+  nothing. The pre-check now reads the database's format number and, on a 1.7.x game or a
+  format this build does not read, stops with: which game versions ARE supported (SE 1.5.97,
+  AE 1.6.x), that updating the library will not help, and the Discord hub. The missing-file
+  message now names the "All in One" download plainly.
+
 ## 1.5.6 - 2026-09-05 - untested
 
 ### Added
