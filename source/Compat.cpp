@@ -313,64 +313,64 @@ namespace compat
 // the embedded Dear ImGui. Text family forwards va_list (the igTextDisabledV gotcha family).
 // --------------------------------------------------------------------------------------------
 
-AMF_EXPORT void igTextV(const char* a_fmt, va_list a_args) { ImGui::TextV(a_fmt, a_args); }
-AMF_EXPORT void igTextWrappedV(const char* a_fmt, va_list a_args) { ImGui::TextWrappedV(a_fmt, a_args); }
-AMF_EXPORT void igTextDisabledV(const char* a_fmt, va_list a_args) { ImGui::TextDisabledV(a_fmt, a_args); }
-AMF_EXPORT void igSetTooltipV(const char* a_fmt, va_list a_args) { ImGui::SetTooltipV(a_fmt, a_args); }
+AMF_EXPORT void igTextV(const char* a_fmt, va_list a_args) { if (a_fmt) { ImGui::TextV(a_fmt, a_args); } }
+AMF_EXPORT void igTextWrappedV(const char* a_fmt, va_list a_args) { if (a_fmt) { ImGui::TextWrappedV(a_fmt, a_args); } }
+AMF_EXPORT void igTextDisabledV(const char* a_fmt, va_list a_args) { if (a_fmt) { ImGui::TextDisabledV(a_fmt, a_args); } }
+AMF_EXPORT void igSetTooltipV(const char* a_fmt, va_list a_args) { if (a_fmt) { ImGui::SetTooltipV(a_fmt, a_args); } }
 
 AMF_EXPORT void igSameLine(float a_offset, float a_spacing) { ImGui::SameLine(a_offset, a_spacing); }
 AMF_EXPORT void igSpacing() { ImGui::Spacing(); }
 AMF_EXPORT void igSeparator() { ImGui::Separator(); }
-AMF_EXPORT void igSeparatorText(const char* a_label) { ImGui::SeparatorText(a_label); }
+AMF_EXPORT void igSeparatorText(const char* a_label) { ImGui::SeparatorText(a_label ? a_label : ""); }
 AMF_EXPORT void igIndent(float a_width) { ImGui::Indent(a_width); }
 AMF_EXPORT void igUnindent(float a_width) { ImGui::Unindent(a_width); }
 AMF_EXPORT void igPushItemWidth(float a_width) { ImGui::PushItemWidth(a_width); }
 AMF_EXPORT void igPopItemWidth() { ImGui::PopItemWidth(); }
 AMF_EXPORT bool igBeginChild_Str(const char* a_id, const ImVec2 a_size, int a_childFlags, int a_windowFlags)
 {
-	return ImGui::BeginChild(a_id, a_size, a_childFlags, a_windowFlags);
+	return ImGui::BeginChild(a_id ? a_id : "##", a_size, a_childFlags, a_windowFlags);
 }
 AMF_EXPORT void igEndChild() { ImGui::EndChild(); }
 
-AMF_EXPORT bool igButton(const char* a_label, const ImVec2 a_size) { return ImGui::Button(a_label, a_size); }
+AMF_EXPORT bool igButton(const char* a_label, const ImVec2 a_size) { return ImGui::Button(a_label ? a_label : "", a_size); }
 AMF_EXPORT bool igCombo_Str_arr(const char* a_label, int* a_current, const char* const a_items[], int a_count, int a_popupMax)
 {
-	return ImGui::Combo(a_label, a_current, a_items, a_count, a_popupMax);
+	return (a_current && a_items) ? ImGui::Combo(a_label ? a_label : "", a_current, a_items, a_count, a_popupMax) : false;
 }
 AMF_EXPORT bool igCombo_Str(const char* a_label, int* a_current, const char* a_itemsSeparatedByZeros, int a_popupMax)
 {
-	return ImGui::Combo(a_label, a_current, a_itemsSeparatedByZeros, a_popupMax);
+	return (a_current && a_itemsSeparatedByZeros) ? ImGui::Combo(a_label ? a_label : "", a_current, a_itemsSeparatedByZeros, a_popupMax) : false;
 }
-AMF_EXPORT bool igCheckbox(const char* a_label, bool* a_value) { return ImGui::Checkbox(a_label, a_value); }
+AMF_EXPORT bool igCheckbox(const char* a_label, bool* a_value) { return a_value ? ImGui::Checkbox(a_label ? a_label : "", a_value) : false; }
 AMF_EXPORT bool igSliderFloat(const char* a_label, float* a_value, float a_min, float a_max, const char* a_format, int a_flags)
 {
-	return ImGui::SliderFloat(a_label, a_value, a_min, a_max, a_format, a_flags);
+	return a_value ? ImGui::SliderFloat(a_label ? a_label : "", a_value, a_min, a_max, a_format ? a_format : "%.3f", a_flags) : false;
 }
 AMF_EXPORT bool igSliderInt(const char* a_label, int* a_value, int a_min, int a_max, const char* a_format, int a_flags)
 {
-	return ImGui::SliderInt(a_label, a_value, a_min, a_max, a_format, a_flags);
+	return a_value ? ImGui::SliderInt(a_label ? a_label : "", a_value, a_min, a_max, a_format ? a_format : "%d", a_flags) : false;
 }
 AMF_EXPORT bool igInputInt(const char* a_label, int* a_value, int a_step, int a_stepFast, int a_flags)
 {
-	return ImGui::InputInt(a_label, a_value, a_step, a_stepFast, a_flags);
+	return a_value ? ImGui::InputInt(a_label ? a_label : "", a_value, a_step, a_stepFast, a_flags) : false;
 }
 AMF_EXPORT bool igInputText(const char* a_label, char* a_buf, size_t a_bufSize, int a_flags, ImGuiInputTextCallback a_callback, void* a_userData)
 {
-	return ImGui::InputText(a_label, a_buf, a_bufSize, a_flags, a_callback, a_userData);
+	return (a_buf && a_bufSize > 0) ? ImGui::InputText(a_label ? a_label : "", a_buf, a_bufSize, a_flags, a_callback, a_userData) : false;
 }
 AMF_EXPORT bool igSelectable_Bool(const char* a_label, bool a_selected, int a_flags, const ImVec2 a_size)
 {
-	return ImGui::Selectable(a_label, a_selected, a_flags, a_size);
+	return ImGui::Selectable(a_label ? a_label : "", a_selected, a_flags, a_size);
 }
 AMF_EXPORT bool igCollapsingHeader_TreeNodeFlags(const char* a_label, int a_flags)
 {
-	return ImGui::CollapsingHeader(a_label, a_flags);
+	return ImGui::CollapsingHeader(a_label ? a_label : "", a_flags);
 }
 AMF_EXPORT bool igInvisibleButton(const char* a_id, const ImVec2 a_size, int a_flags)
 {
-	return ImGui::InvisibleButton(a_id, a_size, a_flags);
+	return ImGui::InvisibleButton(a_id ? a_id : "##", a_size, a_flags);
 }
-AMF_EXPORT void igPushID_Str(const char* a_id) { ImGui::PushID(a_id); }
+AMF_EXPORT void igPushID_Str(const char* a_id) { ImGui::PushID(a_id ? a_id : ""); }
 AMF_EXPORT void igPopID() { ImGui::PopID(); }
 
 AMF_EXPORT bool igIsItemHovered(int a_flags) { return ImGui::IsItemHovered(a_flags); }

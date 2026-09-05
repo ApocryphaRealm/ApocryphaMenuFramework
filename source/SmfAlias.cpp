@@ -1,4 +1,5 @@
 #include "SmfAlias.h"
+#include "ExportStubs.h"
 
 #include "utils/Logger.h"
 
@@ -11,6 +12,8 @@
 #include <set>
 #include <string>
 #include <string_view>
+
+namespace export_stubs::detail { void NoteKnown(const char* a_name); }
 
 namespace
 {
@@ -79,6 +82,65 @@ namespace
 			return g_self;
 		}
 		return g_realW ? g_realW(a_name) : nullptr;
+	}
+
+	// The consumer API's name shapes: cimgui's ig* / Im*_* wrappers and the framework's own
+	// verbs. Anything else asked of this module is some other plugin's probe.
+	bool IsSmfApiName(const char* a_name)
+	{
+		static constexpr const char* kVerbs[] = {
+			"AddSectionItem", "AddWindow", "AddWindowWithView", "GetMainWindow", "GetMenuFrameworkVersion",
+			"IsAnyBlockingWindowOpened", "SetHotkeyEnabled", "IsHotkeyEnabled", "SetWindowsPauseGame",
+			"RegisterEventPriority", "UnregisterEvent", "RegisterInpoutEvent", "RegisterInputEvent",
+			"UnregisterInputEvent", "RegisterHudElement", "UnregisterHudElement", "LoadTexture",
+			"DisposeTexture", "PushFont", "PushRegular", "PushSolid", "PushBrands", "Pop",
+		};
+		if (!a_name) {
+			return false;
+		}
+		if (std::strncmp(a_name, "ig", 2) == 0 && a_name[2] >= 'A' && a_name[2] <= 'Z') {
+			return true;
+		}
+		if (std::strncmp(a_name, "Im", 2) == 0 && std::strchr(a_name, '_') != nullptr) {
+			return true;
+		}
+		for (const auto v : kVerbs) {
+			if (std::strcmp(a_name, v) == 0) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	using GetProcAddress_t = FARPROC(WINAPI*)(HMODULE, LPCSTR);
+	GetProcAddress_t g_realGetProc = nullptr;
+
+	// GetProcAddress aimed at OUR module: a name we export resolves normally (and is noted by
+	// the listener); a name we lack gets a logging no-op stub instead of null, because the stock
+	// consumer header calls whatever it got back without checking it. Everything aimed at any
+	// other module passes straight through. Ordinal imports (name < 0x10000) are not ours to
+	// interpret and pass through too.
+	FARPROC WINAPI GetProcAddress_Alias(HMODULE a_module, LPCSTR a_name)
+	{
+		if (!g_realGetProc) {
+			return nullptr;
+		}
+		const auto real = g_realGetProc(a_module, a_name);
+		if (a_module != g_self || !a_name || reinterpret_cast<std::uintptr_t>(a_name) < 0x10000) {
+			return real;
+		}
+		if (real) {
+			export_stubs::detail::NoteKnown(a_name);
+			return real;
+		}
+		// Only names shaped like the SKSE Menu Framework consumer API get a stub. The very first
+		// live run showed why this must be narrow: a plugin probing EVERY loaded module for
+		// "ReShadeRegisterAddon" was handed a stub, took the non-null as "this module is ReShade",
+		// and called it. A probe for something we are not must get the honest null back.
+		if (IsSmfApiName(a_name)) {
+			return reinterpret_cast<FARPROC>(export_stubs::StubFor(a_name));
+		}
+		return nullptr;
 	}
 
 	HMODULE WINAPI GetModuleHandleA_Alias(LPCSTR a_name)
@@ -272,6 +334,9 @@ namespace
 					} else if (std::strcmp(byName->Name, "GetModuleHandleA") == 0) {
 						PatchThunk(addrs, reinterpret_cast<void*>(&GetModuleHandleA_Alias));
 						++patched;
+					} else if (std::strcmp(byName->Name, "GetProcAddress") == 0) {
+						PatchThunk(addrs, reinterpret_cast<void*>(&GetProcAddress_Alias));
+						++patched;
 					}
 				}
 			}
@@ -310,7 +375,8 @@ namespace smf_alias
 			}
 			g_realW = reinterpret_cast<GetModuleHandleW_t>(::GetProcAddress(k32, "GetModuleHandleW"));
 			g_realA = reinterpret_cast<GetModuleHandleA_t>(::GetProcAddress(k32, "GetModuleHandleA"));
-			if (!g_realW || !g_realA) {
+			g_realGetProc = reinterpret_cast<GetProcAddress_t>(::GetProcAddress(k32, "GetProcAddress"));
+			if (!g_realW || !g_realA || !g_realGetProc) {
 				logger::error("SMF module-name alias: could not resolve the real GetModuleHandleW/A; alias NOT installed");
 				g_realW = nullptr;
 				g_realA = nullptr;

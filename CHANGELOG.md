@@ -19,6 +19,15 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   `rules-version.ps1 -Action bump`. If a number was typed by hand, it is wrong until the tool
 >   agrees.
 
+## 1.5.5 - 2026-09-04 - untested
+
+### Added
+- A NULL GUARD FOR EXPORTS THIS FRAMEWORK DOES NOT HAVE, AND A LISTENER THAT NAMES THEM. The stock SKSE Menu Framework header calls whatever `GetProcAddress` returns without checking it, so a consumer asking for a widget export this framework lacks used to receive null and crash the game the first time its page drew. This framework already answers the module-name lookup for SKSE plugins; it now answers their `GetProcAddress` for its own module too. A name it exports resolves normally; a name shaped like the SMF consumer API that it lacks resolves to a generated stub that returns zero (in both the integer and floating-point return registers) and logs the name once - the page draws with a hole in it instead of the game dying, and the log says which export to add next. Names not shaped like the consumer API get the honest null: the first live run showed a plugin probing every module for `ReShadeRegisterAddon`, taking a stub as "this is ReShade", and calling it.
+- Every resolved export is logged once at debug as an inventory of what consumers actually use.
+
+### Fixed
+- Argument null guards across the widget exports: a null label, format string, value pointer, buffer or draw list no longer reaches Dear ImGui.
+
 ## 1.5.4 - 2026-09-04 - untested
 
 ### Fixed
