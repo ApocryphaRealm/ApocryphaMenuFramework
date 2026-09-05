@@ -11,6 +11,7 @@
 
 #include <imgui.h>
 
+#include <atomic>
 #include <mutex>
 #include <unordered_set>
 #include <vector>
@@ -35,6 +36,7 @@ namespace input
 				kGamepad,
 				kThumbstick,  // left stick, for menu nav in controller mode (x,y in [-1,1])
 				kCharacter,
+				kCursorSet,   // absolute placement from a driver (DevBench)
 			};
 
 			Kind kind{};
@@ -104,6 +106,13 @@ namespace input
 		// MouseMoveEvent deltas (the Wheeler-lineage approach from the survey).
 		float g_cursorX = 0.0f;
 		float g_cursorY = 0.0f;
+		// Records that must land on a LATER frame (see QueueMouseClick). Drained by the render
+		// thread at the top of ProcessQueuedEvents; guarded by the same lock as the main queue.
+		struct Deferred { int framesLeft; Record record; };
+		std::vector<Deferred> g_deferred;
+
+		std::atomic<float> g_cursorMirrorX{ 0.0f };   // read by DevBench off-thread
+		std::atomic<float> g_cursorMirrorY{ 0.0f };
 
 		void Enqueue(const Record& a_record)
 		{
@@ -443,6 +452,20 @@ namespace input
 		std::vector<Record> drained;
 		{
 			std::scoped_lock lock(g_queueLock);
+			// Deferred records: count down, and promote the ones that are due into this drain
+			// AFTER everything already queued, so a press never overtakes the move before it.
+			for (auto it = g_deferred.begin(); it != g_deferred.end();)
+			{
+				if (--it->framesLeft <= 0)
+				{
+					g_queue.push_back(it->record);
+					it = g_deferred.erase(it);
+				}
+				else
+				{
+					++it;
+				}
+			}
 			drained.swap(g_queue);
 		}
 
@@ -463,6 +486,17 @@ namespace input
 				g_cursorY += record.y;
 				g_cursorX = g_cursorX < 0.0f ? 0.0f : (g_cursorX > display.x - 1.0f ? display.x - 1.0f : g_cursorX);
 				g_cursorY = g_cursorY < 0.0f ? 0.0f : (g_cursorY > display.y - 1.0f ? display.y - 1.0f : g_cursorY);
+				break;
+			case Record::Kind::kCursorSet:
+				// Absolute placement from a driver (DevBench). Counts as mouse use so the shell
+				// switches to keyboard/mouse presentation, exactly as a real move would.
+				NoteDevice(Device::kKeyboardMouse);
+				g_cursorX = record.x < 0.0f ? 0.0f : (record.x > display.x - 1.0f ? display.x - 1.0f : record.x);
+				g_cursorY = record.y < 0.0f ? 0.0f : (record.y > display.y - 1.0f ? display.y - 1.0f : record.y);
+				// Publish the position NOW, ahead of any button record queued behind it in this
+				// same drain. The per-frame AddMousePosEvent runs after the loop, so without this
+				// a driver's press would reach ImGui before the move and land on the old spot.
+				io.AddMousePosEvent(g_cursorX, g_cursorY);
 				break;
 			case Record::Kind::kMouseButton:
 				if (record.down) { NoteDevice(Device::kKeyboardMouse); }
@@ -556,6 +590,8 @@ namespace input
 		// unconditionally last - paired with trickle-off (set at init) - means the software
 		// cursor is the only position ImGui ever acts on.
 		io.AddMousePosEvent(g_cursorX, g_cursorY);
+		g_cursorMirrorX.store(g_cursorX, std::memory_order_relaxed);
+		g_cursorMirrorY.store(g_cursorY, std::memory_order_relaxed);
 	}
 
 	void OnMenuOpened()
@@ -627,5 +663,28 @@ namespace input
 	std::int64_t LastCapturedKey()
 	{
 		return g_lastCaptured.load(std::memory_order_acquire);
+	}
+
+	void SetCursorAbsolute(float a_x, float a_y)
+	{
+		Enqueue({ Record::Kind::kCursorSet, 0, false, a_x, a_y });
+	}
+
+	void QueueMouseButton(std::uint32_t a_button, bool a_down)
+	{
+		Enqueue({ Record::Kind::kMouseButton, a_button, a_down, 0.0f, 0.0f });
+	}
+
+	void QueueMouseClick(std::uint32_t a_button)
+	{
+		std::scoped_lock lock(g_queueLock);
+		g_deferred.push_back({ 1, { Record::Kind::kMouseButton, a_button, true, 0.0f, 0.0f } });
+		g_deferred.push_back({ 3, { Record::Kind::kMouseButton, a_button, false, 0.0f, 0.0f } });
+	}
+
+	void GetCursor(float& a_x, float& a_y)
+	{
+		a_x = g_cursorMirrorX.load(std::memory_order_relaxed);
+		a_y = g_cursorMirrorY.load(std::memory_order_relaxed);
 	}
 }

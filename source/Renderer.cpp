@@ -1381,7 +1381,10 @@ namespace renderer
 						 ",\"mod\":\"" + esc(rows[i].modName) + "\",\"shows\":\"" + esc(rows[i].displayName) + "\"}";
 			}
 		}
-		return std::string("{\"visible\":") + (visible ? "true" : "false") +
+		float cursorX = 0.0f, cursorY = 0.0f;
+		input::GetCursor(cursorX, cursorY);
+		return std::string("{\"cursor\":{\"x\":") + std::to_string(static_cast<int>(cursorX)) + ",\"y\":" + std::to_string(static_cast<int>(cursorY)) + "}" +
+			   ",\"visible\":" + (visible ? "true" : "false") +
 			   ",\"tab\":\"" + esc(tab) + "\",\"selected\":\"" + esc(node) + "\",\"selectedMod\":" + std::to_string(selMod) +
 			   ",\"controllerMode\":" + (input::UsingController() ? "true" : "false") +
 			   ",\"lastDevice\":\"" + (input::LastDevice() == input::Device::kGamepad ? "gamepad" :

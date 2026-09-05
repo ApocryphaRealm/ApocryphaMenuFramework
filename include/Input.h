@@ -60,6 +60,20 @@ namespace input
 	// backend NewFrame calls and ImGui::NewFrame().
 	void ProcessQueuedEvents();
 
+	// DRIVING (1.5.6). The software cursor is the only mouse position ImGui ever sees while the
+	// menu is open - the game recentres the OS cursor every frame - so an outside driver cannot
+	// point at a widget through the OS. These give DevBench an authoritative way in: place the
+	// cursor at an absolute display-space position, press/release a button, and read where the
+	// cursor is. All three are queued and applied on the render thread like real input.
+	void SetCursorAbsolute(float a_x, float a_y);
+	void QueueMouseButton(std::uint32_t a_button, bool a_down);
+	// A full click that SPANS FRAMES: press one frame after the call, release two frames after
+	// that. ImGui event trickling is off in this framework (set at init, for the software
+	// cursor), so a press and release queued in the same drain collapse to no click at all -
+	// measured 2026-09-05 on a checkbox that the cursor was visibly sitting on.
+	void QueueMouseClick(std::uint32_t a_button);
+	void GetCursor(float& a_x, float& a_y);
+
 	// Render-thread notification that the menu just opened: centres the software cursor and
 	// clears any stale queued events from a previous open.
 	void OnMenuOpened();

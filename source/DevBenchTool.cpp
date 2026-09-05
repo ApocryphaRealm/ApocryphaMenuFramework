@@ -21,6 +21,19 @@ namespace devbenchtool
 {
 	namespace
 	{
+		// Minimal extractor for a top-level JSON number field: "key":123 or "key":12.5.
+		double JsonNum(const std::string& a_json, const char* a_key, double a_default)
+		{
+			const std::string needle = std::string("\"") + a_key + "\"";
+			auto pos = a_json.find(needle);
+			if (pos == std::string::npos) return a_default;
+			pos = a_json.find(':', pos + needle.size());
+			if (pos == std::string::npos) return a_default;
+			++pos;
+			while (pos < a_json.size() && (a_json[pos] == ' ' || a_json[pos] == '	')) ++pos;
+			try { return std::stod(a_json.substr(pos)); } catch (...) { return a_default; }
+		}
+
 		// Minimal extractor for a top-level JSON string field: finds "key":"value" and returns
 		// value (handling backslash escapes). Enough for this tool's small, controlled argument
 		// shape - no dependency on a JSON library.
@@ -120,6 +133,36 @@ namespace devbenchtool
 			{
 				renderer::ResetModOrder();
 				result = "{\"ok\":true,\"op\":\"resetorder\"}";
+			}
+			else if (op == "cursor")
+			{
+				// Point-and-click driving (1.5.6): place the software cursor at an absolute
+				// display-space position. The OS cursor is not what ImGui reads here.
+				const double x = JsonNum(args, "x", -1);
+				const double y = JsonNum(args, "y", -1);
+				if (x < 0 || y < 0)
+				{
+					result = "{\"ok\":false,\"error\":\"cursor needs x and y (display pixels)\"}";
+				}
+				else
+				{
+					input::SetCursorAbsolute(static_cast<float>(x), static_cast<float>(y));
+					result = "{\"ok\":true,\"op\":\"cursor\",\"x\":" + std::to_string(x) + ",\"y\":" + std::to_string(y) + "}";
+				}
+			}
+			else if (op == "click")
+			{
+				// Press and release at the current cursor; optional x/y places it first. Down and
+				// up land on separate frames - trickling is off in this framework, so same-frame pairs vanish.
+				const double x = JsonNum(args, "x", -1);
+				const double y = JsonNum(args, "y", -1);
+				const int button = static_cast<int>(JsonNum(args, "button", 0));
+				if (x >= 0 && y >= 0)
+				{
+					input::SetCursorAbsolute(static_cast<float>(x), static_cast<float>(y));
+				}
+				input::QueueMouseClick(static_cast<std::uint32_t>(button));
+				result = "{\"ok\":true,\"op\":\"click\",\"button\":" + std::to_string(button) + "}";
 			}
 			else if (op == "state" || op.empty())
 			{

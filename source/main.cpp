@@ -17,6 +17,8 @@
 #include <Windows.h>
 
 #include <array>
+#include <filesystem>
+#include <format>
 
 // ============================================================================================
 // Apocrypha Menu Framework - M0: a plugin that loads on both runtimes, logs richly, and ships
@@ -193,6 +195,31 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 
 	// Workaround for static initialization order bug of CommonLibSSE-NG
 	REL::Module::reset();
+
+	// ADDRESS LIBRARY PRE-CHECK (1.5.6). Every address this plugin touches resolves through
+	// Address Library, and CommonLibSSE opens the database on the FIRST lookup - with the error
+	// "REL/ID.h(223): failed to open address library file", naming a build-directory hash and
+	// nothing a player can act on (bug report filed 2026-09-04). Check for the file ourselves,
+	// before any relocation, and fail with the instruction instead. SE names the file
+	// version-X-Y-Z-0.bin; AE (1.6+) names it versionlib-X-Y-Z-0.bin.
+	{
+		const auto ver = REL::Module::get().version();
+		const bool ae = ver[1] >= 6;
+		const auto file = std::format("Data/SKSE/Plugins/{}-{}-{}-{}-0.bin", ae ? "versionlib" : "version", ver[0], ver[1], ver[2]);
+		std::error_code ec;
+		if (!std::filesystem::exists(file, ec)) {
+			const auto msg = std::format(
+				"Apocrypha Menu Framework cannot start: no Address Library database for Skyrim {}.{}.{}.\n\n"
+				"Missing file: {}\n\n"
+				"Install \"Address Library for SKSE Plugins - All in One\" from Nexus (mod 32444). The plain "
+				"SE-only download does not include databases for newer game versions.\n\n"
+				"Still stuck? The Apocrypha Realm Modding Hub on Discord - post in the bug reports forum "
+				"with your skse64.log.",
+				ver[0], ver[1], ver[2], file);
+			logger::critical("{}", msg);
+			SKSE::stl::report_and_fail(msg);
+		}
+	}
 
 	const SKSE::PluginDeclaration* plugin = SKSE::PluginDeclaration::GetSingleton();
 

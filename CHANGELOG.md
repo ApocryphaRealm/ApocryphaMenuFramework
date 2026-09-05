@@ -19,6 +19,12 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   `rules-version.ps1 -Action bump`. If a number was typed by hand, it is wrong until the tool
 >   agrees.
 
+## 1.5.6 - 2026-09-05 - untested
+
+### Added
+- POINT-AND-CLICK DRIVING FOR TESTS. `amf.menu` gains `op=cursor` (x, y in display pixels) and `op=click` (optional x, y, button), and `op=state` now reports the software cursor. While the menu is open the game recentres the OS cursor every frame, so the framework's own integrated cursor is the only position Dear ImGui ever sees - an outside driver could not point at a widget at all. The cursor is placed and its position published ahead of any queued button in the same frame, and a click's press and release land on separate frames because event trickling is off in this framework. Verified: a third-party mod's checkbox toggled by a driven click, its own Save Settings pressed the same way, the value written to its INI on disk, the game saved and reloaded with the page showing the change.
+- A PLAYER-FACING ADDRESS LIBRARY CHECK. Every address here resolves through Address Library, and CommonLibSSE opens its database on the first lookup with an error that names a build-directory hash and nothing to act on (bug report 2026-09-04). The framework now checks for the database file for the running game version before its first lookup and, when it is missing, stops with the file name, the download to install (Address Library for SKSE Plugins - All in One), and where to get help.
+
 ## 1.5.5 - 2026-09-04 - untested
 
 ### Added
