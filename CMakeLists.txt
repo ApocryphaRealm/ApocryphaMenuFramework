@@ -65,6 +65,13 @@ find_package(imgui CONFIG REQUIRED)
 add_commonlibsse_plugin(${PROJECT_NAME} SOURCES ${headers} ${sources})
 add_library("${PROJECT_NAME}::${PROJECT_NAME}" ALIAS "${PROJECT_NAME}")
 
+# Which build line this DLL is (one source tree, two CommonLibs). "1" = the SE 1.5.97 / AE 1.6.x
+# line on CommonLibSSE-NG 3.7.0 (cmake/ports); "17" = the Skyrim 1.7.x line on CommonLibSSE-NG
+# 7.2.0 (cmake/ports-17, preset build-relwithdebinfo-17). The Address Library pre-check in
+# main.cpp and the load-time log line read it; nothing else may branch on it.
+set(AMF_RUNTIME_LINE "1" CACHE STRING "Build line: 1 (SE/AE 1.6) or 17 (Skyrim 1.7.x)")
+target_compile_definitions(${PROJECT_NAME} PRIVATE AMF_RUNTIME_LINE=${AMF_RUNTIME_LINE})
+
 ########################################################################################################################
 ## Debug symbols (CLAUDE.md rule 43) - stated on the target, never left to a default
 ########################################################################################################################

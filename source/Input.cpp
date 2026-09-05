@@ -519,11 +519,11 @@ namespace input
 						// Modifier flags tracked explicitly - "modifier keys are not left/right
 						// side conscious" (survey, ModExplorerMenu's translation notes).
 						if (key == ImGuiKey_LeftShift || key == ImGuiKey_RightShift)
-							io.AddKeyEvent(ImGuiKey_ModShift, record.down);
+							io.AddKeyEvent(ImGuiMod_Shift, record.down);
 						else if (key == ImGuiKey_LeftCtrl || key == ImGuiKey_RightCtrl)
-							io.AddKeyEvent(ImGuiKey_ModCtrl, record.down);
+							io.AddKeyEvent(ImGuiMod_Ctrl, record.down);
 						else if (key == ImGuiKey_LeftAlt || key == ImGuiKey_RightAlt)
-							io.AddKeyEvent(ImGuiKey_ModAlt, record.down);
+							io.AddKeyEvent(ImGuiMod_Alt, record.down);
 					}
 					break;
 				}

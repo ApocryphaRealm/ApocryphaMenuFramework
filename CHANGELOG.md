@@ -19,7 +19,26 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   `rules-version.ps1 -Action bump`. If a number was typed by hand, it is wrong until the tool
 >   agrees.
 
-## 1.5.7 - 2026-09-04 - untested
+## 1.5.7 - 2026-09-04 - working
+
+> Line 1 observed on Apostasy Test Build (SE 1.5.97) 2026-09-04 23:53: log opens "Build line: SE
+> 1.5.97 / AE 1.6.x (CommonLibSSE-NG 3.7.0); game 1.5.97.0", 21 sections listed, menu opened and
+> captured, no crash log. Line 17 observed on Steam 1.7.104 + SKSE 2.3.1 + Address Library v13
+> 2026-09-04 23:47-23:55: "Build line: Skyrim 1.7.x (CommonLibSSE-NG 7.2.0); game 1.7.104.0", DXGI
+> present + D3D init + PollInputDevices hooked, DevBench answered amf.menu state. Wrong-pick test:
+> the line-1 DLL on 1.7.104 stops with this mod's own "re-run the installer" box, not CommonLib's.
+
+### Added
+- A SKYRIM 1.7.x BUILD, AND AN INSTALLER THAT ASKS WHICH GAME YOU HAVE. Skyrim 1.7.99 / 1.7.104
+  (what Steam installs since 28 August 2026) ship their Address Library databases in a new format
+  that the CommonLibSSE-NG this mod was built on cannot read, so on those games the mod could
+  never start. The same source now builds twice: the SE 1.5.97 / AE 1.6.x line as before, and a
+  Skyrim 1.7.x line on CommonLibSSE-NG 7.2.0. The download is a FOMOD whose one question is your
+  game version; it installs the matching DLL. The 1.7 DLL is distributed under GPL-3.0-or-later
+  because of the library it links (its licence texts and a NOTICE install alongside it); the
+  mod's own source and the SE/1.6 DLL stay MIT.
+- The load-time log now names the build line and the game version on its third line, so a log
+  from a bug report says at once which DLL the player has and which game they ran it on.
 
 ### Changed
 - THE ADDRESS LIBRARY CHECK NOW TELLS THE TRUTH ABOUT SKYRIM 1.7.x. Skyrim 1.7.99 and 1.7.104

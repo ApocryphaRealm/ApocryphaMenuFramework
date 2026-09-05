@@ -221,22 +221,39 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 			logger::critical("{}", msg);
 			SKSE::stl::report_and_fail(msg);
 		}
-		const std::int32_t expectedFormat = ae ? 2 : 1;
+		// Two build lines, one source (CMake AMF_RUNTIME_LINE): line 1 is SE 1.5.97 / AE 1.6.x on
+		// CommonLibSSE-NG 3.7.0 and reads formats 1 and 2; line 17 is Skyrim 1.7.x on CommonLibSSE-NG
+		// 7.2.0 and reads format 5 for 1.7 (and 2 for 1.6). The FOMOD installs whichever the player
+		// picked, so a wrong pick is the most likely reason to land here - say so.
+		constexpr bool kLine17 = (AMF_RUNTIME_LINE == 17);
+		const bool game17 = ver[1] >= 7;
+		const std::int32_t expectedFormat = !ae ? 1 : (game17 ? 5 : 2);
+		const char* const  lineReads = kLine17 ? "2 and 5" : "1 and 2";  // what THIS build line can read
+		const bool lineSupportsGame = kLine17 ? ae : !game17;
 		std::int32_t format = 0;
 		if (std::ifstream in(file, std::ios::binary); in) {
 			in.read(reinterpret_cast<char*>(&format), sizeof(format));
 		}
-		if (ver[1] >= 7 || format != expectedFormat) {
+		if (!lineSupportsGame || format != expectedFormat) {
 			const auto msg = std::format(
-				"Apocrypha Menu Framework cannot start: Skyrim {}.{}.{} is not supported by this build.\n\n"
-				"Supported: Skyrim SE 1.5.97 and AE 1.6.x. Its Address Library database ({}) is format {}; "
-				"this build reads format {}. Updating the library will not change that - the mod itself "
-				"needs a build for this game version.\n\n{}",
-				ver[0], ver[1], ver[2], file, format, expectedFormat, kHub);
+				"Apocrypha Menu Framework cannot start: Skyrim {}.{}.{} is not supported by the installed build.\n\n"
+				"This is the {} build; it supports {}. Its Address Library database ({}) is format {}; "
+				"this build reads formats {}.\n\n"
+				"Re-run the mod's installer and pick the option for your game version. Updating Address "
+				"Library alone will not change this.\n\n{}",
+				ver[0], ver[1], ver[2],
+				kLine17 ? "Skyrim 1.7.x" : "Skyrim SE / AE 1.6",
+				kLine17 ? "Skyrim AE 1.6.x and 1.7.x" : "Skyrim SE 1.5.97 and AE 1.6.x",
+				file, format, lineReads, kHub);
 			logger::critical("{}", msg);
 			SKSE::stl::report_and_fail(msg);
 		}
 	}
+
+	// SKSE::Init AFTER the pre-check (it may touch the module/database) and BEFORE our logger:
+	// CommonLibSSE-NG 7.x (the Skyrim 1.7.x line) installs its own truncating default logger inside
+	// SKSE::Init, so ours has to come after it to keep every line in our format on both lines.
+	SKSE::Init(a_skse);
 
 	const SKSE::PluginDeclaration* plugin = SKSE::PluginDeclaration::GetSingleton();
 
@@ -247,8 +264,8 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 
 	logger::info("Loading {} {}...", plugin->GetName(), plugin->GetVersion());
 	logger::info("Original framework embedding Dear ImGui (MIT); not a fork of SKSE Menu Framework");
+	logger::info("Build line: {} (CommonLibSSE-NG {}); game {}", AMF_RUNTIME_LINE == 17 ? "Skyrim 1.7.x" : "SE 1.5.97 / AE 1.6.x", AMF_RUNTIME_LINE == 17 ? "7.2.0" : "3.7.0", REL::Module::get().version().string("."));
 
-	SKSE::Init(a_skse);
 	logger::debug("SKSE core APIs initialized");
 
 	// SMF module-name alias, as early as we can manage. Third-party mods built against the stock
