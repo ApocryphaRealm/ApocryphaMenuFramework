@@ -387,6 +387,27 @@ AMF_EXPORT void igGetCursorScreenPos(ImVec2* a_out)
 	}
 }
 AMF_EXPORT ImDrawList* igGetWindowDrawList() { return ImGui::GetWindowDrawList(); }
+
+// Screen-wide draw lists, so a consumer can draw an overlay anywhere (e.g. a HUD position preview)
+// rather than being clipped to the current window. The Nil forms use the main viewport.
+AMF_EXPORT ImDrawList* igGetForegroundDrawList_Nil() { return ImGui::GetForegroundDrawList(); }
+AMF_EXPORT ImDrawList* igGetBackgroundDrawList_Nil() { return ImGui::GetBackgroundDrawList(); }
+
+AMF_EXPORT void ImDrawList_AddRect(ImDrawList* a_self, const ImVec2 a_min, const ImVec2 a_max, ImU32 a_color, float a_rounding, int a_flags, float a_thickness)
+{
+	if (a_self)
+	{
+		a_self->AddRect(a_min, a_max, a_color, a_rounding, a_flags, a_thickness);
+	}
+}
+
+AMF_EXPORT void ImDrawList_AddText_Vec2(ImDrawList* a_self, const ImVec2 a_pos, ImU32 a_color, const char* a_textBegin, const char* a_textEnd)
+{
+	if (a_self)
+	{
+		a_self->AddText(a_pos, a_color, a_textBegin, a_textEnd);
+	}
+}
 AMF_EXPORT float igGetFrameHeight() { return ImGui::GetFrameHeight(); }
 AMF_EXPORT void ImDrawList_AddRectFilled(ImDrawList* a_self, const ImVec2 a_min, const ImVec2 a_max, ImU32 a_color, float a_rounding, int a_flags)
 {

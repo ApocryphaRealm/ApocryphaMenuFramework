@@ -19,6 +19,15 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   `rules-version.ps1 -Action bump`. If a number was typed by hand, it is wrong until the tool
 >   agrees.
 
+## 1.5.8 - 2026-09-05 - untested
+
+### Added
+- SCREEN-WIDE DRAWING FOR MOD MENUS. A mod's settings page can now draw an overlay anywhere on
+  the screen, not only inside its own window - the foreground and background draw lists are
+  exposed (igGetForegroundDrawList, igGetBackgroundDrawList) along with the rectangle and text
+  draw calls. The first use is a HUD-position preview that shows where a HUD element will sit
+  while you adjust it; any mod can use it.
+
 ## 1.5.7 - 2026-09-04 - working
 
 > Line 1 observed on Apostasy Test Build (SE 1.5.97) 2026-09-04 23:53: log opens "Build line: SE
