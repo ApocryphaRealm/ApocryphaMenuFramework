@@ -175,8 +175,19 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 	// shim lists only the real name). So the FIRST call initialises; any later call - same
 	// module or a genuine second copy - is refused before it touches the logger, the messaging
 	// interface, or a hook. A named event is process-wide, so it holds in both cases.
+	//
+	// THE NAME CARRIES THE PROCESS ID (1.5.9). "Local\" is the LOGON SESSION's namespace, not the
+	// process's: the plain name was shared with every other SkyrimSE.exe alive at the time, and a
+	// game left wedged in its exit (1.7.104, 2026-09-05 - one thread, no window, unkillable)
+	// still held the event, so the NEXT game's AMF saw ERROR_ALREADY_EXISTS at its first and only
+	// load, returned "import target only", and ran nothing - no log, no menu, no alias - while
+	// SKSE reported it "loaded correctly". A lingering SkyrimSE.exe is a common thing on a
+	// player's machine. Scoping the name to this process keeps the once-only guard exactly
+	// once-only for THIS game and nobody else's.
 	{
-		HANDLE once = CreateEventW(nullptr, TRUE, FALSE, L"Local\\ApocryphaMenuFramework.SKSEPlugin_Load.once");
+		wchar_t onceName[128]{};
+		swprintf_s(onceName, L"Local\\ApocryphaMenuFramework.SKSEPlugin_Load.once.%lu", static_cast<unsigned long>(GetCurrentProcessId()));
+		HANDLE once = CreateEventW(nullptr, TRUE, FALSE, onceName);
 		if (once && GetLastError() == ERROR_ALREADY_EXISTS)
 		{
 			CloseHandle(once);
