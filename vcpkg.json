@@ -1,6 +1,6 @@
 ﻿{
     "name": "apocryphamenuframework",
-    "version-string": "1.6.0",
+    "version-string": "1.6.1",
     "description": "Original SKSE menu framework embedding Dear ImGui. Not a fork of SKSE Menu Framework.",
     "homepage": "https://github.com/ApocryphaRealm/ApocryphaMenuFramework",
     "license": "MIT",
@@ -9,6 +9,7 @@
         {
             "name": "imgui",
             "features": [
+                "docking-experimental",
                 "dx11-binding",
                 "win32-binding"
             ]

@@ -19,6 +19,14 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   `rules-version.ps1 -Action bump`. If a number was typed by hand, it is wrong until the tool
 >   agrees.
 
+## 1.6.1 - 2026-09-05 - untested
+
+### Changed
+- THE EMBEDDED DEAR IMGUI IS NOW THE ONE SKSE MENU FRAMEWORK USES: 1.90.8, docking branch, on both build lines (an overlay port; vcpkg's registry never carried 1.90.8). Mods built against the SKSE Menu Framework header now meet exactly the colour, style-variable, item-flag and struct layout that header was generated from, so nothing needs translating; the translation added in 1.5.9 stays in place as a safety net.
+
+### Added
+- FAST EXIT, so a closing game can never get stuck where nothing can end it. When the game asks Windows to exit, the framework flushes its log and ends the process at once instead of letting every loaded DLL and driver run its shutdown code - the phase in which a Skyrim 1.7.104 test game wedged on 2026-09-05 into a state no in-process or external kill could reach. On by default (bEnabled under [FastExit]; a toggle on the Settings page). Nothing the game needs is lost: saves are written when you save, settings when you change them.
+
 ## 1.6.0 - 2026-09-05 - untested
 
 ### Changed

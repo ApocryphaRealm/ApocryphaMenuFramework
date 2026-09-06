@@ -368,6 +368,7 @@ namespace renderer
 				ScanFonts();
 				BuildFonts();
 				watchdog::Init();
+				{ std::string why; watchdog::InstallFastExit(why); }
 				ImGui::GetStyle().ScaleAllSizes(g_uiScale);
 
 				ImGui::GetIO().IniFilename = "Data/SKSE/Plugins/ApocryphaMenuFramework_layout.ini";
@@ -411,6 +412,11 @@ namespace renderer
 			// made a reversible preference into something you had to reinstall to change - and
 			// forked the documentation, the INI and the support answers along with it. One build,
 			// one INI, and the choice lives here where it can be changed and changed back.
+			if (widgets::Toggle("Fast exit - end the process the moment the game exits", &values.fastExit))
+			{
+				logger::info("settings page: fast exit -> {}", values.fastExit);
+				settings::Save();
+			}
 			if (widgets::Toggle("Mod settings in the game's System menu", &values.systemMenuRow))
 			{
 				logger::info("settings page: system menu row -> {}", values.systemMenuRow);

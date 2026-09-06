@@ -1,6 +1,6 @@
 {
     "name": "apocryphamenuframework-17",
-    "version-string": "1.6.0",
+    "version-string": "1.6.1",
     "description": "Apocrypha Menu Framework, Skyrim 1.7.x build line: same sources, CommonLibSSE-NG 7.2.0 (cmake/ports-17) on a 2026-08-22 vcpkg baseline. The SE/AE-1.6 line keeps the root manifest untouched.",
     "homepage": "https://github.com/ApocryphaRealm/ApocryphaMenuFramework",
     "license": "MIT",
@@ -9,6 +9,7 @@
         {
             "name": "imgui",
             "features": [
+                "docking-experimental",
                 "dx11-binding",
                 "win32-binding"
             ]

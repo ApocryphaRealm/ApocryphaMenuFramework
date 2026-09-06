@@ -59,6 +59,11 @@ namespace settings
 		// installed and collides with none of it.
 		bool systemMenuRow = true;
 		bool watchdogEnabled = true;
+		// Fast exit (the author, 2026-09-05: "a way to deal with this on exit no kill function issue"):
+		// when the game asks Windows to exit, end the process at once instead of running every
+		// loaded DLL's and driver's shutdown code - the phase in which a game can wedge into a state
+		// no kill, inside or outside the process, can reach. Nothing the game needs happens there.
+		bool fastExit = true;
 		std::uint32_t watchdogSeconds = 120;
 		std::int32_t windowPreset = 0;   // 0 = centre (the standard). Preset positions, never free placement -
 		                                 // the author 2026-08-27, same anchor philosophy as the minimap; more presets later.

@@ -104,7 +104,11 @@ namespace
 		ImGuiCol_HeaderHovered, ImGuiCol_HeaderActive, ImGuiCol_Separator, ImGuiCol_SeparatorHovered, ImGuiCol_SeparatorActive,
 		ImGuiCol_ResizeGrip, ImGuiCol_ResizeGripHovered, ImGuiCol_ResizeGripActive, ImGuiCol_Tab, ImGuiCol_TabHovered,
 		kOurTabActive, kOurTabUnfocused, kOurTabUnfocusedActive,
+#ifdef IMGUI_HAS_DOCK
+		ImGuiCol_DockingPreview, ImGuiCol_DockingEmptyBg,   // exact: this ImGui is the docking branch (1.90.8, SMF's own)
+#else
 		kOurTabActive /* DockingPreview: no docking here; the nearest thing it tints */, ImGuiCol_WindowBg /* DockingEmptyBg */,
+#endif
 		ImGuiCol_PlotLines, ImGuiCol_PlotLinesHovered, ImGuiCol_PlotHistogram, ImGuiCol_PlotHistogramHovered,
 		ImGuiCol_TableHeaderBg, ImGuiCol_TableBorderStrong, ImGuiCol_TableBorderLight, ImGuiCol_TableRowBg, ImGuiCol_TableRowBgAlt,
 		ImGuiCol_TextSelectedBg, ImGuiCol_DragDropTarget, kOurNavHighlight, ImGuiCol_NavWindowingHighlight,
@@ -118,14 +122,17 @@ namespace
 		bool vec2;
 	};
 
-#if IMGUI_VERSION_NUM >= 19100
-	constexpr ImGuiStyleVar kOurAngledAngle = ImGuiStyleVar_TableAngledHeadersAngle;
+#if IMGUI_VERSION_NUM >= 19010
+	constexpr ImGuiStyleVar kOurAngledAngle = ImGuiStyleVar_TableAngledHeadersAngle;      // both added in 1.90.1
 	constexpr ImGuiStyleVar kOurAngledAlign = ImGuiStyleVar_TableAngledHeadersTextAlign;
-	constexpr ImGuiStyleVar kOurTabBorderSize = ImGuiStyleVar_TabBorderSize;
 #else
 	constexpr ImGuiStyleVar kOurAngledAngle = -1;
 	constexpr ImGuiStyleVar kOurAngledAlign = -1;
-	constexpr ImGuiStyleVar kOurTabBorderSize = -1;   // 1.90.2 has the style field but no push-able var for it
+#endif
+#if IMGUI_VERSION_NUM >= 19100
+	constexpr ImGuiStyleVar kOurTabBorderSize = ImGuiStyleVar_TabBorderSize;              // added in 1.91.0
+#else
+	constexpr ImGuiStyleVar kOurTabBorderSize = -1;   // 1.90.x has the style field but no push-able var for it
 #endif
 
 	constexpr VarMap kVarMap[SmfVar_COUNT] = {
@@ -140,7 +147,12 @@ namespace
 		{ ImGuiStyleVar_TabBarBorderSize, false }, { kOurAngledAngle, false }, { kOurAngledAlign, true },
 		{ ImGuiStyleVar_ButtonTextAlign, true }, { ImGuiStyleVar_SelectableTextAlign, true },
 		{ ImGuiStyleVar_SeparatorTextBorderSize, false }, { ImGuiStyleVar_SeparatorTextAlign, true },
-		{ ImGuiStyleVar_SeparatorTextPadding, true }, { -1 /* DockingSeparatorSize */, false },
+		{ ImGuiStyleVar_SeparatorTextPadding, true },
+#ifdef IMGUI_HAS_DOCK
+		{ ImGuiStyleVar_DockingSeparatorSize, false },
+#else
+		{ -1 /* DockingSeparatorSize */, false },
+#endif
 	};
 	static_assert(sizeof(kVarMap) / sizeof(kVarMap[0]) == SmfVar_COUNT, "style-var map must cover the consumer enum exactly");
 
@@ -290,10 +302,13 @@ namespace
 		o.TabBorderSize = s.TabBorderSize;
 #if IMGUI_VERSION_NUM >= 19100
 		o.TabMinWidthForCloseButton = s.TabCloseButtonMinWidthSelected;
+#else
+		o.TabMinWidthForCloseButton = s.TabMinWidthForCloseButton;
+#endif
+#if IMGUI_VERSION_NUM >= 19010
 		o.TableAngledHeadersAngle = s.TableAngledHeadersAngle;
 		o.TableAngledHeadersTextAlign = s.TableAngledHeadersTextAlign;
 #else
-		o.TabMinWidthForCloseButton = s.TabMinWidthForCloseButton;
 		o.TableAngledHeadersAngle = 0.0f;
 		o.TableAngledHeadersTextAlign = ImVec2(0.5f, 0.0f);
 #endif
@@ -306,7 +321,11 @@ namespace
 		o.SeparatorTextPadding = s.SeparatorTextPadding;
 		o.DisplayWindowPadding = s.DisplayWindowPadding;
 		o.DisplaySafeAreaPadding = s.DisplaySafeAreaPadding;
-		o.DockingSeparatorSize = 0.0f;   // no docking in either line
+#ifdef IMGUI_HAS_DOCK
+		o.DockingSeparatorSize = s.DockingSeparatorSize;
+#else
+		o.DockingSeparatorSize = 0.0f;   // no docking on this line
+#endif
 		o.MouseCursorScale = s.MouseCursorScale;
 		o.AntiAliasedLines = s.AntiAliasedLines;
 		o.AntiAliasedLinesUseTex = s.AntiAliasedLinesUseTex;

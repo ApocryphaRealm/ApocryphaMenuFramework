@@ -34,6 +34,16 @@ namespace watchdog
 	// thread, including devbench's listener thread while the main thread is hung.
 	[[noreturn]] void KillNow(const std::string& a_reason);
 
+	// FAST EXIT (1.6.1). Hooks kernel32!ExitProcess itself (the Steam-packed executable exposes no import) so the moment the
+	// game asks Windows to exit, the process is terminated outright: the log is flushed and nothing
+	// else runs. What is skipped is DLL_PROCESS_DETACH for every loaded module and the drivers'
+	// teardown - the phase in which a Skyrim 1.7.104 test game wedged on 2026-09-05 into one
+	// thread, no window, unreachable by TerminateProcess from outside AND by this watchdog (its
+	// thread had already been torn down by then). Returns false when the exe's import could not be
+	// found; a_reason names what happened either way.
+	bool InstallFastExit(std::string& a_reason);
+	bool FastExitInstalled();
+
 	// JSON for the DevBench tool: frame counter, seconds since the last frame, whether the
 	// watchdog considers the game hung, and the configured window.
 	std::string StatusJson();

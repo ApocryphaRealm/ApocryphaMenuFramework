@@ -143,6 +143,7 @@ namespace settings
 				if (it != entries.end()) { g_values.fontPath = it->second; }
 			}
 			ReadBool(entries, "Watchdog.bEnabled", g_values.watchdogEnabled);
+			ReadBool(entries, "FastExit.bEnabled", g_values.fastExit);
 			ReadNumber(entries, "Watchdog.uSeconds", g_values.watchdogSeconds);
 			ReadNumber(entries, "Display.uWindowPreset", g_values.windowPreset);
 			if (const auto it = entries.find("Theme.sThemeId"); it != entries.end() && !it->second.empty())
@@ -226,6 +227,12 @@ namespace settings
 				"; hung and closes itself - no Task Manager needed. 0 or bEnabled=0 disables it.\n"
 				"bEnabled=" << (g_values.watchdogEnabled ? 1 : 0) << "\n"
 				"uSeconds=" << g_values.watchdogSeconds << "\n"
+				"\n"
+				"[FastExit]\n"
+				"; When the game exits, end the process at once instead of running every DLL's and\n"
+				"; driver's shutdown code - the phase where a closing game can get stuck beyond any kill.\n"
+				"; Saves and settings are written when you save or change them, not at exit. 0 disables.\n"
+				"bEnabled=" << (g_values.fastExit ? 1 : 0) << "\n"
 				"\n"
 				"[Theme]\n"
 				"; Registry id (see the theme picker on the Framework Settings page).\n"

@@ -5,6 +5,9 @@
 
 #include <Windows.h>
 
+#include <cstdint>
+#include <cstring>
+
 #include <atomic>
 #include <chrono>
 #include <thread>
@@ -13,6 +16,91 @@ namespace watchdog
 {
 	namespace
 	{
+		using ExitProcess_t = void(WINAPI*)(UINT);
+		ExitProcess_t g_rtlExitUserProcess = nullptr;   // ntdll's implementation: what kernel32!ExitProcess itself calls
+		bool g_fastExitInstalled = false;
+		std::uint8_t g_savedBytes[5]{};
+		std::uint8_t* g_hookTarget = nullptr;
+
+		void WINAPI ExitProcess_Fast(UINT a_code)
+		{
+			if (!settings::Get().fastExit)
+			{
+				// The first five bytes of kernel32!ExitProcess are ours now, so the ordinary path is
+				// what ExitProcess itself would have called next: ntdll's RtlExitUserProcess.
+				logger::info("fast exit is off; letting the game exit the ordinary way (code {})", a_code);
+				logger::flush();
+				if (g_rtlExitUserProcess) { g_rtlExitUserProcess(a_code); }
+				::TerminateProcess(::GetCurrentProcess(), a_code);
+			}
+			logger::info("fast exit: the game asked to exit (code {}) - terminating the process now, skipping every DLL's and driver's shutdown", a_code);
+			logger::flush();
+			::TerminateProcess(::GetCurrentProcess(), a_code);
+			for (;;) { ::Sleep(1000); }
+		}
+
+		// An executable page within +/-2 GB of a_near, so a five-byte relative jump can reach it.
+		// Walked outward from a_near in 64 KB steps, both directions, first free region wins.
+		std::uint8_t* AllocNear(const std::uint8_t* a_near)
+		{
+			const auto base = reinterpret_cast<std::uintptr_t>(a_near) & ~static_cast<std::uintptr_t>(0xFFFF);
+			constexpr std::uintptr_t kStep = 0x10000;
+			constexpr std::uintptr_t kRange = 0x7FF00000;
+			for (std::uintptr_t off = kStep; off < kRange; off += kStep)
+			{
+				for (const std::uintptr_t cand : { base - off, base + off })
+				{
+					if (cand < 0x10000) { continue; }
+					MEMORY_BASIC_INFORMATION mbi{};
+					if (!::VirtualQuery(reinterpret_cast<void*>(cand), &mbi, sizeof(mbi))) { continue; }
+					if (mbi.State != MEM_FREE) { continue; }
+					auto* p = static_cast<std::uint8_t*>(::VirtualAlloc(reinterpret_cast<void*>(cand), 0x1000, MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE));
+					if (p) { return p; }
+				}
+			}
+			return nullptr;
+		}
+
+		// Hooks kernel32!ExitProcess itself - NOT an import table. The game executable is Steam-
+		// packed: the import directory its in-memory headers point at is the packer's, with no
+		// ExitProcess in it (measured 2026-09-05), so the one place every exit passes through is
+		// the function. Five bytes at its start become a relative jump to a nearby page holding
+		// an absolute jump into ExitProcess_Fast. Refused (never stacked) if those bytes already
+		// look like somebody else's jump - another fast-exit mod, say - and reported as such.
+		bool HookKernel32ExitProcess(std::string& a_why)
+		{
+			const auto k32 = ::GetModuleHandleW(L"kernel32.dll");
+			const auto ntdll = ::GetModuleHandleW(L"ntdll.dll");
+			if (!k32 || !ntdll) { a_why = "kernel32 or ntdll handle missing"; return false; }
+			auto* target = reinterpret_cast<std::uint8_t*>(::GetProcAddress(k32, "ExitProcess"));
+			g_rtlExitUserProcess = reinterpret_cast<ExitProcess_t>(::GetProcAddress(ntdll, "RtlExitUserProcess"));
+			if (!target || !g_rtlExitUserProcess) { a_why = "ExitProcess or RtlExitUserProcess not found"; return false; }
+			if (target[0] == 0xE9 || target[0] == 0xEB || (target[0] == 0xFF && target[1] == 0x25))
+			{
+				a_why = "kernel32!ExitProcess already starts with a jump - another mod hooks it; not stacking ours";
+				return false;
+			}
+			auto* page = AllocNear(target);
+			if (!page) { a_why = "no free executable page within reach of kernel32"; return false; }
+			// absolute jump: FF 25 00 00 00 00 <8-byte address>
+			const auto handler = reinterpret_cast<std::uintptr_t>(&ExitProcess_Fast);
+			page[0] = 0xFF; page[1] = 0x25; page[2] = 0; page[3] = 0; page[4] = 0; page[5] = 0;
+			std::memcpy(page + 6, &handler, sizeof(handler));
+			const auto rel = static_cast<std::intptr_t>(reinterpret_cast<std::uintptr_t>(page)) - static_cast<std::intptr_t>(reinterpret_cast<std::uintptr_t>(target) + 5);
+			if (rel > INT32_MAX || rel < INT32_MIN) { a_why = "near page is not within a relative jump after all"; return false; }
+			DWORD previous = 0;
+			if (!::VirtualProtect(target, 5, PAGE_EXECUTE_READWRITE, &previous)) { a_why = "VirtualProtect on kernel32!ExitProcess refused"; return false; }
+			std::memcpy(g_savedBytes, target, 5);
+			const auto rel32 = static_cast<std::int32_t>(rel);
+			target[0] = 0xE9;
+			std::memcpy(target + 1, &rel32, 4);
+			DWORD ignored = 0;
+			::VirtualProtect(target, 5, previous, &ignored);
+			::FlushInstructionCache(::GetCurrentProcess(), target, 5);
+			g_hookTarget = target;
+			a_why = "kernel32!ExitProcess now jumps to the framework, which ends the process outright";
+			return true;
+		}
 		using clock = std::chrono::steady_clock;
 
 		std::atomic<std::uint64_t> g_frames{ 0 };
@@ -101,6 +189,21 @@ namespace watchdog
 		for (;;) { std::this_thread::sleep_for(std::chrono::seconds(1)); }
 	}
 
+	bool InstallFastExit(std::string& a_reason)
+	{
+		if (g_fastExitInstalled) { a_reason = "already installed"; return true; }
+		if (HookKernel32ExitProcess(a_reason))
+		{
+			g_fastExitInstalled = true;
+			logger::info("fast exit: {} (enabled={})", a_reason, settings::Get().fastExit);
+			return true;
+		}
+		logger::warn("fast exit NOT installed: {} - the ordinary exit path stays", a_reason);
+		return false;
+	}
+
+	bool FastExitInstalled() { return g_fastExitInstalled; }
+
 	std::string StatusJson()
 	{
 		const std::int64_t stalledMs = SinceLastFrameMs();
@@ -112,6 +215,8 @@ namespace watchdog
 			   ",\"secondsSinceFrame\":" + std::to_string(stalledMs / 1000) +
 			   ",\"watchdogEnabled\":" + (settings::Get().watchdogEnabled ? "true" : "false") +
 			   ",\"windowSeconds\":" + std::to_string(settings::Get().watchdogSeconds) +
-			   ",\"consideredHung\":" + (hung ? "true" : "false") + "}";
+			   ",\"consideredHung\":" + (hung ? "true" : "false") +
+			   ",\"fastExit\":" + (settings::Get().fastExit ? "true" : "false") +
+			   ",\"fastExitInstalled\":" + (g_fastExitInstalled ? "true" : "false") + "}";
 	}
 }
