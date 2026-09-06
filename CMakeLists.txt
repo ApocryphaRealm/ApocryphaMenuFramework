@@ -15,7 +15,7 @@
 
 project(
 	ApocryphaMenuFramework
-	VERSION 1.6.2
+	VERSION 1.6.3
 	LANGUAGES CXX
 )
 
@@ -64,6 +64,15 @@ find_package(imgui CONFIG REQUIRED)
 
 add_commonlibsse_plugin(${PROJECT_NAME} SOURCES ${headers} ${sources})
 add_library("${PROJECT_NAME}::${PROJECT_NAME}" ALIAS "${PROJECT_NAME}")
+
+# SORT-FIRST FILENAME (1.6.3, the owner 2026-09-06). SKSE loads plugins in alphabetical order, and a
+# consumer that snapshots the framework handle in a file-scope static at ITS OWN DLL load (Ammo
+# Patcher's vendored SMF header) only finds a framework that loaded before it. "!" sorts before
+# every letter, so the shipped file is !ApocryphaMenuFramework.dll - the DLL and its PDB only; the
+# INI, the log, the data folder, the load-guard event and every other name keep the product name.
+# The alias (SmfAlias.cpp) answers module-name lookups for the OLD name as well, so nothing that
+# resolves "ApocryphaMenuFramework" by name needs to change.
+set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME "!ApocryphaMenuFramework")
 
 # Which build line this DLL is (one source tree, two CommonLibs). "1" = the SE 1.5.97 / AE 1.6.x
 # line on CommonLibSSE-NG 3.7.0 (cmake/ports); "17" = the Skyrim 1.7.x line on CommonLibSSE-NG

@@ -74,6 +74,16 @@ namespace
 	std::set<std::wstring> g_loggedNames;   // one log line per distinct name, not per call
 
 	constexpr std::wstring_view kSmf = L"sksemenuframework";
+
+	// The framework's own PREVIOUS filename (1.6.3 renamed the DLL to !ApocryphaMenuFramework.dll so
+
+	// SKSE loads it first). Every consumer built before that - this project's own mods included - resolves
+
+	// the framework with GetModuleHandle("ApocryphaMenuFramework"), and a stale old copy left beside the
+
+	// new file must never be the module they get, so that name is answered with THIS module as well.
+
+	constexpr std::wstring_view kAmfOld = L"apocryphamenuframework";
 	constexpr std::wstring_view kSmfDll = L"sksemenuframework.dll";
 
 	std::wstring Lowered(std::wstring_view a_text)
@@ -116,8 +126,8 @@ namespace
 		return narrow;
 	}
 
-	// Matches "SKSEMenuFramework", "SKSEMenuFramework.dll", and either of those with a path in
-	// front, case-insensitively. GetModuleHandle accepts all of those spellings, so a consumer
+	// Matches "SKSEMenuFramework", "SKSEMenuFramework.dll", the framework's own old name
+	// "ApocryphaMenuFramework(.dll)", and any of those with a path in front, case-insensitively. GetModuleHandle accepts all of those spellings, so a consumer
 	// using any of them has to land here.
 	bool IsSmfName(std::wstring_view a_name)
 	{
@@ -134,7 +144,7 @@ namespace
 			lowered.resize(lowered.size() - 4);
 		}
 
-		return lowered == kSmf;
+		return lowered == kSmf || lowered == kAmfOld;
 	}
 
 	// The FILE the stock consumer header looks for: exactly "SKSEMenuFramework.dll" as the last

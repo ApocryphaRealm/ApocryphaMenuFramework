@@ -19,6 +19,12 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   `rules-version.ps1 -Action bump`. If a number was typed by hand, it is wrong until the tool
 >   agrees.
 
+## 1.6.3 - 2026-09-06 - working
+
+### Changed
+- THE DLL IS NOW NAMED !ApocryphaMenuFramework.dll. SKSE loads plugins in alphabetical order, and a mod that takes hold of the framework at its own load (Ammo Patcher, through the vendored SKSE Menu Framework header) only finds a framework that loaded before it; the leading ! puts this DLL first. Only the DLL and its PDB are renamed - the INI, the log, the data folder and every setting keep their names. The old name still resolves: a mod that looks the framework up as ApocryphaMenuFramework by name is answered with this module.
+- If an old ApocryphaMenuFramework.dll is left beside the new file (a hand update), it loads inert, the log says so, and a notice at load asks for it to be deleted. Mod Organizer users replacing the mod folder are unaffected.
+
 ## 1.6.2 - 2026-09-06 - working
 
 ### Fixed

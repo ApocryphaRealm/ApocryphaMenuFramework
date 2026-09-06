@@ -1,3 +1,4 @@
+#include <atomic>
 #include <fstream>
 #include "AMF/API.h"
 #include "DevBenchTool.h"
@@ -25,6 +26,9 @@
 // Apocrypha Menu Framework - M0: a plugin that loads on both runtimes, logs richly, and ships
 // its public contract. Rendering (M1), input (M2) and the page registry (M3) build on this.
 // ============================================================================================
+
+// Set at load when a stale pre-1.6.3 ApocryphaMenuFramework.dll sits beside this DLL; read at kDataLoaded.
+static std::atomic<bool> g_staleOldCopy{ false };
 
 namespace
 {
@@ -99,6 +103,14 @@ namespace
 			break;
 		case SKSE::MessagingInterface::kDataLoaded:
 			logger::debug("kDataLoaded received");
+			if (g_staleOldCopy.load(std::memory_order_acquire)) {
+				constexpr auto kStale = "Apocrypha Menu Framework: delete the old ApocryphaMenuFramework.dll from SKSE/Plugins (this version is !ApocryphaMenuFramework.dll).";
+#if AMF_RUNTIME_LINE == 17
+				RE::SendHUDMessage::ShowHUDMessage(kStale, nullptr, true);
+#else
+				RE::DebugNotification(kStale);
+#endif
+			}
 			smf_alias::Install();  // last sweep: anything that loaded during the message phase
 			devbenchtool::Init(true);  // retry / last attempt, once registration has had its chance
 
@@ -175,6 +187,12 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 	// shim lists only the real name). So the FIRST call initialises; any later call - same
 	// module or a genuine second copy - is refused before it touches the logger, the messaging
 	// interface, or a hook. A named event is process-wide, so it holds in both cases.
+	//
+	// SINCE 1.6.3 THE FILE IS !ApocryphaMenuFramework.dll, which sorts before every other plugin, so
+	// this module is always the first load - and a stale ApocryphaMenuFramework.dll a player left
+	// behind from an older version loads AFTER it and lands here, inert. The alias answers the old
+	// name with this module, so consumers never reach the stale copy; the stale file is reported
+	// once the log is up (see the SORT-FIRST block below).
 	//
 	// THE NAME CARRIES THE PROCESS ID (1.5.9). "Local\" is the LOGON SESSION's namespace, not the
 	// process's: the plain name was shared with every other SkyrimSE.exe alive at the time, and a
@@ -284,6 +302,20 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 	// GetModuleHandleW(L"SKSEMenuFramework") and cache the result on the first call; without this
 	// they resolve null, register nothing, and - because their success logging is unconditional -
 	// report success anyway. See SmfAlias.h for why the MO2 virtual alias cannot cover this.
+
+	// SORT-FIRST FILENAME (1.6.3): the shipped DLL is !ApocryphaMenuFramework.dll. A player who
+	// updated by hand may still have the OLD ApocryphaMenuFramework.dll beside it; that copy loads
+	// after this one and is refused by the once-only guard above, so nothing breaks - but it is
+	// dead weight that will confuse the next bug report, so say so plainly.
+	{
+		std::error_code ec;
+		if (std::filesystem::exists("Data/SKSE/Plugins/ApocryphaMenuFramework.dll", ec)) {
+			logger::warn("A stale ApocryphaMenuFramework.dll is installed beside this build (!ApocryphaMenuFramework.dll). "
+						 "It loads inert and does nothing, but delete it: Data/SKSE/Plugins/ApocryphaMenuFramework.dll "
+						 "(and its .pdb). Mod Organizer users: replace the framework's mod folder instead of merging into it.");
+			g_staleOldCopy.store(true, std::memory_order_release);
+		}
+	}
 	smf_alias::Install();
 
 	if (!SKSE::GetMessagingInterface()->RegisterListener("SKSE", SKSEMessageListener))
