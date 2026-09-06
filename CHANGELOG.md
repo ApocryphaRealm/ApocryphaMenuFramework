@@ -19,7 +19,12 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   `rules-version.ps1 -Action bump`. If a number was typed by hand, it is wrong until the tool
 >   agrees.
 
-## 1.6.1 - 2026-09-05 - untested
+## 1.6.2 - 2026-09-06 - working
+
+### Fixed
+- A mod with many sections keeps its tab labels whole. The section tab bar now uses the scrolling fitting policy with a tab-list button on its left, so a page with twelve sections (Character Progression Control) no longer squeezes them to "Level... Expe... Skills"; the bar scrolls and the list button opens every section by name. The same fix SkyHUD Settings Menu 1.0.3 made for its own tab bar, now in the framework for every mod.
+
+## 1.6.1 - 2026-09-05 - working
 
 ### Changed
 - THE EMBEDDED DEAR IMGUI IS NOW THE ONE SKSE MENU FRAMEWORK USES: 1.90.8, docking branch, on both build lines (an overlay port; vcpkg's registry never carried 1.90.8). Mods built against the SKSE Menu Framework header now meet exactly the colour, style-variable, item-flag and struct layout that header was generated from, so nothing needs translating; the translation added in 1.5.9 stays in place as a safety net.

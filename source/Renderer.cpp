@@ -967,7 +967,7 @@ namespace renderer
 					{
 						entry.pages[0].render();
 					}
-					else if (ImGui::BeginTabBar("##pages"))
+					else if (ImGui::BeginTabBar("##pages", ImGuiTabBarFlags_FittingPolicyScroll | ImGuiTabBarFlags_TabListPopupButton))   // a mod with many sections keeps whole labels: the bar scrolls, and the list button on the left opens every section by name (Character Progression Control reached twelve tabs and the default policy squeezed them to "Level... Expe... Skills")
 					{
 						for (const registry::Page& page : entry.pages)
 						{
