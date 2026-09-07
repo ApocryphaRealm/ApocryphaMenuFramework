@@ -7,6 +7,9 @@
 #include "Registry.h"
 #include "Renderer.h"
 #include "Settings.h"
+#include "Strings.h"
+
+namespace renderer { void RequestFontRebuild(); }
 #include "SmfAlias.h"
 #include "SystemRow.h"
 #include "Theme.h"
@@ -103,6 +106,10 @@ namespace
 			break;
 		case SKSE::MessagingInterface::kDataLoaded:
 			logger::debug("kDataLoaded received");
+			// The framework's own text, in the game's language (or the INI's) - the game's INI is
+			// readable by now, and the atlas is rebuilt for the language's glyphs before the next frame.
+			strings::Load();
+			renderer::RequestFontRebuild();
 			if (g_staleOldCopy.load(std::memory_order_acquire)) {
 				constexpr auto kStale = "Apocrypha Menu Framework: delete the old ApocryphaMenuFramework.dll from SKSE/Plugins (this version is !ApocryphaMenuFramework.dll).";
 #if AMF_RUNTIME_LINE == 17

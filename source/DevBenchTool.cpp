@@ -5,6 +5,7 @@
 #include "MainMenuDriver.h"
 #include "Renderer.h"
 #include "Settings.h"
+#include "Strings.h"
 #include <ctime>
 #include <filesystem>
 #include "Watchdog.h"
@@ -103,6 +104,16 @@ namespace devbenchtool
 				renderer::ActivateSelectedNode();
 				result = std::string("{\"ok\":true,\"op\":\"activate\",\"selected\":\"") +
 						 renderer::GetSelectedNode() + "\"}";
+			}
+			else if (op == "language")
+			{
+				// 1.6.4: switch the framework's own text live - args language ("german", "auto"). Reloads the
+				// strings, saves the INI override and rebuilds the atlas for the language's glyphs.
+				const std::string lang = JsonStr(args, "language");
+				strings::SetLanguage(lang);
+				std::string avail;
+				for (const auto& l : strings::Available()) { avail += (avail.empty() ? "\"" : ",\"") + l + "\""; }
+				result = "{\"ok\":true,\"op\":\"language\",\"showing\":\"" + strings::Language() + "\",\"available\":[" + avail + "]}";
 			}
 			else if (op == "theme")
 			{
@@ -345,7 +356,7 @@ namespace devbenchtool
 		constexpr const char* descriptor =
 			"{"
 			"\"description\":\"Drive and inspect the Apocrypha Menu Framework window for testing. "
-			"op: open|close|select|activate|state|alias|move|resetorder|theme. For select, node is a path: settings, controls, help "
+			"op: open|close|select|activate|state|alias|move|resetorder|theme|language (args language: a translation file name or auto). For select, node is a path: settings, controls, help "
 			"(pre-1.4.4 system/... paths are still accepted) or mod:<index>. "
 			"activate is a no-op in the SMF shape (kept for compatibility). alias renames a mod's menu entry "
 			"(args mod, name; empty name clears it); move sends it to a 1-based position (args mod, position) and "

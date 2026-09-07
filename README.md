@@ -60,3 +60,14 @@ vcpkg supplies CommonLibSSE-NG, Dear ImGui (dx11 + win32 bindings) and DirectXTK
 the project's `package-mod.ps1`; the `.pdb` ships as a sibling "Debug Symbols" package.
 
 Repository: https://github.com/ApocryphaRealm/ApocryphaMenuFramework - every version is a tag.
+
+## Languages (1.6.4)
+
+The framework's own text - its Settings, Controls and Help pages and the window chrome - is read from
+`Data/Interface/Translations/ApocryphaMenuFramework_<language>.txt` in the game's language (Skyrim's
+`sLanguage`), the same file format SkyUI uses. Shipped: English, Japanese, Korean, Chinese, Russian, German,
+French, Spanish, Italian, Polish and Czech. The Language combo on the Framework Settings page (or
+`sLanguage=` in the INI) forces one; switching is live. A translation that lacks a line falls back to
+English. The font atlas takes its glyph ranges from the loaded translation and merges a system CJK or
+Hangul face where the chosen font lacks the characters. Each mod's own page is that mod's to translate.
+Corrections from native speakers are welcome - the files are plain text.

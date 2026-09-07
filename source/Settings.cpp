@@ -141,6 +141,7 @@ namespace settings
 			{
 				auto it = entries.find("Display.sFontPath");
 				if (it != entries.end()) { g_values.fontPath = it->second; }
+				if (const auto lt = entries.find("Display.sLanguage"); lt != entries.end()) { g_values.language = lt->second; }
 			}
 			ReadBool(entries, "Watchdog.bEnabled", g_values.watchdogEnabled);
 			ReadBool(entries, "FastExit.bEnabled", g_values.fastExit);
@@ -204,6 +205,10 @@ namespace settings
 				"fTextScale=" << g_values.textScale << "\n"
 				"; Optional .ttf to rasterise the menu text from. Empty = a clean system font.\n"
 				"sFontPath=" << g_values.fontPath << "\n"
+				"; Language of the framework's own text: empty = the game's language; or a translation\n"
+				"; file's name - english, german, french, spanish, italian, russian, polish, czech,\n"
+				"; japanese, chinese (Interface/Translations/ApocryphaMenuFramework_<language>.txt).\n"
+				"sLanguage=" << g_values.language << "\n"
 				"; Window position preset. 0 = centre. Preset anchors, not free placement.\n"
 				"uWindowPreset=" << g_values.windowPreset << "\n"
 				"\n"

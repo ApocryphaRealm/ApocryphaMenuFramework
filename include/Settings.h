@@ -49,6 +49,10 @@ namespace settings
 		// Optional path to a .ttf to rasterise the menu text from. Empty = pick a clean system
 		// face automatically. Set it to use any font, e.g. one that matches Skyrim's own lettering.
 		std::string fontPath;
+		// [Display] sLanguage - which translation file the framework's own text comes from
+		// (Interface\Translations\ApocryphaMenuFramework_<language>.txt). Empty = follow the game's
+		// sLanguage. Set from the Language combo on the Framework Settings page or here.
+		std::string language;
 
 		// Hang watchdog (the author, 2026-08-28): if the renderer stops producing frames for this many
 		// seconds the game is treated as hung and the process terminates itself, so a wedged game

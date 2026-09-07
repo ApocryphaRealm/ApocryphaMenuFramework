@@ -10,6 +10,7 @@
 #include "Personalization.h"
 #include "Registry.h"
 #include "Settings.h"
+#include "Strings.h"
 #include "SystemRow.h"
 #include "Theme.h"
 #include "Watchdog.h"
@@ -36,9 +37,12 @@
 #include <imgui_impl_win32.h>
 
 #include <atomic>
+#include <cctype>
 
 namespace renderer
 {
+	using strings::TR;
+
 	namespace
 	{
 		std::atomic<bool> g_d3dReady{ false };
@@ -151,6 +155,13 @@ namespace renderer
 		// magnified. Changing the text-size slider rebuilds the atlas rather than stretching it.
 		constexpr float kBaseFontPx = 16.0f;   // at the 1080p baseline, before uiScale/textScale
 		std::atomic<bool> g_fontRebuildPending{ false };
+	}
+
+	// Strings::SetLanguage and kDataLoaded ask for a new atlas holding the language's glyphs.
+	void RequestFontRebuild() { g_fontRebuildPending = true; }
+
+	namespace
+	{
 
 		// Ordered candidates: a clean sans that matches Skyrim's own menu lettering, then fallbacks.
 		// A user-supplied path (sFontPath in the INI) wins when set, so any .ttf can be dropped in.
@@ -223,17 +234,59 @@ namespace renderer
 			io.Fonts->Clear();
 			ImFont* loaded = nullptr;
 
+			// GLYPH RANGES (1.6.4, language support): the atlas holds the default Latin set plus
+			// every character that appears in the loaded translation - Cyrillic, Polish and Czech
+			// letters, kana, hanzi - built from the strings themselves, so no per-language table
+			// can be wrong or incomplete. Static so the ranges outlive Build().
+			static ImVector<ImWchar> s_ranges;
+			{
+				ImFontGlyphRangesBuilder builder;
+				builder.AddRanges(io.Fonts->GetGlyphRangesDefault());
+				builder.AddText(strings::AllText().c_str());
+				s_ranges.clear();
+				builder.BuildRanges(&s_ranges);
+			}
+
 			const std::string& custom = settings::Get().fontPath;
 			if (!custom.empty())
 			{
-				loaded = io.Fonts->AddFontFromFileTTF(custom.c_str(), px);
+				loaded = io.Fonts->AddFontFromFileTTF(custom.c_str(), px, nullptr, s_ranges.Data);
 				if (!loaded) { logger::warn("font: sFontPath \"{}\" could not be loaded; falling back", custom); }
 			}
 			for (const char* cand : kFontCandidates)
 			{
 				if (loaded) { break; }
-				loaded = io.Fonts->AddFontFromFileTTF(cand, px);
+				loaded = io.Fonts->AddFontFromFileTTF(cand, px, nullptr, s_ranges.Data);
 				if (loaded) { logger::info("font: rasterised \"{}\" at {:.1f}px", cand, px); }
+			}
+			// A FALLBACK FACE merged in for the glyphs the chosen face lacks (MergeMode adds only what
+			// is missing): the Latin faces above carry Cyrillic and Latin Extended but no kana or
+			// hanzi, so Japanese and Chinese draw from a system CJK face. Harmless for English.
+			if (loaded)
+			{
+				const std::string lang = strings::Language();
+				// Per language first (the owner's priority order: Japanese, Korean, Chinese, Russian), then
+				// every CJK/Hangul face Windows ships, so a missing preferred face still finds glyphs.
+				const char* const cjk[] = {
+					lang == "japanese" ? "C:/Windows/Fonts/meiryo.ttc" : lang == "korean" ? "C:/Windows/Fonts/malgun.ttf" : "C:/Windows/Fonts/msyh.ttc",
+					lang == "japanese" ? "C:/Windows/Fonts/msgothic.ttc" : lang == "korean" ? "C:/Windows/Fonts/malgunbd.ttf" : "C:/Windows/Fonts/simsun.ttc",
+					"C:/Windows/Fonts/msyh.ttc", "C:/Windows/Fonts/meiryo.ttc", "C:/Windows/Fonts/malgun.ttf", "C:/Windows/Fonts/YuGothM.ttc", "C:/Windows/Fonts/msgothic.ttc", "C:/Windows/Fonts/simsun.ttc" };
+				if (lang != "english")
+				{
+					ImFontConfig merge;
+					merge.MergeMode = true;
+					merge.PixelSnapH = true;
+					for (const char* face : cjk)
+					{
+						std::error_code ec;
+						if (!std::filesystem::exists(face, ec)) { continue; }
+						if (io.Fonts->AddFontFromFileTTF(face, px, &merge, s_ranges.Data))
+						{
+							logger::info("font: merged \"{}\" for the glyphs \"{}\" needs", face, lang);
+							break;
+						}
+					}
+				}
 			}
 			if (!loaded)
 			{
@@ -403,7 +456,7 @@ namespace renderer
 		{
 			auto& values = settings::Get();
 
-			ImGui::TextUnformatted("Framework Settings");
+			ImGui::TextUnformatted(TR("AMF_FrameworkSettings", "Framework Settings"));
 			ImGui::Separator();
 			ImGui::Spacing();
 
@@ -412,23 +465,23 @@ namespace renderer
 			// made a reversible preference into something you had to reinstall to change - and
 			// forked the documentation, the INI and the support answers along with it. One build,
 			// one INI, and the choice lives here where it can be changed and changed back.
-			if (widgets::Toggle("Fast exit - end the process the moment the game exits", &values.fastExit))
+			if (widgets::Toggle(TR("AMF_FastExit", "Fast exit - end the process the moment the game exits"), &values.fastExit))
 			{
 				logger::info("settings page: fast exit -> {}", values.fastExit);
 				settings::Save();
 			}
-			if (widgets::Toggle("Mod settings in the game's System menu", &values.systemMenuRow))
+			if (widgets::Toggle(TR("AMF_SystemRow", "Mod settings in the game's System menu"), &values.systemMenuRow))
 			{
 				logger::info("settings page: system menu row -> {}", values.systemMenuRow);
 				settings::Save();
 			}
-			ImGui::TextWrapped("On: a SKSE MENUS row is added to the journal's System tab, beside SAVE, "
+			ImGui::TextWrapped("%s", TR("AMF_SystemRowHelp", "On: a SKSE MENUS row is added to the journal's System tab, beside SAVE, "
 							   "LOAD and SETTINGS, and opens this menu sized to the journal around it. "
 							   "The row is added to the menu as it opens rather than by replacing any "
 							   "game file, so it works with whatever menu artwork you have installed. "
 							   "Off: the game's menu is left completely untouched and this menu is "
-							   "reached by its key alone.");
-			ImGui::TextDisabled("Takes effect the next time the journal is opened.");
+							   "reached by its key alone."));
+			ImGui::TextDisabled("%s", TR("AMF_TakesEffectJournal", "Takes effect the next time the journal is opened."));
 			ImGui::Spacing();
 
 			// WINDOW PROFILES. Each way in remembers where it was left; this is the way back to the
@@ -437,13 +490,13 @@ namespace renderer
 			{
 				auto& v = settings::Get();
 				const bool anySet = v.nestedWindow.IsSet() || v.hotkeyWindow.IsSet();
-				ImGui::TextUnformatted("Window position and size");
-				ImGui::TextWrapped("Each way of opening this menu remembers where you leave it: one for the "
+				ImGui::TextUnformatted(TR("AMF_WindowPosSize", "Window position and size"));
+				ImGui::TextWrapped("%s", TR("AMF_WindowProfilesHelp", "Each way of opening this menu remembers where you leave it: one for the "
 								   "System menu row, one for the key. They start fitted to the journal panel "
 								   "and centred on the screen respectively - move or resize either and it "
-								   "keeps what you chose.");
+								   "keeps what you chose."));
 				ImGui::BeginDisabled(!anySet);
-				if (ImGui::Button("Reset both to default"))
+				if (ImGui::Button(TR("AMF_ResetBoth", "Reset both to default")))
 				{
 					v.nestedWindow.Clear();
 					v.hotkeyWindow.Clear();
@@ -455,7 +508,7 @@ namespace renderer
 				if (!anySet)
 				{
 					ImGui::SameLine();
-					ImGui::TextDisabled("(both are at their defaults)");
+					ImGui::TextDisabled("%s", TR("AMF_BothDefault", "(both are at their defaults)"));
 				}
 			}
 			ImGui::Spacing();
@@ -487,16 +540,16 @@ namespace renderer
 			}
 
 			ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
-			if (ImGui::Combo("Theme", &currentIndex, names.data(), static_cast<int>(names.size())))
+			if (ImGui::Combo(TR("AMF_Theme", "Theme"), &currentIndex, names.data(), static_cast<int>(names.size())))
 			{
 				theme::SetActiveTheme(themes[currentIndex].id);
 				theme::Apply();
 				values.themeId = themes[currentIndex].id;
 				settings::Save();
 			}
-			ImGui::TextWrapped("\"Skyrim\" is the knotwork look - the Nordic frame with silver and gold "
+			ImGui::TextWrapped("%s", TR("AMF_ThemeHelp", "\"Skyrim\" is the knotwork look - the Nordic frame with silver and gold "
 							   "lines. \"Untarnished\" is the framework's original identity: the same "
-							   "layout with clean lines and no frame art.");
+							   "layout with clean lines and no frame art."));
 		
 			ImGui::Spacing();
 
@@ -512,7 +565,7 @@ namespace renderer
 					if (g_fontChoices[i].path == values.fontPath) { current = static_cast<int>(i); }
 				}
 				ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
-				if (!labels.empty() && ImGui::Combo("Font", &current, labels.data(), static_cast<int>(labels.size())))
+				if (!labels.empty() && ImGui::Combo(TR("AMF_Font", "Font"), &current, labels.data(), static_cast<int>(labels.size())))
 				{
 					values.fontPath = g_fontChoices[current].path;
 					settings::Save();
@@ -521,8 +574,35 @@ namespace renderer
 								 g_fontChoices[current].label,
 								 values.fontPath.empty() ? "auto" : values.fontPath.c_str());
 				}
-				ImGui::TextWrapped("Drop a .ttf into Data/SKSE/Plugins/ApocryphaMenuFramework/fonts "
-								   "to add it to this list.");
+				ImGui::TextWrapped("%s", TR("AMF_FontHelp", "Drop a .ttf into Data/SKSE/Plugins/ApocryphaMenuFramework/fonts "
+								   "to add it to this list."));
+			}
+			ImGui::Spacing();
+			ImGui::Spacing();
+
+			// LANGUAGE (1.6.4): which translation file the framework's own text comes from. "Game
+			// language" follows the game's sLanguage; a named entry forces that file (the INI's
+			// sLanguage). Changing it reloads the strings and rebuilds the atlas for the new glyphs.
+			{
+				static std::vector<std::string> s_langs;
+				static double s_scannedAt = -1.0;
+				const double now = ImGui::GetTime();
+				if (s_scannedAt < 0.0 || now - s_scannedAt > 5.0) { s_langs = strings::Available(); s_scannedAt = now; }
+				std::vector<std::string> labels;
+				labels.push_back(std::string(TR("AMF_LanguageAuto", "Game language")) + " (" + strings::Language() + ")");
+				for (const auto& l : s_langs) { std::string t = l; if (!t.empty()) { t[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(t[0]))); } labels.push_back(t); }
+				std::vector<const char*> cLabels;
+				for (const auto& l : labels) { cLabels.push_back(l.c_str()); }
+				int current = 0;
+				const std::string& forced = settings::Get().language;
+				for (std::size_t i = 0; i < s_langs.size(); ++i) { if (!forced.empty() && s_langs[i] == forced) { current = static_cast<int>(i) + 1; } }
+				ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
+				if (ImGui::Combo(TR("AMF_Language", "Language"), &current, cLabels.data(), static_cast<int>(cLabels.size())))
+				{
+					strings::SetLanguage(current == 0 ? "" : s_langs[static_cast<std::size_t>(current - 1)]);
+				}
+				ImGui::TextWrapped("%s", TR("AMF_LanguageHelp", "The framework's own text. Game language follows Skyrim's setting; pick one to force it. "
+								   "Each mod's own page is translated by that mod. Translation files: Data/Interface/Translations/ApocryphaMenuFramework_<language>.txt."));
 			}
 			ImGui::Spacing();
 			ImGui::Spacing();
@@ -534,24 +614,24 @@ namespace renderer
 			// fact the game already knows, and they could be left disagreeing with reality. The
 			// detector's reading is now simply used, and shown, so it can still be judged while
 			// playing rather than taken on trust.
-			ImGui::TextUnformatted("Navigation");
-			ImGui::TextWrapped("Follows whatever you last used: press a key or move the mouse for "
+			ImGui::TextUnformatted(TR("AMF_Navigation", "Navigation"));
+			ImGui::TextWrapped("%s", TR("AMF_NavigationHelp", "Follows whatever you last used: press a key or move the mouse for "
 							   "keyboard navigation (arrow keys, Enter, Escape), touch the pad for "
-							   "controller navigation (D-pad moves, A activates, B cancels).");
+							   "controller navigation (D-pad moves, A activates, B cancels)."));
 			{
 				const input::Device device = input::LastDevice();
 				const float since = input::SecondsSinceLastDevice();
-				const char* name = device == input::Device::kGamepad ? "controller"
-								 : device == input::Device::kKeyboardMouse ? "keyboard and mouse"
-								 : "nothing yet";
-				if (since < 0.0f) { ImGui::TextDisabled("Detected: %s", name); }
-				else { ImGui::TextDisabled("Detected: %s (%.1fs ago)", name, since); }
+				const char* name = device == input::Device::kGamepad ? TR("AMF_DevController", "controller")
+								 : device == input::Device::kKeyboardMouse ? TR("AMF_DevKeyboard", "keyboard and mouse")
+								 : TR("AMF_DevNone", "nothing yet");
+				if (since < 0.0f) { ImGui::TextDisabled(TR("AMF_Detected", "Detected: %s"), name); }
+				else { ImGui::TextDisabled(TR("AMF_DetectedAgo", "Detected: %s (%.1fs ago)"), name, since); }
 			}
 			ImGui::Spacing();
 			ImGui::Spacing();
 
 			ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
-			if (ImGui::SliderFloat("Text size", &values.textScale, 1.0f, 2.0f, "%.2f"))
+			if (ImGui::SliderFloat(TR("AMF_TextSize", "Text size"), &values.textScale, 1.0f, 2.0f, "%.2f"))
 			{
 				// applied live via FontGlobalScale each frame
 			}
@@ -561,7 +641,7 @@ namespace renderer
 				settings::Save();
 				g_fontRebuildPending = true;  // re-rasterise at the new size rather than stretch
 			}
-			ImGui::TextWrapped("Extra text scaling on top of the automatic resolution scale.");
+			ImGui::TextWrapped("%s", TR("AMF_TextSizeHelp", "Extra text scaling on top of the automatic resolution scale."));
 			ImGui::Spacing();
 			ImGui::Spacing();
 		
@@ -572,30 +652,30 @@ namespace renderer
 			// hook, so it works whether the menu is driven by keyboard or controller.
 			if (input::IsAwaitingRebind())
 			{
-				ImGui::TextUnformatted("Menu toggle key: press any key...  (Escape cancels)");
+				ImGui::TextUnformatted(TR("AMF_ToggleKeyPress", "Menu toggle key: press any key...  (Escape cancels)"));
 			}
 			else
 			{
 				if (values.toggleKey == 0x3B)
 				{
-					ImGui::TextUnformatted("Menu toggle key: F1");
+					ImGui::TextUnformatted(TR("AMF_ToggleKeyF1", "Menu toggle key: F1"));
 				}
 				else
 				{
-					ImGui::Text("Menu toggle key: scan code %d", values.toggleKey);
+					ImGui::Text(TR("AMF_ToggleKeyCode", "Menu toggle key: scan code %d"), values.toggleKey);
 				}
 				ImGui::SameLine();
-				if (ImGui::Button("Rebind"))
+				if (ImGui::Button(TR("AMF_Rebind", "Rebind")))
 				{
 					input::BeginRebindToggleKey();
 				}
 			}
-			ImGui::TextWrapped("Click Rebind, then press the key you want to open and close the "
-							   "menu. In controller mode, the Start button also closes the menu.");
+			ImGui::TextWrapped("%s", TR("AMF_RebindHelp", "Click Rebind, then press the key you want to open and close the "
+							   "menu. In controller mode, the Start button also closes the menu."));
 			ImGui::Spacing();
-			ImGui::TextUnformatted("Window position: Centre");
-			ImGui::TextWrapped("Preset positions rather than free placement; more presets arrive "
-							   "in a later milestone.");
+			ImGui::TextUnformatted(TR("AMF_WindowPosCentre", "Window position: Centre"));
+			ImGui::TextWrapped("%s", TR("AMF_PresetHelp", "Preset positions rather than free placement; more presets arrive "
+							   "in a later milestone."));
 
 			// Persistence-channel test harness (decisions doc S10) - lets the per-save round
 			// trip be exercised end to end (write, save, quit, reload, confirm) with no Papyrus
@@ -626,13 +706,13 @@ namespace renderer
 		void DrawMenuListSection()
 		{
 			const std::vector<registry::Entry> entries = registry::Snapshot();
-			ImGui::SeparatorText("Menu list");
-			ImGui::TextWrapped("Rename any mod's entry, and set the order of the list. Type a position "
-							   "number to move an entry there - every other entry re-flows around it.");
+			ImGui::SeparatorText(TR("AMF_MenuList", "Menu list"));
+			ImGui::TextWrapped("%s", TR("AMF_MenuListHelp", "Rename any mod's entry, and set the order of the list. Type a position "
+							   "number to move an entry there - every other entry re-flows around it."));
 
-			ImGui::Text("Order: %s", personalization::IsCustomOrder() ? "custom" : "alphabetical");
+			ImGui::Text(TR("AMF_Order", "Order: %s"), personalization::IsCustomOrder() ? TR("AMF_OrderCustom", "custom") : TR("AMF_OrderAlphabetical", "alphabetical"));
 			ImGui::SameLine();
-			if (ImGui::Button("Reset to alphabetical"))
+			if (ImGui::Button(TR("AMF_ResetAlphabetical", "Reset to alphabetical")))
 			{
 				personalization::ResetToAlphabetical();
 				settings::Save();
@@ -640,7 +720,7 @@ namespace renderer
 
 			if (entries.empty())
 			{
-				ImGui::TextDisabled("No mods have registered a page yet.");
+				ImGui::TextDisabled("%s", TR("AMF_NoMods", "No mods have registered a page yet."));
 				return;
 			}
 
@@ -650,8 +730,8 @@ namespace renderer
 			if (ImGui::BeginTable("##menulist", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
 			{
 				ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFontSize() * 3.2f);
-				ImGui::TableSetupColumn("Mod");
-				ImGui::TableSetupColumn("Shows as");
+				ImGui::TableSetupColumn(TR("AMF_ColMod", "Mod"));
+				ImGui::TableSetupColumn(TR("AMF_ColShowsAs", "Shows as"));
 				ImGui::TableHeadersRow();
 
 				for (int i = 0; i < static_cast<int>(rows.size()); ++i)
@@ -705,39 +785,39 @@ namespace renderer
 		void DrawControlsPane()
 		{
 			auto& values = settings::Get();
-			ImGui::TextUnformatted("Controls");
+			ImGui::TextUnformatted(TR("AMF_Controls", "Controls"));
 			ImGui::Separator();
 			if (input::IsAwaitingRebind())
 			{
-				ImGui::TextUnformatted("Menu toggle key: press any key...  (Escape cancels)");
+				ImGui::TextUnformatted(TR("AMF_ToggleKeyPress", "Menu toggle key: press any key...  (Escape cancels)"));
 			}
 			else
 			{
-				if (values.toggleKey == 0x3B) { ImGui::TextUnformatted("Menu toggle key: F1"); }
-				else { ImGui::Text("Menu toggle key: scan code %d", values.toggleKey); }
+				if (values.toggleKey == 0x3B) { ImGui::TextUnformatted(TR("AMF_ToggleKeyF1", "Menu toggle key: F1")); }
+				else { ImGui::Text(TR("AMF_ToggleKeyCode", "Menu toggle key: scan code %d"), values.toggleKey); }
 				ImGui::SameLine();
-				if (ImGui::Button("Rebind##controls")) { input::BeginRebindToggleKey(); }
+				if (ImGui::Button((std::string(TR("AMF_Rebind", "Rebind")) + "##controls").c_str())) { input::BeginRebindToggleKey(); }
 			}
 			ImGui::Spacing();
-			ImGui::TextUnformatted("Keyboard:  arrow keys move, Enter activates, Escape closes.");
-			ImGui::TextUnformatted("Controller (controller mode on):");
-			ImGui::BulletText("Left stick moves through the list and across to the options - no button needed.");
-			ImGui::BulletText("A takes hold of a slider; the RIGHT stick then moves it. A again lets go.");
-			ImGui::BulletText("A on a drop-down opens it; the sticks choose; A confirms.");
-			ImGui::BulletText("B cancels, START closes the menu. The D-pad does everything the left stick does.");
+			ImGui::TextUnformatted(TR("AMF_KeyboardHelp", "Keyboard:  arrow keys move, Enter activates, Escape closes."));
+			ImGui::TextUnformatted(TR("AMF_ControllerHead", "Controller (controller mode on):"));
+			ImGui::BulletText("%s", TR("AMF_Ctrl1", "Left stick moves through the list and across to the options - no button needed."));
+			ImGui::BulletText("%s", TR("AMF_Ctrl2", "A takes hold of a slider; the RIGHT stick then moves it. A again lets go."));
+			ImGui::BulletText("%s", TR("AMF_Ctrl3", "A on a drop-down opens it; the sticks choose; A confirms."));
+			ImGui::BulletText("%s", TR("AMF_Ctrl4", "B cancels, START closes the menu. The D-pad does everything the left stick does."));
 		}
 
 		void DrawHelpPane()
 		{
-			ImGui::TextUnformatted("Help");
+			ImGui::TextUnformatted(TR("AMF_Help", "Help"));
 			ImGui::Separator();
-			ImGui::TextWrapped("ApocryphaRealm Menu Framework presents mod settings in one menu, laid out like "
+			ImGui::TextWrapped("%s", TR("AMF_Help1", "ApocryphaRealm Menu Framework presents mod settings in one menu, laid out like "
 							   "the game's own: tabs across the top, a list down the side, and the "
-							   "selected entry's options here.");
+							   "selected entry's options here."));
 			ImGui::Spacing();
-			ImGui::TextWrapped("Mod settings live under System -> Mod menus, the same place SkyUI puts Mod "
+			ImGui::TextWrapped("%s", TR("AMF_Help2", "Mod settings live under System -> Mod menus, the same place SkyUI puts Mod "
 							   "Configuration. Framework options are under System -> Settings, and key "
-							   "bindings under System -> Controls.");
+							   "bindings under System -> Controls."));
 		}
 
 		void DrawFrameworkWindow()
@@ -915,12 +995,12 @@ namespace renderer
 					}
 					if (ImGui::Selectable(label, isOpen)) { sel = id; changed = true; }
 				};
-				ImGui::TextDisabled("Framework");
-				sideItem("Settings", "settings");
-				sideItem("Controls", "controls");
-				sideItem("Help",     "help");
+				ImGui::TextDisabled("%s", TR("AMF_Framework", "Framework"));
+				sideItem(TR("AMF_Settings", "Settings"), "settings");
+				sideItem(TR("AMF_Controls", "Controls"), "controls");
+				sideItem(TR("AMF_Help", "Help"),     "help");
 				ImGui::Separator();
-				ImGui::TextDisabled("Mods");
+				ImGui::TextDisabled("%s", TR("AMF_Mods", "Mods"));
 				// Player-facing order and names (menu-shell personalization). The rows carry the
 				// REGISTRY index, so selection, the C API and DevBench addressing are unaffected.
 				for (const personalization::DisplayEntry& row : personalization::Order(entries))
@@ -938,7 +1018,7 @@ namespace renderer
 						changed = true;
 					}
 				}
-				if (entries.empty()) { ImGui::TextDisabled("none registered"); }
+				if (entries.empty()) { ImGui::TextDisabled("%s", TR("AMF_NoneRegistered", "none registered")); }
 				const bool sideHasNav = ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows);
 				ImGui::EndChild();
 				if (knot)

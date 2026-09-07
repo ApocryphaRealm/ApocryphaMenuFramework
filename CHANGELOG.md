@@ -19,6 +19,17 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   `rules-version.ps1 -Action bump`. If a number was typed by hand, it is wrong until the tool
 >   agrees.
 
+## 1.6.4 - 2026-09-06 - working
+
+### Added
+- Language support for the framework's own text. Every string the framework draws (the Settings, Controls and Help pages and the window chrome) now comes from Interface/Translations/ApocryphaMenuFramework_<language>.txt - the SKSE translation file format - in the game's language, with an INI override (sLanguage) and a Language combo on the Framework Settings page that switches live. Anything a translation lacks falls back to English, then to the compiled text.
+- Eleven languages shipped: English, Japanese, Korean, Chinese, Russian, German, French, Spanish, Italian, Polish, Czech (the first four proven in game). The FOMOD asks which to install: all (follow the game) or one.
+- The font atlas is built from the loaded translation's own characters, and a system CJK or Hangul face is merged in for the glyphs the Latin face lacks (Meiryo / MS Gothic, Malgun Gothic, Microsoft YaHei / SimSun), so kana, kanji, hangul, hanzi and Cyrillic all draw.
+- amf.menu gained op=language (a translation name or auto).
+
+### Proof
+- Test Build SE 1.5.97, 2026-09-06 22:52: one launch, live switches to Japanese, Korean, Chinese, Russian and German over amf.menu, each captured on the Framework Settings page with its script rendered; 55 strings read per language; the merged face logged per language; auto returned to English.
+
 ## 1.6.3 - 2026-09-06 - working
 
 ### Changed
