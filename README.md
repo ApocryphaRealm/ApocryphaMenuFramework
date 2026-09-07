@@ -69,5 +69,5 @@ The framework's own text - its Settings, Controls and Help pages and the window 
 French, Spanish, Italian, Polish and Czech. The Language combo on the Framework Settings page (or
 `sLanguage=` in the INI) forces one; switching is live. A translation that lacks a line falls back to
 English. The font atlas takes its glyph ranges from the loaded translation and merges a system CJK or
-Hangul face where the chosen font lacks the characters. Each mod's own page is that mod's to translate.
+Hangul face where the chosen font lacks the characters. Each mod's own page is that mod's to translate - a mod that ships its own `<Mod>_<language>.txt` beside ours follows the same Language setting (`AMF_GetLanguage()` in the C API) and its characters go into the atlas automatically (1.6.5).
 Corrections from native speakers are welcome - the files are plain text.

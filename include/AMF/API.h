@@ -62,6 +62,17 @@ enum class AMF_InputMode : std::uint32_t
 };
 
 AMF_API std::uint32_t AMF_GetInputMode();
+// --------------------------------------------------------------------------------------------
+// Language (1.6.5). The language the framework's own text is showing - "english", "japanese",
+// "korean", "chinese", "russian", ... - after the player's choice on the Framework Settings page
+// (or the INI's sLanguage) and the game's own sLanguage. Consumer mods that ship
+// Interface\Translations\<Mod>_<language>.txt read this each frame and reload their strings when
+// it changes, so ONE setting drives every page. The pointer is stable for the process lifetime
+// and the string only changes when the player switches language. The framework's font atlas is
+// built from EVERY <anything>_<language>.txt in Interface\Translations for the active language,
+// so a consumer's kana, hangul, hanzi or Cyrillic draw without the consumer touching fonts.
+// --------------------------------------------------------------------------------------------
+AMF_API const char* AMF_GetLanguage();
 
 // --------------------------------------------------------------------------------------------
 // ig* surface (M3): cimgui-compatible C exports generated from the PUBLIC cimgui definitions

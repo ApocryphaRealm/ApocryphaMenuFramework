@@ -19,6 +19,12 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   `rules-version.ps1 -Action bump`. If a number was typed by hand, it is wrong until the tool
 >   agrees.
 
+## 1.6.5 - 2026-09-06 - working
+
+### Added
+- The font atlas is now built from EVERY mod's translation file of the active language in Interface/Translations (any <Mod>_<language>.txt), not only the framework's own, so a consumer mod's translated page draws its kana, hangul, hanzi or Cyrillic without touching fonts itself.
+- AMF_GetLanguage() in the C API: the language the framework is showing, for consumer mods to follow - one Language setting drives every page.
+
 ## 1.6.4 - 2026-09-06 - working
 
 ### Added

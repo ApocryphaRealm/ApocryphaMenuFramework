@@ -111,6 +111,31 @@ namespace strings
 
 		std::string all;
 		for (const auto& [k, v] : texts) { all += v; all += '\n'; }
+		// The atlas text: not just this framework's file but EVERY mod's <Mod>_<language>.txt in the
+		// folder (1.6.5), so a consumer page's glyphs are in the atlas without the consumer touching
+		// fonts. Read into a scratch map; only the characters matter here.
+		int otherFiles = 0;
+		{
+			std::error_code ec;
+			const auto dir = TranslationsDir();
+			const std::string suffix = "_" + lang + ".txt";
+			if (std::filesystem::is_directory(dir, ec))
+			{
+				for (const auto& e : std::filesystem::directory_iterator(dir, ec))
+				{
+					if (!e.is_regular_file(ec)) { continue; }
+					const std::string name = Lower(e.path().filename().string());
+					if (name.size() <= suffix.size() || name.substr(name.size() - suffix.size()) != suffix) { continue; }
+					if (name.rfind("apocryphamenuframework_", 0) == 0) { continue; }
+					std::unordered_map<std::string, std::string> other;
+					if (ReadInto(e.path(), other, true) > 0)
+					{
+						++otherFiles;
+						for (const auto& [k, v] : other) { all += v; all += '\n'; }
+					}
+				}
+			}
+		}
 
 		{
 			std::scoped_lock l(g_lock);
@@ -130,9 +155,9 @@ namespace strings
 		}
 		else
 		{
-			logger::info("strings: {} text(s) read for \"{}\"{} ({})", fromLang, lang,
+			logger::info("strings: {} text(s) read for \"{}\"{} ({}); atlas text also from {} other mod translation file(s)", fromLang, lang,
 						 fromEnglish > 0 ? std::format(", {} filled from English", fromEnglish) : "",
-						 override.empty() ? "the game's language" : "the INI's sLanguage");
+						 override.empty() ? "the game's language" : "the INI's sLanguage", otherFiles);
 		}
 	}
 

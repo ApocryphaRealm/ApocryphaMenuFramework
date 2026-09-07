@@ -9,6 +9,9 @@
 #include "Settings.h"
 #include "Strings.h"
 
+#include <cstdio>
+#include <cstring>
+
 namespace renderer { void RequestFontRebuild(); }
 #include "SmfAlias.h"
 #include "SystemRow.h"
@@ -170,6 +173,18 @@ AMF_API std::uint32_t AMF_GetAPIVersion()
 AMF_API bool AMF_RegisterPage(const char* a_modName, const char* a_pageName, AMF_RenderCallback a_render)
 {
 	return registry::Register(a_modName, a_pageName, a_render);
+}
+
+AMF_API const char* AMF_GetLanguage()
+{
+	// A process-lifetime buffer: consumers may keep the pointer and compare each frame.
+	static char s_buffer[64] = "english";
+	const std::string& lang = strings::Language();
+	if (std::strncmp(s_buffer, lang.c_str(), sizeof(s_buffer)) != 0)
+	{
+		std::snprintf(s_buffer, sizeof(s_buffer), "%s", lang.c_str());
+	}
+	return s_buffer;
 }
 
 AMF_API std::uint32_t AMF_GetInputMode()
