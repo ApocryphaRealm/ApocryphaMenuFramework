@@ -19,6 +19,15 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   `rules-version.ps1 -Action bump`. If a number was typed by hand, it is wrong until the tool
 >   agrees.
 
+## 1.6.8 - 2026-09-08 - working
+
+### Fixed
+- The search box above the mod list has been drawing English in every language since 1.6.6: its two strings (the "Search" hint and "no mod matches that") were never added to any translation file, English included. They are now in all eleven. A missing key falls back to the compiled English, so nothing was broken - it just was not translated.
+- The Controls line describing the section-tab navigation, added in 1.6.7, reached only English, Japanese, Korean, Chinese and Russian. German, French, Spanish, Italian, Polish and Czech now have it too.
+
+### Added
+- `.MD\scripts	ranslation-coverage.py` (project tooling, not shipped): compares the keys the code asks for against every shipped translation file, for every mod. `pre-finalize-check.ps1` now runs it, so a mod can no longer finalize with strings that never reached the files.
+
 ## 1.6.7 - 2026-09-08 - working
 
 ### Changed
