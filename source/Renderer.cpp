@@ -37,7 +37,9 @@
 #include <imgui_impl_win32.h>
 
 #include <atomic>
+#include <algorithm>
 #include <cctype>
+#include <string>
 
 namespace renderer
 {
@@ -1001,10 +1003,35 @@ namespace renderer
 				sideItem(TR("AMF_Help", "Help"),     "help");
 				ImGui::Separator();
 				ImGui::TextDisabled("%s", TR("AMF_Mods", "Mods"));
+
+				// Search the list by name. Once a load order registers thirty or more pages the
+				// list is longer than the pane and finding one means scrolling; typing two or
+				// three letters is faster than any amount of ordering.
+				static char s_modFilter[64] = {};
+				ImGui::SetNextItemWidth(-FLT_MIN);
+				ImGui::InputTextWithHint("##modsearch", TR("AMF_SearchMods", "Search"),
+										 s_modFilter, sizeof(s_modFilter));
+
+				const auto lower = [](std::string a_in) {
+					std::transform(a_in.begin(), a_in.end(), a_in.begin(),
+								   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+					return a_in;
+				};
+				const std::string needle = lower(s_modFilter);
+
 				// Player-facing order and names (menu-shell personalization). The rows carry the
 				// REGISTRY index, so selection, the C API and DevBench addressing are unaffected.
+				int shown = 0;
 				for (const personalization::DisplayEntry& row : personalization::Order(entries))
 				{
+					// The name the player actually reads is what they will type at, so the filter
+					// matches the DISPLAY name - an aliased entry is findable by its alias.
+					if (!needle.empty() && lower(row.displayName).find(needle) == std::string::npos)
+					{
+						continue;
+					}
+					++shown;
+
 					const bool isOpen = (sel == "mod" && selMod == row.registryIndex);
 					if (isOpen && g_navToSelected)
 					{
@@ -1019,6 +1046,7 @@ namespace renderer
 					}
 				}
 				if (entries.empty()) { ImGui::TextDisabled("%s", TR("AMF_NoneRegistered", "none registered")); }
+				else if (shown == 0) { ImGui::TextDisabled("%s", TR("AMF_NoMatch", "no mod matches that")); }
 				const bool sideHasNav = ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows);
 				ImGui::EndChild();
 				if (knot)

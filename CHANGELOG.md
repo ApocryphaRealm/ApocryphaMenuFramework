@@ -19,6 +19,11 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   `rules-version.ps1 -Action bump`. If a number was typed by hand, it is wrong until the tool
 >   agrees.
 
+## 1.6.6 - 2026-09-08 - untested
+
+### Added
+- Added a search box above the mod list. Once a load order registers thirty or more pages the list is longer than the pane, and typing two or three letters is faster than scrolling. It matches the name you actually see, so a renamed entry is found by its new name.
+
 ## 1.6.5 - 2026-09-06 - working
 
 ### Added
