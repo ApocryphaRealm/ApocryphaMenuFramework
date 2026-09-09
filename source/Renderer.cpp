@@ -80,6 +80,11 @@ namespace renderer
 		std::string g_selTab  = "mods";            // kept for the DevBench state JSON; the SMF shape has one list
 		std::string g_selNode = "settings";        // side-list entry: settings|controls|help|mod
 		int g_selMod = 0;
+		// The open mod's tab bar, mirrored under this same lock for the DevBench state JSON. The
+		// render loop owns the live values below; these are the copy the listener thread may read.
+		std::string g_selTabName;
+		int g_selTabIndex = 0;
+		int g_selTabCount = 0;
 		// Set when the selection is changed from OUTSIDE the UI (the amf.menu DevBench tool).
 		// Without this the render loop copied its own state back every frame and ImGui's tab bar,
 		// which owns its selected tab internally, stomped the external change immediately - the
@@ -444,13 +449,39 @@ namespace renderer
 		// list, 2 = the options). Set when the player pushes across the border; applied by
 		// SetNextWindowFocus before that child begins, which also makes ImGui pick a sensible item
 		// inside it (the first one, or the one it was last on).
-		int g_focusPane = 0;
+		// Atomic because a driving tool sets it from devbench's listener thread (renderer::FocusPane).
+		std::atomic<int> g_focusPane{ 0 };
 
 		// When nav returns to the mod list, put the cursor back on the entry whose page is open -
 		// not wherever the list's cursor happened to be left (author, 2026-09-01: "if I select
 		// settings and go right and I scroll to the bottom and then I go back left then it should
 		// take me back to the settings menu selector not to the bottom of the left pane").
-		bool g_navToSelected = false;
+		std::atomic<bool> g_navToSelected{ false };
+
+		// Tab navigation inside the options pane (the author, 2026-09-08: "using the left d pad
+		// doesnt move out of the menu until you get to the begining of the tabs otherwise you cant
+		// use the lft d pad in the menu except to exit the menu"). A mod with several pages draws a
+		// tab bar, and the D-pad now WALKS that bar: left steps back one tab, and only a left press
+		// already at the FIRST tab hands nav back to the mod list. Before this the very first left
+		// press left the pane, so the twelve sections of a mod like Character Progression Control
+		// could not be reached with the D-pad at all - left's only use inside a menu was to leave it.
+		//
+		// Right steps FORWARD a tab only while the cursor is on the bar itself, and that asymmetry
+		// is deliberate. Left was already spent on leaving the pane, so taking it costs nothing;
+		// right is still ImGui's own move-between-widgets key down in the page and stays that way.
+		// On the bar nothing is lost either: ImGui moves the nav highlight along the tabs but does
+		// NOT select the one it lands on - selecting needs an activate press - so all that changes
+		// is that the highlight and the selection now move together.
+		int  g_tabCount = 0;          // tabs the open mod drew this frame; 0 or 1 = no bar to walk
+		int  g_tabIndex = 0;          // which of them is selected - re-read from the bar every frame,
+		                              // so a mouse click or the tab-list popup keeps it honest
+		int  g_tabRequest = -1;       // tab to force-select on the next frame; -1 = none
+		bool g_tabBarHasNav = false;  // the cursor is on the bar itself, not down in the page
+
+		// Where a driving tool's synthetic press lands (amf.menu op=nav). It is read in exactly the
+		// place a real D-pad press is read, so the tool exercises this logic rather than a shortcut
+		// past it (rule 64). 0 = nothing pending, 1 = left, 2 = right.
+		std::atomic<int> g_navRequest{ 0 };
 
 		void DrawMenuListSection();  // defined below, next to the other leaf panes
 
@@ -807,6 +838,7 @@ namespace renderer
 			ImGui::BulletText("%s", TR("AMF_Ctrl2", "A takes hold of a slider; the RIGHT stick then moves it. A again lets go."));
 			ImGui::BulletText("%s", TR("AMF_Ctrl3", "A on a drop-down opens it; the sticks choose; A confirms."));
 			ImGui::BulletText("%s", TR("AMF_Ctrl4", "B cancels, START closes the menu. The D-pad does everything the left stick does."));
+			ImGui::BulletText("%s", TR("AMF_Ctrl5", "In a mod with several sections, left and right walk the tabs. Left at the first tab goes back to the list."));
 		}
 
 		void DrawHelpPane()
@@ -1060,6 +1092,12 @@ namespace renderer
 				// ---- CONTENT PANE -------------------------------------------------------------
 				if (g_focusPane == 2) { ImGui::SetNextWindowFocus(); g_focusPane = 0; }
 				ImGui::BeginChild("##content", ImVec2(0.0f, 0.0f), true);
+				// Re-measured every frame. A pane with no tab bar leaves these at zero, so left
+				// falls straight back to the mod list exactly as it always did.
+				g_tabCount = 0;
+				g_tabIndex = 0;
+				g_tabBarHasNav = false;
+				std::string curTabName;
 				if (sel == "settings")      { DrawFrameworkSettingsPane(); }
 				else if (sel == "controls") { DrawControlsPane(); }
 				else if (sel == "help")     { DrawHelpPane(); }
@@ -1077,14 +1115,29 @@ namespace renderer
 					}
 					else if (ImGui::BeginTabBar("##pages", ImGuiTabBarFlags_FittingPolicyScroll | ImGuiTabBarFlags_TabListPopupButton))   // a mod with many sections keeps whole labels: the bar scrolls, and the list button on the left opens every section by name (Character Progression Control reached twelve tabs and the default policy squeezed them to "Level... Expe... Skills")
 					{
+						int index = 0;
 						for (const registry::Page& page : entry.pages)
 						{
-							if (ImGui::BeginTabItem(page.pageName.c_str()))
+							// A D-pad step asks for its tab for exactly ONE frame. Every other
+							// frame the bar owns its own selection, so the D-pad, a mouse click
+							// and the tab-list popup never fight over which tab is open.
+							const ImGuiTabItemFlags flags =
+								(index == g_tabRequest) ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
+							const bool open = ImGui::BeginTabItem(page.pageName.c_str(), nullptr, flags);
+							// Asked of the tab itself rather than worked out from where nav "should"
+							// be (rule 30): the item just submitted is the tab button, selected or not.
+							if (ImGui::IsItemFocused()) { g_tabBarHasNav = true; }
+							if (open)
 							{
+								g_tabIndex = index;
+								curTabName = page.pageName;
 								page.render();
 								ImGui::EndTabItem();
 							}
+							++index;
 						}
+						g_tabCount = index;
+						g_tabRequest = -1;
 						ImGui::EndTabBar();
 					}
 				}
@@ -1121,17 +1174,42 @@ namespace renderer
 										   ImGui::IsKeyPressed(ImGuiKey_GamepadLStickLeft, false) ||
 										   ImGui::IsKeyPressed(ImGuiKey_LeftArrow, false);
 					const bool editing = ImGui::IsAnyItemActive();
-					if (sideHasNav && wantsRight && !editing)
+					// A driving tool's press is read here, alongside the real ones, so amf.menu
+					// op=nav proves THIS decision rather than a private path around it.
+					const int  driven   = g_navRequest.exchange(0);
+					const bool navLeft  = wantsLeft  || driven == 1;
+					const bool navRight = wantsRight || driven == 2;
+					if (sideHasNav && navRight && !editing)
 					{
 						g_focusPane = 2;
 						logger::debug("nav: list -> options");
 					}
-					else if (contentHasNav && wantsLeft && !editing)
+					else if (contentHasNav && navLeft && !editing && g_tabCount > 1 && g_tabIndex > 0)
 					{
+						// Still somewhere inside the tabs: step back one instead of dropping the
+						// player out of the menu they are reading.
+						g_tabRequest = g_tabIndex - 1;
+						logger::debug("nav: tab {} -> {} of {}", g_tabIndex, g_tabRequest, g_tabCount);
+					}
+					else if (contentHasNav && navRight && !editing && g_tabBarHasNav && g_tabIndex + 1 < g_tabCount)
+					{
+						g_tabRequest = g_tabIndex + 1;
+						logger::debug("nav: tab {} -> {} of {}", g_tabIndex, g_tabRequest, g_tabCount);
+					}
+					else if (contentHasNav && navLeft && !editing)
+					{
+						// At the first tab, or in a pane that has no tabs at all: back to the list.
 						g_focusPane = 1;
 						g_navToSelected = true;  // land on the open entry, not the last cursor position
 						logger::debug("nav: options -> list (returning to the open entry)");
 					}
+				}
+
+				// Publish the tab bar for the DevBench state JSON, so a driving tool can assert
+				// which section is open without reading pixels.
+				{
+					std::scoped_lock l(g_selLock);
+					g_selTabName = curTabName; g_selTabIndex = g_tabIndex; g_selTabCount = g_tabCount;
 				}
 
 				// Controller scheme: while a slider/drag is ACTIVE the right stick moves it and the
@@ -1464,10 +1542,30 @@ namespace renderer
 		settings::Save();
 	}
 
+	bool QueueNav(const std::string& a_direction)
+	{
+		if (a_direction == "left")  { g_navRequest.store(1, std::memory_order_release); return true; }
+		if (a_direction == "right") { g_navRequest.store(2, std::memory_order_release); return true; }
+		logger::warn("amf.menu nav: unknown direction \"{}\" (expected left or right)", a_direction);
+		return false;
+	}
+
+	bool FocusPane(const std::string& a_pane)
+	{
+		if (a_pane == "list")    { g_focusPane = 1; g_navToSelected = true; return true; }
+		if (a_pane == "options") { g_focusPane = 2; return true; }
+		logger::warn("amf.menu focus: unknown pane \"{}\" (expected list or options)", a_pane);
+		return false;
+	}
+
 	std::string GetMenuStateJson()
 	{
-		std::string node, tab; int selMod;
-		{ std::scoped_lock l(g_selLock); node = g_selNode; tab = g_selTab; selMod = g_selMod; }
+		std::string node, tab, tabName; int selMod, tabIndex, tabCount;
+		{
+			std::scoped_lock l(g_selLock);
+			node = g_selNode; tab = g_selTab; selMod = g_selMod;
+			tabName = g_selTabName; tabIndex = g_selTabIndex; tabCount = g_selTabCount;
+		}
 		const bool visible = g_windowVisible.load(std::memory_order_relaxed);
 		const auto entries = registry::Snapshot();
 		auto esc = [](const std::string& v) { std::string o; for (char c : v) { if (c == '"' || c == '\x5C') { o += '\x5C'; } o += c; } return o; };
@@ -1500,6 +1598,8 @@ namespace renderer
 		return std::string("{\"cursor\":{\"x\":") + std::to_string(static_cast<int>(cursorX)) + ",\"y\":" + std::to_string(static_cast<int>(cursorY)) + "}" +
 			   ",\"visible\":" + (visible ? "true" : "false") +
 			   ",\"tab\":\"" + esc(tab) + "\",\"selected\":\"" + esc(node) + "\",\"selectedMod\":" + std::to_string(selMod) +
+			   ",\"page\":\"" + esc(tabName) + "\",\"pageIndex\":" + std::to_string(tabIndex) +
+			   ",\"pageCount\":" + std::to_string(tabCount) +
 			   ",\"controllerMode\":" + (input::UsingController() ? "true" : "false") +
 			   ",\"lastDevice\":\"" + (input::LastDevice() == input::Device::kGamepad ? "gamepad" :
 										   input::LastDevice() == input::Device::kKeyboardMouse ? "keyboard" : "none") + "\"" +

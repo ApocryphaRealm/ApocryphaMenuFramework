@@ -19,7 +19,16 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   `rules-version.ps1 -Action bump`. If a number was typed by hand, it is wrong until the tool
 >   agrees.
 
-## 1.6.6 - 2026-09-08 - untested
+## 1.6.7 - 2026-09-08 - working
+
+### Changed
+- The D-pad now walks a mod's tabs instead of falling out of the menu on the first press. In a mod with several sections - Character Progression Control has twelve - left steps back one tab, and only a left press already at the FIRST tab hands navigation back to the mod list. Right steps forward a tab while the cursor is on the tab bar itself, and still moves between a page's own controls below it. Before this, left inside a mod's page had no use except leaving it, so the tabs could not be reached with the D-pad at all.
+
+### Added
+- amf.menu gained op=nav (arg dir: left|right) and op=focus (arg pane: list|options): the D-pad press and the pane placement, driven from DevBench. nav is read in the same place a real press is read, so a test exercises the shipped decision rather than a path around it.
+- The amf.menu state JSON now reports the open mod's page, pageIndex and pageCount, so a driving tool can assert which section is showing without reading pixels.
+
+## 1.6.6 - 2026-09-08 - working
 
 ### Added
 - Added a search box above the mod list. Once a load order registers thirty or more pages the list is longer than the pane, and typing two or three letters is faster than scrolling. It matches the name you actually see, so a renamed entry is found by its new name.

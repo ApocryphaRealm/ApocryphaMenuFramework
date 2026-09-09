@@ -145,6 +145,24 @@ namespace devbenchtool
 				renderer::ResetModOrder();
 				result = "{\"ok\":true,\"op\":\"resetorder\"}";
 			}
+			else if (op == "nav")
+			{
+				// 1.6.7: drive the navigation exactly as the D-pad does - args dir left|right.
+				// Inside a mod with several sections this walks the tab bar; left at the first tab
+				// (or in a pane with no tabs) goes back to the mod list.
+				const std::string dir = JsonStr(args, "dir");
+				const bool ok = renderer::QueueNav(dir);
+				result = std::string("{\"ok\":") + (ok ? "true" : "false") +
+						 ",\"op\":\"nav\",\"dir\":\"" + dir + "\"}";
+			}
+			else if (op == "focus")
+			{
+				// Put nav in a pane so a nav case can be set up without pressing anything.
+				const std::string pane = JsonStr(args, "pane");
+				const bool ok = renderer::FocusPane(pane);
+				result = std::string("{\"ok\":") + (ok ? "true" : "false") +
+						 ",\"op\":\"focus\",\"pane\":\"" + pane + "\"}";
+			}
 			else if (op == "cursor")
 			{
 				// Point-and-click driving (1.5.6): place the software cursor at an absolute
@@ -356,17 +374,21 @@ namespace devbenchtool
 		constexpr const char* descriptor =
 			"{"
 			"\"description\":\"Drive and inspect the Apocrypha Menu Framework window for testing. "
-			"op: open|close|select|activate|state|alias|move|resetorder|theme|language (args language: a translation file name or auto). For select, node is a path: settings, controls, help "
+			"op: open|close|select|activate|state|alias|move|resetorder|theme|language|nav|focus|cursor|click "
+			"(args language: a translation file name or auto). For select, node is a path: settings, controls, help "
 			"(pre-1.4.4 system/... paths are still accepted) or mod:<index>. "
 			"activate is a no-op in the SMF shape (kept for compatibility). alias renames a mod's menu entry "
 			"(args mod, name; empty name clears it); move sends it to a 1-based position (args mod, position) and "
 			"re-flows the rest; resetorder returns the list to alphabetical; theme switches the active theme by "
-			"registry id (arg id: skyrim, untarnished). state returns visibility, the "
-			"selected node, every registered mod + its pages, and the player-facing displayOrder.\","
+			"registry id (arg id: skyrim, untarnished). nav presses the D-pad (arg dir: left|right) - inside a "
+			"mod with several sections that walks its tabs, and left at the first tab returns to the mod list; "
+			"focus puts navigation in a pane (arg pane: list|options). state returns visibility, the "
+			"selected node, the open mod's page/pageIndex/pageCount, every registered mod + its pages, "
+			"and the player-facing displayOrder.\","
 			"\"inputSchema\":{\"type\":\"object\",\"properties\":{"
 			"\"op\":{\"type\":\"string\"},\"node\":{\"type\":\"string\"},"
 			"\"mod\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"position\":{\"type\":\"string\"},"
-			"\"id\":{\"type\":\"string\"}}},"
+			"\"id\":{\"type\":\"string\"},\"dir\":{\"type\":\"string\"},\"pane\":{\"type\":\"string\"}}},"
 			"\"readOnly\":false"
 			"}";
 

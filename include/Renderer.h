@@ -44,6 +44,16 @@ namespace renderer
 	// ONE game session instead of one launch per theme. Returns false for an unknown id.
 	bool SetTheme(const std::string& a_themeId);
 
+	// Driving the pane and tab navigation from DevBench (amf.menu op=nav / op=focus), so the
+	// controller scheme can be exercised with no keypress at all (rule 64). QueueNav queues a
+	// synthetic left/right press that is read in the same place a real D-pad press is read -
+	// including the tab walking, so a test proves the shipped decision rather than a private path
+	// around it. FocusPane puts nav in the mod list or the options pane, which is how a nav case
+	// is set up headlessly. Both return false, and log why, for a value they do not recognise.
+	// Thread-safe: called on devbench's listener thread, applied on the render thread.
+	bool QueueNav(const std::string& a_direction);  // "left" | "right"
+	bool FocusPane(const std::string& a_pane);      // "list" | "options"
+
 	bool SetModAlias(const std::string& a_modName, const std::string& a_alias);
 	bool MoveModTo(const std::string& a_modName, int a_position);
 	void ResetModOrder();
