@@ -82,6 +82,11 @@ namespace settings
 		// match their own interface (requested 2026-09-09 for borokoshow / Dragonborn UI). All
 		// four are optional and independent; see Skin.h for what an author actually ships.
 		// Every image is PNG - AMF decodes through WIC, which does not read DDS at all.
+		// OFF BY DEFAULT, and that is the point. Art that is on unless you turn it off means a
+		// player with no art replacer installed can end up looking at whatever placeholder PNGs
+		// happen to be on disk - which is exactly what happened during development. A UI author
+		// turning the feature on is one line; a player seeing art they never asked for is a bug.
+		bool          skinEnabled = false; // bEnabled - master switch for everything in [Skin]
 		std::string   skinFrame;            // sFrame - nine-slice frame PNG, transparent centre
 		std::uint32_t skinFrameCorner = 64; // uFrameCorner - corner slice in px (192x192/64 suggested)
 		std::string   skinBackground;       // sBackground - tiled if <= 512px both sides, else stretched

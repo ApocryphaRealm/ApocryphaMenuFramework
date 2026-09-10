@@ -22,6 +22,7 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 ## 1.7.0 - 2026-09-10 - untested
 
 ### Added
+- A master switch for custom menu art, off by default, in the INI as [Skin] bEnabled and as a toggle on the Framework Settings page - so the built-in look is what you get unless you deliberately install artwork and turn it on.
 - A Save button on the settings page's menu list, so an order you have dragged into place survives the game closing instead of reverting to the registration order.
 
 ## 1.6.9 - 2026-09-09 - working

@@ -580,6 +580,22 @@ namespace renderer
 			ImGui::TextDisabled("%s", TR("AMF_TakesEffectJournal", "Takes effect the next time the journal is opened."));
 			ImGui::Spacing();
 
+			// CUSTOM MENU ART IS OFF UNLESS ASKED FOR (the owner, 2026-09-10: "i dont want the custom
+			// menu art to be visible ... there needs to be a way to not have it on at all times").
+			// The switch is here as well as in the INI so a player can turn it off without editing a
+			// file, and turning it off reloads at once rather than at the next launch.
+			if (widgets::Toggle(TR("AMF_SkinEnabled", "Custom menu art from a UI author"), &values.skinEnabled))
+			{
+				logger::info("settings page: custom menu art -> {}", values.skinEnabled);
+				settings::Save();
+				skin::Reload();
+			}
+			ImGui::TextWrapped("%s", TR("AMF_SkinEnabledHelp", "Off: the menu keeps its built-in look, whatever is set under [Skin] in the "
+							   "INI. On: the frame, background and toggle switch are replaced by the PNGs a UI "
+							   "author has pointed the framework at. Leave this off unless you have installed "
+							   "artwork made for it."));
+			ImGui::Spacing();
+
 			// WINDOW PROFILES. Each way in remembers where it was left; this is the way back to the
 			// starting geometry, which matters because the default for the nested window is the
 			// journal panel measured live - something the player cannot reproduce by dragging.

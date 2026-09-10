@@ -152,6 +152,7 @@ namespace settings
 				// Retired ids from the 2026-09-01 theme merge are mapped, not dropped.
 				g_values.themeId = theme::MigrateThemeId(it->second);
 			}
+			ReadBool(entries, "Skin.bEnabled", g_values.skinEnabled);
 			if (const auto it = entries.find("Skin.sFrame"); it != entries.end()) { g_values.skinFrame = it->second; }
 			if (const auto it = entries.find("Skin.sBackground"); it != entries.end()) { g_values.skinBackground = it->second; }
 			if (const auto it = entries.find("Skin.sPlates"); it != entries.end()) { g_values.skinPlates = it->second; }
@@ -250,6 +251,11 @@ namespace settings
 				"[Skin]\n"
 				"; Replacement ARTWORK for the menu shell, for a UI author matching their own\n"
 				"; interface. Every image is a 32-bit RGBA PNG - DDS is not decoded. All optional.\n"
+				";\n"
+				"; bEnabled is the master switch and is OFF by default: with it off nothing below is\n"
+				"; even loaded and the menu keeps its built-in look, whatever the paths say. Turn it\n"
+				"; on only when you actually have artwork to point it at. There is a matching switch\n"
+				"; on the Framework Settings page, so it can be turned off without editing this file.\n"
 				";   sFrame       one square PNG with a TRANSPARENT CENTRE, drawn as a nine-slice\n"
 				";                around the window. 192x192 with 64px corners is a good default.\n"
 				";   uFrameCorner how many pixels of that PNG are the corner ornament.\n"
@@ -258,6 +264,7 @@ namespace settings
 				";   sPlates      a FOLDER holding any of toggle.png, slider.png, tab.png, to restyle\n"
 				";                individual controls. Supply only the ones you want changed.\n"
 				"; Paths are under Data (Interface/YourMod/frame.png), or absolute while working.\n"
+				"bEnabled=" << (g_values.skinEnabled ? 1 : 0) << "\n"
 				"sFrame=" << g_values.skinFrame << "\n"
 				"uFrameCorner=" << g_values.skinFrameCorner << "\n"
 				"sBackground=" << g_values.skinBackground << "\n"

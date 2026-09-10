@@ -101,6 +101,18 @@ namespace skin
 	{
 		const auto& v = settings::Get();
 
+		// The master switch is honoured HERE rather than at each draw site, so exactly one place
+		// decides whether custom art exists at all. With it off every Has*() below reports false and
+		// the built-in look draws - which is what a player who installed no art replacer must get,
+		// including when paths are still sitting in the INI from somebody's experiment.
+		if (!v.skinEnabled)
+		{
+			g_frame = Entry{};
+			g_background = Entry{};
+			for (std::size_t i = 0; i < g_plates.size(); ++i) { g_plates[i] = Entry{}; }
+			return;
+		}
+
 		Load(g_frame, Resolve(v.skinFrame), "frame");
 		Load(g_background, Resolve(v.skinBackground), "background");
 
