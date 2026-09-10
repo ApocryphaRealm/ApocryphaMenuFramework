@@ -6,6 +6,8 @@
 // but written against the real embedded Dear ImGui API rather than SMF's cimgui exports,
 // because this framework owns its ImGui.
 
+#include "Skin.h"
+
 #include <imgui.h>
 
 #include <string_view>
@@ -38,7 +40,19 @@ namespace widgets
 
 		const float knobX = pos.x + radius + (isOn ? (width - height) : 0.0f);
 
-		drawList->AddRectFilled(pos, ImVec2(pos.x + width, pos.y + height), trackColor, radius);
+		// A UI author may supply toggle.png to restyle the track (see Skin.h). The knob still
+		// draws over it, so the switch remains readable as a switch whatever the art does, and
+		// the on/off tint is still applied - the plate carries the SHAPE, the state stays legible.
+		if (skin::HasPlate(skin::Plate::kToggle))
+		{
+			drawList->AddImage(reinterpret_cast<ImTextureID>(skin::PlateTexture(skin::Plate::kToggle)),
+							   pos, ImVec2(pos.x + width, pos.y + height),
+							   ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), trackColor);
+		}
+		else
+		{
+			drawList->AddRectFilled(pos, ImVec2(pos.x + width, pos.y + height), trackColor, radius);
+		}
 		drawList->AddCircleFilled(ImVec2(knobX, pos.y + radius), radius - 2.0f, IM_COL32(240, 240, 240, 255), 32);
 
 		ImGui::PopID();

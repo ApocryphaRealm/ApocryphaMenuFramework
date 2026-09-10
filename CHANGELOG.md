@@ -19,6 +19,45 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   `rules-version.ps1 -Action bump`. If a number was typed by hand, it is wrong until the tool
 >   agrees.
 
+## 1.6.9 - 2026-09-09 - working
+
+Custom menu art, so a UI author can make the framework match their own interface instead of
+accepting the built-in look. Requested for borokoshow, to match Dragonborn UI.
+
+Four new `[Skin]` INI keys, all optional and independent:
+
+* `sFrame` + `uFrameCorner` - a square RGBA PNG with a transparent centre, drawn as a nine-slice
+  around the window. 192x192 with 64px corners is the suggested default. The corner is a key
+  because only the artist knows where their ornament stops; an over-large value is clamped and
+  logged rather than drawn as flipped middle slices.
+* `sBackground` - a PNG drawn behind the window's content. **Tiled if it is 512px or smaller on
+  both sides, stretched otherwise**, decided from the image rather than from a fifth key, so a
+  256x256 seamless tile and a 1920x1080 backdrop both simply work.
+* `sPlates` - a folder holding any of `toggle.png`, `slider.png`, `tab.png`. `toggle.png` draws
+  now, tinted by the on/off state so the switch stays readable as a switch. The slider and tab
+  plates load and are reported but are not drawn yet: those two are Dear ImGui built-ins rather
+  than this framework's own widgets, so restyling them means replacing the widgets outright,
+  which would land on every consumer's page at once and is not worth doing carelessly.
+
+A supplied frame REPLACES the built-in knotwork rather than drawing over it, and is drawn
+whichever theme is selected - shipping frame art is itself the request for a frame.
+
+The existing nine-slice was generalised rather than duplicated, so an author's frame goes through
+exactly the same geometry the built-in knotwork was proven on.
+
+PNG only: the texture loader decodes through WIC, which reads PNG/JPG/BMP/TIFF and does not read
+DDS at all. A `.dds` is now rejected by name in the log rather than failing as an unexplained
+"could not decode". (Adding real DDS support via DirectXTK remains the separate open to-do item.)
+
+Two DevBench ops, so an artist iterates without restarting: `amf.process op=skin` reports exactly
+what loaded and why anything did not, and `op=skinreload` re-reads every texture from disk.
+
+No new user-visible strings, so no translation work is owed for this version.
+
+Proven in game on Test Build (SE 1.5.97): a 192x192 frame with 64px corners and a 256x256 tiled
+background drew correctly around and behind the live window, corners fixed and edges stretched,
+with the toggle plate tinted by state; `op=skinreload` reloaded from disk mid-session.
+
 ## 1.6.8 - 2026-09-08 - working
 
 ### Fixed

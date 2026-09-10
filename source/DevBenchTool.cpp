@@ -5,6 +5,7 @@
 #include "MainMenuDriver.h"
 #include "Renderer.h"
 #include "Settings.h"
+#include "Skin.h"
 #include "Strings.h"
 #include <ctime>
 #include <filesystem>
@@ -220,6 +221,19 @@ namespace devbenchtool
 				watchdog::KillNow("amf.process kill requested over DevBench");
 			}
 
+			// op=skin - what menu art actually loaded, and op=skinreload - load it again from
+			// disk without restarting the game, so a UI author can iterate on their PNGs live.
+			if (op == "skin")
+			{
+				a_write(a_sink, (std::string(R"({"ok":true,"op":"skin","skin":)") + skin::StatusJson() + "}").c_str());
+				return;
+			}
+			if (op == "skinreload")
+			{
+				skin::Reload();
+				a_write(a_sink, (std::string(R"({"ok":true,"op":"skinreload","skin":)") + skin::StatusJson() + "}").c_str());
+				return;
+			}
 			if (op == "capture")
 			{
 				// Saves the current frame WITH the framework overlay to

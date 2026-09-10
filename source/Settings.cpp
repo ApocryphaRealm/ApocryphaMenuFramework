@@ -152,6 +152,10 @@ namespace settings
 				// Retired ids from the 2026-09-01 theme merge are mapped, not dropped.
 				g_values.themeId = theme::MigrateThemeId(it->second);
 			}
+			if (const auto it = entries.find("Skin.sFrame"); it != entries.end()) { g_values.skinFrame = it->second; }
+			if (const auto it = entries.find("Skin.sBackground"); it != entries.end()) { g_values.skinBackground = it->second; }
+			if (const auto it = entries.find("Skin.sPlates"); it != entries.end()) { g_values.skinPlates = it->second; }
+			ReadNumber(entries, "Skin.uFrameCorner", g_values.skinFrameCorner);
 			ReadNumber(entries, "Log.uLogLevel", g_values.logLevel);
 			// Menu-shell personalization (aliases + custom order) lives in the same file.
 			personalization::LoadFrom(entries);
@@ -242,6 +246,22 @@ namespace settings
 				"[Theme]\n"
 				"; Registry id (see the theme picker on the Framework Settings page).\n"
 				"sThemeId=" << g_values.themeId << "\n"
+				"\n"
+				"[Skin]\n"
+				"; Replacement ARTWORK for the menu shell, for a UI author matching their own\n"
+				"; interface. Every image is a 32-bit RGBA PNG - DDS is not decoded. All optional.\n"
+				";   sFrame       one square PNG with a TRANSPARENT CENTRE, drawn as a nine-slice\n"
+				";                around the window. 192x192 with 64px corners is a good default.\n"
+				";   uFrameCorner how many pixels of that PNG are the corner ornament.\n"
+				";   sBackground  a small tileable PNG (<=512px each side) OR a full-screen one -\n"
+				";                which it is is decided by its own size, so both just work.\n"
+				";   sPlates      a FOLDER holding any of toggle.png, slider.png, tab.png, to restyle\n"
+				";                individual controls. Supply only the ones you want changed.\n"
+				"; Paths are under Data (Interface/YourMod/frame.png), or absolute while working.\n"
+				"sFrame=" << g_values.skinFrame << "\n"
+				"uFrameCorner=" << g_values.skinFrameCorner << "\n"
+				"sBackground=" << g_values.skinBackground << "\n"
+				"sPlates=" << g_values.skinPlates << "\n"
 				"\n"
 				"[Log]\n"
 				"; 0 = trace (most comprehensive, the project default) ... 6 = off.\n"

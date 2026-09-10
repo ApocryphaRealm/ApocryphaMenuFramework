@@ -7,6 +7,7 @@
 #include "Offsets.h"
 #include "Persistence.h"
 #include "KnotworkBorder.h"
+#include "Skin.h"
 #include "Personalization.h"
 #include "Registry.h"
 #include "Settings.h"
@@ -95,16 +96,17 @@ namespace renderer
 		// ornate corners at fixed size, the four edges stretched between them, the centre left
 		// transparent so the window shows through. Faithful reproduction, so the art is drawn at
 		// its own colour (white tint = no recolour). No-op if the texture failed to create.
-		void DrawKnotworkFrame(ImDrawList* dl, const ImVec2& p0, const ImVec2& p1)
+		// The nine-slice itself, for ANY texture. Split out on 2026-09-09 so a UI author's own
+		// frame art (skin::FrameTexture) goes through exactly the same geometry the built-in
+		// knotwork always did - one implementation, so a supplied frame cannot draw differently
+		// from the one this was proven on.
+		void DrawNineSlice(ImDrawList* dl, void* a_srv, float W, float H, float cs,
+						   const ImVec2& p0, const ImVec2& p1)
 		{
-			if (!g_knotSRV || !dl)
+			if (!a_srv || !dl || W <= 0.0f || H <= 0.0f || cs <= 0.0f)
 			{
 				return;
 			}
-
-			const float W = static_cast<float>(knotwork::kWidth);
-			const float H = static_cast<float>(knotwork::kHeight);
-			const float cs = static_cast<float>(knotwork::kCorner);
 
 			// UV split points (source), and screen split points (dest, corners at fixed cs px).
 			const float u0 = 0.0f, u1 = cs / W, u2 = (W - cs) / W, u3 = 1.0f;
@@ -118,7 +120,7 @@ namespace renderer
 				return;
 			}
 
-			const auto tex = reinterpret_cast<ImTextureID>(g_knotSRV);
+			const auto tex = reinterpret_cast<ImTextureID>(a_srv);
 			const ImU32 white = IM_COL32_WHITE;
 			auto slice = [&](float ax, float ay, float bx, float by, float au, float av, float bu, float bv) {
 				dl->AddImage(tex, ImVec2(ax, ay), ImVec2(bx, by), ImVec2(au, av), ImVec2(bu, bv), white);
@@ -134,6 +136,59 @@ namespace renderer
 			slice(x1, y2, x2, y3, u1, v2, u2, v3);  // bottom
 			slice(x0, y1, x1, y2, u0, v1, u1, v2);  // left
 			slice(x2, y1, x3, y2, u2, v1, u3, v2);  // right
+		}
+
+		// Draws the window frame: the UI author's own art when one is configured and loaded,
+		// otherwise the embedded 78x78 knotwork. A supplied frame REPLACES the knotwork rather
+		// than drawing over it - a theme in this project means replacement art, not a second
+		// ornament on top of the first.
+		void DrawKnotworkFrame(ImDrawList* dl, const ImVec2& p0, const ImVec2& p1)
+		{
+			if (skin::HasFrame())
+			{
+				const ImVec2 sz = skin::FrameSize();
+				DrawNineSlice(dl, skin::FrameTexture(), sz.x, sz.y, skin::FrameCorner(), p0, p1);
+				return;
+			}
+			DrawNineSlice(dl, g_knotSRV, static_cast<float>(knotwork::kWidth),
+						  static_cast<float>(knotwork::kHeight), static_cast<float>(knotwork::kCorner), p0, p1);
+		}
+
+		// The author's background, drawn INSIDE the given rect and clipped to it, behind whatever
+		// the window then draws. A small image tiles at its own pixel size; a large one is
+		// stretched to fill. Which one it is is decided by the image, not by a fifth INI key.
+		void DrawSkinBackground(ImDrawList* dl, const ImVec2& p0, const ImVec2& p1)
+		{
+			if (!dl || !skin::HasBackground() || p1.x <= p0.x || p1.y <= p0.y)
+			{
+				return;
+			}
+			const auto  tex = reinterpret_cast<ImTextureID>(skin::BackgroundTexture());
+			const ImVec2 sz = skin::BackgroundSize();
+			const ImU32 white = IM_COL32_WHITE;
+
+			if (!skin::BackgroundTiles())
+			{
+				dl->AddImage(tex, p0, p1, ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), white);
+				return;
+			}
+
+			// Tiled. Clip so the last row and column are cut rather than overhanging the window,
+			// and cap the count so a 1px image cannot spend the frame budget on draw calls.
+			dl->PushClipRect(p0, p1, true);
+			const float tw = sz.x > 0.0f ? sz.x : 1.0f;
+			const float th = sz.y > 0.0f ? sz.y : 1.0f;
+			constexpr int kMaxTiles = 4096;
+			int drawn = 0;
+			for (float y = p0.y; y < p1.y && drawn < kMaxTiles; y += th)
+			{
+				for (float x = p0.x; x < p1.x && drawn < kMaxTiles; x += tw, ++drawn)
+				{
+					dl->AddImage(tex, ImVec2(x, y), ImVec2(x + tw, y + th),
+								 ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), white);
+				}
+			}
+			dl->PopClipRect();
 		}
 
 		// The knotwork frames a rect from just OUTSIDE it (author, 2026-09-01): drawn exactly on a
@@ -356,6 +411,9 @@ namespace renderer
 				// The consumer surface needs the device to decode textures for LoadTexture.
 				// Handed over here, at the one moment it is known to be valid.
 				consumer::SetDevice(device);
+				// The author's own menu art, if any is configured. After SetDevice because the skin
+				// decodes through the same cached loader consumer mods use, and that needs the device.
+				skin::Reload();
 				const HWND hwnd = reinterpret_cast<HWND>(window.hWnd);
 
 				if (!device || !context || !hwnd || !window.swapChain)
@@ -956,6 +1014,14 @@ namespace renderer
 
 			if (ImGui::Begin(windowId, nullptr, ImGuiWindowFlags_None))
 			{
+				// The author's background, before any content: ImGui has already painted the window's
+				// own colour, and everything drawn after this lands on top of the art.
+				if (skin::HasBackground())
+				{
+					const ImVec2 bp = ImGui::GetWindowPos();
+					const ImVec2 bs = ImGui::GetWindowSize();
+					DrawSkinBackground(ImGui::GetWindowDrawList(), bp, ImVec2(bp.x + bs.x, bp.y + bs.y));
+				}
 				// REMEMBER WHERE THE PLAYER LEAVES IT. Written back as fractions of the display, so
 				// the profile stays correct if the resolution changes between sessions.
 				//
@@ -992,7 +1058,9 @@ namespace renderer
 
 				// Whether this theme wants the knotwork frame - captured once, applied to every
 				// panel below and the outer window for a consistent framed look.
-				const bool knot = theme::GetActiveTheme().knotwork;
+				// A supplied frame is drawn whatever the theme says: an author who ships frame art
+				// has asked for a frame, and it replaces the knotwork rather than adding to it.
+				const bool knot = theme::GetActiveTheme().knotwork || skin::HasFrame();
 
 				const float leftWidth = ImGui::GetContentRegionAvail().x * 0.30f;
 

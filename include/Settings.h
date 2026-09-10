@@ -78,6 +78,15 @@ namespace settings
 		                                     // 2026-08-27) - "Untarnished" (the original identity)
 		                                     // is still registered and selectable, just not default.
 
+		// [Skin] - REPLACEMENT ARTWORK for the menu shell, so a UI author can make the framework
+		// match their own interface (requested 2026-09-09 for borokoshow / Dragonborn UI). All
+		// four are optional and independent; see Skin.h for what an author actually ships.
+		// Every image is PNG - AMF decodes through WIC, which does not read DDS at all.
+		std::string   skinFrame;            // sFrame - nine-slice frame PNG, transparent centre
+		std::uint32_t skinFrameCorner = 64; // uFrameCorner - corner slice in px (192x192/64 suggested)
+		std::string   skinBackground;       // sBackground - tiled if <= 512px both sides, else stretched
+		std::string   skinPlates;           // sPlates - folder holding toggle.png / slider.png / tab.png
+
 		// [Debug]
 
 		// [Log]
