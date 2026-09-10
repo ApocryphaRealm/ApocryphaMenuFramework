@@ -149,6 +149,10 @@ AMF_EXPORT std::int64_t RegisterEventPriority(EventCallback a_callback, float a_
 	return id;
 }
 
+// SKSE Menu Framework exports both forms; this one is the priority-less default, and defers to the
+// prioritised implementation below rather than keeping a second copy of the bookkeeping.
+AMF_EXPORT std::int64_t RegisterEvent(EventCallback a_callback) { return RegisterEventPriority(a_callback, 0.0f); }
+
 AMF_EXPORT void UnregisterEvent(std::int64_t a_id)
 {
 	std::scoped_lock lock(g_eventLock);
@@ -270,6 +274,14 @@ AMF_EXPORT void PushRegular() { consumer::PushRegular(); }
 AMF_EXPORT void PushSolid() { consumer::PushSolid(); }
 AMF_EXPORT void PushBrands() { consumer::PushBrands(); }
 
+// The other three font pushes SKSE Menu Framework exports. This framework builds a single atlas
+// face, so like PushRegular/Solid/Brands above they push the current font - what matters to the
+// frames around them is that every push has its Pop, and that is preserved. A consumer asking for
+// a face we do not have gets the same look, never an unbalanced stack.
+AMF_EXPORT void PushBig() { consumer::PushNamedFont("big"); }
+AMF_EXPORT void PushSmall() { consumer::PushNamedFont("small"); }
+AMF_EXPORT void PushDefault() { consumer::PushNamedFont("default"); }
+
 // Named "Pop" because that is the name the consumer header resolves - it is the pop half of the
 // four pushes above, not a general-purpose stack pop.
 AMF_EXPORT void Pop() { consumer::PopFont(); }
@@ -312,114 +324,3 @@ namespace compat
 // cimgui-compatible surface - the 36 ig*/ImDrawList_* names from the inventory, forwarding to
 // the embedded Dear ImGui. Text family forwards va_list (the igTextDisabledV gotcha family).
 // --------------------------------------------------------------------------------------------
-
-AMF_EXPORT void igTextV(const char* a_fmt, va_list a_args) { if (a_fmt) { ImGui::TextV(a_fmt, a_args); } }
-AMF_EXPORT void igTextWrappedV(const char* a_fmt, va_list a_args) { if (a_fmt) { ImGui::TextWrappedV(a_fmt, a_args); } }
-AMF_EXPORT void igTextDisabledV(const char* a_fmt, va_list a_args) { if (a_fmt) { ImGui::TextDisabledV(a_fmt, a_args); } }
-AMF_EXPORT void igSetTooltipV(const char* a_fmt, va_list a_args) { if (a_fmt) { ImGui::SetTooltipV(a_fmt, a_args); } }
-
-AMF_EXPORT void igSameLine(float a_offset, float a_spacing) { ImGui::SameLine(a_offset, a_spacing); }
-AMF_EXPORT void igSpacing() { ImGui::Spacing(); }
-AMF_EXPORT void igSeparator() { ImGui::Separator(); }
-AMF_EXPORT void igSeparatorText(const char* a_label) { ImGui::SeparatorText(a_label ? a_label : ""); }
-AMF_EXPORT void igIndent(float a_width) { ImGui::Indent(a_width); }
-AMF_EXPORT void igUnindent(float a_width) { ImGui::Unindent(a_width); }
-AMF_EXPORT void igPushItemWidth(float a_width) { ImGui::PushItemWidth(a_width); }
-AMF_EXPORT void igPopItemWidth() { ImGui::PopItemWidth(); }
-AMF_EXPORT bool igBeginChild_Str(const char* a_id, const ImVec2 a_size, int a_childFlags, int a_windowFlags)
-{
-	return ImGui::BeginChild(a_id ? a_id : "##", a_size, a_childFlags, a_windowFlags);
-}
-AMF_EXPORT void igEndChild() { ImGui::EndChild(); }
-
-AMF_EXPORT bool igButton(const char* a_label, const ImVec2 a_size) { return ImGui::Button(a_label ? a_label : "", a_size); }
-AMF_EXPORT bool igCombo_Str_arr(const char* a_label, int* a_current, const char* const a_items[], int a_count, int a_popupMax)
-{
-	return (a_current && a_items) ? ImGui::Combo(a_label ? a_label : "", a_current, a_items, a_count, a_popupMax) : false;
-}
-AMF_EXPORT bool igCombo_Str(const char* a_label, int* a_current, const char* a_itemsSeparatedByZeros, int a_popupMax)
-{
-	return (a_current && a_itemsSeparatedByZeros) ? ImGui::Combo(a_label ? a_label : "", a_current, a_itemsSeparatedByZeros, a_popupMax) : false;
-}
-AMF_EXPORT bool igCheckbox(const char* a_label, bool* a_value) { return a_value ? ImGui::Checkbox(a_label ? a_label : "", a_value) : false; }
-AMF_EXPORT bool igSliderFloat(const char* a_label, float* a_value, float a_min, float a_max, const char* a_format, int a_flags)
-{
-	return a_value ? ImGui::SliderFloat(a_label ? a_label : "", a_value, a_min, a_max, a_format ? a_format : "%.3f", a_flags) : false;
-}
-AMF_EXPORT bool igSliderInt(const char* a_label, int* a_value, int a_min, int a_max, const char* a_format, int a_flags)
-{
-	return a_value ? ImGui::SliderInt(a_label ? a_label : "", a_value, a_min, a_max, a_format ? a_format : "%d", a_flags) : false;
-}
-AMF_EXPORT bool igInputInt(const char* a_label, int* a_value, int a_step, int a_stepFast, int a_flags)
-{
-	return a_value ? ImGui::InputInt(a_label ? a_label : "", a_value, a_step, a_stepFast, a_flags) : false;
-}
-AMF_EXPORT bool igInputText(const char* a_label, char* a_buf, size_t a_bufSize, int a_flags, ImGuiInputTextCallback a_callback, void* a_userData)
-{
-	return (a_buf && a_bufSize > 0) ? ImGui::InputText(a_label ? a_label : "", a_buf, a_bufSize, a_flags, a_callback, a_userData) : false;
-}
-AMF_EXPORT bool igSelectable_Bool(const char* a_label, bool a_selected, int a_flags, const ImVec2 a_size)
-{
-	return ImGui::Selectable(a_label ? a_label : "", a_selected, a_flags, a_size);
-}
-AMF_EXPORT bool igCollapsingHeader_TreeNodeFlags(const char* a_label, int a_flags)
-{
-	return ImGui::CollapsingHeader(a_label ? a_label : "", a_flags);
-}
-AMF_EXPORT bool igInvisibleButton(const char* a_id, const ImVec2 a_size, int a_flags)
-{
-	return ImGui::InvisibleButton(a_id ? a_id : "##", a_size, a_flags);
-}
-AMF_EXPORT void igPushID_Str(const char* a_id) { ImGui::PushID(a_id ? a_id : ""); }
-AMF_EXPORT void igPopID() { ImGui::PopID(); }
-
-AMF_EXPORT bool igIsItemHovered(int a_flags) { return ImGui::IsItemHovered(a_flags); }
-AMF_EXPORT bool igIsItemClicked(int a_mouseButton) { return ImGui::IsItemClicked(a_mouseButton); }
-AMF_EXPORT bool igIsItemActive() { return ImGui::IsItemActive(); }
-AMF_EXPORT bool igIsKeyPressed_Bool(int a_key, bool a_repeat) { return ImGui::IsKeyPressed(static_cast<ImGuiKey>(a_key), a_repeat); }
-
-// The inventory's one pOut case: result through the pointer, never by value across the boundary.
-AMF_EXPORT void igGetCursorScreenPos(ImVec2* a_out)
-{
-	if (a_out)
-	{
-		*a_out = ImGui::GetCursorScreenPos();
-	}
-}
-AMF_EXPORT ImDrawList* igGetWindowDrawList() { return ImGui::GetWindowDrawList(); }
-
-// Screen-wide draw lists, so a consumer can draw an overlay anywhere (e.g. a HUD position preview)
-// rather than being clipped to the current window. The Nil forms use the main viewport.
-AMF_EXPORT ImDrawList* igGetForegroundDrawList_Nil() { return ImGui::GetForegroundDrawList(); }
-AMF_EXPORT ImDrawList* igGetBackgroundDrawList_Nil() { return ImGui::GetBackgroundDrawList(); }
-
-AMF_EXPORT void ImDrawList_AddRect(ImDrawList* a_self, const ImVec2 a_min, const ImVec2 a_max, ImU32 a_color, float a_rounding, int a_flags, float a_thickness)
-{
-	if (a_self)
-	{
-		a_self->AddRect(a_min, a_max, a_color, a_rounding, a_flags, a_thickness);
-	}
-}
-
-AMF_EXPORT void ImDrawList_AddText_Vec2(ImDrawList* a_self, const ImVec2 a_pos, ImU32 a_color, const char* a_textBegin, const char* a_textEnd)
-{
-	if (a_self)
-	{
-		a_self->AddText(a_pos, a_color, a_textBegin, a_textEnd);
-	}
-}
-AMF_EXPORT float igGetFrameHeight() { return ImGui::GetFrameHeight(); }
-AMF_EXPORT void ImDrawList_AddRectFilled(ImDrawList* a_self, const ImVec2 a_min, const ImVec2 a_max, ImU32 a_color, float a_rounding, int a_flags)
-{
-	if (a_self)
-	{
-		a_self->AddRectFilled(a_min, a_max, a_color, a_rounding, a_flags);
-	}
-}
-AMF_EXPORT void ImDrawList_AddCircleFilled(ImDrawList* a_self, const ImVec2 a_center, float a_radius, ImU32 a_color, int a_segments)
-{
-	if (a_self)
-	{
-		a_self->AddCircleFilled(a_center, a_radius, a_color, a_segments);
-	}
-}

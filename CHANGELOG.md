@@ -19,6 +19,11 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   `rules-version.ps1 -Action bump`. If a number was typed by hand, it is wrong until the tool
 >   agrees.
 
+## 1.7.2 - 2026-09-10 - untested
+
+### Changed
+- Full export parity with SKSE Menu Framework: all 1,420 of its entry points are now exported, up from 252, by vendoring the generated cimgui 1.90.8dock this framework's Dear ImGui matches instead of hand-writing wrappers a tranche at a time. A mod can no longer come up blank because of a name we never got round to adding.
+
 ## 1.7.1 - 2026-09-10 - untested
 
 ### Fixed
