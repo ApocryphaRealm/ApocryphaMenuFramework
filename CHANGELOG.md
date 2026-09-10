@@ -19,6 +19,11 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   `rules-version.ps1 -Action bump`. If a number was typed by hand, it is wrong until the tool
 >   agrees.
 
+## 1.7.1 - 2026-09-10 - untested
+
+### Fixed
+- A mod's settings page could come up blank: an SMF consumer resolves every drawing function it uses by name from the framework, so a name this framework did not export came back null and that part of the page simply drew nothing. Thirty-eight missing entry points were added, measured by scanning every SKSE plugin on the machine that uses the framework - all 140 are now fully covered.
+
 ## 1.7.0 - 2026-09-10 - untested
 
 ### Added
