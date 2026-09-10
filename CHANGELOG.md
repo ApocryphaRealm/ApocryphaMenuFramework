@@ -19,6 +19,11 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   `rules-version.ps1 -Action bump`. If a number was typed by hand, it is wrong until the tool
 >   agrees.
 
+## 1.7.3 - 2026-09-10 - untested
+
+### Fixed
+- Restored the null checks the hand-written wrappers used to do, now generated over the vendored cimgui rather than written by hand: 656 guards across 614 functions, so a mod passing a null label or a null value pointer gets a no-op instead of crashing the game. ImGui's optional p_* pointers are deliberately left alone, because guarding those would stop windows drawing.
+
 ## 1.7.2 - 2026-09-10 - untested
 
 ### Changed
