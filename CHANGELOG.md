@@ -19,6 +19,11 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   `rules-version.ps1 -Action bump`. If a number was typed by hand, it is wrong until the tool
 >   agrees.
 
+## 1.7.0 - 2026-09-10 - untested
+
+### Added
+- A Save button on the settings page's menu list, so an order you have dragged into place survives the game closing instead of reverting to the registration order.
+
 ## 1.6.9 - 2026-09-09 - working
 
 Custom menu art, so a UI author can make the framework match their own interface instead of

@@ -217,6 +217,11 @@ namespace renderer
 		// magnified. Changing the text-size slider rebuilds the atlas rather than stretching it.
 		constexpr float kBaseFontPx = 16.0f;   // at the 1080p baseline, before uiScale/textScale
 		std::atomic<bool> g_fontRebuildPending{ false };
+
+		// When Save was last pressed, so "saved" can appear beside the button for a few seconds
+		// rather than the press doing nothing visible. settings::Save() returns nothing, so there
+		// is no honest success/failure to report here - only that the write was asked for.
+		double g_menuListSavedAt = 0.0;
 	}
 
 	// Strings::SetLanguage and kDataLoaded ask for a new atlas holding the language's glyphs.
@@ -808,6 +813,20 @@ namespace renderer
 				personalization::ResetToAlphabetical();
 				settings::Save();
 			}
+			ImGui::SameLine();
+			// Asked for directly (the owner, 2026-09-10). Every edit above already writes the file
+			// on commit, so this is the reassurance that the list on screen is the list on disk -
+			// and the way out if a field was left mid-edit.
+			if (ImGui::Button(TR("AMF_SaveMenuList", "Save menu list")))
+			{
+				settings::Save();
+				g_menuListSavedAt = ImGui::GetTime();
+			}
+			if (g_menuListSavedAt > 0.0 && ImGui::GetTime() - g_menuListSavedAt < 3.0)
+			{
+				ImGui::SameLine();
+				ImGui::TextDisabled("%s", TR("AMF_MenuListSaved", "saved"));
+			}
 
 			if (entries.empty())
 			{
@@ -834,8 +853,13 @@ namespace renderer
 					ImGui::TableSetColumnIndex(0);
 					int position = i + 1;
 					ImGui::SetNextItemWidth(-FLT_MIN);
-					if (ImGui::InputInt("##pos", &position, 0, 0, ImGuiInputTextFlags_EnterReturnsTrue) &&
-						position != i + 1)
+					// Commit on Enter OR on losing focus. EnterReturnsTrue alone meant that typing a
+					// position and then clicking away threw the number away without a word, which
+					// is why reordering appeared not to save at all (the owner, 2026-09-10). The
+					// alias field beside this one already committed both ways; now they match.
+					const bool posEntered = ImGui::InputInt("##pos", &position, 0, 0,
+															ImGuiInputTextFlags_EnterReturnsTrue);
+					if ((posEntered || ImGui::IsItemDeactivatedAfterEdit()) && position != i + 1)
 					{
 						personalization::MoveTo(entries, row.modName, position);
 						settings::Save();
