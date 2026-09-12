@@ -19,6 +19,16 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   `rules-version.ps1 -Action bump`. If a number was typed by hand, it is wrong until the tool
 >   agrees.
 
+## 1.7.4 - 2026-09-12 - working
+
+### Fixed
+- Input callbacks registered by other mods are now dispatched while the framework menu is CLOSED, not only while it is open - which is how the reference framework behaves. With the menu down an event passes through to the game unless a mod's callback explicitly claims it, so ordinary gameplay keys are untouched.
+- Reordering the mod list no longer stops responding after a few moves. The move was applied in the middle of the frame that was still drawing the list, so every row after it was laid out against a sequence that no longer matched. The move is now applied once, after the table closes.
+- The framework now reports the SKSE Menu Framework interface version it impersonates (3.7) instead of 1.2. That export answers 'which SMF am I talking to', not 'which AMF is this', and the stale 1.2 made mods refuse to register at all - one logged 'skse framework 1.2 found. Expected minimum version not met.' and never appeared in the list. A mod that fails that check returns before installing anything, so this also brought back hotkeys that looked like a separate fault. The value was read out of the reference framework's own code bytes, not guessed.
+
+### Added
+- Diagnostics for consumer hotkeys: the DevBench state report now includes blockingWindowOpen (exactly what IsAnyBlockingWindowOpened answers a mod) and a consumerWindows list naming each registered window with its open/blocking flags, so a window left latched open identifies itself instead of leaving several suspects.
+
 ## 1.7.3 - 2026-09-10 - untested
 
 ### Fixed
