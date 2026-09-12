@@ -377,6 +377,34 @@ namespace input
 						// the scroll-zoom and movement while the menu is up.
 						passThrough = button && button->IsUp();
 					}
+					else
+					{
+						// MENU CLOSED. Consumer input callbacks still get the event.
+						//
+						// They used to be dispatched ONLY in the branch above, i.e. only while the
+						// framework menu was on screen - so every hotkey registered through
+						// RegisterInpoutEvent/AddInputEvent was dead during normal play. Two mods
+						// reported it independently (Simple Power Attack and SkyPlace, 2026-09-11):
+						// "hotkeys do not work under AMF but work fine on SKSE Menu Framework".
+						// Real SMF dispatches these regardless of its own menu state, and a mod that
+						// registers an input event and no section - Simple Power Attack resolves
+						// RegisterInpoutEvent and neither SetSection nor GetMenuFrameworkVersion -
+						// has nowhere else for its key to arrive.
+						//
+						// The consume rule here is deliberately the OPPOSITE of the open branch. With
+						// the menu up everything is swallowed by default; with it down, `passThrough`
+						// stays true unless a callback explicitly claims the event by returning true.
+						// Anything else would eat ordinary gameplay keys, which is a far worse defect
+						// than the one being fixed.
+						//
+						// Nothing is fed to ImGui here: the menu is not drawing, and the held-button
+						// model stays consistent because a consumed press never reaches the block
+						// below that records it - the game did not see that press either.
+						if (compat::DispatchInputEvent(current))
+						{
+							passThrough = false;
+						}
+					}
 
 					if (passThrough && button)
 					{

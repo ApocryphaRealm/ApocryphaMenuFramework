@@ -30,9 +30,19 @@ namespace compat
 	// Render thread. Fires every registered event callback in priority order.
 	void FireMenuEvent(MenuEvent a_event);
 
-	// Input thread, called from the poll hook for each event while the menu is open. Returns
-	// true if any registered input callback consumed the event (the caller then skips feeding
-	// it to ImGui; the game does not see it either way).
+	// Input thread, called from the poll hook for EVERY event - menu open or closed. Returns true
+	// if any registered input callback consumed it.
+	//
+	// The caller's handling differs by menu state, and the difference is the point:
+	//   * menu OPEN   - the event is consumed either way (the game sees nothing while the menu is
+	//                   up); a true return only means ImGui is not fed it as well.
+	//   * menu CLOSED - the event passes through to the game UNLESS a callback returns true. This
+	//                   is what makes a consumer's hotkey work during normal play.
+	//
+	// This was previously called only in the menu-open branch, and this comment said so as though
+	// it were the design. It was not: it is why every hotkey registered through
+	// RegisterInpoutEvent/AddInputEvent was dead outside the menu (Simple Power Attack and
+	// SkyPlace, reported 2026-09-11; real SMF dispatches these regardless of its own menu state).
 	bool DispatchInputEvent(RE::InputEvent* a_event);
 
 	// ----------------------------------------------------------------------------------------
