@@ -14,10 +14,12 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   `1.0.10` never exists.
 > * The next number is **LAST WORKING + 1**. A failed, scratch or untested test build does NOT
 >   consume its number - the next attempt at the same step REUSES it.
-> * Numbers are assigned by the tooling, never by hand: mods via `version-ledger.ps1 -Action next`
->   then `set-version.ps1`; governed documents via `docs-pipeline.ps1 -Action bump`; the rules via
->   `rules-version.ps1 -Action bump`. If a number was typed by hand, it is wrong until the tool
->   agrees.
+> * Numbers are never typed. ONE tool, `.MD\scripts\version-gate.ps1`, holds every version rule
+>   and is a GATE that fails: `bump` issues the next number and writes every location, `record`
+>   proves it working (evidence + the binary's hash), `gate` refuses packaging or finalizing
+>   anything it did not issue. Documents go through `docs-pipeline.ps1 -Action bump` and the rules
+>   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
+>   tool. A number typed by hand is wrong until the tool agrees.
 
 ## 1.7.4 - 2026-09-12 - working
 
