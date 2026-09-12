@@ -162,8 +162,22 @@ AMF_EXPORT void UnregisterEvent(std::int64_t a_id)
 
 AMF_EXPORT float GetMenuFrameworkVersion()
 {
-	// Probed optionally by the vendored header. AMF reports its own major.minor as a float.
-	return 1.2f;
+	// This reports the SKSE Menu Framework INTERFACE version we impersonate - NOT AMF's own product
+	// version. It returned 1.2f with a comment saying "AMF reports its own major.minor", which was
+	// wrong on both counts: the number was stale (AMF was 1.7.3 by then), and the question a
+	// consumer asks here is "which SMF am I talking to", so our own number can never satisfy it.
+	// A user's mod refused to appear and logged, exactly:
+	//   "skse framework 1.2 found. Expected minimum version not met."
+	//
+	// MEASURED, not guessed - read out of the reference SMF DLL's own code bytes via its PE export
+	// table (RVA 0x119190):
+	//     F3 0F 10 05 A0 ED 21 00     movss xmm0, [rip+0x21EDA0]
+	//     C3                          ret
+	// and the float at that address is 3.7. Note SMF's FILE resource says 3.0.0.0 - a different
+	// number again, and NOT the contract; do not take the version from the resource.
+	//
+	// Bump this when the SMF interface we mirror moves, never when AMF's own version moves.
+	return 3.7f;
 }
 
 // --------------------------------------------------------------------------------------------

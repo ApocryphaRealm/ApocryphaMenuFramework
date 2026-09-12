@@ -853,6 +853,19 @@ namespace renderer
 			const std::vector<personalization::DisplayEntry> rows = personalization::Order(entries);
 			static std::unordered_map<std::string, std::array<char, 64>> aliasBuffers;
 
+			// A reorder requested this frame, applied AFTER the table closes.
+			//
+			// It used to call personalization::MoveTo() inline, in the middle of the loop that is
+			// still walking `rows`. MoveTo rewrites the global order immediately, so every row drawn
+			// after the commit was laid out against a sequence that no longer matched - the widget
+			// ids are pushed from the mod NAME while the committed value is compared against the row
+			// INDEX (`position != i + 1`), and after a move those two refer to different entries.
+			// A player could move two or three and then found the fields stopped responding
+			// (xLenax, 2026-09-11). Deferring keeps the frame's layout consistent with the sequence
+			// it was built from, and applies exactly one move per frame.
+			std::string pendingMoveMod;
+			int pendingMovePosition = 0;
+
 			if (ImGui::BeginTable("##menulist", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
 			{
 				ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFontSize() * 3.2f);
@@ -877,8 +890,10 @@ namespace renderer
 															ImGuiInputTextFlags_EnterReturnsTrue);
 					if ((posEntered || ImGui::IsItemDeactivatedAfterEdit()) && position != i + 1)
 					{
-						personalization::MoveTo(entries, row.modName, position);
-						settings::Save();
+						// RECORDED, not applied - see the note above the declaration. Applying here
+						// rewrote the order while this same loop was still walking `rows`.
+						pendingMoveMod = row.modName;
+						pendingMovePosition = position;
 					}
 
 					ImGui::TableSetColumnIndex(1);
@@ -906,6 +921,14 @@ namespace renderer
 					ImGui::PopID();
 				}
 				ImGui::EndTable();
+			}
+
+			// Applied once, after the table has closed, so the sequence only changes between frames
+			// and never underneath the rows being drawn from it.
+			if (!pendingMoveMod.empty())
+			{
+				personalization::MoveTo(entries, pendingMoveMod, pendingMovePosition);
+				settings::Save();
 			}
 		}
 
