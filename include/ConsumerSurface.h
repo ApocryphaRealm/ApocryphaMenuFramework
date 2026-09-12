@@ -20,6 +20,10 @@
 // ============================================================================================
 
 #include <cstdint>
+// For WindowStates()'s diagnostic snapshot below - it returns a vector of copied structs, one of
+// which holds the window's view name.
+#include <string>
+#include <vector>
 
 struct ID3D11Device;
 struct ImVec2;
@@ -77,4 +81,23 @@ namespace consumer
 	std::size_t WindowCount();
 	std::size_t HudElementCount();
 	std::size_t TextureCount();
+
+	// One consumer window's flags, copied out. DIAGNOSTIC, added 2026-09-12.
+	//
+	// IsAnyBlockingWindowOpened() answers `IsMainWindowVisible() || AnyBlockingWindowOpen()`, and
+	// mods gate their own hotkeys on it - Gear Toggle's SettingsPanel::BlocksInput() returns early
+	// from its input sink when it is true, and Simple Power Attack imports the same export. Two
+	// users reported hotkeys dead under AMF but fine on SKSE Menu Framework.
+	//
+	// The aggregate alone is not enough to act on: with several windows registered, "true" does not
+	// say WHICH one is latched open, and guessing among them is what has made this defect take three
+	// passes. Each entry names itself so one measurement identifies the culprit.
+	struct WindowState
+	{
+		bool open{ false };
+		bool blocking{ false };
+		std::string view;   // AddWindowWithView's name; empty for a plain AddWindow
+	};
+
+	std::vector<WindowState> WindowStates();
 }

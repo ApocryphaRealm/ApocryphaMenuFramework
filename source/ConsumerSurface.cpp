@@ -287,6 +287,25 @@ namespace consumer
 		return g_windows.size();
 	}
 
+	std::vector<WindowState> WindowStates()
+	{
+		// Copied out under the lock - no reference to g_windows escapes, and nothing here calls
+		// AnyBlockingWindowOpen(), which takes the same lock. The caller computes the aggregate
+		// from this vector instead, so the two can never nest.
+		std::scoped_lock lock(g_lock);
+
+		std::vector<WindowState> states;
+		states.reserve(g_windows.size());
+		for (const WindowEntry& w : g_windows) {
+			WindowState s;
+			s.open = w.iface->IsOpen.load(std::memory_order_acquire);
+			s.blocking = w.iface->BlockUserInput.load(std::memory_order_acquire);
+			s.view = w.view;
+			states.push_back(std::move(s));
+		}
+		return states;
+	}
+
 	std::size_t HudElementCount()
 	{
 		std::scoped_lock lock(g_lock);

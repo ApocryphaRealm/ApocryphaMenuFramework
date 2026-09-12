@@ -1724,10 +1724,32 @@ namespace renderer
 						 ",\"mod\":\"" + esc(rows[i].modName) + "\",\"shows\":\"" + esc(rows[i].displayName) + "\"}";
 			}
 		}
+		// Consumer-window diagnostic (2026-09-12). Mods gate their own hotkeys on
+		// IsAnyBlockingWindowOpened(), which is `visible || any consumer window open AND blocking`.
+		// Two users reported hotkeys dead under AMF but working on SKSE Menu Framework, and the
+		// aggregate on its own would not say WHICH window was latched - so each is listed.
+		// blockingWindowOpen is computed from the same copied snapshot, never by calling
+		// consumer::AnyBlockingWindowOpen() here, because that takes the lock WindowStates() holds.
+		std::string windows;
+		bool anyBlocking = false;
+		{
+			const auto states = consumer::WindowStates();
+			for (std::size_t i = 0; i < states.size(); ++i)
+			{
+				if (states[i].open && states[i].blocking) { anyBlocking = true; }
+				if (i) { windows += ","; }
+				windows += "{\"open\":" + std::string(states[i].open ? "true" : "false") +
+						   ",\"blocking\":" + (states[i].blocking ? "true" : "false") +
+						   ",\"view\":\"" + esc(states[i].view) + "\"}";
+			}
+		}
+
 		float cursorX = 0.0f, cursorY = 0.0f;
 		input::GetCursor(cursorX, cursorY);
 		return std::string("{\"cursor\":{\"x\":") + std::to_string(static_cast<int>(cursorX)) + ",\"y\":" + std::to_string(static_cast<int>(cursorY)) + "}" +
 			   ",\"visible\":" + (visible ? "true" : "false") +
+			   ",\"blockingWindowOpen\":" + ((visible || anyBlocking) ? "true" : "false") +
+			   ",\"consumerWindows\":[" + windows + "]" +
 			   ",\"tab\":\"" + esc(tab) + "\",\"selected\":\"" + esc(node) + "\",\"selectedMod\":" + std::to_string(selMod) +
 			   ",\"page\":\"" + esc(tabName) + "\",\"pageIndex\":" + std::to_string(tabIndex) +
 			   ",\"pageCount\":" + std::to_string(tabCount) +
