@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 // ================================================================================================
 // THE SYSTEM-MENU ROW - mod menus reached from the GAME's own pause menu.
 //
@@ -64,4 +66,13 @@ namespace systemrow
 	// when the journal is not open or its panel cannot be measured; the caller then keeps whatever
 	// it had rather than snapping to a default mid-frame.
 	bool GetPanelRect(float& a_x, float& a_y, float& a_w, float& a_h);
+
+	// 1.8.0: the journal art's pane divider (Quest Journal Overhaul's redesign), as a screen
+	// fraction, once GetPanelRect has seen it; -1 when the loaded art has none. A stored nested
+	// profile that starts left of it was dragged under different art and is stale.
+	float PaneLeft();
+
+	// Any clip in the open journal, as fractions of the screen - the DevBench 'bounds' op, so a
+	// new art replacer is measured rather than guessed at.
+	bool MeasurePath(const std::string& a_path, float& a_x, float& a_y, float& a_w, float& a_h);
 }

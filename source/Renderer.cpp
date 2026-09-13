@@ -1115,7 +1115,22 @@ namespace renderer
 			}
 			else if (g_applyGeometry.load(std::memory_order_acquire))
 			{
-				const bool useProfile = profile.IsSet();
+				bool useProfile = profile.IsSet();
+				// 1.8.0: a stored nested profile that starts LEFT of the journal art's pane divider was
+				// dragged under different art (the owner switched to Quest Journal Overhaul's redesign,
+				// 2026-09-13) - it would sit across the button column, so the measured pane wins and the
+				// next drag re-saves the profile for this art.
+				const float paneLeft = systemrow::PaneLeft();
+				if (useProfile && haveDefault && paneLeft > 0.0f && profile.x < paneLeft - 0.01f)
+				{
+					useProfile = false;
+					static bool s_said = false;
+					if (!s_said)
+					{
+						s_said = true;
+						logger::info("window profile (nested) starts at x={:.3f}, left of this journal art's pane divider at {:.3f}: stale under this art, the measured pane is used instead", profile.x, paneLeft);
+					}
+				}
 				if (useProfile || haveDefault)
 				{
 					const float gx = useProfile ? profile.x : dx;

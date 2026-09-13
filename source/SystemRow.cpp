@@ -1,4 +1,5 @@
 #include "PCH.h"
+#include <algorithm>
 
 #include "SystemRow.h"
 
@@ -256,6 +257,83 @@ namespace systemrow
 		return g_foundPath.c_str();
 	}
 
+	namespace
+	{
+		float g_paneLeft = -1.0f;   // the journal art's pane divider, as a screen fraction; -1 = none seen
+
+		// One clip's bounds as fractions of the stage, in _root space. Rejects a degenerate clip and
+		// one bigger than the stage (a union of hidden children, not a panel).
+		bool MeasureClip(RE::GFxMovieView* a_movie, const RE::GFxValue& a_root, const RE::GRectF& a_visible,
+			const std::string& a_path, float& a_x, float& a_y, float& a_w, float& a_h)
+		{
+			if (a_path.empty() || a_path == ".")
+			{
+				return false;
+			}
+			const float visW = a_visible.right - a_visible.left;
+			const float visH = a_visible.bottom - a_visible.top;
+			RE::GFxValue bounds;
+			RE::GFxValue args[1]{ a_root };
+			const std::string fn = a_path + ".getBounds";
+			if (!a_movie->Invoke(fn.c_str(), &bounds, args, 1) || !bounds.IsObject())
+			{
+				return false;
+			}
+			RE::GFxValue xMin, xMax, yMin, yMax;
+			if (!bounds.GetMember("xMin", &xMin) || !bounds.GetMember("xMax", &xMax) ||
+				!bounds.GetMember("yMin", &yMin) || !bounds.GetMember("yMax", &yMax) ||
+				!xMin.IsNumber() || !xMax.IsNumber() || !yMin.IsNumber() || !yMax.IsNumber())
+			{
+				return false;
+			}
+			const float left = static_cast<float>(xMin.GetNumber());
+			const float top = static_cast<float>(yMin.GetNumber());
+			const float width = static_cast<float>(xMax.GetNumber()) - left;
+			const float height = static_cast<float>(yMax.GetNumber()) - top;
+			if (width < 1.0f || height < 1.0f)
+			{
+				return false;   // faded out, not built, or AS2's 6710886.4 for an empty clip
+			}
+			if (width > visW * 1.02f || height > visH * 1.02f)
+			{
+				logger::debug("System row: {} measures {:.0f}x{:.0f} against a {:.0f}x{:.0f} stage - bigger than the screen, so it is a union of hidden children",
+					a_path, width, height, visW, visH);
+				return false;
+			}
+			a_x = (left - a_visible.left) / visW;
+			a_y = (top - a_visible.top) / visH;
+			a_w = width / visW;
+			a_h = height / visH;
+			return true;
+		}
+	}
+
+	bool MeasurePath(const std::string& a_path, float& a_x, float& a_y, float& a_w, float& a_h)
+	{
+		RE::GPtr<RE::IMenu> menu = JournalMenu();
+		if (!menu || !menu->uiMovie)
+		{
+			return false;
+		}
+		RE::GFxMovieView* movie = menu->uiMovie.get();
+		RE::GFxValue root;
+		if (!movie->GetVariable(&root, "_root") || !root.IsObject())
+		{
+			return false;
+		}
+		const RE::GRectF visible = movie->GetVisibleFrameRect();
+		if (visible.right - visible.left <= 1.0f || visible.bottom - visible.top <= 1.0f)
+		{
+			return false;
+		}
+		return MeasureClip(movie, root, visible, a_path, a_x, a_y, a_w, a_h);
+	}
+
+	float PaneLeft()
+	{
+		return g_paneLeft;
+	}
+
 	bool GetPanelRect(float& a_x, float& a_y, float& a_w, float& a_h)
 	{
 		RE::GPtr<RE::IMenu> menu = JournalMenu();
@@ -266,121 +344,134 @@ namespace systemrow
 		RE::GFxMovieView* movie = menu->uiMovie.get();
 
 		// getBounds() reports in the coordinate space of whatever clip it is handed, so it is
-		// handed _root: that is the one space the visible frame rect below is also expressed in,
-		// and mixing the two spaces is the easy way to get a rectangle that is right in shape and
-		// wrong in place.
+		// handed _root: that is the one space the visible frame rect is also expressed in.
 		RE::GFxValue root;
 		if (!movie->GetVariable(&root, "_root") || !root.IsObject())
 		{
 			return false;
 		}
-
-		// The stage, in the same _root space getBounds reports in. Every rectangle below is turned
-		// into a FRACTION of this, so the caller can multiply by the real display size and never has
-		// to know anything about Scaleform's coordinate space.
 		const RE::GRectF visible = movie->GetVisibleFrameRect();
-		const float visW = visible.right - visible.left;
-		const float visH = visible.bottom - visible.top;
-		if (visW <= 1.0f || visH <= 1.0f)
+		if (visible.right - visible.left <= 1.0f || visible.bottom - visible.top <= 1.0f)
 		{
-			return false;   // a degenerate stage would divide the fractions below into nonsense
+			return false;   // a degenerate stage would divide the fractions into nonsense
 		}
 
-		// WHICH CLIP TO MEASURE, and why not the obvious one.
-		//
-		// Menu_mc was measured first and produced x=-0.063 y=0.064 w=1.127 h=1.254 - a rectangle
-		// larger than the screen, which is exactly what the window then became. getBounds() returns
-		// the union of a clip and ALL its children, visible or not, and the journal keeps its
-		// Save/Load, Creations, Help and Confirm panels parented and hidden rather than removed. So
-		// the honest bounds of Menu_mc really are bigger than the panel you can see. There is no
-		// visible-only variant of getBounds in ActionScript 2 to ask instead.
-		//
-		// PanelRect is the answer, and it is not a guess: the page carries an invisible rectangle
-		// instance for precisely this purpose (shape 138, placed as PanelRect inside the System
-		// page - the same shape the menu reuses as QuestsPageRect, StatsPageRect, SaveLoadRect and
-		// so on). It has no children, so its bounds are its own, and it is the rectangle the page
-		// itself lays its content out against - which is the rectangle we want to fill.
+		// WHICH CLIP TO MEASURE. Menu_mc measured larger than the screen (getBounds is the union of a
+		// clip and ALL its children, and the journal keeps its hidden panels parented), so the page's
+		// own PanelRect - the invisible rectangle the page lays its content out against - is the
+		// answer; SystemPageRect and the page itself are the fallbacks.
 		const std::string page = g_foundPath.empty() ? std::string() : g_foundPath;
-		std::string candidates[] = {
-			page + ".PanelRect",         // the page's own content rectangle - the right answer
-			page + ".SystemPageRect",    // same idea, the whole page including its margins
-			page,                        // the page itself: has hidden children, so a last resort
+		const std::string candidates[] = {
+			page + ".PanelRect",
+			page + ".SystemPageRect",
+			page,
 		};
-
+		bool found = false;
+		std::string foundAt;
 		for (const std::string& path : candidates)
 		{
-			if (path.empty() || path == ".")
+			if (MeasureClip(movie, root, visible, path, a_x, a_y, a_w, a_h))
 			{
-				continue;
+				found = true;
+				foundAt = path;
+				break;
 			}
-			RE::GFxValue bounds;
-			RE::GFxValue args[1]{ root };
-			const std::string fn = path + ".getBounds";
-			if (!movie->Invoke(fn.c_str(), &bounds, args, 1) || !bounds.IsObject())
-			{
-				continue;
-			}
-
-			RE::GFxValue xMin, xMax, yMin, yMax;
-			if (!bounds.GetMember("xMin", &xMin) || !bounds.GetMember("xMax", &xMax) ||
-				!bounds.GetMember("yMin", &yMin) || !bounds.GetMember("yMax", &yMax) ||
-				!xMin.IsNumber() || !xMax.IsNumber() || !yMin.IsNumber() || !yMax.IsNumber())
-			{
-				continue;
-			}
-
-			const float left = static_cast<float>(xMin.GetNumber());
-			const float top = static_cast<float>(yMin.GetNumber());
-			const float width = static_cast<float>(xMax.GetNumber()) - left;
-			const float height = static_cast<float>(yMax.GetNumber()) - top;
-
-			// A clip that is faded out or not yet built measures as a point, or as the 6710886.4
-			// AS2 reports for an empty one. Neither is a panel.
-			if (width < 1.0f || height < 1.0f)
-			{
-				continue;
-			}
-
-			// AND IT MUST FIT ON THE SCREEN. This is the guard that was too loose the first time -
-			// it allowed four times the stage, so a 1.25x rectangle sailed through and the window
-			// was drawn off the edge of the display. A panel is a panel: if a candidate measures
-			// larger than the stage it is a union of hidden children, not the thing we want, so it
-			// is rejected outright and the next candidate is tried.
-			if (width > visW * 1.02f || height > visH * 1.02f)
-			{
-				logger::debug("System row: {} measures {:.0f}x{:.0f} against a {:.0f}x{:.0f} stage - "
-					"bigger than the screen, so it is a union of hidden children; trying the next candidate",
-					path, width, height, visW, visH);
-				continue;
-			}
-
-			a_x = (left - visible.left) / visW;
-			a_y = (top - visible.top) / visH;
-			a_w = width / visW;
-			a_h = height / visH;
-
-			// Clamp into the stage even now. A panel can legitimately sit a hair off the edge, and
-			// a window placed there is one the player cannot reach the far side of.
-			if (a_x < 0.0f) { a_w += a_x; a_x = 0.0f; }
-			if (a_y < 0.0f) { a_h += a_y; a_y = 0.0f; }
-			if (a_x + a_w > 1.0f) { a_w = 1.0f - a_x; }
-			if (a_y + a_h > 1.0f) { a_h = 1.0f - a_y; }
-			if (a_w <= 0.0f || a_h <= 0.0f)
-			{
-				continue;
-			}
-
-			static std::string reported;
-			if (reported != path)
-			{
-				reported = path;
-				logger::info("System row: journal panel measured at {} -> x={:.3f} y={:.3f} w={:.3f} h={:.3f} of the screen",
-					path, a_x, a_y, a_w, a_h);
-			}
-			return true;
+		}
+		if (!found)
+		{
+			logger::warn("System row: journal is open but no panel clip could be measured; the window keeps its own size");
+			return false;
 		}
 
-		logger::warn("System row: journal is open but no panel clip could be measured; the window keeps its own size");
-		return false;
+		// Quest Journal Overhaul - Entire Journal Redesigned (the owner, 2026-09-13, two screenshots):
+		// it keeps vanilla's PanelRect where it always was but draws the System page as a button
+		// column LEFT of a vertical divider and a content pane RIGHT of it, headed by the selected
+		// row's title and a rule. Fitting PanelRect put the window across the buttons. So when that
+		// art's divider is on the stage, the pane is the rectangle: left of the divider's right
+		// edge, below the header rule, out to the page's own right edge. Vanilla and the other
+		// replacers have none of these clips and keep PanelRect untouched.
+		g_paneLeft = -1.0f;
+		{
+			float dx = 0.0f, dy = 0.0f, dw = 0.0f, dh = 0.0f;
+			const char* const dividers[] = {
+				"_root.QuestJournalFader.Menu_mc.QJUI_PanelShadows_mc.RightDivider_mc",
+				"_root.Menu_mc.QJUI_PanelShadows_mc.RightDivider_mc",
+			};
+			for (const char* d : dividers)
+			{
+				if (MeasureClip(movie, root, visible, d, dx, dy, dw, dh))
+				{
+					g_paneLeft = dx + dw + 0.008f;
+					break;
+				}
+			}
+		}
+		if (g_paneLeft > 0.0f)
+		{
+			const float right0 = a_x + a_w;
+			float right = right0;
+			float rx = 0.0f, ry = 0.0f, rw = 0.0f, rh = 0.0f;
+			// RightFill_mc is the fill the redesign lays over exactly its content pane (frame 1,
+			// QJUI_LayoutPanelShadows): its right and bottom edges are the pane's.
+			float bottomFill = -1.0f;
+			if (MeasureClip(movie, root, visible, "_root.QuestJournalFader.Menu_mc.QJUI_PanelShadows_mc.RightFill_mc", rx, ry, rw, rh))
+			{
+				right = rx + rw - 0.012f;
+				bottomFill = ry + rh - 0.012f;
+			}
+			else if (MeasureClip(movie, root, visible, page + ".SystemPageRect", rx, ry, rw, rh) && rx + rw > right)
+			{
+				right = rx + rw - 0.012f;
+			}
+			float top = a_y;
+			float hx = 0.0f, hy = 0.0f, hw = 0.0f, hh = 0.0f;
+			const std::string rules[] = {
+				page + ".QJS_Overlay.CategoryHeaderRule",   // where the redesign's script puts it
+				page + ".CategoryHeader_mc.CategoryHeaderRule",
+				page + ".CategoryHeaderRule",
+				"_root.QuestJournalFader.Menu_mc.CategoryHeader_mc.CategoryHeaderRule",
+			};
+			for (const std::string& r : rules)
+			{
+				if (MeasureClip(movie, root, visible, r, hx, hy, hw, hh))
+				{
+					top = (std::max)(top, hy + hh + 0.01f);
+					break;
+				}
+			}
+			const float bottom = bottomFill > 0.0f ? bottomFill : a_y + a_h;
+			if (g_paneLeft > a_x && right > g_paneLeft + 0.1f && bottom > top + 0.1f)
+			{
+				a_x = g_paneLeft;
+				a_w = right - g_paneLeft;
+				a_y = top;
+				a_h = bottom - top;
+				foundAt += " + Journal Redesigned pane (RightDivider_mc / CategoryHeaderRule / SystemPageRect)";
+			}
+			else
+			{
+				g_paneLeft = -1.0f;   // the divider was there but the pane it implies is nonsense; PanelRect stands
+			}
+		}
+
+		// Clamp into the stage. A panel can sit a hair off the edge, and a window placed there is
+		// one the player cannot reach the far side of.
+		if (a_x < 0.0f) { a_w += a_x; a_x = 0.0f; }
+		if (a_y < 0.0f) { a_h += a_y; a_y = 0.0f; }
+		if (a_x + a_w > 1.0f) { a_w = 1.0f - a_x; }
+		if (a_y + a_h > 1.0f) { a_h = 1.0f - a_y; }
+		if (a_w <= 0.0f || a_h <= 0.0f)
+		{
+			return false;
+		}
+
+		static std::string reported;
+		if (reported != foundAt)
+		{
+			reported = foundAt;
+			logger::info("System row: journal panel measured at {} -> x={:.3f} y={:.3f} w={:.3f} h={:.3f} of the screen",
+				foundAt, a_x, a_y, a_w, a_h);
+		}
+		return true;
 	}
 }

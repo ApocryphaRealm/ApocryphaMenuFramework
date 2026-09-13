@@ -1,4 +1,5 @@
 #include "DevBenchTool.h"
+#include "SystemRow.h"
 
 #include "DevBench/DevBenchAPI.h"
 #include "Input.h"
@@ -88,8 +89,12 @@ namespace devbenchtool
 			std::string result;
 			if (op == "open")
 			{
-				renderer::SetMenuVisible(true);
-				result = "{\"ok\":true,\"op\":\"open\"}";
+				// 1.8.0: nested=true opens the window the way the SKSE MENUS row does (sized to the journal),
+				// so a journal-art fit can be measured with the journal open and nobody pressing the row.
+				const bool nested = args.find("\"nested\":true") != std::string::npos;
+				if (nested) { renderer::SetSelectedNode("system/mods"); }
+				renderer::SetMenuVisible(true, nested);
+				result = std::string("{\"ok\":true,\"op\":\"open\",\"nested\":") + (nested ? "true" : "false") + "}";
 			}
 			else if (op == "close")
 			{
@@ -225,6 +230,18 @@ namespace devbenchtool
 				}
 				input::QueueMouseClick(static_cast<std::uint32_t>(button));
 				result = "{\"ok\":true,\"op\":\"click\",\"button\":" + std::to_string(button) + "}";
+			}
+			else if (op == "bounds")
+			{
+				// 1.8.0: measure any clip of the open journal as screen fractions (args path), so a new
+				// art replacer's pane is measured rather than guessed at.
+				const std::string path = JsonStr(args, "path");
+				float x = 0.0f, y = 0.0f, w = 0.0f, h = 0.0f;
+				const bool ok = systemrow::MeasurePath(path, x, y, w, h);
+				std::string esc; for (char c : path) { if (c == '"' || c == '\\') { esc += '\\'; } esc += c; }
+				result = std::string("{\"ok\":") + (ok ? "true" : "false") + ",\"op\":\"bounds\",\"path\":\"" + esc +
+					"\",\"x\":" + std::to_string(x) + ",\"y\":" + std::to_string(y) + ",\"w\":" + std::to_string(w) + ",\"h\":" + std::to_string(h) +
+					",\"paneLeft\":" + std::to_string(systemrow::PaneLeft()) + "}";
 			}
 			else if (op == "style")
 			{

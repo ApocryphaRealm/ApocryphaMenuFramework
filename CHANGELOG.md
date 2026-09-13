@@ -21,6 +21,14 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## 1.8.0 - 2026-09-13 - untested
+
+### Fixed
+- Quest Journal Overhaul - Entire Journal Redesigned: the SKSE MENUS row worked, but the window opened from it was sized to the vanilla panel rectangle, which that art keeps where it always was while drawing its System page as a button column left of a divider and a content pane right of it - so the window sat across the buttons. The pane is now measured from that art's own divider, header rule and page rectangle, and a stored window position that starts left of the divider (dragged under other art) is set aside for the measured pane. Vanilla and the other replacers are unchanged.
+
+### Added
+- `amf.menu bounds path=<clip>` measures any clip of the open journal as fractions of the screen, so the next art replacer is measured rather than guessed at.
+
 ## 1.7.9 - 2026-09-13 - untested
 
 ### Fixed
