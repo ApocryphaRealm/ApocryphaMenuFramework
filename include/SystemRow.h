@@ -72,6 +72,11 @@ namespace systemrow
 	// profile that starts left of it was dragged under different art and is stale.
 	float PaneLeft();
 
+	// 1.8.1: which journal art GetPanelRect last measured - "qjo-redesign" when Quest Journal
+	// Overhaul's redesigned pane was found, "panel" for the game's own layout and every other
+	// replacer. The nested window profile is remembered per art key.
+	const char* ArtKey();
+
 	// Any clip in the open journal, as fractions of the screen - the DevBench 'bounds' op, so a
 	// new art replacer is measured rather than guessed at.
 	bool MeasurePath(const std::string& a_path, float& a_x, float& a_y, float& a_w, float& a_h);

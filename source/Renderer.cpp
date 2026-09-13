@@ -1116,19 +1116,20 @@ namespace renderer
 			else if (g_applyGeometry.load(std::memory_order_acquire))
 			{
 				bool useProfile = profile.IsSet();
-				// 1.8.0: a stored nested profile that starts LEFT of the journal art's pane divider was
-				// dragged under different art (the owner switched to Quest Journal Overhaul's redesign,
-				// 2026-09-13) - it would sit across the button column, so the measured pane wins and the
-				// next drag re-saves the profile for this art.
-				const float paneLeft = systemrow::PaneLeft();
-				if (useProfile && haveDefault && paneLeft > 0.0f && profile.x < paneLeft - 0.01f)
+				// 1.8.1: the nested profile is remembered PER JOURNAL ART (the owner, 2026-09-13: "the
+				// position should only change to match the redesign when the redesign is active"). The
+				// art on screen is what GetPanelRect just measured; a position dragged under other art
+				// is ignored, the journal is measured afresh, and the next drag saves for this art.
+				const std::string artNow = systemrow::ArtKey();
+				if (useProfile && haveDefault && profile.art != artNow)
 				{
 					useProfile = false;
-					static bool s_said = false;
-					if (!s_said)
+					static std::string s_saidFor;
+					if (s_saidFor != artNow)
 					{
-						s_said = true;
-						logger::info("window profile (nested) starts at x={:.3f}, left of this journal art's pane divider at {:.3f}: stale under this art, the measured pane is used instead", profile.x, paneLeft);
+						s_saidFor = artNow;
+						logger::info("window profile (nested) was saved under journal art '{}'; the journal on screen is '{}', so the measured panel is used instead",
+							profile.art.empty() ? "unknown" : profile.art, artNow);
 					}
 				}
 				if (useProfile || haveDefault)
@@ -1185,6 +1186,7 @@ namespace renderer
 						moved(nw, profile.w) || moved(nh, profile.h))
 					{
 						profile.x = nx; profile.y = ny; profile.w = nw; profile.h = nh;
+						if (nested) { profile.art = systemrow::ArtKey(); }   // 1.8.1: remembered for THIS journal art
 						settings::Save();
 						logger::debug("window profile ({}) saved: x={:.3f} y={:.3f} w={:.3f} h={:.3f}",
 							nested ? "nested" : "hotkey", nx, ny, nw, nh);

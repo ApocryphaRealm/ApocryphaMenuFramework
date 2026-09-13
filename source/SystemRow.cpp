@@ -334,6 +334,11 @@ namespace systemrow
 		return g_paneLeft;
 	}
 
+	const char* ArtKey()
+	{
+		return g_paneLeft > 0.0f ? "qjo-redesign" : "panel";
+	}
+
 	bool GetPanelRect(float& a_x, float& a_y, float& a_w, float& a_h)
 	{
 		RE::GPtr<RE::IMenu> menu = JournalMenu();

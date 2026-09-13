@@ -21,6 +21,11 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## 1.8.1 - 2026-09-13 - untested
+
+### Fixed
+- The System-row window's remembered position followed the player from one journal art to another: dragged under Quest Journal Overhaul's redesign, it then opened at that spot in the game's own journal. The position is now remembered per journal art (`Window.sNestedArt`): under any other art it is ignored and the journal is measured afresh, and the next drag saves a position for that art. The key-opened window is unchanged.
+
 ## 1.8.0 - 2026-09-13 - untested
 
 ### Fixed

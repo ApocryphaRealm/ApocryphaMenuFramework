@@ -31,6 +31,10 @@ namespace settings
 		float w = -1.0f;
 		float h = -1.0f;
 		// 1.7.8: the KEY-OPENED window keeps only x/y/w/h (a corner drag keeps its shape; nothing scales).
+		// 1.8.1: the NESTED profile also remembers which journal ART it was dragged under (the owner,
+		// 2026-09-13: the position must only follow the redesign while the redesign is active). A stored
+		// position whose art is not the art on screen is ignored and the measured panel is used.
+		std::string art;
 
 		bool IsSet() const { return x >= 0.0f && y >= 0.0f && w > 0.0f && h > 0.0f; }
 		void Clear() { x = y = w = h = -1.0f; }

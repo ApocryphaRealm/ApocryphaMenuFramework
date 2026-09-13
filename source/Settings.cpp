@@ -133,6 +133,7 @@ namespace settings
 			ReadNumber(entries, "Window.fNestedY", g_values.nestedWindow.y);
 			ReadNumber(entries, "Window.fNestedW", g_values.nestedWindow.w);
 			ReadNumber(entries, "Window.fNestedH", g_values.nestedWindow.h);
+			if (const auto it = entries.find("Window.sNestedArt"); it != entries.end()) { g_values.nestedWindow.art = it->second; }
 			ReadNumber(entries, "Window.fHotkeyX", g_values.hotkeyWindow.x);
 			ReadNumber(entries, "Window.fHotkeyY", g_values.hotkeyWindow.y);
 			ReadNumber(entries, "Window.fHotkeyW", g_values.hotkeyWindow.w);
@@ -227,6 +228,10 @@ namespace settings
 				"fNestedY=" << g_values.nestedWindow.y << "\n"
 				"fNestedW=" << g_values.nestedWindow.w << "\n"
 				"fNestedH=" << g_values.nestedWindow.h << "\n"
+				"; The journal art the nested position was dragged under (panel = the game's own layout,\n"
+				"; qjo-redesign = Quest Journal Overhaul - Entire Journal Redesigned). Under any other art\n"
+				"; the position is ignored and the journal is measured afresh.\n"
+				"sNestedArt=" << g_values.nestedWindow.art << "\n"
 				"fHotkeyX=" << g_values.hotkeyWindow.x << "\n"
 				"fHotkeyY=" << g_values.hotkeyWindow.y << "\n"
 				"fHotkeyW=" << g_values.hotkeyWindow.w << "\n"
