@@ -21,6 +21,11 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## 1.7.8 - 2026-09-13 - untested
+
+### Fixed
+- Dragging a corner of the key-opened window scaled the text along with the window and let it grow past the screen, jumping as it went. A corner drag now keeps the window's shape and grows only its width and height, the window cannot be larger than the game screen, and the size is applied through ImGui's own resize so nothing jumps. Edge drags still grow both sides about the centre.
+
 ## 1.7.7 - 2026-09-13 - untested
 
 ### Changed

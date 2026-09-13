@@ -1072,33 +1072,45 @@ namespace renderer
 			// frame tries again, rather than falling back to the centre and jumping later.
 			bool appliedThisFrame = false;
 			ImGuiWindowFlags windowFlags = ImGuiWindowFlags_None;
-			// 1.7.7 (the owner, 2026-09-13): the KEY-OPENED window is fixed to the screen centre; an
-			// edge resize grows both sides (the centre never moves); a corner drag scales the whole
-			// window - its font scale follows the size change and the aspect is locked. None of it
+			// 1.7.7/1.7.8 (the owner, 2026-09-13): the KEY-OPENED window is fixed to the screen centre; an
+			// edge drag grows both sides (the centre never moves); a corner drag keeps the window's SHAPE
+			// and grows it - the text does not scale ("it should just increase the size of the window
+			// length and width proportionally"); the window can never be larger than the game screen.
+			// Done through ImGui's own size constraint callback, so ImGui resizes once per frame with
+			// the rule already applied and nothing is forced afterwards (no jumping). None of it
 			// applies to the nested window, which keeps the journal-panel placement below.
-			static ImVec2 s_hotkeyLastSize{};
-			static bool s_hotkeyHaveLast = false;
-			static bool s_hotkeyForceSize = false;
-			static ImVec2 s_hotkeyForcedSize{};
+			struct HotkeyConstraint { ImVec2 display{}; float aspect = 0.0f; };
+			static HotkeyConstraint s_hotkeyConstraint{};
 			if (!nested)
 			{
 				windowFlags |= ImGuiWindowFlags_NoMove;
-				if (!(profile.scale > 0.25f && profile.scale < 4.0f)) { profile.scale = 1.0f; }
 				if (g_applyGeometry.load(std::memory_order_acquire))
 				{
-					const float gw = profile.IsSet() ? profile.w : dw;
-					const float gh = profile.IsSet() ? profile.h : dh;
-					ImGui::SetNextWindowSize(ImVec2(display.x * gw * profile.scale, display.y * gh * profile.scale), ImGuiCond_Always);
+					const float gw = std::min(profile.IsSet() ? profile.w : dw, 1.0f);
+					const float gh = std::min(profile.IsSet() ? profile.h : dh, 1.0f);
+					ImGui::SetNextWindowSize(ImVec2(display.x * gw, display.y * gh), ImGuiCond_Always);
 					g_applyGeometry.store(false, std::memory_order_release);
 					appliedThisFrame = true;
-					s_hotkeyHaveLast = false;
-					s_hotkeyForceSize = false;
+					s_hotkeyConstraint.aspect = 0.0f;
 				}
-				else if (s_hotkeyForceSize)
-				{
-					ImGui::SetNextWindowSize(s_hotkeyForcedSize, ImGuiCond_Always);
-					s_hotkeyForceSize = false;
-				}
+				s_hotkeyConstraint.display = display;
+				ImGui::SetNextWindowSizeConstraints(ImVec2(display.x * 0.2f, display.y * 0.2f), display,
+					+[](ImGuiSizeCallbackData* a_data) {
+						auto* c = static_cast<HotkeyConstraint*>(a_data->UserData);
+						const bool wChanged = std::fabs(a_data->DesiredSize.x - a_data->CurrentSize.x) > 0.5f;
+						const bool hChanged = std::fabs(a_data->DesiredSize.y - a_data->CurrentSize.y) > 0.5f;
+						const bool corner = wChanged && hChanged && c->aspect > 0.0f;
+						if (corner)
+						{
+							a_data->DesiredSize.y = a_data->DesiredSize.x / c->aspect;   // keep the shape
+						}
+						a_data->DesiredSize.x = std::min(a_data->DesiredSize.x, c->display.x);
+						a_data->DesiredSize.y = std::min(a_data->DesiredSize.y, c->display.y);
+						if (corner && a_data->DesiredSize.y * c->aspect < a_data->DesiredSize.x)
+						{
+							a_data->DesiredSize.x = a_data->DesiredSize.y * c->aspect;   // the clamp held one side: keep the shape
+						}
+					}, &s_hotkeyConstraint);
 				ImGui::SetNextWindowPos(ImVec2(display.x * 0.5f, display.y * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
 			}
 			else if (g_applyGeometry.load(std::memory_order_acquire))
@@ -1121,44 +1133,13 @@ namespace renderer
 			{
 				if (!nested)
 				{
-					ImGui::SetWindowFontScale(profile.scale);
-
-					// Which grip is the player dragging? Both dimensions moving in one frame is a
-					// corner: scale the whole window (aspect locked, font scale along). One
-					// dimension is an edge: the unscaled base size changes, the scale does not.
+					// The shape a corner drag keeps is the shape the window had when the drag began:
+					// refreshed every frame the mouse is up, frozen while it is down.
 					const ImVec2 cur = ImGui::GetWindowSize();
-					if (s_hotkeyHaveLast && !appliedThisFrame && ImGui::IsMouseDown(ImGuiMouseButton_Left))
+					if (!ImGui::IsMouseDown(ImGuiMouseButton_Left) && cur.x > 1.0f && cur.y > 1.0f)
 					{
-						const float ddw = cur.x - s_hotkeyLastSize.x;
-						const float ddh = cur.y - s_hotkeyLastSize.y;
-						const bool wChanged = std::fabs(ddw) > 0.5f;
-						const bool hChanged = std::fabs(ddh) > 0.5f;
-						float baseW = profile.IsSet() ? profile.w : dw;
-						float baseH = profile.IsSet() ? profile.h : dh;
-						if (wChanged && hChanged && s_hotkeyLastSize.x > 1.0f)
-						{
-							const float factor = cur.x / s_hotkeyLastSize.x;
-							profile.scale = std::clamp(profile.scale * factor, 0.5f, 3.0f);
-							s_hotkeyForcedSize = ImVec2(display.x * baseW * profile.scale, display.y * baseH * profile.scale);
-							s_hotkeyForceSize = true;
-						}
-						else if (wChanged)
-						{
-							baseW = cur.x / display.x / profile.scale;
-						}
-						else if (hChanged)
-						{
-							baseH = cur.y / display.y / profile.scale;
-						}
-						if (wChanged || hChanged)
-						{
-							profile.w = baseW; profile.h = baseH;
-							profile.x = 0.5f - baseW * profile.scale * 0.5f;
-							profile.y = 0.5f - baseH * profile.scale * 0.5f;
-						}
+						s_hotkeyConstraint.aspect = cur.x / cur.y;
 					}
-					s_hotkeyLastSize = cur;
-					s_hotkeyHaveLast = true;
 				}
 				// The author's background, before any content: ImGui has already painted the window's
 				// own colour, and everything drawn after this lands on top of the art.
@@ -1176,21 +1157,19 @@ namespace renderer
 				// Reset could not restore the journal fit. And not mid-drag either: the settings
 				// file is rewritten on each save, and a drag would rewrite it every frame. Waiting
 				// for the mouse to come up saves once, when the player has finished.
-				static float s_savedX = -2.0f, s_savedY = -2.0f, s_savedW = -2.0f, s_savedH = -2.0f, s_savedScale = -2.0f;
 				if (!appliedThisFrame && !ImGui::IsMouseDown(ImGuiMouseButton_Left))
 				{
 					const ImVec2 wpos = ImGui::GetWindowPos();
 					const ImVec2 wsize = ImGui::GetWindowSize();
-					const float nx = nested ? wpos.x / display.x : profile.x;
-					const float ny = nested ? wpos.y / display.y : profile.y;
-					const float nw = nested ? wsize.x / display.x : profile.w;
-					const float nh = nested ? wsize.y / display.y : profile.h;
+					const float nx = wpos.x / display.x;
+					const float ny = wpos.y / display.y;
+					const float nw = wsize.x / display.x;
+					const float nh = wsize.y / display.y;
 					const auto moved = [](float a, float b) { return std::fabs(a - b) > 0.001f; };
-					const bool hotkeyChanged = !nested && (moved(nw, s_savedW) || moved(nh, s_savedH) || moved(profile.scale, s_savedScale));
-					if ((nested && (moved(nx, profile.x) || moved(ny, profile.y) || moved(nw, profile.w) || moved(nh, profile.h))) || hotkeyChanged)
+					if (moved(nx, profile.x) || moved(ny, profile.y) ||
+						moved(nw, profile.w) || moved(nh, profile.h))
 					{
 						profile.x = nx; profile.y = ny; profile.w = nw; profile.h = nh;
-						s_savedX = nx; s_savedY = ny; s_savedW = nw; s_savedH = nh; s_savedScale = profile.scale;
 						settings::Save();
 						logger::debug("window profile ({}) saved: x={:.3f} y={:.3f} w={:.3f} h={:.3f}",
 							nested ? "nested" : "hotkey", nx, ny, nw, nh);

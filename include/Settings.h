@@ -30,13 +30,10 @@ namespace settings
 		float y = -1.0f;
 		float w = -1.0f;
 		float h = -1.0f;
-		// 1.7.7 (the owner, 2026-09-13): the KEY-OPENED window is fixed to the screen centre; an edge
-		// resize grows both sides, a corner drag scales the whole window. `scale` is that whole-window
-		// factor (1 = the size the profile stores); w/h stay the UNSCALED size. Unused when nested.
-		float scale = 1.0f;
+		// 1.7.8: the KEY-OPENED window keeps only x/y/w/h (a corner drag keeps its shape; nothing scales).
 
 		bool IsSet() const { return x >= 0.0f && y >= 0.0f && w > 0.0f && h > 0.0f; }
-		void Clear() { x = y = w = h = -1.0f; scale = 1.0f; }
+		void Clear() { x = y = w = h = -1.0f; }
 	};
 
 	struct Values
