@@ -27,6 +27,7 @@
 #include <unordered_map>
 
 #include <imgui.h>
+#include <imgui_internal.h>
 #include <vector>
 // The vcpkg imgui port installs the binding headers FLAT at the include root, not under
 // backends/ as in the upstream repo layout.
@@ -44,6 +45,17 @@
 
 namespace renderer
 {
+	// Search-box mirrors (driving tool). Written on the render thread, read on the listener thread.
+	std::atomic<float> g_searchRect[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+	std::atomic<bool> g_searchActive{ false };
+	std::atomic<int> g_searchLen{ 0 };
+	std::mutex g_searchTextLock;
+	std::string g_searchText;
+	std::atomic<bool> g_wantTextInput{ false };
+	std::atomic<bool> g_backspaceDown{ false };
+	std::atomic<unsigned int> g_activeIdMirror{ 0 };
+	std::atomic<bool> g_modCtrl{ false }, g_modShift{ false }, g_modAlt{ false };
+
 	using strings::TR;
 
 	namespace
@@ -1174,6 +1186,21 @@ namespace renderer
 				ImGui::SetNextItemWidth(-FLT_MIN);
 				ImGui::InputTextWithHint("##modsearch", TR("AMF_SearchMods", "Search"),
 										 s_modFilter, sizeof(s_modFilter));
+				// Mirrored for the driving tool (report 2026-09-12: the box stops taking input after the
+				// text is erased). Rect so the REAL box can be clicked; active/text/key state so the
+				// failure is measured at the widget rather than guessed from a symptom.
+				{
+					const ImVec2 mn = ImGui::GetItemRectMin(), mx = ImGui::GetItemRectMax();
+					g_searchRect[0].store(mn.x); g_searchRect[1].store(mn.y); g_searchRect[2].store(mx.x); g_searchRect[3].store(mx.y);
+					g_searchActive.store(ImGui::IsItemActive());
+					g_searchLen.store(static_cast<int>(std::strlen(s_modFilter)));
+					{ std::scoped_lock l(g_searchTextLock); g_searchText = s_modFilter; }
+					const ImGuiIO& sio = ImGui::GetIO();
+					g_wantTextInput.store(sio.WantTextInput);
+					g_backspaceDown.store(ImGui::IsKeyDown(ImGuiKey_Backspace));
+					g_modCtrl.store(sio.KeyCtrl); g_modShift.store(sio.KeyShift); g_modAlt.store(sio.KeyAlt);
+					g_activeIdMirror.store(GImGui ? GImGui->ActiveId : 0u);   // imgui_internal: which item holds keyboard input
+				}
 
 				const auto lower = [](std::string a_in) {
 					std::transform(a_in.begin(), a_in.end(), a_in.begin(),
@@ -1699,6 +1726,12 @@ namespace renderer
 		}
 		const bool visible = g_windowVisible.load(std::memory_order_relaxed);
 		const auto entries = registry::Snapshot();
+		std::string searchText; { std::scoped_lock l(g_searchTextLock); searchText = g_searchText; }
+		const std::string searchJson = "\"search\":{\"text\":\"" + [&]{ std::string o; for (char c : searchText) { if (c == '"' || c == '\\') { o += '\\'; } o += c; } return o; }() +
+			"\",\"len\":" + std::to_string(g_searchLen.load()) + ",\"active\":" + (g_searchActive.load() ? "true" : "false") +
+			",\"rect\":[" + std::to_string(g_searchRect[0].load()) + "," + std::to_string(g_searchRect[1].load()) + "," + std::to_string(g_searchRect[2].load()) + "," + std::to_string(g_searchRect[3].load()) + "]}," +
+			"\"wantTextInput\":" + (g_wantTextInput.load() ? "true" : "false") + ",\"backspaceDown\":" + (g_backspaceDown.load() ? "true" : "false") +
+			",\"activeId\":" + std::to_string(g_activeIdMirror.load()) + ",\"keyCtrl\":" + (g_modCtrl.load() ? "true" : "false") + ",\"keyShift\":" + (g_modShift.load() ? "true" : "false") + ",\"keyAlt\":" + (g_modAlt.load() ? "true" : "false") + ",";
 		auto esc = [](const std::string& v) { std::string o; for (char c : v) { if (c == '"' || c == '\x5C') { o += '\x5C'; } o += c; } return o; };
 		std::string mods;
 		for (std::size_t i = 0; i < entries.size(); ++i)
@@ -1746,7 +1779,7 @@ namespace renderer
 
 		float cursorX = 0.0f, cursorY = 0.0f;
 		input::GetCursor(cursorX, cursorY);
-		return std::string("{\"cursor\":{\"x\":") + std::to_string(static_cast<int>(cursorX)) + ",\"y\":" + std::to_string(static_cast<int>(cursorY)) + "}" +
+		return std::string("{" + searchJson + "\"cursor\":{\"x\":") + std::to_string(static_cast<int>(cursorX)) + ",\"y\":" + std::to_string(static_cast<int>(cursorY)) + "}" +
 			   ",\"visible\":" + (visible ? "true" : "false") +
 			   ",\"blockingWindowOpen\":" + ((visible || anyBlocking) ? "true" : "false") +
 			   ",\"consumerWindows\":[" + windows + "]" +

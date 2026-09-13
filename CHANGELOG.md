@@ -21,6 +21,15 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## 1.7.5 - 2026-09-12 - untested
+
+### Fixed
+- A key released inside the menu now reaches the game only if the game saw its press. An unconditional pass-through line overwrote that decision, so every release reached the game - a shout key pressed inside the menu could complete as a shout on its release.
+- The menu's input hook now writes an EMPTY list head back to the game when it has consumed every event. It did not, so the engine handed the just-consumed node back on every following dispatch that carried no new input, and the last key event before the hands left the keyboard was re-processed every frame: a released Backspace stayed held and deleted each character as it was typed, a character replayed dozens of times, and every later press was swallowed. This is the mechanism behind the search box going dead after erasing (xLenax, 1.7.4) and the earlier reorder-field report.
+
+### Added
+- The log names any consumer input callback that claims a press while the menu is open, since from the player's side that is indistinguishable from the menu freezing. The amf.menu driving tool gained inject, injectchar, type and key operations and reports the search box, text-input and modifier state, so keyboard paths are provable without a person at the keyboard.
+
 ## 1.7.4 - 2026-09-12 - working
 
 ### Fixed

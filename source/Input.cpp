@@ -185,6 +185,55 @@ namespace input
 		//      (stuck-key prevention) and consume everything else (camera/movement halt)
 		//   3. menu closed -> pass everything through untouched
 		// -----------------------------------------------------------------------------------
+	// ---- driver-side event injection (DevBench) -------------------------------------------
+	// Splices REAL engine event nodes (RE::ButtonEvent / RE::CharEvent) at the head of the list
+	// inside this plugin's own dispatch hook, BEFORE the hook processes them - so an injected
+	// press takes the same path as a hardware one from here on: the consumer input callbacks'
+	// first look, the consume rule, the held set, ImGui, and every downstream handler. This is
+	// what the `type`/`key` record ops could not exercise (they enter at the record queue, after
+	// the first look), and the reported search-box freeze lives in exactly that gap.
+	namespace inject
+	{
+		struct Press { RE::INPUT_DEVICE device; std::uint32_t code; int framesLeft; bool downSent; };
+		std::mutex g_lock;
+		std::vector<Press> g_presses;
+		std::vector<std::uint32_t> g_chars;
+
+		void SpliceButton(RE::InputEvent** a_events, RE::INPUT_DEVICE a_device, std::uint32_t a_code, float a_value, float a_held)
+		{
+			auto* controlMap = RE::ControlMap::GetSingleton();
+			const std::string_view name = controlMap ? controlMap->GetUserEventName(a_code, a_device) : std::string_view{};
+			RE::BSFixedString userEvent(name.empty() ? "" : std::string(name).c_str());
+			auto* ev = RE::ButtonEvent::Create(a_device, userEvent, a_code, a_value, a_held);
+			if (!ev) { return; }
+			ev->next = *a_events; *a_events = ev;
+		}
+		void SpliceChar(RE::InputEvent** a_events, std::uint32_t a_code)
+		{
+			auto* ev = RE::malloc<RE::CharEvent>(sizeof(RE::CharEvent));
+			if (!ev) { return; }
+			std::memset(reinterpret_cast<void*>(ev), 0, sizeof(RE::CharEvent));
+			RE::stl::emplace_vtable<RE::CharEvent>(ev);
+			ev->device = RE::INPUT_DEVICE::kKeyboard;
+			ev->eventType = RE::INPUT_EVENT_TYPE::kChar;
+			ev->keyCode = a_code;
+			ev->next = *a_events; *a_events = ev;
+		}
+		void Service(RE::InputEvent** a_events)
+		{
+			std::scoped_lock l(g_lock);
+			if (g_presses.empty() && g_chars.empty()) { return; }
+			if (!g_chars.empty()) { SpliceChar(a_events, g_chars.front()); g_chars.erase(g_chars.begin()); }  // one character per dispatch
+			for (auto it = g_presses.begin(); it != g_presses.end();) {
+				if (!it->downSent) { SpliceButton(a_events, it->device, it->code, 1.0f, 0.0f); it->downSent = true; ++it; continue; }
+				if (it->framesLeft-- > 0) { SpliceButton(a_events, it->device, it->code, 1.0f, 0.05f * static_cast<float>(it->framesLeft + 1)); ++it; continue; }
+				SpliceButton(a_events, it->device, it->code, 0.0f, 0.1f);
+				it = g_presses.erase(it);
+			}
+		}
+	}
+
+
 		struct PollInputDevicesHook
 		{
 			static inline REL::Relocation<void(RE::BSTEventSource<RE::InputEvent*>*, RE::InputEvent**)> func;
@@ -274,6 +323,8 @@ namespace input
 					return;
 				}
 
+				inject::Service(a_events);   // driver-side presses/characters, ahead of everything below
+
 				const bool menuOpen = renderer::IsMainWindowVisible();
 				const auto toggleKey = static_cast<std::uint32_t>(settings::Get().toggleKey);
 				const bool controllerMode = UsingController();
@@ -354,6 +405,16 @@ namespace input
 						{
 							CopyForImGui(current);
 						}
+						else if (button && button->IsDown())
+						{
+							// A consumer's input callback CLAIMED this press while the menu is up, so the
+							// menu's own widgets never see it. Logged because from the player's side this is
+							// indistinguishable from the menu freezing (report 2026-09-12: the search box
+							// stopped taking input) - the log names the device and key so the claiming mod
+							// can be found by what it consumes.
+							logger::info("input: a consumer input callback claimed device {} code {} while the menu is open - the menu's widgets will not see it",
+								static_cast<std::uint32_t>(button->GetDevice()), button->GetIDCode());
+						}
 
 						passThrough = false;
 
@@ -371,11 +432,11 @@ namespace input
 							}
 						}
 
-						// Releases pass through so a key/button held across the open transition
-						// releases cleanly game-side (a stray release for an unpressed key is a
-						// no-op). Everything else is consumed - THIS is what halts the camera,
-						// the scroll-zoom and movement while the menu is up.
-						passThrough = button && button->IsUp();
+						// Everything else is consumed - THIS is what halts the camera, the scroll-zoom and
+						// movement while the menu is up. (An unconditional `passThrough = IsUp()` used to sit
+						// here and overwrote the held-set decision above, so EVERY release reached the game -
+						// the 1.1.2 behaviour the held set was written to end: a shout key pressed inside the
+						// menu completed as a shout on its release. Queue row 2026-09-12; fixed 2026-09-12.)
 					}
 					else
 					{
@@ -447,6 +508,18 @@ namespace input
 				{
 					// Everything was consumed - hand the game a live-but-empty list, the
 					// corroborated dummy-list idiom, never a null pointer.
+					//
+					// AND write the pruned (empty) head back to the caller. This branch used to leave
+					// *a_events pointing at the node it had just consumed, and the engine hands that
+					// same pointer straight back on every following dispatch that carries no new
+					// input - so the last key event before the hands left the keyboard was
+					// re-processed every frame: a released Backspace read as held (each typed
+					// character deleted on arrival), a CharEvent replayed sixty times, every later
+					// press swallowed. Measured 2026-09-12 with events spliced ahead of this hook;
+					// it is the mechanism behind 'the search bar stopped taking input after I
+					// erased' (xLenax, 1.7.4) and the earlier reorder-field report. The non-empty
+					// branch above always wrote back; this one is now symmetric.
+					*a_events = nullptr;
 					static RE::InputEvent* dummy[] = { nullptr };
 					func(a_dispatcher, dummy);
 				}
@@ -708,6 +781,38 @@ namespace input
 		std::scoped_lock lock(g_queueLock);
 		g_deferred.push_back({ 1, { Record::Kind::kMouseButton, a_button, true, 0.0f, 0.0f } });
 		g_deferred.push_back({ 3, { Record::Kind::kMouseButton, a_button, false, 0.0f, 0.0f } });
+	}
+
+	// Driver-side key press (DirectInput scan code) and text, queued as the SAME records the game's
+	// own events become - so a headless test exercises the translation and ImGui exactly as a
+	// keyboard would, from the record queue onward. Down and up land on separate frames.
+
+	void InjectPress(std::uint32_t a_device, std::uint32_t a_code, int a_holdFrames)
+	{
+		RE::INPUT_DEVICE dev = a_device == 2 ? RE::INPUT_DEVICE::kGamepad : (a_device == 1 ? RE::INPUT_DEVICE::kMouse : RE::INPUT_DEVICE::kKeyboard);
+		std::scoped_lock l(inject::g_lock);
+		inject::g_presses.push_back({ dev, a_code, a_holdFrames < 1 ? 1 : (a_holdFrames > 600 ? 600 : a_holdFrames), false });
+	}
+	void InjectText(const std::string& a_utf8)
+	{
+		std::scoped_lock l(inject::g_lock);
+		for (unsigned char c : a_utf8) { inject::g_chars.push_back(static_cast<std::uint32_t>(c)); }
+	}
+
+	void QueueKey(std::uint32_t a_scancode)
+	{
+		std::scoped_lock lock(g_queueLock);
+		g_deferred.push_back({ 1, { Record::Kind::kKeyboard, a_scancode, true, 0.0f, 0.0f } });
+		g_deferred.push_back({ 3, { Record::Kind::kKeyboard, a_scancode, false, 0.0f, 0.0f } });
+	}
+
+	void QueueText(const std::string& a_utf8)
+	{
+		std::scoped_lock lock(g_queueLock);
+		int frame = 1;
+		for (unsigned char c : a_utf8) {
+			g_deferred.push_back({ frame++, { Record::Kind::kCharacter, static_cast<std::uint32_t>(c), true, 0.0f, 0.0f } });
+		}
 	}
 
 	void GetCursor(float& a_x, float& a_y)

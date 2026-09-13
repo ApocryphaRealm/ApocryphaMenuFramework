@@ -180,6 +180,36 @@ namespace devbenchtool
 					result = "{\"ok\":true,\"op\":\"cursor\",\"x\":" + std::to_string(x) + ",\"y\":" + std::to_string(y) + "}";
 				}
 			}
+			else if (op == "inject")
+			{
+				// A REAL engine press spliced ahead of this plugin's hook: device keyboard|gamepad|mouse, code, hold.
+				const std::string dev = JsonStr(args, "device");
+				const std::uint32_t d = dev == "gamepad" ? 2u : (dev == "mouse" ? 1u : 0u);
+				const int code = static_cast<int>(JsonNum(args, "code", 0)); const int hold = static_cast<int>(JsonNum(args, "hold", 4));
+				if (code <= 0) { result = "{\"ok\":false,\"error\":\"inject needs a code\"}"; }
+				else { input::InjectPress(d, static_cast<std::uint32_t>(code), hold); result = "{\"ok\":true,\"op\":\"inject\",\"code\":" + std::to_string(code) + ",\"hold\":" + std::to_string(hold) + "}"; }
+			}
+			else if (op == "injectchar")
+			{
+				// REAL CharEvents (what the engine makes from WM_CHAR), one per dispatch, ahead of the hook.
+				const std::string text = JsonStr(args, "text");
+				input::InjectText(text);
+				result = "{\"ok\":true,\"op\":\"injectchar\",\"chars\":" + std::to_string(text.size()) + "}";
+			}
+			else if (op == "type")
+			{
+				// Type text into whatever ImGui item is active (the real record path, from the queue on).
+				const std::string text = JsonStr(args, "text");
+				input::QueueText(text);
+				result = "{\"ok\":true,\"op\":\"type\",\"chars\":" + std::to_string(text.size()) + "}";
+			}
+			else if (op == "key")
+			{
+				// Press one key by DirectInput scan code (Backspace 0x0E, Enter 0x1C, Escape 0x01 ...).
+				const int code = static_cast<int>(JsonNum(args, "code", 0));
+				if (code <= 0) { result = "{\"ok\":false,\"error\":\"key needs a scan code\"}"; }
+				else { input::QueueKey(static_cast<std::uint32_t>(code)); result = "{\"ok\":true,\"op\":\"key\",\"code\":" + std::to_string(code) + "}"; }
+			}
 			else if (op == "click")
 			{
 				// Press and release at the current cursor; optional x/y places it first. Down and
