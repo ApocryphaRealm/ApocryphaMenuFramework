@@ -47,7 +47,13 @@ namespace
 	//
 	// DirectInput scan codes: 0x3B = F1 (framework menu), 0x0F = Tab, 0x01 = Escape,
 	// 0xC8/0xD0/0xCB/0xCD = arrow keys, 0x1C = Enter.
-	constexpr std::array<std::int32_t, 8> kReservedKeys{ 0x3B, 0x0F, 0x01, 0xC8, 0xD0, 0xCB, 0xCD, 0x1C };
+	//
+	// 1.7.6 (the owner, 2026-09-12): "the key that activates amf's menu is essentially a variable key
+	// and there's an if-then statement that if variablekey(f1) then no other key can bind to key(f1)".
+	// So the MENU key is no longer a constant in this list: SMF_GetReservedKeyCodes composes the LIVE
+	// settings::Get().toggleKey with the navigation keys below at every call. F1 is reserved exactly
+	// while it IS the toggle key, and a key the player has moved AMF away from becomes free again.
+	constexpr std::array<std::int32_t, 7> kNavigationKeys{ 0x0F, 0x01, 0xC8, 0xD0, 0xCB, 0xCD, 0x1C };
 
 	void SKSEMessageListener(SKSE::MessagingInterface::Message* a_msg)
 	{
@@ -137,7 +143,23 @@ namespace
 
 AMF_API std::uint32_t SMF_GetReservedKeyCodes(std::int32_t* a_buffer, std::uint32_t a_capacity)
 {
-	const auto count = static_cast<std::uint32_t>(kReservedKeys.size());
+	// Composed fresh on every call: the LIVE menu key first, then the navigation keys. A consumer
+	// that asks at capture time (DEM 1.5.3+, Wheeler 1.0.5+) therefore refuses whatever key the
+	// player has AMF on today, not the one it shipped with.
+	std::array<std::int32_t, kNavigationKeys.size() + 1> reserved{};
+	std::uint32_t count = 0;
+	const std::int32_t live = settings::Get().toggleKey;
+	if (live > 0)
+	{
+		reserved[count++] = live;
+	}
+	for (const std::int32_t nav : kNavigationKeys)
+	{
+		if (nav != live)
+		{
+			reserved[count++] = nav;
+		}
+	}
 
 	if (!a_buffer)
 	{
@@ -149,10 +171,10 @@ AMF_API std::uint32_t SMF_GetReservedKeyCodes(std::int32_t* a_buffer, std::uint3
 
 	for (std::uint32_t i = 0; i < written; ++i)
 	{
-		a_buffer[i] = kReservedKeys[i];
+		a_buffer[i] = reserved[i];
 	}
 
-	logger::debug("SMF_GetReservedKeyCodes: reported {} reserved key(s) to a caller", written);
+	logger::debug("SMF_GetReservedKeyCodes: reported {} reserved key(s) to a caller (menu key 0x{:X} first)", written, live);
 
 	return written;
 }

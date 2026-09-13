@@ -21,6 +21,11 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## 1.7.6 - 2026-09-13 - untested
+
+### Changed
+- The reserved-key list other mods ask for (SMF_GetReservedKeyCodes) now reports the menu key the player CURRENTLY has set, first, followed by the menu's navigation keys. It reported a fixed list with F1 hard-coded, so a mod checking it could still take the menu key from a player who had moved the menu to another key. F1 is reserved only while it is the menu key.
+
 ## 1.7.5 - 2026-09-12 - untested
 
 ### Fixed
