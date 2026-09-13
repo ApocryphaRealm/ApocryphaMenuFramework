@@ -137,6 +137,8 @@ namespace settings
 			ReadNumber(entries, "Window.fHotkeyY", g_values.hotkeyWindow.y);
 			ReadNumber(entries, "Window.fHotkeyW", g_values.hotkeyWindow.w);
 			ReadNumber(entries, "Window.fHotkeyH", g_values.hotkeyWindow.h);
+			ReadNumber(entries, "Window.fHotkeyScale", g_values.hotkeyWindow.scale);
+			if (!(g_values.hotkeyWindow.scale > 0.25f && g_values.hotkeyWindow.scale < 4.0f)) { g_values.hotkeyWindow.scale = 1.0f; }
 			ReadNumber(entries, "Display.fTextScale", g_values.textScale);
 			{
 				auto it = entries.find("Display.sFontPath");
@@ -231,6 +233,7 @@ namespace settings
 				"fHotkeyY=" << g_values.hotkeyWindow.y << "\n"
 				"fHotkeyW=" << g_values.hotkeyWindow.w << "\n"
 				"fHotkeyH=" << g_values.hotkeyWindow.h << "\n"
+				"fHotkeyScale=" << g_values.hotkeyWindow.scale << "\n"
 				"\n"
 				"[Watchdog]\n"
 				"; If the menu renderer stops producing frames for uSeconds the game is treated as\n"

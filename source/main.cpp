@@ -209,6 +209,35 @@ AMF_API const char* AMF_GetLanguage()
 	return s_buffer;
 }
 
+AMF_API bool AMF_OpenMenu(const char* a_modName)
+{
+	// 1.7.7: a consumer's own settings key opens the framework ON its page (Wheeler 1.0.8+). Opens
+	// as the hotkey does (our own window, never nested); an unknown or empty name opens the menu
+	// where it last was. Returns whether the named mod was found.
+	renderer::SetMenuVisible(true, false);
+	if (!a_modName || !*a_modName)
+	{
+		return true;
+	}
+	const std::vector<registry::Entry> entries = registry::Snapshot();
+	for (std::size_t i = 0; i < entries.size(); ++i)
+	{
+		if (entries[i].modName == a_modName)
+		{
+			renderer::SetSelectedNode("mod:" + std::to_string(i));
+			logger::info("AMF_OpenMenu: opened on '{}' (registry index {})", a_modName, i);
+			return true;
+		}
+	}
+	logger::info("AMF_OpenMenu: '{}' is not registered; menu opened where it was", a_modName);
+	return false;
+}
+
+AMF_API void AMF_CloseMenu()
+{
+	renderer::SetMenuVisible(false, false);
+}
+
 AMF_API std::uint32_t AMF_GetInputMode()
 {
 	// The LIVE mode, not a stored one. Consumers use this to word their own prompts, so it has to

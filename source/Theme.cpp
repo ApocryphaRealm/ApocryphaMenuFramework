@@ -414,6 +414,25 @@ namespace theme
 		c[ImGuiCol_SliderGrabActive] = accent;
 		c[ImGuiCol_CheckMark] = accent;
 		c[ImGuiCol_NavHighlight] = accent;
+		// 1.7.7: every remaining ImGui default that is blue or off-palette (the owner saw "a bit more of a
+		// blue or purple colour in some areas"); nothing the menu draws is left on Dear ImGui's own palette.
+		c[ImGuiCol_TextSelectedBg] = accentSoft;
+		c[ImGuiCol_DragDropTarget] = accent;
+		c[ImGuiCol_ResizeGrip] = borderFaint;
+		c[ImGuiCol_ResizeGripHovered] = borderSoft;
+		c[ImGuiCol_ResizeGripActive] = border;
+		c[ImGuiCol_TableHeaderBg] = black;
+		c[ImGuiCol_TableBorderStrong] = borderDim;
+		c[ImGuiCol_TableBorderLight] = borderFaint;
+		c[ImGuiCol_TableRowBg] = ImVec4{ 0, 0, 0, 0 };
+		c[ImGuiCol_TableRowBgAlt] = borderFaint;
+		c[ImGuiCol_PlotLines] = accent;
+		c[ImGuiCol_PlotLinesHovered] = accentSoft;
+		c[ImGuiCol_PlotHistogram] = accent;
+		c[ImGuiCol_PlotHistogramHovered] = accentSoft;
+		c[ImGuiCol_ModalWindowDimBg] = ImVec4{ 0, 0, 0, 0.6f };
+		c[ImGuiCol_NavWindowingHighlight] = accent;
+		c[ImGuiCol_NavWindowingDimBg] = ImVec4{ 0, 0, 0, 0.4f };
 
 		logger::info("Theme applied: \"{}\" ({}); knotwork={}; game HUD opacity {:.2f}",
 					 active.name, active.id, active.knotwork, GetGameHUDOpacity());

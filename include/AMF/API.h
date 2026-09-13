@@ -75,6 +75,15 @@ AMF_API std::uint32_t AMF_GetInputMode();
 AMF_API const char* AMF_GetLanguage();
 
 // --------------------------------------------------------------------------------------------
+// Open the framework's menu on a mod's page (1.7.7). For a consumer whose own settings key
+// should land on its page: resolve by name with GetProcAddress, null-check, call with the mod
+// name it registered under ("Wheeler - Refined"). Returns false when no such mod is registered
+// (the menu still opens). AMF_CloseMenu closes it.
+// --------------------------------------------------------------------------------------------
+AMF_API bool AMF_OpenMenu(const char* a_modName);
+AMF_API void AMF_CloseMenu();
+
+// --------------------------------------------------------------------------------------------
 // ig* surface (M3): cimgui-compatible C exports generated from the PUBLIC cimgui definitions
 // (github.com/cimgui/cimgui, MIT). Consumers that already resolve names like "igText",
 // "igSliderFloat", "igTextDisabledV" keep working by resolving the same names from this DLL.

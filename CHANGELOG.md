@@ -21,6 +21,17 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## 1.7.7 - 2026-09-13 - untested
+
+### Changed
+- The key-opened window is fixed to the centre of the screen. Dragging an edge grows the window on both sides so the centre never moves; dragging a corner scales the whole window, text included, with its shape kept. The window opened from the game's System menu row is untouched and keeps its own placement and resizing. The scale is remembered with the window's other geometry.
+
+- Every remaining Dear ImGui default colour is now on the theme's palette (text selection, resize grips, tables, plots, modal dim). The menu list selection and hover use the theme's accent, as the tabs already did.
+
+### Added
+- AMF_OpenMenu(modName) and AMF_CloseMenu exports, so a mod's own settings key can open this menu on that mod's page (Wheeler uses it from 1.0.10).
+- The amf.menu driving tool reports the style colours the menu draws with (op style), for the report that the mod list selection looks blue.
+
 ## 1.7.6 - 2026-09-13 - untested
 
 ### Changed

@@ -4,6 +4,8 @@
 #include "Input.h"
 #include "MainMenuDriver.h"
 #include "Renderer.h"
+#include <imgui.h>
+#include "Theme.h"
 #include "Settings.h"
 #include "Skin.h"
 #include "Strings.h"
@@ -223,6 +225,21 @@ namespace devbenchtool
 				}
 				input::QueueMouseClick(static_cast<std::uint32_t>(button));
 				result = "{\"ok\":true,\"op\":\"click\",\"button\":" + std::to_string(button) + "}";
+			}
+			else if (op == "style")
+			{
+				// 1.7.7: the style colours the menu is DRAWING with, for the "blue selection" report.
+				const ImVec4* c = ImGui::GetStyle().Colors;
+				auto hex = [](const ImVec4& v) {
+					char b[16];
+					std::snprintf(b, sizeof(b), "#%02X%02X%02X%02X", (int)(v.x * 255), (int)(v.y * 255), (int)(v.z * 255), (int)(v.w * 255));
+					return std::string(b);
+				};
+				result = std::string("{\"ok\":true,\"op\":\"style\",\"theme\":\"") + theme::GetActiveTheme().id +
+					"\",\"Header\":\"" + hex(c[ImGuiCol_Header]) + "\",\"HeaderHovered\":\"" + hex(c[ImGuiCol_HeaderHovered]) +
+					"\",\"HeaderActive\":\"" + hex(c[ImGuiCol_HeaderActive]) + "\",\"TabActive\":\"" + hex(c[ImGuiCol_TabActive]) +
+					"\",\"NavHighlight\":\"" + hex(c[ImGuiCol_NavHighlight]) + "\",\"WindowBg\":\"" + hex(c[ImGuiCol_WindowBg]) +
+					"\",\"TextSelectedBg\":\"" + hex(c[ImGuiCol_TextSelectedBg]) + "\",\"alpha\":" + std::to_string(ImGui::GetStyle().Alpha) + "}";
 			}
 			else if (op == "state" || op.empty())
 			{
