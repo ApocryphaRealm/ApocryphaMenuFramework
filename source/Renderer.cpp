@@ -1842,6 +1842,10 @@ namespace renderer
 			   ",\"lastDevice\":\"" + (input::LastDevice() == input::Device::kGamepad ? "gamepad" :
 										   input::LastDevice() == input::Device::kKeyboardMouse ? "keyboard" : "none") + "\"" +
 			   ",\"customOrder\":" + (personalization::IsCustomOrder() ? "true" : "false") +
+			   // 1.7.9: ImGui's navigation cursor, so a "the cursor jumps to the top of the list" report
+			   // (housem3, 2026-09-13) can be measured by a driving script rather than described.
+			   ",\"navId\":" + std::to_string(GImGui ? GImGui->NavId : 0u) +
+			   ",\"navWindow\":\"" + esc(GImGui && GImGui->NavWindow && GImGui->NavWindow->Name ? GImGui->NavWindow->Name : "") + "\"" +
 			   ",\"displayOrder\":[" + order + "]" +
 			   ",\"mods\":[" + mods + "]}";
 	}

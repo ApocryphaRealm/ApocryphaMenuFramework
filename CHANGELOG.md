@@ -21,6 +21,14 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## 1.7.9 - 2026-09-13 - untested
+
+### Fixed
+- Crash thirteen seconds into the game (Haron's crash log, 1.7.6, SE 1.5.97): the input hook wrote the pruned event list back through the caller's pointer, and with seven other input hooks in the chain that pointer can point into another mod's read-only memory (a constant empty list). The write-back now happens only when the head actually changed and the slot is writable memory; otherwise the pruned list is passed on through the framework's own array and the caller's memory is left alone. The 1.7.5 stale-event fix (the search bar dying after an erase) is kept for the ordinary case.
+
+### Added
+- `amf.menu state` reports ImGui's navigation cursor (`navId`, `navWindow`) so a "the cursor jumps to the top of the list" report can be measured from a driving script.
+
 ## 1.7.8 - 2026-09-13 - untested
 
 ### Fixed

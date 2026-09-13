@@ -499,10 +499,45 @@ namespace input
 					current = next;
 				}
 
+				// 1.7.9 (Haron's crash log, 2026-09-13): the list pointer is `RE::InputEvent* const*` -
+				// another hook up the chain may hand us a pointer into ITS OWN read-only memory (a
+				// `static const` empty list in a DLL's .rdata; the faulting write landed inside
+				// AltTabFix.dll's image, thirteen seconds into the game, with seven other input hooks
+				// in the chain). So the pruned head is written back only when it actually changed AND
+				// the slot is writable; otherwise the game gets the pruned list through our own array
+				// and the caller's memory is left alone.
+				const auto writeBack = [&](RE::InputEvent* a_head) -> RE::InputEvent** {
+					static RE::InputEvent* s_own[] = { nullptr };
+					auto* slot = const_cast<RE::InputEvent**>(a_events);
+					if (*slot == a_head)
+					{
+						return slot;
+					}
+					MEMORY_BASIC_INFORMATION mbi{};
+					const bool writable =
+						VirtualQuery(slot, &mbi, sizeof(mbi)) == sizeof(mbi) && mbi.State == MEM_COMMIT &&
+						(mbi.Protect & (PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)) != 0 &&
+						(mbi.Protect & PAGE_GUARD) == 0;
+					if (writable)
+					{
+						*slot = a_head;
+						return slot;
+					}
+					static bool s_said = false;
+					if (!s_said)
+					{
+						s_said = true;
+						logger::warn("input hook: the event-list slot {} is read-only memory (another hook's constant list); "
+									 "the pruned list is passed on through our own array and the caller's memory is not written",
+									 static_cast<const void*>(slot));
+					}
+					s_own[0] = a_head;
+					return s_own;
+				};
+
 				if (head)
 				{
-					*a_events = head;
-					func(a_dispatcher, a_events);
+					func(a_dispatcher, writeBack(head));
 				}
 				else
 				{
@@ -519,7 +554,10 @@ namespace input
 					// it is the mechanism behind 'the search bar stopped taking input after I
 					// erased' (xLenax, 1.7.4) and the earlier reorder-field report. The non-empty
 					// branch above always wrote back; this one is now symmetric.
-					*a_events = nullptr;
+					//
+					// 1.7.9: through writeBack - a caller whose list was ALREADY empty (a constant empty
+					// list from another hook) is not written at all, which is the crash Haron reported.
+					writeBack(nullptr);
 					static RE::InputEvent* dummy[] = { nullptr };
 					func(a_dispatcher, dummy);
 				}
