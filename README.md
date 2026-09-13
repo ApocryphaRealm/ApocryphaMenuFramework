@@ -4,7 +4,7 @@ An original SKSE menu framework that embeds Dear ImGui and exposes an API compat
 public consumer header of SKSE Menu Framework - so mods written for that API register with this
 framework unchanged. Skyrim SE 1.5.97 and AE 1.6.x from one DLL (CommonLibSSE-NG, Address Library).
 
-Licence: MIT (see `LICENSE`). Not a fork: contains no SKSE Menu Framework code.
+Licence: GPL-3.0-or-later (see `LICENSE` and `NOTICE.md`). Not a fork: contains no SKSE Menu Framework code.
 
 
 > **Scope note (2026-08-30):** this repository is **AMF**, the SKSE-Menu-Framework replacement released as
@@ -71,3 +71,9 @@ French, Spanish, Italian, Polish and Czech. The Language combo on the Framework 
 English. The font atlas takes its glyph ranges from the loaded translation and merges a system CJK or
 Hangul face where the chosen font lacks the characters. Each mod's own page is that mod's to translate - a mod that ships its own `<Mod>_<language>.txt` beside ours follows the same Language setting (`AMF_GetLanguage()` in the C API) and its characters go into the atlas automatically (1.6.5).
 Corrections from native speakers are welcome - the files are plain text.
+
+## Licence
+
+GPL-3.0-or-later - see `LICENSE` and `NOTICE.md`; components under other licences, with their notices, are in
+`THIRD_PARTY_NOTICES.md`. Versions before 2026-09-13 carried an MIT licence in error: the Skyrim 1.7.x build links
+CommonLibSSE-NG 7.2.0, which is GPL-3.0-or-later.
