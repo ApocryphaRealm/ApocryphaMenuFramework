@@ -238,6 +238,13 @@ AMF_API void AMF_CloseMenu()
 	renderer::SetMenuVisible(false, false);
 }
 
+AMF_API bool AMF_SetPageVisible(const char* a_modName, const char* a_pageName, bool a_visible)
+{
+	// 1.8.3 (Wheeler - Refined's Advanced settings switch: the owner, "the advanced settings toggle doesnt hide the
+	// advanced settings tabs"). The renderer reads the flag from each frame's registry snapshot.
+	return registry::SetPageVisible(a_modName, a_pageName, a_visible);
+}
+
 AMF_API std::uint32_t AMF_GetInputMode()
 {
 	// The LIVE mode, not a stored one. Consumers use this to word their own prompts, so it has to

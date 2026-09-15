@@ -19,6 +19,7 @@ namespace registry
 	{
 		std::string pageName;
 		AMF_RenderCallback render = nullptr;
+		bool hidden = false;  // 1.8.3: AMF_SetPageVisible(false) leaves the page out of the menu until shown again
 	};
 
 	struct Entry
@@ -31,6 +32,10 @@ namespace registry
 	// iteration happens on the render thread. Returns false only for null/empty arguments or a
 	// duplicate (mod, page) pair - both logged.
 	bool Register(const char* a_modName, const char* a_pageName, AMF_RenderCallback a_render);
+
+	// 1.8.3: hide or show one registered page (AMF_SetPageVisible). False when the (mod, page) pair is not
+	// registered. The page stays registered - hiding only leaves it out of the menu's tabs.
+	bool SetPageVisible(const char* a_modName, const char* a_pageName, bool a_visible);
 
 	// Render-thread snapshot access. The copy is cheap at menu scale (a handful of mods) and
 	// means the render loop never holds the registration lock across user callbacks.

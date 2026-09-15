@@ -21,6 +21,11 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## 1.8.3 - 2026-09-14 - working
+
+### Added
+- AMF_SetPageVisible(mod, page, visible): a mod can hide or show one of its registered pages. A hidden page is left out of the mod's tabs (a mod with one visible page shows it without a tab bar) and comes back exactly as it was; registration is untouched. Idempotent, so a consumer may call it every frame; false when the (mod, page) pair is not registered. DevBench amf.menu state lists each mod's hiddenPages. For Wheeler - Refined's Advanced settings switch (the owner: 'the advanced settings toggle doesnt hide the advanced settings tabs').
+
 ## 1.8.1 - 2026-09-13 - untested
 
 ### Fixed

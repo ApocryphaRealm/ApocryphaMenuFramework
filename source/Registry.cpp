@@ -51,6 +51,32 @@ namespace registry
 		return true;
 	}
 
+	bool SetPageVisible(const char* a_modName, const char* a_pageName, bool a_visible)
+	{
+		if (!a_modName || !*a_modName || !a_pageName || !*a_pageName)
+		{
+			logger::warn("AMF_SetPageVisible refused: mod=\"{}\", page=\"{}\" - both names must be non-empty",
+						 a_modName ? a_modName : "<null>", a_pageName ? a_pageName : "<null>");
+			return false;
+		}
+
+		std::scoped_lock lock(g_lock);
+		for (auto& entry : g_entries)
+		{
+			if (entry.modName != a_modName) { continue; }
+			for (auto& page : entry.pages)
+			{
+				if (page.pageName != a_pageName) { continue; }
+				if (page.hidden == !a_visible) { return true; }  // already so; the consumer may call every frame
+				page.hidden = !a_visible;
+				logger::info("page {}: \"{}\" -> \"{}\"", a_visible ? "shown" : "hidden", a_modName, a_pageName);
+				return true;
+			}
+		}
+		logger::warn("AMF_SetPageVisible: \"{}\" has no registered page \"{}\"", a_modName, a_pageName);
+		return false;
+	}
+
 	std::vector<Entry> Snapshot()
 	{
 		std::scoped_lock lock(g_lock);

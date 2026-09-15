@@ -1336,15 +1336,22 @@ namespace renderer
 						ImGui::TextUnformatted(alias.empty() ? entry.modName.c_str() : alias.c_str());
 					}
 					ImGui::Separator();
-					if (entry.pages.size() == 1)
+					// Pages a mod hid with AMF_SetPageVisible (1.8.3) are left out; the rest keep their order.
+					std::vector<const registry::Page*> visiblePages;
+					for (const registry::Page& page : entry.pages)
 					{
-						entry.pages[0].render();
+						if (!page.hidden) { visiblePages.push_back(&page); }
 					}
-					else if (ImGui::BeginTabBar("##pages", ImGuiTabBarFlags_FittingPolicyScroll | ImGuiTabBarFlags_TabListPopupButton))   // a mod with many sections keeps whole labels: the bar scrolls, and the list button on the left opens every section by name (Character Progression Control reached twelve tabs and the default policy squeezed them to "Level... Expe... Skills")
+					if (visiblePages.size() == 1)
+					{
+						visiblePages[0]->render();
+					}
+					else if (visiblePages.size() > 1 && ImGui::BeginTabBar("##pages", ImGuiTabBarFlags_FittingPolicyScroll | ImGuiTabBarFlags_TabListPopupButton))   // a mod with many sections keeps whole labels: the bar scrolls, and the list button on the left opens every section by name (Character Progression Control reached twelve tabs and the default policy squeezed them to "Level... Expe... Skills")
 					{
 						int index = 0;
-						for (const registry::Page& page : entry.pages)
+						for (const registry::Page* pagePtr : visiblePages)
 						{
+							const registry::Page& page = *pagePtr;
 							// A D-pad step asks for its tab for exactly ONE frame. Every other
 							// frame the bar owns its own selection, so the D-pad, a mouse click
 							// and the tab-list popup never fight over which tab is open.
@@ -1812,7 +1819,12 @@ namespace renderer
 				if (j) { pages += ","; }
 				pages += "\"" + esc(entries[i].pages[j].pageName) + "\"";
 			}
-				mods += "{\"index\":" + std::to_string(i) + ",\"name\":\"" + esc(entries[i].modName) + "\",\"pages\":[" + pages + "]}";
+				std::string hiddenPages;
+				for (const registry::Page& page : entries[i].pages)
+				{
+					if (page.hidden) { hiddenPages += (hiddenPages.empty() ? "\"" : ",\"") + esc(page.pageName) + "\""; }
+				}
+				mods += "{\"index\":" + std::to_string(i) + ",\"name\":\"" + esc(entries[i].modName) + "\",\"pages\":[" + pages + "],\"hiddenPages\":[" + hiddenPages + "]}";
 		}
 		// Menu-shell personalization: the list AS THE PLAYER SEES IT (position, identity, shown
 		// name), so a driving tool can assert the order and the aliases without reading pixels.

@@ -84,6 +84,16 @@ AMF_API bool AMF_OpenMenu(const char* a_modName);
 AMF_API void AMF_CloseMenu();
 
 // --------------------------------------------------------------------------------------------
+// Hide or show a registered page (1.8.3). A mod whose settings have an "advanced" switch hides the
+// sections it does not want listed; a hidden page is left out of the mod's tabs (and a mod with one
+// visible page shows it without a tab bar) until it is shown again. Registration is untouched, so the
+// page comes back exactly as it was. Resolve by name with GetProcAddress and null-check - an older
+// framework does not have it. Cheap and idempotent, so a consumer may call it every frame. Returns
+// false when the (mod, page) pair is not registered.
+// --------------------------------------------------------------------------------------------
+AMF_API bool AMF_SetPageVisible(const char* a_modName, const char* a_pageName, bool a_visible);
+
+// --------------------------------------------------------------------------------------------
 // ig* surface (M3): cimgui-compatible C exports generated from the PUBLIC cimgui definitions
 // (github.com/cimgui/cimgui, MIT). Consumers that already resolve names like "igText",
 // "igSliderFloat", "igTextDisabledV" keep working by resolving the same names from this DLL.
