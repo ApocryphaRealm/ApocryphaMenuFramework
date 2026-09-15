@@ -413,7 +413,10 @@ namespace theme
 		c[ImGuiCol_SliderGrab] = accent;
 		c[ImGuiCol_SliderGrabActive] = accent;
 		c[ImGuiCol_CheckMark] = accent;
-		c[ImGuiCol_NavHighlight] = accent;
+		// The controller navigation box is bright blue in every theme (the owner, 2026-09-15: "the next amf version should have
+		// a bright blue controller nav box instead of the old yellow one"), so the focused item stands out from the gold
+		// selection wash instead of blending into it.
+		c[ImGuiCol_NavHighlight] = ImVec4{ 0.24f, 0.62f, 1.00f, 1.00f };
 		// 1.7.7: every remaining ImGui default that is blue or off-palette (the owner saw "a bit more of a
 		// blue or purple colour in some areas"); nothing the menu draws is left on Dear ImGui's own palette.
 		c[ImGuiCol_TextSelectedBg] = accentSoft;

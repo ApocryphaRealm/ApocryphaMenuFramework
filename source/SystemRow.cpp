@@ -20,7 +20,8 @@ namespace systemrow
 		std::atomic_bool g_installed{ false };
 		std::atomic_bool g_injected{ false };
 		std::string      g_foundPath;     // the System page, once located
-		int              g_rowIndex = -1; // our row's index in entryList
+		std::string      g_listPath;      // its category list, for the DevBench report
+		int              g_rowIndex = -1; // where our row landed when it was added - NOT where it is now
 
 		// The listener object handed to addEventListener. Held for the life of the process: the
 		// movie keeps a reference to it, and letting our side drop the value invites the pair to
@@ -76,7 +77,19 @@ namespace systemrow
 		public:
 			void Call(Params& a_params) override
 			{
-				int index = -1;
+				// WHICH ROW WAS PRESSED IS READ OFF THE ENTRY, NOT OFF A REMEMBERED INDEX.
+				//
+				// 1.8.4, from borokoshow's report against Dragonborn UI: the row drew - first between
+				// HELP and QUIT, and after Quit on the next open - and did nothing either way. The
+				// index is not stable. SystemPage.SetShowMod does
+				//     entryList.splice(MOD_MANAGER_BUTTON_INDEX, 0, {text:"$MOD MANAGER"})
+				// whenever the game decides to show the Mod Manager row, so every entry after index 2
+				// moves down by one AFTER we have pushed ours and recorded where it landed. The list's
+				// own itemPress event carries the entry object (BSScrollingList.onItemPress dispatches
+				// {type, index, entry, keyboardOrMouse}), so the entry's own text is the identity that
+				// cannot drift. The index stays as a fallback for a list that hands us no entry.
+				int         index = -1;
+				std::string text;
 				if (a_params.argCount > 0 && a_params.args[0].IsObject())
 				{
 					RE::GFxValue idx;
@@ -84,11 +97,21 @@ namespace systemrow
 					{
 						index = static_cast<int>(idx.GetNumber());
 					}
+					RE::GFxValue entry;
+					RE::GFxValue label;
+					if (a_params.args[0].GetMember("entry", &entry) && entry.IsObject() &&
+						entry.GetMember("text", &label) && label.IsString())
+					{
+						text = label.GetString();
+					}
 				}
 
-				if (index >= 0 && index == g_rowIndex)
+				const bool ours = !text.empty() ? text == kRowLabel
+												: (index >= 0 && index == g_rowIndex);
+				if (ours)
 				{
-					logger::info("System row: selected (index {}); opening the mod menus", index);
+					logger::info("System row: selected (index {}, text \"{}\"); opening the mod menus",
+						index, text.empty() ? "<none given>" : text.c_str());
 					renderer::SetSelectedNode("system/mods");
 					renderer::SetMenuVisible(true, /*a_nested=*/true);
 					return;
@@ -98,6 +121,36 @@ namespace systemrow
 				// still attached and handles it exactly as it always did.
 			}
 		};
+
+		// The category list's rows, in order, as `0:$SAVE, 1:$LOAD, ...`. Logged after every injection
+		// and reported by the DevBench tool, because the order differs per art replacer and per open.
+		std::string RowTexts(RE::GFxMovieView* a_movie, const std::string& a_listPath)
+		{
+			RE::GFxValue list;
+			std::string  out;
+			if (!a_movie || !a_movie->GetVariable(&list, (a_listPath + ".entryList").c_str()) || !list.IsArray())
+			{
+				return out;
+			}
+			const std::uint32_t count = list.GetArraySize();
+			for (std::uint32_t i = 0; i < count; ++i)
+			{
+				RE::GFxValue entry;
+				RE::GFxValue text;
+				std::string  label = "?";
+				if (list.GetElement(i, &entry) && entry.IsObject() &&
+					entry.GetMember("text", &text) && text.IsString())
+				{
+					label = text.GetString();
+				}
+				if (i != 0)
+				{
+					out += ", ";
+				}
+				out += std::to_string(i) + ":" + label;
+			}
+			return out;
+		}
 
 		void InjectRow()
 		{
@@ -134,9 +187,19 @@ namespace systemrow
 				return;
 			}
 
-			// Never add twice into one movie: a re-open rebuilds the list, but a second call in the
-			// same open would leave two identical rows.
+			g_listPath = listPath;
+
+			// Never add twice into one movie: a re-open normally rebuilds the list, but a movie that
+			// outlives the close - some replacers and menu caches keep theirs - still holds our row,
+			// and a second push would leave two identical ones.
+			//
+			// 1.8.4: finding it already there no longer RETURNS from this function. Until this version
+			// it did, and that skipped the listener block below - which the close handler had just
+			// dropped, because the listener belongs to the movie that was closed. The result is exactly
+			// what borokoshow reported against Dragonborn UI: the row draws and pressing it does
+			// nothing at all. Whether the row is found or pushed, the listener is attached afterwards.
 			const std::uint32_t before = entryList.GetArraySize();
+			bool               alreadyThere = false;
 			for (std::uint32_t i = 0; i < before; ++i)
 			{
 				RE::GFxValue existing;
@@ -146,21 +209,32 @@ namespace systemrow
 					std::string(text.GetString()) == kRowLabel)
 				{
 					g_rowIndex = static_cast<int>(i);
-					logger::debug("System row: already present at index {}", g_rowIndex);
-					return;
+					alreadyThere = true;
+					logger::debug("System row: already present at index {}; re-attaching the press listener",
+						g_rowIndex);
+					break;
 				}
 			}
 
-			RE::GFxValue entry;
-			movie->CreateObject(&entry);
-			RE::GFxValue label;
-			label.SetString(kRowLabel);
-			entry.SetMember("text", label);
-			entryList.PushBack(entry);
-			g_rowIndex = static_cast<int>(before);
+			if (!alreadyThere)
+			{
+				RE::GFxValue entry;
+				movie->CreateObject(&entry);
+				RE::GFxValue label;
+				label.SetString(kRowLabel);
+				entry.SetMember("text", label);
+				entryList.PushBack(entry);
+				g_rowIndex = static_cast<int>(before);
 
-			RE::GFxValue result;
-			movie->Invoke((listPath + ".InvalidateData").c_str(), &result, nullptr, 0);
+				RE::GFxValue result;
+				movie->Invoke((listPath + ".InvalidateData").c_str(), &result, nullptr, 0);
+			}
+
+			// What the menu actually holds, in order. Where the row ENDS UP is the game's business -
+			// SetShowMod splices a Mod Manager row in at index 2 whenever the game wants one, which
+			// moves everything below it - and a report that says "the row sat between HELP and QUIT"
+			// can only be answered if the list of the day was written down.
+			logger::info("System row: category list is now [{}]", RowTexts(movie, listPath));
 
 			// ---- the press listener --------------------------------------------------------
 			// NOT a wrapper. The menu binds its own handler with
@@ -255,6 +329,30 @@ namespace systemrow
 	const char* FoundPath()
 	{
 		return g_foundPath.c_str();
+	}
+
+	std::string ListJson()
+	{
+		std::string rows;
+		RE::GPtr<RE::IMenu> menu = JournalMenu();
+		if (menu && menu->uiMovie && !g_listPath.empty())
+		{
+			rows = RowTexts(menu->uiMovie.get(), g_listPath);
+		}
+		std::string esc;
+		for (char c : rows)
+		{
+			if (c == '"' || c == '\\')
+			{
+				esc += '\\';
+			}
+			esc += c;
+		}
+		return std::string("{\"journalOpen\":") + ((menu && menu->uiMovie) ? "true" : "false") +
+			   ",\"injected\":" + (WasInjected() ? "true" : "false") +
+			   ",\"listener\":" + (g_listenerAdded ? "true" : "false") +
+			   ",\"addedAtIndex\":" + std::to_string(g_rowIndex) +
+			   ",\"page\":\"" + g_foundPath + "\",\"rows\":\"" + esc + "\"}";
 	}
 
 	namespace

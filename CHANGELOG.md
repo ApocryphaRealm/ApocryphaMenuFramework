@@ -21,6 +21,17 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## 1.8.4 - 2026-09-15 - untested
+
+### Fixed
+- the System-menu row drew but did nothing under Dragonborn UI (borokoshow's report): the press listener was skipped whenever the row was already in the list, and the row was identified by a remembered index that SystemPage.SetShowMod moves when it splices a Mod Manager row in at index 2. The listener is now attached on every journal open whether the row is found or pushed, and a press is matched by the entry's own text instead of its index.
+
+### Changed
+- the controller navigation box is bright blue in every theme instead of the old gold (the owner: 'the next amf version should have a bright blue controller nav box instead of the old yellow one'), so the focused item stands out from the gold selection wash rather than blending into it.
+
+### Added
+- DevBench op amf.menu systemrow: the live journal category list - every row's text in order, whether our press listener is attached, and the index the row was added at - so a 'the row is in the wrong place and does nothing' report is answered by reading the menu instead of reasoning about someone else's SWF.
+
 ## 1.8.3 - 2026-09-14 - working
 
 ### Added

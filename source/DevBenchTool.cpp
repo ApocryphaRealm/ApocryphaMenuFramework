@@ -243,6 +243,13 @@ namespace devbenchtool
 					"\",\"x\":" + std::to_string(x) + ",\"y\":" + std::to_string(y) + ",\"w\":" + std::to_string(w) + ",\"h\":" + std::to_string(h) +
 					",\"paneLeft\":" + std::to_string(systemrow::PaneLeft()) + "}";
 			}
+			else if (op == "systemrow")
+			{
+				// 1.8.4: the live journal category list - every row in order, and whether our press
+				// listener is attached. Our row's index moves under us (SetShowMod splices a Mod Manager
+				// row in at index 2), so this is how a "the row does nothing" report is actually checked.
+				result = std::string("{\"ok\":true,\"op\":\"systemrow\",\"systemRow\":") + systemrow::ListJson() + "}";
+			}
 			else if (op == "style")
 			{
 				// 1.7.7: the style colours the menu is DRAWING with, for the "blue selection" report.

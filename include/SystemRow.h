@@ -54,6 +54,13 @@ namespace systemrow
 	// rather than assumed, because it is the thing that differs between art replacers.
 	const char* FoundPath();
 
+	// 1.8.4: what the journal's category list actually holds right now - every row's text in order,
+	// whether our press listener is attached, and the index our row was added at. The DevBench
+	// 'systemrow' op reports it, so a report of the shape "the row sits in the wrong place and does
+	// nothing when pressed" (borokoshow, against Dragonborn UI) is answered by reading the live list
+	// rather than by reasoning about someone else's SWF. Empty rows when the journal is not open.
+	std::string ListJson();
+
 	// The journal PANEL's rectangle, as fractions of the screen (0..1), read off the live movie.
 	//
 	// Used to size the framework's window to the journal it is hosted in, so the nested surface

@@ -32,7 +32,8 @@ Licence: GPL-3.0-or-later (see `LICENSE` and `NOTICE.md`). Not a fork: contains 
   framework terminates the game process itself - the only thing that closes a kernel-wedged
   Skyrim, since Task Manager cannot.
 - **DevBench driving tools** (optional, only if DevBench is installed): `amf.menu` opens, selects
-  and reads the menu headlessly; `amf.mainmenu` drives the vanilla start menu; `amf.process`
+  and reads the menu headlessly (`op=systemrow` reports the journal's own category list and whether
+  the framework's row is live in it); `amf.mainmenu` drives the vanilla start menu; `amf.process`
   reports frame health and can force-exit the game on demand.
 
 ## Requirements
