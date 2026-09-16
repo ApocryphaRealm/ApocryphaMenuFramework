@@ -178,6 +178,24 @@ namespace curtain
 		}
 
 		const ImGuiIO& io = ImGui::GetIO();
+
+		// Do not draw until the font atlas has a texture.
+		//
+		// AddRectFilled is not a special case in ImGui - it is geometry sampling the atlas's white pixel. With no
+		// texture bound the fill comes out untextured, which on screen is WHITE. At startup that is exactly the state
+		// for the first frames: the atlas is built on the first frame that needs it, and this mod also queues a
+		// deliberate rebuild for its own fonts, which invalidates the device objects again. So the curtain - the thing
+		// whose entire job is to show black - was flashing white instead (the owner, 2026-09-16: "a white shuttering
+		// effect at the very beginning of its startup").
+		//
+		// Skipping the frame is the right response rather than drawing something else: one uncovered frame of the
+		// game's own startup is what the curtain would have hidden anyway, and it is over in a frame or two. The state
+		// machine above keeps running, and the fade cannot begin while frames are this slow.
+		if (!io.Fonts || !io.Fonts->IsBuilt() || io.Fonts->TexID == 0)
+		{
+			return;
+		}
+
 		if (io.DisplaySize.x <= 0.0f || io.DisplaySize.y <= 0.0f)
 		{
 			return;  // no viewport yet; nothing sensible to cover
