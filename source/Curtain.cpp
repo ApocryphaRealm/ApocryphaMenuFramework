@@ -9,6 +9,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <format>
 
 #include <imgui.h>
 
@@ -20,6 +21,23 @@ namespace curtain
 
 		// How long the fade out takes once the main menu is up. Short: this is a reveal, not an effect.
 		constexpr float kFadeSeconds = 0.40f;
+
+		// A fade is a lie told over many frames, and at the end of startup there are not many frames. The main menu
+		// registers as open while its movie is still loading, so the frames just after that are enormous - one of them
+		// can be most of a second by itself. The fade is timed by the wall clock, so a frame that long leaves the
+		// curtain at whatever alpha it had reached and holds it there until the next frame arrives: a black screen
+		// that jumps to half-transparent, hangs, then vanishes (the owner, 2026-09-16: "a slight stutter between when
+		// it's supposed to close and when it shows the menu where it's partially transparent and it holds that for
+		// about a second").
+		//
+		// So the fade does not start when the menu opens - it starts when the game is presenting frames fast enough
+		// to draw one. Until then the curtain stays FULLY opaque, which is what it is for: solid black is not an
+		// artifact, half-black frozen for a second is.
+		constexpr float kSteadyFrameSeconds = 0.040f;  // ~25 fps; slower than this and the fade is a slideshow
+		constexpr int   kSteadyFrames = 6;             // consecutive quick frames before the reveal begins
+		// ... but never wait forever for them. If the frames never settle, fade anyway rather than hold black over a
+		// game that is already running.
+		constexpr float kSettleSeconds = 3.0f;
 
 		// The escape hatch, in seconds, read from the INI so a heavy load order can be given more
 		// room without a rebuild. 30s was the first value and it was too short: on the owner's list
@@ -43,7 +61,11 @@ namespace curtain
 		std::atomic<bool> g_lifted{ false };
 		bool              g_started = false;
 		bool              g_sawMainMenu = false;
+		bool              g_fading = false;
+		int               g_steadyFrames = 0;
 		clock::time_point g_firstFrame{};
+		clock::time_point g_menuSeen{};
+		clock::time_point g_lastFrame{};
 		clock::time_point g_fadeStart{};
 
 		bool MainMenuIsUp()
@@ -98,20 +120,51 @@ namespace curtain
 			return;
 		}
 
+		// Frame-to-frame time, measured here because this runs once per presented frame. It is the only thing that
+		// says whether a fade drawn now would be seen as a fade or as two stuck alphas.
+		const float sinceLastFrame = (g_lastFrame == clock::time_point{}) ? 0.0f : std::chrono::duration<float>(now - g_lastFrame).count();
+		g_lastFrame = now;
+
 		if (!g_sawMainMenu && MainMenuIsUp())
 		{
 			g_sawMainMenu = true;
-			g_fadeStart = now;
-			logger::info("startup curtain: main menu is up; fading out over {:.2f}s", kFadeSeconds);
+			g_menuSeen = now;
+			g_steadyFrames = 0;
+			logger::info("startup curtain: main menu is up; holding black until the frames settle, then fading out over {:.2f}s", kFadeSeconds);
+		}
+
+		// The menu is up but the reveal has not begun: count quick frames, and start the fade once there have been
+		// enough of them in a row to draw one - or once waiting for them has itself gone on too long.
+		if (g_sawMainMenu && !g_fading)
+		{
+			if (sinceLastFrame > 0.0f && sinceLastFrame <= kSteadyFrameSeconds) { ++g_steadyFrames; }
+			else { g_steadyFrames = 0; }
+
+			const float waiting = std::chrono::duration<float>(now - g_menuSeen).count();
+			if (g_steadyFrames >= kSteadyFrames || waiting >= kSettleSeconds)
+			{
+				g_fading = true;
+				g_fadeStart = now;
+				logger::info("startup curtain: fading out over {:.2f}s ({})", kFadeSeconds,
+							 g_steadyFrames >= kSteadyFrames ? std::format("{} steady frames, last {:.0f}ms", g_steadyFrames, sinceLastFrame * 1000.0f) :
+															   std::format("frames never settled within {:.1f}s, revealing anyway", kSettleSeconds));
+			}
 		}
 
 		float alpha = 1.0f;
-		if (g_sawMainMenu)
+		if (g_fading)
 		{
 			const float elapsed = std::chrono::duration<float>(now - g_fadeStart).count();
 			if (elapsed >= kFadeSeconds)
 			{
 				Lift("the main menu is up and the fade finished");
+				return;
+			}
+			// A frame that arrives after a long gap would jump the alpha and then hold it - the artifact the settle
+			// check exists to avoid, reappearing mid-fade if the game stalls again. A cut is better than a freeze.
+			if (sinceLastFrame > kSteadyFrameSeconds * 4.0f)
+			{
+				Lift(std::format("a {:.0f}ms frame landed mid-fade; cut rather than hold a half-faded screen", sinceLastFrame * 1000.0f).c_str());
 				return;
 			}
 			alpha = 1.0f - (elapsed / kFadeSeconds);

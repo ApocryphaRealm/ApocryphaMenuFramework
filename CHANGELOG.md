@@ -21,6 +21,11 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## 1.8.7 - 2026-09-16 - untested
+
+### Fixed
+- **The startup curtain no longer freezes half-faded on its way out** (the owner, 2026-09-16: *"the curtain that's built into AMF has a slight stutter between when it's supposed to close and when it shows the menu where it's partially transparent and it holds that for about a second"*). The fade was started the moment the main menu registered as open, and timed by the wall clock. But the menu registers while its movie is still loading, so the frames right after it are enormous - one can be most of a second on its own - and a wall-clock fade drawn across a frame that long leaves the curtain at whatever alpha it had reached and holds it there until the next frame arrives. That is the stutter: black, then abruptly half-transparent, held, then gone. The fade now begins only once the game is actually presenting frames fast enough to draw one (six consecutive frames under 40 ms), and the curtain stays FULLY opaque until then - solid black is what the curtain is for, half-black frozen for a second is not. Waiting for those frames is itself capped at 3 s, so a game that never settles still gets its screen back, and if a long frame lands mid-fade the curtain is cut outright rather than left holding a half-faded screen.
+
 ## 1.8.6 - 2026-09-15 - untested
 
 ### Fixed
