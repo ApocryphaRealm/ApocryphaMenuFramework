@@ -147,6 +147,7 @@ namespace settings
 			ReadBool(entries, "Watchdog.bEnabled", g_values.watchdogEnabled);
 			ReadBool(entries, "FastExit.bEnabled", g_values.fastExit);
 			ReadBool(entries, "Startup.bBlackCurtain", g_values.startupCurtain);
+			ReadNumber(entries, "Startup.uTimeoutSeconds", g_values.curtainTimeoutSeconds);
 			ReadNumber(entries, "Watchdog.uSeconds", g_values.watchdogSeconds);
 			ReadNumber(entries, "Display.uWindowPreset", g_values.windowPreset);
 			if (const auto it = entries.find("Theme.sThemeId"); it != entries.end() && !it->second.empty())
@@ -253,9 +254,12 @@ namespace settings
 				"[Startup]\n"
 				"; Hold the screen black from the first frame the game draws until its main menu is\n"
 				"; up, so the logo frames and the half-drawn menu behind them are never shown. It\n"
-				"; lifts by itself if the main menu has not appeared after 30 seconds, so a slow\n"
-				"; start can never leave you looking at nothing. 0 disables.\n"
+				"; lifts the moment play begins, or after uTimeoutSeconds if the main menu never\n"
+				"; appears, so a slow start can never leave you looking at nothing. 0 disables.\n"
 				"bBlackCurtain=" << (g_values.startupCurtain ? 1 : 0) << "\n"
+				"; Seconds the curtain may stay up before it lifts anyway. It also lifts the moment\n"
+				"; play begins, so this only matters for a start that never reaches either.\n"
+				"uTimeoutSeconds=" << g_values.curtainTimeoutSeconds << "\n"
 				"\n"
 				"[Theme]\n"
 				"; Registry id (see the theme picker on the Framework Settings page).\n"

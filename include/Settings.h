@@ -78,6 +78,9 @@ namespace settings
 		// never shown. Lifts by itself on a timeout - see Curtain.cpp, where failing safe is the
 		// whole design.
 		bool startupCurtain = true;
+		// How long the curtain may stay up before it gives up and lifts anyway. INI-only, because
+		// it is a safety valve rather than a preference. 30 proved too short on a heavy list.
+		std::uint32_t curtainTimeoutSeconds = 120;
 		std::uint32_t watchdogSeconds = 120;
 		std::int32_t windowPreset = 0;   // 0 = centre (the standard). Preset positions, never free placement -
 		                                 // the author 2026-08-27, same anchor philosophy as the minimap; more presets later.

@@ -21,7 +21,16 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
-## 1.8.5 - 2026-09-15 - untested
+## 1.8.6 - 2026-09-15 - untested
+
+### Fixed
+- the startup curtain lifted on its timeout instead of on the main menu. Observed in game on the owner's list the same evening 1.8.5 shipped: the curtain covered the screen at 23:39:19.861 and released itself at 23:39:49.888 with "the main menu was never seen within the timeout", while AMF was still registering mod pages at 23:40:14 - so the main menu simply had not arrived yet and the curtain uncovered the tail of startup, which is the one thing it exists to hide. Two wrong explanations were checked and discarded first: a main-menu replacer (the mod named "Open Animation - No Main Menu GUI" ships only an Open Animation Replacer config and is unrelated) and a detection failure (DevBench's amf.mainmenu confirmed the menu genuinely was not open). The cause was simply that 30 seconds is not long enough for a heavy load order.
+- the timeout is now `uTimeoutSeconds` under `[Startup]`, defaulting to 120, so a slow list can be given more room without a rebuild.
+
+### Added
+- a second way out, so that a longer timeout cannot strand anyone: the curtain also lifts the moment the player is in a loaded world (`PlayerCharacter::GetSingleton()` with a non-null `parentCell`, the same idiom Dragon's Eye Minimap uses). Covering actual gameplay would be far worse than showing a little of startup, and `parentCell` stays null until a save or new game really loads, so it cannot fire early.
+
+## 1.8.5 - 2026-09-15 - working
 
 ### Added
 - a startup curtain: the screen is held black from the first frame the framework draws until the game's main menu is up, so the logo frames and the half-drawn menu behind them are never shown. The owner asked for this as its own mod ("the mod that makes the screen black until the menu loads") and then, the same day, for it to live here instead ("build it into amf with a toggle in the settings page of amf") - which is the right place: the framework already owns the present hook and its surface draws every frame whether or not its own menu is up, so a separate plugin would have had to stand up a second D3D hook and race this one for the same frame.

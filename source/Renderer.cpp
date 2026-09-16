@@ -587,8 +587,8 @@ namespace renderer
 			}
 			ImGui::TextWrapped("%s", TR("AMF_BlackCurtainHelp", "On: the screen is held black from the first frame the game "
 							   "draws until its main menu is up, so the logo frames and the half-drawn menu behind it are never "
-							   "shown. It lifts by itself if the main menu has not appeared after 30 seconds, so a slow start can "
-							   "never leave you looking at nothing."));
+							   "shown. It lifts the moment play begins, or after a couple of minutes if the main menu never "
+							   "appears, so a slow start can never leave you looking at nothing."));
 			ImGui::Spacing();
 
 			if (widgets::Toggle(TR("AMF_FastExit", "Fast exit - end the process the moment the game exits"), &values.fastExit))

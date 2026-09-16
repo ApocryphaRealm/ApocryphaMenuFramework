@@ -21,10 +21,24 @@ namespace curtain
 		// How long the fade out takes once the main menu is up. Short: this is a reveal, not an effect.
 		constexpr float kFadeSeconds = 0.40f;
 
-		// The escape hatch. If the main menu has not been seen by now the curtain lifts anyway and
-		// says so in the log. Generous enough for a slow load order on a hard disk, short enough
-		// that nobody sits looking at a black screen wondering whether the game has hung.
-		constexpr float kHardTimeoutSeconds = 30.0f;
+		// The escape hatch, in seconds, read from the INI so a heavy load order can be given more
+		// room without a rebuild. 30s was the first value and it was too short: on the owner's list
+		// (2026-09-15) the main menu had still not appeared, so the curtain timed out and uncovered
+		// the tail of startup - exactly what it exists to hide.
+		float HardTimeoutSeconds()
+		{
+			return static_cast<float>(settings::Get().curtainTimeoutSeconds);
+		}
+
+		// The player being in a loaded world is proof we are past startup, whatever the menu did.
+		// parentCell stays null until a save or a new game actually loads, so this cannot fire
+		// early. It is what stops a longer timeout from ever stranding anyone: if the curtain is
+		// somehow still up when play begins, it goes at once.
+		bool PlayerIsInWorld()
+		{
+			auto* player = RE::PlayerCharacter::GetSingleton();
+			return player && player->parentCell;
+		}
 
 		std::atomic<bool> g_lifted{ false };
 		bool              g_started = false;
@@ -75,7 +89,13 @@ namespace curtain
 			g_started = true;
 			g_firstFrame = now;
 			logger::info("startup curtain: covering the screen until the main menu is ready "
-						 "(lifts by itself after {:.0f}s)", kHardTimeoutSeconds);
+						 "(lifts by itself after {:.0f}s, or the moment play begins)", HardTimeoutSeconds());
+		}
+
+		if (!g_sawMainMenu && PlayerIsInWorld())
+		{
+			Lift("the player is already in the world");
+			return;
 		}
 
 		if (!g_sawMainMenu && MainMenuIsUp())
@@ -96,7 +116,7 @@ namespace curtain
 			}
 			alpha = 1.0f - (elapsed / kFadeSeconds);
 		}
-		else if (std::chrono::duration<float>(now - g_firstFrame).count() >= kHardTimeoutSeconds)
+		else if (std::chrono::duration<float>(now - g_firstFrame).count() >= HardTimeoutSeconds())
 		{
 			// Something is wrong - a main menu replacer we cannot see, or a start that never gets
 			// there. Either way the player gets their screen back rather than a black rectangle.
