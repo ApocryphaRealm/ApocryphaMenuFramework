@@ -81,6 +81,11 @@ namespace settings
 		// How long the curtain may stay up before it gives up and lifts anyway. INI-only, because
 		// it is a safety valve rather than a preference. 30 proved too short on a heavy list.
 		std::uint32_t curtainTimeoutSeconds = 120;
+		// [Startup] sCurtainImage - a picture to show on the curtain instead of plain black, given
+		// relative to Data (e.g. SKSE\\Plugins\\ApocryphaMenuFramework\\curtain.png). Empty is the
+		// default and means black, so a plain install looks exactly as it did. The image is fitted
+		// inside the screen with its aspect kept, on black, and fades out with the curtain.
+		std::string curtainImage;
 		std::uint32_t watchdogSeconds = 120;
 		std::int32_t windowPreset = 0;   // 0 = centre (the standard). Preset positions, never free placement -
 		                                 // the author 2026-08-27, same anchor philosophy as the minimap; more presets later.

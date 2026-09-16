@@ -21,6 +21,9 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+### Added
+- **The startup curtain can show a picture instead of plain black** (the owner's idea, 2026-09-16: *"can we make the curtain for AMF display the Njordlinger splash art?"*). A new `[Startup] sCurtainImage` names a file relative to Data; empty is the default, so a plain install looks exactly as it did. The picture is fitted inside the screen with its shape kept and centred on black - fitted rather than cropped, because a splash is usually lettering and a composition that filling the screen would cut - and it fades out on the same alpha as the curtain. Decoding goes through WIC, which Windows already provides, so this framework gains no new dependency for one ornament; PNG, JPEG and BMP all work. Everything about it fails soft: a missing file, an unreadable one or a device that will not take the texture leaves the curtain black, logs the reason once, and the game starts normally. A picture is decoration - covering the screen is the job.
+
 ## 1.8.7 - 2026-09-16 - untested
 
 ### Fixed

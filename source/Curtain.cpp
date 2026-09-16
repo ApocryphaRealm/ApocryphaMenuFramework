@@ -10,8 +10,15 @@
 #include <chrono>
 #include <cmath>
 #include <format>
+#include <filesystem>
+#include <system_error>
+#include <vector>
 
 #include <imgui.h>
+
+#include <d3d11.h>
+#include <wincodec.h>
+#include <wrl/client.h>
 
 namespace curtain
 {
@@ -73,6 +80,107 @@ namespace curtain
 			// Null the moment the process starts - this runs long before the UI singleton exists.
 			auto* ui = RE::UI::GetSingleton();
 			return ui && ui->IsMenuOpen(RE::MainMenu::MENU_NAME);
+		}
+
+		// ---- the optional picture -------------------------------------------------------------------------
+		//
+		// [Startup] sCurtainImage names a file relative to Data. Decoding goes through WIC, which Windows
+		// already provides: it reads PNG, JPEG and BMP, and it keeps this framework's dependency list as it is -
+		// a decoder pulled in for one ornament would ship with every copy of the mod.
+		//
+		// Everything here fails soft. A missing file, an unreadable one, a device that will not take the
+		// texture: the curtain is simply black, the reason is logged once, and the game starts. A picture is
+		// decoration; the curtain's job is to cover the screen.
+		ID3D11ShaderResourceView* g_imageSRV = nullptr;
+		int  g_imageW = 0;
+		int  g_imageH = 0;
+		bool g_imageTried = false;
+
+		void LoadImageOnce(ID3D11Device* a_device)
+		{
+			if (g_imageTried) { return; }
+			g_imageTried = true;
+
+			const std::string& rel = settings::Get().curtainImage;
+			if (rel.empty() || !a_device) { return; }
+
+			std::error_code ec;
+			const std::filesystem::path path = std::filesystem::current_path(ec) / "Data" / rel;
+			if (ec || !std::filesystem::exists(path))
+			{
+				logger::warn("startup curtain: sCurtainImage \"{}\" not found at {}; the curtain stays black", rel, path.string());
+				return;
+			}
+
+			using Microsoft::WRL::ComPtr;
+			ComPtr<IWICImagingFactory> factory;
+			if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory))))
+			{
+				logger::warn("startup curtain: no WIC factory; the curtain stays black");
+				return;
+			}
+			ComPtr<IWICBitmapDecoder> decoder;
+			if (FAILED(factory->CreateDecoderFromFilename(path.wstring().c_str(), nullptr, GENERIC_READ,
+														  WICDecodeMetadataCacheOnDemand, &decoder)))
+			{
+				logger::warn("startup curtain: {} could not be decoded (is it a PNG, JPEG or BMP?); the curtain stays black", path.string());
+				return;
+			}
+			ComPtr<IWICBitmapFrameDecode> frame;
+			ComPtr<IWICFormatConverter> converter;
+			if (FAILED(decoder->GetFrame(0, &frame)) || FAILED(factory->CreateFormatConverter(&converter)) ||
+				FAILED(converter->Initialize(frame.Get(), GUID_WICPixelFormat32bppRGBA, WICBitmapDitherTypeNone,
+											 nullptr, 0.0, WICBitmapPaletteTypeCustom)))
+			{
+				logger::warn("startup curtain: {} could not be converted to RGBA; the curtain stays black", path.string());
+				return;
+			}
+			UINT w = 0, h = 0;
+			if (FAILED(converter->GetSize(&w, &h)) || w == 0 || h == 0)
+			{
+				logger::warn("startup curtain: {} has no size; the curtain stays black", path.string());
+				return;
+			}
+			std::vector<std::uint8_t> pixels(static_cast<std::size_t>(w) * h * 4u);
+			if (FAILED(converter->CopyPixels(nullptr, w * 4u, static_cast<UINT>(pixels.size()), pixels.data())))
+			{
+				logger::warn("startup curtain: {} could not be read into memory; the curtain stays black", path.string());
+				return;
+			}
+
+			D3D11_TEXTURE2D_DESC td{};
+			td.Width = w;
+			td.Height = h;
+			td.MipLevels = 1;
+			td.ArraySize = 1;
+			td.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+			td.SampleDesc.Count = 1;
+			td.Usage = D3D11_USAGE_DEFAULT;
+			td.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+			D3D11_SUBRESOURCE_DATA sd{};
+			sd.pSysMem = pixels.data();
+			sd.SysMemPitch = w * 4u;
+
+			ID3D11Texture2D* tex = nullptr;
+			if (SUCCEEDED(a_device->CreateTexture2D(&td, &sd, &tex)) && tex)
+			{
+				if (FAILED(a_device->CreateShaderResourceView(tex, nullptr, &g_imageSRV)))
+				{
+					g_imageSRV = nullptr;
+					logger::warn("startup curtain: the picture could not be given a shader view; the curtain stays black");
+				}
+				else
+				{
+					g_imageW = static_cast<int>(w);
+					g_imageH = static_cast<int>(h);
+					logger::info("startup curtain: showing {} ({}x{})", path.string(), g_imageW, g_imageH);
+				}
+				tex->Release();
+			}
+			else
+			{
+				logger::warn("startup curtain: the picture could not be uploaded to the device; the curtain stays black");
+			}
 		}
 	}
 
@@ -201,12 +309,42 @@ namespace curtain
 			return;  // no viewport yet; nothing sensible to cover
 		}
 
+		// Decoded once, on the first frame that actually draws - by then the device is up and the atlas is
+		// built, so nothing here races the renderer's own initialisation.
+		{
+			ID3D11Device* device = nullptr;
+			if (ImGui::GetIO().BackendRendererUserData)
+			{
+				if (auto* view = reinterpret_cast<ID3D11ShaderResourceView*>(ImGui::GetIO().Fonts->TexID))
+				{
+					view->GetDevice(&device);
+				}
+			}
+			LoadImageOnce(device);
+			if (device) { device->Release(); }
+		}
+
 		// The FOREGROUND draw list, so the curtain is over the framework's own window and over
 		// every consumer HUD element, not interleaved with them.
 		const auto a = static_cast<ImU32>(std::lround(std::clamp(alpha, 0.0f, 1.0f) * 255.0f));
-		ImGui::GetForegroundDrawList()->AddRectFilled(
+		ImDrawList* draw = ImGui::GetForegroundDrawList();
+		draw->AddRectFilled(
 			ImVec2(0.0f, 0.0f),
 			ImVec2(io.DisplaySize.x, io.DisplaySize.y),
 			IM_COL32(0, 0, 0, a));
+
+		// The picture, if one is set: fitted inside the screen with its shape kept, centred, on top of the
+		// black that is already there. Fitted rather than cropped - a splash is usually lettering and a
+		// composition, and filling the screen would cut it. It fades with the curtain, on the same alpha.
+		if (g_imageSRV && g_imageW > 0 && g_imageH > 0 && io.DisplaySize.x > 0.0f && io.DisplaySize.y > 0.0f)
+		{
+			const float scale = (std::min)(io.DisplaySize.x / static_cast<float>(g_imageW),
+										   io.DisplaySize.y / static_cast<float>(g_imageH));
+			const float w = static_cast<float>(g_imageW) * scale;
+			const float h = static_cast<float>(g_imageH) * scale;
+			const ImVec2 tl((io.DisplaySize.x - w) * 0.5f, (io.DisplaySize.y - h) * 0.5f);
+			draw->AddImage(reinterpret_cast<ImTextureID>(g_imageSRV), tl, ImVec2(tl.x + w, tl.y + h),
+						   ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), IM_COL32(255, 255, 255, a));
+		}
 	}
 }
