@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://qconsulting.ca/fo3/ModConfig5.0.xsd">
+	<moduleName>Apocrypha Menu Framework</moduleName>
+	<requiredInstallFiles>
+		<folder source="Common" destination="" priority="0" />
+	</requiredInstallFiles>
+	<installSteps order="Explicit">
+		<installStep name="Which Skyrim do you have?">
+			<optionalFileGroups order="Explicit">
+				<group name="Game version" type="SelectExactlyOne">
+					<plugins order="Explicit">
+						<plugin name="Skyrim SE 1.5.97 or AE 1.6.x">
+							<description>For Skyrim Special Edition 1.5.97 and Anniversary Edition 1.6.317 to 1.6.1179 (1.6.1170 is the last Steam build before 1.7). Built on CommonLibSSE-NG 3.7.0 (MIT). Reads Address Library formats 1 and 2. If you are not sure: open the game's properties in Steam or look at SkyrimSE.exe's file version.</description>
+							<files>
+								<folder source="Line-SE-AE16" destination="" priority="0" />
+							</files>
+							<typeDescriptor>
+								<type name="Recommended" />
+							</typeDescriptor>
+						</plugin>
+						<plugin name="Skyrim 1.7.x (current Steam version)">
+							<description>For Skyrim 1.7.99 and 1.7.104 - what Steam installs today (since 28 August 2026). Needs SKSE 2.3.x and Address Library All-in-One v13 or newer. Built on CommonLibSSE-NG 7.2.0; this DLL is distributed under GPL-3.0-or-later (the licence texts install with it). Also runs on AE 1.6.x.</description>
+							<files>
+								<folder source="Line-17" destination="" priority="0" />
+							</files>
+							<typeDescriptor>
+								<type name="Optional" />
+							</typeDescriptor>
+						</plugin>
+					</plugins>
+				</group>
+			</optionalFileGroups>
+		</installStep>
+		<installStep name="Language">
+			<optionalFileGroups order="Explicit">
+				<group name="Language of the framework's own pages" type="SelectExactlyOne">
+					<plugins order="Explicit">
+						<plugin name="All languages - follow the game">
+							<description>Installs every translation; the framework's own pages appear in whatever language Skyrim runs in (sLanguage), and the Language combo on the Framework Settings page can force any of them. Each mod's own settings page is that mod's to translate.</description>
+							<files>
+								<folder source="Languages/All" destination="" priority="0" />
+							</files>
+							<typeDescriptor>
+								<type name="Recommended" />
+							</typeDescriptor>
+						</plugin>
+						<plugin name="Japanese (日本語)">
+							<description>Installs the Japanese translation of the framework's own pages (English is always present as the fallback). Skyrim in another language? The Language combo on the Framework Settings page, or sLanguage in the INI, forces it.</description>
+							<files>
+								<folder source="Languages/Japanese" destination="" priority="0" />
+							</files>
+							<typeDescriptor>
+								<type name="Optional" />
+							</typeDescriptor>
+						</plugin>
+						<plugin name="Korean (한국어)">
+							<description>Installs the Korean translation of the framework's own pages (English is always present as the fallback). Skyrim in another language? The Language combo on the Framework Settings page, or sLanguage in the INI, forces it.</description>
+							<files>
+								<folder source="Languages/Korean" destination="" priority="0" />
+							</files>
+							<typeDescriptor>
+								<type name="Optional" />
+							</typeDescriptor>
+						</plugin>
+						<plugin name="Chinese (中文)">
+							<description>Installs the Chinese translation of the framework's own pages (English is always present as the fallback). Skyrim in another language? The Language combo on the Framework Settings page, or sLanguage in the INI, forces it.</description>
+							<files>
+								<folder source="Languages/Chinese" destination="" priority="0" />
+							</files>
+							<typeDescriptor>
+								<type name="Optional" />
+							</typeDescriptor>
+						</plugin>
+						<plugin name="Russian (Русский)">
+							<description>Installs the Russian translation of the framework's own pages (English is always present as the fallback). Skyrim in another language? The Language combo on the Framework Settings page, or sLanguage in the INI, forces it.</description>
+							<files>
+								<folder source="Languages/Russian" destination="" priority="0" />
+							</files>
+							<typeDescriptor>
+								<type name="Optional" />
+							</typeDescriptor>
+						</plugin>
+						<plugin name="German (Deutsch)">
+							<description>Installs the German translation of the framework's own pages (English is always present as the fallback). Skyrim in another language? The Language combo on the Framework Settings page, or sLanguage in the INI, forces it.</description>
+							<files>
+								<folder source="Languages/German" destination="" priority="0" />
+							</files>
+							<typeDescriptor>
+								<type name="Optional" />
+							</typeDescriptor>
+						</plugin>
+						<plugin name="French (Français)">
+							<description>Installs the French translation of the framework's own pages (English is always present as the fallback). Skyrim in another language? The Language combo on the Framework Settings page, or sLanguage in the INI, forces it.</description>
+							<files>
+								<folder source="Languages/French" destination="" priority="0" />
+							</files>
+							<typeDescriptor>
+								<type name="Optional" />
+							</typeDescriptor>
+						</plugin>
+						<plugin name="Spanish (Español)">
+							<description>Installs the Spanish translation of the framework's own pages (English is always present as the fallback). Skyrim in another language? The Language combo on the Framework Settings page, or sLanguage in the INI, forces it.</description>
+							<files>
+								<folder source="Languages/Spanish" destination="" priority="0" />
+							</files>
+							<typeDescriptor>
+								<type name="Optional" />
+							</typeDescriptor>
+						</plugin>
+						<plugin name="Italian (Italiano)">
+							<description>Installs the Italian translation of the framework's own pages (English is always present as the fallback). Skyrim in another language? The Language combo on the Framework Settings page, or sLanguage in the INI, forces it.</description>
+							<files>
+								<folder source="Languages/Italian" destination="" priority="0" />
+							</files>
+							<typeDescriptor>
+								<type name="Optional" />
+							</typeDescriptor>
+						</plugin>
+						<plugin name="Polish (Polski)">
+							<description>Installs the Polish translation of the framework's own pages (English is always present as the fallback). Skyrim in another language? The Language combo on the Framework Settings page, or sLanguage in the INI, forces it.</description>
+							<files>
+								<folder source="Languages/Polish" destination="" priority="0" />
+							</files>
+							<typeDescriptor>
+								<type name="Optional" />
+							</typeDescriptor>
+						</plugin>
+						<plugin name="Czech (Čeština)">
+							<description>Installs the Czech translation of the framework's own pages (English is always present as the fallback). Skyrim in another language? The Language combo on the Framework Settings page, or sLanguage in the INI, forces it.</description>
+							<files>
+								<folder source="Languages/Czech" destination="" priority="0" />
+							</files>
+							<typeDescriptor>
+								<type name="Optional" />
+							</typeDescriptor>
+						</plugin>
+					</plugins>
+				</group>
+			</optionalFileGroups>
+		</installStep>
+	</installSteps>
+</config>
