@@ -101,15 +101,52 @@ namespace curtain
 			if (g_imageTried) { return; }
 			g_imageTried = true;
 
+			if (!a_device) { return; }
 			const std::string& rel = settings::Get().curtainImage;
-			if (rel.empty() || !a_device) { return; }
+			if (rel == "none" || rel == "off") { return; }  // an explicit "show nothing"
 
 			std::error_code ec;
-			const std::filesystem::path path = std::filesystem::current_path(ec) / "Data" / rel;
-			if (ec || !std::filesystem::exists(path))
+			const std::filesystem::path here = std::filesystem::current_path(ec);
+			if (ec) { return; }
+
+			std::filesystem::path path;
+			if (!rel.empty())
 			{
-				logger::warn("startup curtain: sCurtainImage \"{}\" not found at {}; the curtain stays black", rel, path.string());
-				return;
+				path = here / "Data" / rel;
+				if (!std::filesystem::exists(path))
+				{
+					logger::warn("startup curtain: sCurtainImage \"{}\" not found at {}; the curtain stays black", rel, path.string());
+					return;
+				}
+			}
+			else
+			{
+				// Nothing set: use the MODLIST'S OWN splash art, if this is a modlist at all.
+				//
+				// Mod Organizer keeps splash.png in the root of its instance, and Wabbajack lists ship one as their
+				// branding - it is the picture shown while the manager starts. The game runs from inside that
+				// instance (a Stock Game or Game Root folder under it), so walking up from the working directory
+				// finds it without anyone configuring a path. The owner asked for exactly that, so a list author
+				// gets their own art on the curtain by doing nothing: "i'd like the curtain display splash art path
+				// to be usable by other mod list authors that use wabbajack, so it just always reads whatever the
+				// splash art is for that mod list" (2026-09-16).
+				//
+				// Bounded to a few levels so this can never wander off into the rest of the disk, and the file that
+				// was chosen is named in the log so a surprising picture is traceable rather than mysterious.
+				std::filesystem::path dir = here;
+				for (int up = 0; up < 4 && !dir.empty(); ++up)
+				{
+					const std::filesystem::path candidate = dir / "splash.png";
+					if (std::filesystem::exists(candidate))
+					{
+						path = candidate;
+						logger::info("startup curtain: using the modlist's own splash art at {} (set sCurtainImage to override, or 'none' for plain black)", path.string());
+						break;
+					}
+					if (!dir.has_parent_path() || dir.parent_path() == dir) { break; }
+					dir = dir.parent_path();
+				}
+				if (path.empty()) { return; }  // not a modlist, or it has no splash: plain black, silently
 			}
 
 			using Microsoft::WRL::ComPtr;
