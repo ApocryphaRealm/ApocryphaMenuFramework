@@ -553,6 +553,18 @@ namespace renderer
 		                              // so a mouse click or the tab-list popup keeps it honest
 		int  g_tabRequest = -1;       // tab to force-select on the next frame; -1 = none
 		bool g_tabBarHasNav = false;  // the cursor is on the bar itself, not down in the page
+		// A page's OWN tab bar, declared by the page itself (AMF_DeclareInnerTabs).
+		//
+		// The framework can only measure the bar IT submits, so a consumer that draws its own BeginTabBar
+		// inside a page is invisible to the nav decision and the D-pad does nothing there (the owner,
+		// 2026-09-16: "the nav box behaves properly on the main tabs ... but when going to the other tabs
+		// within those tabs, it does not"). It cannot be fixed by guessing from outside, so the page says
+		// what it has and reads back which one to open. A mod that never calls this is unaffected - which
+		// is the point: no other author has to patch anything.
+		int g_innerCount = 0;    // tabs the open page declared THIS frame; 0 = it has none
+		int g_innerIndex = 0;    // which of them the page says is open
+		int g_innerRequest = -1; // the tab the page should open next frame; -1 = no request
+		bool g_innerFresh = false;  // the declaration was renewed this frame
 
 		// Where a driving tool's synthetic press lands (amf.menu op=nav). It is read in exactly the
 		// place a real D-pad press is read, so the tool exercises this logic rather than a shortcut
@@ -1342,6 +1354,8 @@ namespace renderer
 				g_tabCount = 0;
 				g_tabIndex = 0;
 				g_tabBarHasNav = false;
+				// A page re-declares its inner tabs every frame it draws; stale numbers must not steer nav.
+				g_innerFresh = false;
 				std::string curTabName;
 				if (sel == "settings")      { DrawFrameworkSettingsPane(); }
 				else if (sel == "controls") { DrawControlsPane(); }
@@ -1394,6 +1408,7 @@ namespace renderer
 					}
 				}
 				else { DrawFrameworkSettingsPane(); }
+				if (!g_innerFresh) { g_innerCount = 0; g_innerIndex = 0; }
 				const bool contentHasNav = ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows);
 				ImGui::EndChild();
 				if (knot)
@@ -1435,6 +1450,18 @@ namespace renderer
 					{
 						g_focusPane = 2;
 						logger::debug("nav: list -> options");
+					}
+					// A page's OWN tabs come first: it is the innermost thing the press could mean, and a page that
+					// declared none leaves these at zero so nothing changes for it.
+					else if (contentHasNav && navRight && !editing && g_innerCount > 1 && g_innerIndex + 1 < g_innerCount)
+					{
+						g_innerRequest = g_innerIndex + 1;
+						logger::debug("nav: inner tab {} -> {} of {}", g_innerIndex, g_innerRequest, g_innerCount);
+					}
+					else if (contentHasNav && navLeft && !editing && g_innerCount > 1 && g_innerIndex > 0)
+					{
+						g_innerRequest = g_innerIndex - 1;
+						logger::debug("nav: inner tab {} -> {} of {}", g_innerIndex, g_innerRequest, g_innerCount);
 					}
 					else if (contentHasNav && navLeft && !editing && g_tabCount > 1 && g_tabIndex > 0)
 					{
@@ -1702,6 +1729,18 @@ namespace renderer
 	bool IsMainWindowVisible()
 	{
 		return g_windowVisible.load(std::memory_order_relaxed);
+	}
+
+	// A page declares its own tab bar, and takes back the tab the D-pad asked for (-1 = nothing asked).
+	// Called from the page's render function, so it is already on the render thread inside the frame.
+	int DeclareInnerTabs(int a_count, int a_current)
+	{
+		g_innerCount = a_count > 0 ? a_count : 0;
+		g_innerIndex = (a_current >= 0 && a_current < g_innerCount) ? a_current : 0;
+		g_innerFresh = true;
+		const int request = g_innerRequest;
+		g_innerRequest = -1;  // handed over once, exactly like the framework's own tab request
+		return (request >= 0 && request < g_innerCount) ? request : -1;
 	}
 
 	void SetMenuVisible(bool a_visible, bool a_nested)

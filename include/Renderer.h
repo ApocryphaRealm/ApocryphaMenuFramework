@@ -33,6 +33,11 @@ namespace renderer
 	// from the hotkey or a menu launcher. It only affects GEOMETRY: a nested window is sized and
 	// placed to the journal panel hosting it, so it reads as a page of that menu instead of a
 	// larger window on top of it. Everything it draws is identical either way.
+	// A page tells the framework about its OWN tab bar and reads back the tab the D-pad asked for
+	// (-1 = nothing). Call it once per frame from the page's render function. A page that never
+	// calls it behaves exactly as before, so no other author has to change anything.
+	int DeclareInnerTabs(int a_count, int a_current);
+
 	void SetMenuVisible(bool a_visible, bool a_nested = false);
 	void SetSelectedNode(const std::string& a_node);
 	std::string GetSelectedNode();

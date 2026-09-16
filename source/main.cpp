@@ -245,6 +245,17 @@ AMF_API bool AMF_SetPageVisible(const char* a_modName, const char* a_pageName, b
 	return registry::SetPageVisible(a_modName, a_pageName, a_visible);
 }
 
+AMF_API int AMF_DeclareInnerTabs(int a_count, int a_current)
+{
+	// 1.8.7. A page that draws its OWN tab bar tells the framework how many tabs it has and which is open,
+	// and gets back the tab the D-pad asked for, or -1. Without it the framework can only see the bar it
+	// submits itself, so a nested bar never moves (the owner, 2026-09-16).
+	//
+	// Opt-in by design: a mod that never resolves this symbol is completely unaffected, so the feature can
+	// go into our own mods without asking any other author to patch theirs.
+	return renderer::DeclareInnerTabs(a_count, a_current);
+}
+
 AMF_API std::uint32_t AMF_GetInputMode()
 {
 	// The LIVE mode, not a stored one. Consumers use this to word their own prompts, so it has to
