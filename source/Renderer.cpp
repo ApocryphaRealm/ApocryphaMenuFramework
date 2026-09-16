@@ -1443,7 +1443,22 @@ namespace renderer
 						g_tabRequest = g_tabIndex - 1;
 						logger::debug("nav: tab {} -> {} of {}", g_tabIndex, g_tabRequest, g_tabCount);
 					}
-					else if (contentHasNav && navRight && !editing && g_tabBarHasNav && g_tabIndex + 1 < g_tabCount)
+					// Stepping tabs must NOT depend on where ImGui's nav focus happens to be.
+					//
+					// This branch used to require g_tabBarHasNav - the cursor sitting literally on the tab bar - and in
+					// practice it almost never is: opening a mod leaves focus in the page below the bar, so right never
+					// advanced the tab and the index stayed at 0. Left then had nothing to step back through and fell
+					// straight to its last branch, dropping the player out to the mod list. That is the whole of the
+					// reported fault (the owner, 2026-09-16: "d-pad left, making it go all the way back to the left pane
+					// instead of just scrolling the tabs ... it should only go back to the far left pane when you're
+					// already done scrolling left and there's nothing left to scroll") - left was never the broken half.
+					//
+					// Measured, not guessed: amf.menu op=state reports page/pageIndex/pageCount, and two op=nav dir=right
+					// presses on Wheeler left it at idx=0 of 3.
+					//
+					// !editing still guards it, so pushing right inside a slider adjusts the value rather than changing tab.
+
+					else if (contentHasNav && navRight && !editing && g_tabIndex + 1 < g_tabCount)
 					{
 						g_tabRequest = g_tabIndex + 1;
 						logger::debug("nav: tab {} -> {} of {}", g_tabIndex, g_tabRequest, g_tabCount);
