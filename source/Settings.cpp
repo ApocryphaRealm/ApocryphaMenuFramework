@@ -146,6 +146,7 @@ namespace settings
 			}
 			ReadBool(entries, "Watchdog.bEnabled", g_values.watchdogEnabled);
 			ReadBool(entries, "FastExit.bEnabled", g_values.fastExit);
+			ReadBool(entries, "Startup.bBlackCurtain", g_values.startupCurtain);
 			ReadNumber(entries, "Watchdog.uSeconds", g_values.watchdogSeconds);
 			ReadNumber(entries, "Display.uWindowPreset", g_values.windowPreset);
 			if (const auto it = entries.find("Theme.sThemeId"); it != entries.end() && !it->second.empty())
@@ -248,6 +249,13 @@ namespace settings
 				"; driver's shutdown code - the phase where a closing game can get stuck beyond any kill.\n"
 				"; Saves and settings are written when you save or change them, not at exit. 0 disables.\n"
 				"bEnabled=" << (g_values.fastExit ? 1 : 0) << "\n"
+				"\n"
+				"[Startup]\n"
+				"; Hold the screen black from the first frame the game draws until its main menu is\n"
+				"; up, so the logo frames and the half-drawn menu behind them are never shown. It\n"
+				"; lifts by itself if the main menu has not appeared after 30 seconds, so a slow\n"
+				"; start can never leave you looking at nothing. 0 disables.\n"
+				"bBlackCurtain=" << (g_values.startupCurtain ? 1 : 0) << "\n"
 				"\n"
 				"[Theme]\n"
 				"; Registry id (see the theme picker on the Framework Settings page).\n"

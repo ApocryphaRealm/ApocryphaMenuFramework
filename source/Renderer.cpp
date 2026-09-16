@@ -3,6 +3,7 @@
 #include "ConsumerSurface.h"
 
 #include "Compat.h"
+#include "Curtain.h"
 #include "Input.h"
 #include "Offsets.h"
 #include "Persistence.h"
@@ -573,6 +574,23 @@ namespace renderer
 			// made a reversible preference into something you had to reinstall to change - and
 			// forked the documentation, the INI and the support answers along with it. One build,
 			// one INI, and the choice lives here where it can be changed and changed back.
+			if (widgets::Toggle(TR("AMF_BlackCurtain", "Black screen until the main menu is ready"), &values.startupCurtain))
+			{
+				logger::info("settings page: startup curtain -> {}", values.startupCurtain);
+				settings::Save();
+				if (!values.startupCurtain)
+				{
+					// Turning it off while the curtain is still up must give the screen back NOW, not at
+					// the next launch - otherwise the one control that fixes a stuck curtain is behind it.
+					curtain::Lift("turned off from the settings page");
+				}
+			}
+			ImGui::TextWrapped("%s", TR("AMF_BlackCurtainHelp", "On: the screen is held black from the first frame the game "
+							   "draws until its main menu is up, so the logo frames and the half-drawn menu behind it are never "
+							   "shown. It lifts by itself if the main menu has not appeared after 30 seconds, so a slow start can "
+							   "never leave you looking at nothing."));
+			ImGui::Spacing();
+
 			if (widgets::Toggle(TR("AMF_FastExit", "Fast exit - end the process the moment the game exits"), &values.fastExit))
 			{
 				logger::info("settings page: fast exit -> {}", values.fastExit);
@@ -1557,6 +1575,10 @@ namespace renderer
 						DrawFrameworkWindow();
 					}
 				}
+
+				// LAST thing in the frame: the curtain covers the framework's own window and every
+				// consumer HUD element rather than being interleaved with them.
+				curtain::Draw();
 
 				ImGui::Render();
 				ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());

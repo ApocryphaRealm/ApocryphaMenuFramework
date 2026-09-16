@@ -21,7 +21,14 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
-## 1.8.4 - 2026-09-15 - untested
+## 1.8.5 - 2026-09-15 - untested
+
+### Added
+- a startup curtain: the screen is held black from the first frame the framework draws until the game's main menu is up, so the logo frames and the half-drawn menu behind them are never shown. The owner asked for this as its own mod ("the mod that makes the screen black until the menu loads") and then, the same day, for it to live here instead ("build it into amf with a toggle in the settings page of amf") - which is the right place: the framework already owns the present hook and its surface draws every frame whether or not its own menu is up, so a separate plugin would have had to stand up a second D3D hook and race this one for the same frame.
+- a toggle for it on the Framework Settings page, and `bBlackCurtain` under a new `[Startup]` section of the INI, shipped on by default. Turning the toggle off while the curtain is still up lifts it immediately rather than at the next launch - the one control that fixes a stuck curtain must not itself be hidden behind the curtain.
+- Failing safe is the whole design of `Curtain.cpp`: the curtain lifts on the main menu appearing, on a 30-second hard timeout, or on the setting being turned off, and never returns for the life of the process. A curtain that does not lift is indistinguishable from a game that will not start, and the player has no way to argue with it. `RE::UI` is null-checked because this runs long before that singleton exists.
+
+## 1.8.4 - 2026-09-15 - working
 
 ### Fixed
 - the System-menu row drew but did nothing under Dragonborn UI (borokoshow's report): the press listener was skipped whenever the row was already in the list, and the row was identified by a remembered index that SystemPage.SetShowMod moves when it splices a Mod Manager row in at index 2. The listener is now attached on every journal open whether the row is found or pushed, and a press is matched by the entry's own text instead of its index.

@@ -73,6 +73,11 @@ namespace settings
 		// loaded DLL's and driver's shutdown code - the phase in which a game can wedge into a state
 		// no kill, inside or outside the process, can reach. Nothing the game needs happens there.
 		bool fastExit = true;
+		// Startup curtain (the owner, 2026-09-15): hold the screen black from the first drawn
+		// frame until the game's main menu is up, so the logo frames and the half-drawn menu are
+		// never shown. Lifts by itself on a timeout - see Curtain.cpp, where failing safe is the
+		// whole design.
+		bool startupCurtain = true;
 		std::uint32_t watchdogSeconds = 120;
 		std::int32_t windowPreset = 0;   // 0 = centre (the standard). Preset positions, never free placement -
 		                                 // the author 2026-08-27, same anchor philosophy as the minimap; more presets later.
