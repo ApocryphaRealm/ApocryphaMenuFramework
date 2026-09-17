@@ -123,6 +123,17 @@ namespace devbenchtool
 				for (const auto& l : strings::Available()) { avail += (avail.empty() ? "\"" : ",\"") + l + "\""; }
 				result = "{\"ok\":true,\"op\":\"language\",\"showing\":\"" + strings::Language() + "\",\"available\":[" + avail + "]}";
 			}
+			else if (op == "font")
+			{
+				// 1.8.9: what the last atlas build holds - the atlas is rebuilt on the render thread after a
+				// language switch, so read this again a moment after op=language.
+				const auto p = renderer::GetFontProbe();
+				result = "{\"ok\":true,\"op\":\"font\",\"language\":\"" + p.language + "\",\"gameLanguage\":\"" + p.gameLanguage +
+					"\",\"builds\":" + std::to_string(p.builds) + ",\"glyphs\":" + std::to_string(p.glyphs) +
+					",\"atlas\":[" + std::to_string(p.atlasWidth) + "," + std::to_string(p.atlasHeight) + "]" +
+					",\"hasKana\":" + (p.hasKana ? "true" : "false") + ",\"hasHangul\":" + (p.hasHangul ? "true" : "false") +
+					",\"hasHanzi\":" + (p.hasHanzi ? "true" : "false") + ",\"hasCyrillic\":" + (p.hasCyrillic ? "true" : "false") + "}";
+			}
 			else if (op == "theme")
 			{
 				const std::string id = JsonStr(args, "id");
@@ -459,7 +470,7 @@ namespace devbenchtool
 		constexpr const char* descriptor =
 			"{"
 			"\"description\":\"Drive and inspect the Apocrypha Menu Framework window for testing. "
-			"op: open|close|select|activate|state|alias|move|resetorder|theme|language|nav|focus|cursor|click "
+			"op: open|close|select|activate|state|alias|move|resetorder|theme|language|font|nav|focus|cursor|click "
 			"(args language: a translation file name or auto). For select, node is a path: settings, controls, help "
 			"(pre-1.4.4 system/... paths are still accepted) or mod:<index>. "
 			"activate is a no-op in the SMF shape (kept for compatibility). alias renames a mod's menu entry "

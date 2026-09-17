@@ -242,6 +242,18 @@ namespace renderer
 
 	namespace
 	{
+		std::mutex g_fontProbeLock;
+		FontProbe g_fontProbe;
+	}
+
+	FontProbe GetFontProbe()
+	{
+		std::scoped_lock l(g_fontProbeLock);
+		return g_fontProbe;
+	}
+
+	namespace
+	{
 
 		// Ordered candidates: a clean sans that matches Skyrim's own menu lettering, then fallbacks.
 		// A user-supplied path (sFontPath in the INI) wins when set, so any .ttf can be dropped in.
@@ -318,10 +330,28 @@ namespace renderer
 			// every character that appears in the loaded translation - Cyrillic, Polish and Czech
 			// letters, kana, hanzi - built from the strings themselves, so no per-language table
 			// can be wrong or incomplete. Static so the ranges outlive Build().
+			// 1.8.9 (littlefot's Wheeler report, 2026-09-17, the same class checked here): the atlas
+			// also holds the BUILT-IN ranges of the scripts in play - the framework's language AND the
+			// game's own sLanguage - because not every character a page draws comes from a translation
+			// file: a Japanese game lists Japanese item names in Item Explorer whatever language the
+			// framework's pages are set to, and those kanji were in no file the builder had read.
 			static ImVector<ImWchar> s_ranges;
+			const std::string lang = strings::Language();
+			const std::string gameLang = strings::GameLanguageSetting();
 			{
 				ImFontGlyphRangesBuilder builder;
 				builder.AddRanges(io.Fonts->GetGlyphRangesDefault());
+				for (const std::string& l : { lang, gameLang })
+				{
+					const ImWchar* r = nullptr;
+					if (l == "japanese") { r = io.Fonts->GetGlyphRangesJapanese(); }
+					else if (l == "korean") { r = io.Fonts->GetGlyphRangesKorean(); }
+					else if (l == "chinese" || l == "schinese" || l == "tchinese") { r = io.Fonts->GetGlyphRangesChineseSimplifiedCommon(); }
+					else if (l == "russian" || l == "ukrainian" || l == "bulgarian") { r = io.Fonts->GetGlyphRangesCyrillic(); }
+					else if (l == "thai") { r = io.Fonts->GetGlyphRangesThai(); }
+					else if (l == "vietnamese") { r = io.Fonts->GetGlyphRangesVietnamese(); }
+					if (r) { builder.AddRanges(r); }
+				}
 				builder.AddText(strings::AllText().c_str());
 				s_ranges.clear();
 				builder.BuildRanges(&s_ranges);
@@ -344,14 +374,17 @@ namespace renderer
 			// hanzi, so Japanese and Chinese draw from a system CJK face. Harmless for English.
 			if (loaded)
 			{
-				const std::string lang = strings::Language();
+				// The script that picks the preferred face: the framework's language when it is CJK,
+				// otherwise the game's (1.8.9 - a Japanese game with English pages still needs kana).
+				auto isCjk = [](const std::string& l) { return l == "japanese" || l == "korean" || l == "chinese" || l == "schinese" || l == "tchinese"; };
+				const std::string cjkLang = isCjk(lang) ? lang : isCjk(gameLang) ? gameLang : lang;
 				// Per language first (the owner's priority order: Japanese, Korean, Chinese, Russian), then
 				// every CJK/Hangul face Windows ships, so a missing preferred face still finds glyphs.
 				const char* const cjk[] = {
-					lang == "japanese" ? "C:/Windows/Fonts/meiryo.ttc" : lang == "korean" ? "C:/Windows/Fonts/malgun.ttf" : "C:/Windows/Fonts/msyh.ttc",
-					lang == "japanese" ? "C:/Windows/Fonts/msgothic.ttc" : lang == "korean" ? "C:/Windows/Fonts/malgunbd.ttf" : "C:/Windows/Fonts/simsun.ttc",
+					cjkLang == "japanese" ? "C:/Windows/Fonts/meiryo.ttc" : cjkLang == "korean" ? "C:/Windows/Fonts/malgun.ttf" : "C:/Windows/Fonts/msyh.ttc",
+					cjkLang == "japanese" ? "C:/Windows/Fonts/YuGothM.ttc" : cjkLang == "korean" ? "C:/Windows/Fonts/malgunbd.ttf" : "C:/Windows/Fonts/simsun.ttc",
 					"C:/Windows/Fonts/msyh.ttc", "C:/Windows/Fonts/meiryo.ttc", "C:/Windows/Fonts/malgun.ttf", "C:/Windows/Fonts/YuGothM.ttc", "C:/Windows/Fonts/msgothic.ttc", "C:/Windows/Fonts/simsun.ttc" };
-				if (lang != "english")
+				if (lang != "english" || gameLang != "english")
 				{
 					ImFontConfig merge;
 					merge.MergeMode = true;
@@ -362,7 +395,7 @@ namespace renderer
 						if (!std::filesystem::exists(face, ec)) { continue; }
 						if (io.Fonts->AddFontFromFileTTF(face, px, &merge, s_ranges.Data))
 						{
-							logger::info("font: merged \"{}\" for the glyphs \"{}\" needs", face, lang);
+							logger::info("font: merged \"{}\" for the glyphs \"{}\" (game \"{}\") needs", face, lang, gameLang);
 							break;
 						}
 					}
@@ -379,6 +412,29 @@ namespace renderer
 
 			io.FontGlobalScale = 1.0f;  // native size - no magnification, so no pixelation
 			io.Fonts->Build();
+
+			// What the atlas can draw, one probe glyph per script (1.8.9): hiragana A, hangul HAN, the
+			// hanzi for water, Cyrillic ZHE. Read back by the driving tool so a language switch is
+			// proved by the atlas rather than a capture.
+			{
+				FontProbe probe;
+				probe.language = lang;
+				probe.gameLanguage = gameLang;
+				probe.glyphs = loaded->Glyphs.Size;
+				probe.hasKana = loaded->FindGlyphNoFallback(0x3042) != nullptr;
+				probe.hasHangul = loaded->FindGlyphNoFallback(0xD55C) != nullptr;
+				probe.hasHanzi = loaded->FindGlyphNoFallback(0x6C34) != nullptr;
+				probe.hasCyrillic = loaded->FindGlyphNoFallback(0x0416) != nullptr;
+				// GetTexDataAsRGBA32 writes through its pixel pointer unconditionally - a null there is a
+				// crash at the first atlas build (boot, 2026-09-17 14:24), not a "skip".
+				unsigned char* pixels = nullptr;
+				io.Fonts->GetTexDataAsRGBA32(&pixels, &probe.atlasWidth, &probe.atlasHeight);
+				std::scoped_lock l(g_fontProbeLock);
+				probe.builds = g_fontProbe.builds + 1;
+				g_fontProbe = probe;
+				logger::info("font: atlas {} built for \"{}\" (game \"{}\"): {} glyphs, {}x{}, kana {} hangul {} hanzi {} cyrillic {}",
+					probe.builds, lang, gameLang, probe.glyphs, probe.atlasWidth, probe.atlasHeight, probe.hasKana, probe.hasHangul, probe.hasHanzi, probe.hasCyrillic);
+			}
 		}
 
 		// -----------------------------------------------------------------------------------
@@ -564,6 +620,13 @@ namespace renderer
 		int g_innerCount = 0;    // tabs the open page declared THIS frame; 0 = it has none
 		int g_innerIndex = 0;    // which of them the page says is open
 		int g_innerRequest = -1; // the tab the page should open next frame; -1 = no request
+		// 1.8.8: a sideways press inside the content pane is FIRST offered to ImGui's own item navigation,
+		// and steps a tab only when ImGui found nothing to move to. The press is noted on the frame it
+		// happens (+1 right, -1 left) and decided on the next one, when GImGui->NavJustMovedToId says
+		// whether the cursor landed on another widget. The owner, 2026-09-16, in Item Explorer: "dpad
+		// right sends you to the favorites tab instead of the add item box" - the page's own widgets sit
+		// side by side (SameLine), and the tab step used to win before ImGui had a chance to move.
+		int g_pendingTabStep = 0;
 		bool g_innerFresh = false;  // the declaration was renewed this frame
 
 		// Where a driving tool's synthetic press lands (amf.menu op=nav). It is read in exactly the
@@ -1451,24 +1514,60 @@ namespace renderer
 						g_focusPane = 2;
 						logger::debug("nav: list -> options");
 					}
-					// A page's OWN tabs come first: it is the innermost thing the press could mean, and a page that
-					// declared none leaves these at zero so nothing changes for it.
-					else if (contentHasNav && navRight && !editing && g_innerCount > 1 && g_innerIndex + 1 < g_innerCount)
+					// Inside the content pane a sideways press is ImGui's first: if there is a widget to that
+					// side, the cursor moves there and nothing else happens. Only a press that moved nothing
+					// steps a tab (the page's own inner tabs first, then the framework's), and only a left press
+					// that moved nothing and had no tab to step back through leaves for the mod list. The
+					// decision is taken one frame late, when ImGui has reported the move (NavJustMovedToId),
+					// so the two never race. A driven op=nav press moves no ImGui cursor and therefore always
+					// steps, which keeps the driving tool's proof of this path intact.
+					else if (contentHasNav && (navRight || navLeft) && !editing && g_pendingTabStep == 0)
 					{
-						g_innerRequest = g_innerIndex + 1;
-						logger::debug("nav: inner tab {} -> {} of {}", g_innerIndex, g_innerRequest, g_innerCount);
+						g_pendingTabStep = navRight ? 1 : -1;
+						logger::debug("nav: sideways press noted ({}), deciding next frame", navRight ? "right" : "left");
 					}
-					else if (contentHasNav && navLeft && !editing && g_innerCount > 1 && g_innerIndex > 0)
+					else if (g_pendingTabStep != 0)
 					{
-						g_innerRequest = g_innerIndex - 1;
-						logger::debug("nav: inner tab {} -> {} of {}", g_innerIndex, g_innerRequest, g_innerCount);
-					}
-					else if (contentHasNav && navLeft && !editing && g_tabCount > 1 && g_tabIndex > 0)
-					{
-						// Still somewhere inside the tabs: step back one instead of dropping the
-						// player out of the menu they are reading.
-						g_tabRequest = g_tabIndex - 1;
-						logger::debug("nav: tab {} -> {} of {}", g_tabIndex, g_tabRequest, g_tabCount);
+						const int step = g_pendingTabStep;
+						g_pendingTabStep = 0;
+						const bool imguiMoved = GImGui && GImGui->NavJustMovedToId != 0;
+						if (imguiMoved)
+						{
+							logger::debug("nav: ImGui moved to a widget; no tab step");
+						}
+						else if (!contentHasNav || editing)
+						{
+							logger::debug("nav: content lost focus before the step was decided; dropped");
+						}
+						else if (step > 0 && g_innerCount > 1 && g_innerIndex + 1 < g_innerCount)
+						{
+							g_innerRequest = g_innerIndex + 1;
+							logger::debug("nav: inner tab {} -> {} of {}", g_innerIndex, g_innerRequest, g_innerCount);
+						}
+						else if (step < 0 && g_innerCount > 1 && g_innerIndex > 0)
+						{
+							g_innerRequest = g_innerIndex - 1;
+							logger::debug("nav: inner tab {} -> {} of {}", g_innerIndex, g_innerRequest, g_innerCount);
+						}
+						else if (step < 0 && g_tabCount > 1 && g_tabIndex > 0)
+						{
+							// Still somewhere inside the tabs: step back one instead of dropping the
+							// player out of the menu they are reading.
+							g_tabRequest = g_tabIndex - 1;
+							logger::debug("nav: tab {} -> {} of {}", g_tabIndex, g_tabRequest, g_tabCount);
+						}
+						else if (step > 0 && g_tabIndex + 1 < g_tabCount)
+						{
+							g_tabRequest = g_tabIndex + 1;
+							logger::debug("nav: tab {} -> {} of {}", g_tabIndex, g_tabRequest, g_tabCount);
+						}
+						else if (step < 0)
+						{
+							// At the first tab, or in a pane that has no tabs at all: back to the list.
+							g_focusPane = 1;
+							g_navToSelected = true;  // land on the open entry, not the last cursor position
+							logger::debug("nav: options -> list (returning to the open entry)");
+						}
 					}
 					// Stepping tabs must NOT depend on where ImGui's nav focus happens to be.
 					//
@@ -1485,18 +1584,6 @@ namespace renderer
 					//
 					// !editing still guards it, so pushing right inside a slider adjusts the value rather than changing tab.
 
-					else if (contentHasNav && navRight && !editing && g_tabIndex + 1 < g_tabCount)
-					{
-						g_tabRequest = g_tabIndex + 1;
-						logger::debug("nav: tab {} -> {} of {}", g_tabIndex, g_tabRequest, g_tabCount);
-					}
-					else if (contentHasNav && navLeft && !editing)
-					{
-						// At the first tab, or in a pane that has no tabs at all: back to the list.
-						g_focusPane = 1;
-						g_navToSelected = true;  // land on the open entry, not the last cursor position
-						logger::debug("nav: options -> list (returning to the open entry)");
-					}
 				}
 
 				// Publish the tab bar for the DevBench state JSON, so a driving tool can assert

@@ -16,6 +16,16 @@
 
 namespace renderer
 {
+	// What the last font atlas build holds (1.8.9): the languages it was built for, its glyph count
+	// and size, and whether one probe glyph per script is present. Read by the driving tool.
+	struct FontProbe
+	{
+		std::string language, gameLanguage;
+		int glyphs = 0, atlasWidth = 0, atlasHeight = 0, builds = 0;
+		bool hasKana = false, hasHangul = false, hasHanzi = false, hasCyrillic = false;
+	};
+	FontProbe GetFontProbe();
+
 	// Installs the D3D-init and present hooks. Returns false (after logging exactly what did
 	// not match) when any pattern guard refuses; the plugin then loads inert rather than crashing.
 	bool Install();

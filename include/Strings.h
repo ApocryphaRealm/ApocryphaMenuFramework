@@ -33,6 +33,10 @@ namespace strings
 	// "english", "german", ... - what Load() resolved (after the override and the game's INI).
 	const std::string& Language();
 
+	// The game's own sLanguage:General, lower-case ("english" when unset) - the language its item
+	// and spell names are in, which can differ from Language() when the INI overrides it (1.8.9).
+	std::string GameLanguageSetting();
+
 	// The languages for which a translation file exists on disk, lower-case, sorted - the
 	// settings page's combo. "english" is always listed first.
 	std::vector<std::string> Available();

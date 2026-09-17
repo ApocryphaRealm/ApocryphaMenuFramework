@@ -210,4 +210,9 @@ namespace strings
 	{
 		return g_allText;
 	}
+
+	std::string GameLanguageSetting()
+	{
+		return GameLanguage();
+	}
 }

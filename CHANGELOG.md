@@ -21,6 +21,15 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## 1.8.8 - 2026-09-16 - untested
+
+### Changed
+- **A sideways press inside a mod's page moves to the next widget first, and steps a tab only at the edge** (the owner, 2026-09-16, in Item Explorer: *"dpad right sends you to the favorites tab instead of the add item box"*). Item Explorer's Browse page lays its widgets side by side - the count slider, then the "Search every plugin" toggle on the same line - and a D-pad right meant to reach the next one was taken by the framework as "next tab" before ImGui had a chance to move the cursor. The press is now noted on the frame it happens and decided one frame later, when ImGui reports through `NavJustMovedToId` whether the cursor landed on another widget: if it did, nothing else happens; if it did not, the tab steps exactly as before (a page's own inner tabs first, then the framework's), and a left press with nothing to move to and no tab to step back through still returns to the mod list. Keyboard arrows and the stick follow the same rule. A driven `amf.menu op=nav` press moves no ImGui cursor, so it always steps, and the driving tool's proof of this path is unchanged.
+
+### Fixed
+- **Text the GAME supplies draws in a Japanese, Korean, Chinese or Russian game** (2026-09-17, the same class as littlefot's Wheeler report on that mod's Nexus page, checked across every mod of ours that owns a font atlas). The atlas was built from the default Latin set plus every character in the translation files - which is right for the framework's own text but says nothing about an item or spell name that Item Explorer or another page reads out of the game: a Japanese game's kanji were in no file the builder had read, and drew as `?`. The atlas now also holds Dear ImGui's built-in ranges for the script of the framework's language AND of the game's own sLanguage (Japanese, Korean, the 2500 common simplified Chinese characters, Cyrillic, Thai, Vietnamese), and the system face merged in for the missing glyphs is chosen by whichever of the two needs it - so a Japanese game with the framework's pages set to English still gets kana and kanji. Nothing changes for an English game.
+- The driving tool gained `op=font`: the languages the last atlas was built for, its glyph count and size, and one probe glyph per script (kana, hangul, hanzi, Cyrillic), so a language switch is proved by reading the atlas.
+
 ## 1.8.7 - 2026-09-16 - untested
 
 ### Added
