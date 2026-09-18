@@ -21,6 +21,15 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## 1.9.3 - 2026-09-18 - untested
+
+### Fixed
+- **The Address Library line reaches the log.** 1.9.2 moved the guard before SKSE::Init, where this framework's own
+  logger does not exist yet (it starts after Init on purpose, so the 1.7 line's CommonLibSSE-NG logger cannot replace
+  it), so the guard's line was written to nothing - a bug report from AMF carried no Address Library line at all. The
+  same report is now logged again as soon as the log is up: game version, the file the library wants, where it looked,
+  and whether it is there. The message box for a missing file is unchanged.
+
 ## 1.9.2 - 2026-09-18 - untested
 
 ### Fixed
