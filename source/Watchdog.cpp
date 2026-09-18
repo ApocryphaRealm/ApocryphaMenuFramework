@@ -1,5 +1,6 @@
 #include "Watchdog.h"
 
+#include "Renderer.h"
 #include "Settings.h"
 #include "utils/Logger.h"
 
@@ -142,6 +143,26 @@ namespace watchdog
 				if (g_lastFrameMs.load(std::memory_order_relaxed) == 0)
 				{
 					continue;
+				}
+
+				// A game that is not in the foreground, or is minimised, presents no frames by design -
+				// Skyrim pauses its render loop when its window loses focus (unless a display mod forces
+				// background rendering). That is not a hang. Twice on 2026-09-18 the owner alt-tabbed away
+				// from a healthy game to type and this watchdog terminated it after 120s, with no crash log
+				// to say so. While the window is not the foreground window the clock is held at 'now',
+				// so the window has the full 120s again once focus returns.
+				{
+					const HWND game = static_cast<HWND>(renderer::GetGameWindow());
+					const bool inForeground = game && ::GetForegroundWindow() == game && !::IsIconic(game);
+					static bool s_wasForeground = true;
+					if (!inForeground)
+					{
+						if (s_wasForeground) { logger::info("watchdog: standing down - the game window is not in the foreground, so no frames are expected"); }
+						s_wasForeground = false;
+						g_lastFrameMs.store(NowMs(), std::memory_order_relaxed);
+						continue;
+					}
+					if (!s_wasForeground) { logger::info("watchdog: the game window is in the foreground again; the {}s window restarts now", windowMs / 1000); s_wasForeground = true; }
 				}
 
 				const std::int64_t stalled = SinceLastFrameMs();

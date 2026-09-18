@@ -36,6 +36,8 @@ namespace renderer
 	// present thunk. Atomic: touched from the input thread, read on the render thread.
 	void ToggleMainWindow();
 	bool IsMainWindowVisible();
+	// The game's window handle (HWND) as seen at D3DInit; null before the renderer is up.
+	void* GetGameWindow();
 
 	// External menu control + query, used by the DevBench tool (DevBenchTool.cpp) so the menu can
 	// be driven and inspected headlessly for testing (rule 31): open/close, move the selection to a

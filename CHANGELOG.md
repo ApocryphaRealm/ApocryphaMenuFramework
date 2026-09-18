@@ -21,7 +21,12 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
-## 1.9.0 - 2026-09-18 - untested
+## 1.9.1 - 2026-09-18 - untested
+
+### Fixed
+- **The hang watchdog no longer terminates a game that is merely out of focus** (the owner, 2026-09-18, twice: *"the game died again"* with no crash log - the framework's own log said `watchdog: terminating the process - no frame for 120s`). Skyrim presents no frames while its window is not in the foreground, and the watchdog read that as a hang. It now stands down while the game window is not the foreground window or is minimised, logs the stand-down and the return, and gives the game the full window again once focus is back.
+
+## 1.9.0 - 2026-09-18 - working
 
 ### Changed
 - **A sideways D-pad or stick press inside a page never changes the tab** (the owner, 2026-09-18: *"i want the only way for the dpad to switch tabs in our mods is to select said tab and activate it, im tired of switching tabs by accident"*). The 1.8.8 rule (move to a widget first, step a tab only at the edge) and the 1.8.7 one before it (left steps back through tabs) are both gone: a press moves between widgets, a left press with nothing to move to returns to the mod list, and a tab - page tabs and a mod's declared inner tabs alike - changes only when the highlight is on the tab and A is pressed. AMF_DeclareInnerTabs still exists for compatibility but never asks a page to change tab.

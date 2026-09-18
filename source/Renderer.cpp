@@ -73,6 +73,7 @@ namespace renderer
 		bool g_captureDone = false;
 		std::string g_captureError;
 		std::atomic<bool> g_windowVisible{ false };
+		std::atomic<void*> g_gameWindow{ nullptr };   // the game's HWND, set at D3DInit; read by the watchdog
 		std::atomic<bool> g_justOpened{ false };  // set on the input thread, consumed on the render thread
 
 		// Opened from the row in the game's own System menu, rather than from the hotkey or a menu
@@ -490,6 +491,7 @@ namespace renderer
 				// decodes through the same cached loader consumer mods use, and that needs the device.
 				skin::Reload();
 				const HWND hwnd = reinterpret_cast<HWND>(window.hWnd);
+				g_gameWindow.store(reinterpret_cast<void*>(hwnd), std::memory_order_release);   // for the watchdog's foreground check
 
 				if (!device || !context || !hwnd || !window.swapChain)
 				{
@@ -1820,6 +1822,11 @@ namespace renderer
 		}
 
 		logger::info("Framework window {}", now ? "shown" : "hidden");
+	}
+
+	void* GetGameWindow()
+	{
+		return g_gameWindow.load(std::memory_order_acquire);
 	}
 
 	bool IsMainWindowVisible()
