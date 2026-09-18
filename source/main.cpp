@@ -19,6 +19,7 @@ namespace renderer { void RequestFontRebuild(); }
 #include "Theme.h"
 
 #include "utils/Logger.h"
+#include "utils/AddressLibraryGuard.h"
 #include "utils/ToggleSwitch.h"
 
 #include <imgui.h>
@@ -392,6 +393,13 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 	// CommonLibSSE-NG 7.x (the Skyrim 1.7.x line) installs its own truncating default logger inside
 	// SKSE::Init, so ours has to come after it to keep every line in our format on both lines.
 	SKSE::Init(a_skse);
+	// 1.8.9: before anything resolves an address, say which Address Library file this game needs and whether it
+	// is there; when it is missing the plugin loads inert with a message that names the file (the guard every
+	// mod of ours carries since Wheeler 1.2.9).
+	if (!AddressLibraryGuard::Guard("Apocrypha Menu Framework"))
+	{
+		return true;
+	}
 
 	const SKSE::PluginDeclaration* plugin = SKSE::PluginDeclaration::GetSingleton();
 
