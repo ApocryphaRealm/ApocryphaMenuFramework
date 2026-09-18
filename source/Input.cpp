@@ -707,9 +707,9 @@ namespace input
 				// the scheme says is in charge:  nothing being edited -> LEFT (navigate);  an item
 				// taken hold of -> RIGHT (move the value). The idle stick is explicitly released so a
 				// resting-but-off-centre stick cannot leave a nav axis stuck down.
-				if (controllerMode && record.code == 0 && keyboard::HandleStick(record.x, record.y))
+				if (controllerMode && keyboard::HandleStick(record.code, record.x, record.y))
 				{
-					break;   // 1.8.9: the keyboard has the left stick while it is open
+					break;   // 1.8.9: the keyboard has the left stick while it is open; 1.9.0: and swallows the right one
 				}
 				if (controllerMode)
 				{

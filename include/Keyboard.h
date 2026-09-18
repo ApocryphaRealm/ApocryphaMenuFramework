@@ -41,7 +41,7 @@ namespace keyboard
 
 	// Render thread (the translation step runs there, before NewFrame). Return true = consumed.
 	bool HandleGamepad(std::uint32_t a_xinputMask, bool a_down);
-	bool HandleStick(float a_x, float a_y);
+	bool HandleStick(std::uint32_t a_stick, float a_x, float a_y);   // 0 = left (moves the cursor), 1 = right (swallowed while open)
 
 	// The exports' backing: open for the focused text field (or the next one focused), close.
 	void Show();

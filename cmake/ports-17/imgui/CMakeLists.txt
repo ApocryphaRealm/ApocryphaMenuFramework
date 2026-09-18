@@ -107,6 +107,8 @@ endif()
 
 if(IMGUI_BUILD_WIN32_BINDING)
     target_sources(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/backends/imgui_impl_win32.cpp)
+    # Apocrypha Menu Framework (2026-09-18): no XInput polling in the backend - see cmake/ports/imgui/CMakeLists.txt.
+    target_compile_definitions(${PROJECT_NAME} PRIVATE IMGUI_IMPL_WIN32_DISABLE_GAMEPAD)
 endif()
 
 if(IMGUI_FREETYPE)

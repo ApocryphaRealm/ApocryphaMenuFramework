@@ -107,6 +107,12 @@ endif()
 
 if(IMGUI_BUILD_WIN32_BINDING)
     target_sources(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/backends/imgui_impl_win32.cpp)
+    # Apocrypha Menu Framework (2026-09-18): the backend must NOT poll XInput itself. The framework feeds
+    # every gamepad event from the game's own input queue (Input.cpp), so the backend's per-frame
+    # ImGui_ImplWin32_UpdateGamepads() was a second, unfiltered source of D-pad/face-button presses:
+    # a real controller leaked out of the on-screen keyboard (the owner: 'the dpad presses leak out of
+    # the keyboard') while a spliced test press, which XInput never sees, did not.
+    target_compile_definitions(${PROJECT_NAME} PRIVATE IMGUI_IMPL_WIN32_DISABLE_GAMEPAD)
 endif()
 
 if(IMGUI_FREETYPE)

@@ -80,15 +80,35 @@ namespace keyboard
 			++g_typed;
 		}
 
+		// A synthetic key press is RELEASED ONE FRAME LATER, never in the same call. The framework runs
+		// ImGui with ConfigInputTrickleEventQueue OFF (Renderer.cpp), so a down and an up queued together
+		// are applied in the same NewFrame and the key is never seen down - Back, Clear and Y did nothing
+		// (the owner, 2026-09-18). The release is queued from Draw() once the press has been applied.
+		struct PendingRelease { ImGuiKey key; bool ctrl; int atFrame; };
+		std::vector<PendingRelease> g_pendingRelease;
+
 		void SendKeyTap(ImGuiKey a_key, bool a_ctrl = false)
 		{
-			// A press followed by a release; ImGui trickles queued key events over successive
-			// frames so the pair is never collapsed into nothing.
 			ImGuiIO& io = ImGui::GetIO();
 			if (a_ctrl) { io.AddKeyEvent(ImGuiMod_Ctrl, true); }
 			io.AddKeyEvent(a_key, true);
-			io.AddKeyEvent(a_key, false);
-			if (a_ctrl) { io.AddKeyEvent(ImGuiMod_Ctrl, false); }
+			g_pendingRelease.push_back({ a_key, a_ctrl, ImGui::GetFrameCount() + 1 });
+		}
+
+		void FlushReleases()
+		{
+			const int frame = ImGui::GetFrameCount();
+			ImGuiIO& io = ImGui::GetIO();
+			for (auto it = g_pendingRelease.begin(); it != g_pendingRelease.end();)
+			{
+				if (frame >= it->atFrame)
+				{
+					io.AddKeyEvent(it->key, false);
+					if (it->ctrl) { io.AddKeyEvent(ImGuiMod_Ctrl, false); }
+					it = g_pendingRelease.erase(it);
+				}
+				else { ++it; }
+			}
 		}
 
 		void Press()
@@ -105,7 +125,12 @@ namespace keyboard
 			case kShift: g_shift = !g_shift; break;
 			case kSpace: SendChar(' '); break;
 			case kBack:  SendKeyTap(ImGuiKey_Backspace); break;
-			case kClear: SendKeyTap(ImGuiKey_A, true); SendKeyTap(ImGuiKey_Backspace); break;
+			case kClear:
+				// Select everything through the edit state itself, then one Backspace deletes it; two
+				// taps (Ctrl+A, Backspace) cannot be sequenced within one frame.
+				if (ImGuiInputTextState* st = ImGui::GetInputTextState(g_target)) { st->SelectAll(); }
+				SendKeyTap(ImGuiKey_Backspace);
+				break;
 			case kDone:  Hide(); break;
 			default: break;
 			}
@@ -197,9 +222,13 @@ namespace keyboard
 		}
 	}
 
-	bool HandleStick(float a_x, float a_y)
+	bool HandleStick(std::uint32_t a_stick, float a_x, float a_y)
 	{
 		if (!g_open) { return false; }
+		// The RIGHT stick is swallowed outright: with the target text box active the page would otherwise
+		// hand it to ImGui as the value-tweak axis (the owner, 2026-09-18: lock the pad to the keyboard
+		// until they exit or switch to mouse).
+		if (a_stick != 0) { return true; }
 		// The left stick works as a repeating D-pad: a push past the deadzone steps once, and
 		// holding it repeats every 180 ms.
 		constexpr float dz = 0.6F;
@@ -220,6 +249,7 @@ namespace keyboard
 
 	void Draw()
 	{
+		FlushReleases();
 		// This frame's text fields are complete (the page has drawn); keep them for the input
 		// translation, which runs before the next frame draws.
 		g_fieldsLastFrame.swap(g_fieldsThisFrame);
