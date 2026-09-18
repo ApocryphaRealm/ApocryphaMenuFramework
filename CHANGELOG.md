@@ -21,6 +21,16 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## 1.9.4 - 2026-09-18 - untested
+
+### Fixed
+- **1.9.3 stopped the game from starting.** It logged the Address Library report a second time by calling the guard's
+  `Check()` again after `SKSE::Init`; with that build the game died about a second after launch, before SKSE wrote a
+  line of its own log, and no message box appeared (the owner, 2026-09-18: *"1.9.2 boots but not 1.9.3"*, *"test
+  profile runs with amf 1.9.1 but not 1.9.3"*). The guard now REMEMBERS the report it made before `SKSE::Init`, and
+  the framework logs that copy: the line a bug report needs is still there, and nothing is asked of the system twice.
+  **1.9.4 replaces 1.9.3 - do not run 1.9.3.**
+
 ## 1.9.3 - 2026-09-18 - untested
 
 ### Fixed

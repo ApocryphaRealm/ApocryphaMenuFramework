@@ -415,11 +415,12 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 
 	logger::debug("SKSE core APIs initialized");
 
-	// 1.9.3: the guard above runs before this logger exists, so its line was lost (oproso's Wheeler log had none,
-	// and AMF's own log had none either). Say it again now that the log is up - the same report, so a bug report
-	// carries the game version, the file the library wants, and whether it is there.
+	// 1.9.4: the guard above runs before this logger exists, so its line was lost (oproso's Wheeler log had none,
+	// and AMF's own log had none either). Say it again now that the log is up, from the report the guard ALREADY
+	// made - 1.9.3 called Check() a second time here and the game died a second into the launch, before SKSE logged
+	// anything (the owner, 2026-09-18: "1.9.2 boots but not 1.9.3"), so nothing is re-entered, only read.
+	if (const auto& r = AddressLibraryGuard::Last(); !r.runtime.empty())
 	{
-		const auto r = AddressLibraryGuard::Check();
 		logger::info("[AddressLibrary] runtime {} ({}) read from \"{}\"; will open \"{}\" relative to \"{}\": {}{}",
 					 r.runtime, r.edition, r.exe, r.file, r.cwd, r.existsAtCwd ? "present" : "MISSING",
 					 r.existsAtCwd == r.existsAtExe ? "" : (r.existsAtExe ? " (but present beside the executable)" : " (and missing beside the executable too)"));

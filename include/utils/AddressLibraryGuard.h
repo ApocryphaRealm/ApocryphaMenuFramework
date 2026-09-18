@@ -46,6 +46,15 @@ namespace AddressLibraryGuard
 
 	// Mirrors REL::IDDatabase::load() in CommonLibSSE-NG: versionlib-<v>.bin for AE, version-<v>.bin
 	// for SE, version-<v>.csv for VR, all under Data/SKSE/Plugins relative to the working directory.
+	// The report the first Check() made, kept so a mod whose logger starts later can print it without asking the
+	// system again. AMF 1.9.3 called Check() a second time after SKSE::Init and the game died a second into the
+	// launch, before SKSE logged anything (the owner, 2026-09-18); nothing may re-enter it after the guard has run.
+	inline Report& Last()
+	{
+		static Report s_last;
+		return s_last;
+	}
+
 	inline Report Check()
 	{
 		Report r;
@@ -84,6 +93,7 @@ namespace AddressLibraryGuard
 		}
 		const auto exeDir = std::filesystem::path(r.exe).parent_path();
 		r.existsAtExe = std::filesystem::exists(exeDir / r.file, ec);
+		Last() = r;
 		return r;
 	}
 
