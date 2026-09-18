@@ -21,7 +21,12 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
-## 1.9.1 - 2026-09-18 - untested
+## 1.9.2 - 2026-09-18 - untested
+
+### Fixed
+- **The Address Library guard now runs before SKSE::Init.** CommonLibSSE-NG's Init opens the Address Library itself, so the guard added for a missing file sat after the very call that fails on it and never ran; oproso's log (Perfected Wheeler 1.3.2, 2026-09-18) showed the banner, then CommonLib's bare 'failed to open address library file', and no [AddressLibrary] line. The check is now the first thing after the logger, so a missing file is named - game version, file, folder - and the plugin loads inert.
+
+## 1.9.1 - 2026-09-18 - working
 
 ### Fixed
 - **The hang watchdog no longer terminates a game that is merely out of focus** (the owner, 2026-09-18, twice: *"the game died again"* with no crash log - the framework's own log said `watchdog: terminating the process - no frame for 120s`). Skyrim presents no frames while its window is not in the foreground, and the watchdog read that as a hang. It now stands down while the game window is not the foreground window or is minimised, logs the stand-down and the return, and gives the game the full window again once focus is back.

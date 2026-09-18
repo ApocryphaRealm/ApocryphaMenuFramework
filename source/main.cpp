@@ -392,14 +392,15 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 	// SKSE::Init AFTER the pre-check (it may touch the module/database) and BEFORE our logger:
 	// CommonLibSSE-NG 7.x (the Skyrim 1.7.x line) installs its own truncating default logger inside
 	// SKSE::Init, so ours has to come after it to keep every line in our format on both lines.
-	SKSE::Init(a_skse);
-	// 1.8.9: before anything resolves an address, say which Address Library file this game needs and whether it
-	// is there; when it is missing the plugin loads inert with a message that names the file (the guard every
-	// mod of ours carries since Wheeler 1.2.9).
+	// The guard runs BEFORE SKSE::Init: CommonLibSSE-NG's Init opens the Address Library itself, so a guard placed after it never ran when the file was missing (oproso's wheeler.log, 2026-09-18 - banner, then the bare failure, no [AddressLibrary] line).
 	if (!AddressLibraryGuard::Guard("Apocrypha Menu Framework"))
 	{
 		return true;
 	}
+	SKSE::Init(a_skse);
+	// 1.8.9: before anything resolves an address, say which Address Library file this game needs and whether it
+	// is there; when it is missing the plugin loads inert with a message that names the file (the guard every
+	// mod of ours carries since Wheeler 1.2.9).
 
 	const SKSE::PluginDeclaration* plugin = SKSE::PluginDeclaration::GetSingleton();
 
