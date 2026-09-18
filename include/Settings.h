@@ -48,6 +48,10 @@ namespace settings
 
 		// [Input]
 		std::int32_t toggleKey = 0x3B;   // DirectInput scan code; 0x3B = F1 (framework convention, the author 2026-08-27)
+		// 1.8.9: the on-screen keyboard for controller players (the owner, 2026-09-18) - a key grid
+		// across the bottom of the screen that types into whichever text box a page has highlighted.
+		// See Keyboard.h. Off hides it entirely; consumer mods can still summon it by export.
+		bool onScreenKeyboard = true;    // bOnScreenKeyboard
 
 		// [Display]
 		float textScale = 1.30f;         // extra font multiplier on top of the resolution scale (the author, 1.0.2 feedback round)

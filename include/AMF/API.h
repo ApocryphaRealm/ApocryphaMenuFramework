@@ -83,6 +83,18 @@ AMF_API const char* AMF_GetLanguage();
 AMF_API bool AMF_OpenMenu(const char* a_modName);
 AMF_API void AMF_CloseMenu();
 
+// 1.8.9 - the theme frame, for a consumer's own floating box. a_drawList is an ImDrawList* (the
+// foreground list from igGetForegroundDrawList_Nil is the usual one); the rect is in display
+// pixels; the frame is drawn just outside it, as around the framework window. Returns false when
+// the active theme has no frame (draw your own line then). Resolve by name; older frameworks lack it.
+AMF_API bool AMF_DrawThemeFrame(void* a_drawList, float a_x0, float a_y0, float a_x1, float a_y1);
+
+// 1.8.9 - the on-screen keyboard (a key grid across the bottom of the screen that types into the
+// highlighted text box; see the Settings page). Show opens it for the text box the controller's
+// highlight is on; Hide closes it. It also opens by itself when A is pressed on a text box.
+AMF_API void AMF_ShowKeyboard();
+AMF_API void AMF_HideKeyboard();
+
 // --------------------------------------------------------------------------------------------
 // Hide or show a registered page (1.8.3). A mod whose settings have an "advanced" switch hides the
 // sections it does not want listed; a hidden page is left out of the mod's tabs (and a mod with one

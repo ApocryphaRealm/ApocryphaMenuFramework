@@ -145,11 +145,25 @@ def main() -> int:
     out, pos = [], 0
     counted = {"self": 0, "pOut": 0, "string": 0, "outparam": 0}
     touched = 0
+    # 1.8.9: the on-screen keyboard has to know which ImGui items are TEXT FIELDS, and the only
+    # place every consumer's text field passes through is these four exports. Their bodies are
+    # rewritten to note the item's id after the call (see Keyboard.h). Nothing else changes.
+    TEXT_FIELDS = {"igInputText", "igInputTextMultiline", "igInputTextWithHint", "igInputTextEx"}
+    noted = 0
     for m in fn.finditer(src):
         ret, name, args = m.group(2).strip(), m.group(3), m.group(4).strip()
         lines = guards_for(ret, args)
         out.append(src[pos:m.end()])
         pos = m.end()
+        if name in TEXT_FIELDS:
+            body_end = src.index("\n}", pos)
+            body = src[pos:body_end]
+            assert body.strip().startswith("return ImGui::"), name
+            call = body.strip()[len("return "):].rstrip(";")
+            out.append("\n    const bool amf_r = " + call + ";   // AMF keyboard: note the text field\n"
+                       "    amf_NoteTextField(ImGui::GetItemID());\n    return amf_r;")
+            pos = body_end
+            noted += 1
         if lines:
             touched += 1
             for L in lines:
@@ -176,7 +190,9 @@ def main() -> int:
         "// would stop every window without a close button from drawing.\n"
         "// ============================================================================================\n"
     )
-    text = banner + "".join(out)
+    # 1.8.9: the text-field hook the four rewritten exports call (defined in Keyboard.cpp).
+    assert noted == 4, noted
+    text = banner + "void amf_NoteTextField(unsigned int a_itemId);\n" + "".join(out)
     os.makedirs(os.path.dirname(TARGET), exist_ok=True)
     io.open(TARGET, "w", encoding="utf-8", newline="\n").write(text)
 

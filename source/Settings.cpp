@@ -124,6 +124,7 @@ namespace settings
 			const auto entries = ParseFile(file);
 
 			ReadNumber(entries, "Input.uToggleKey", g_values.toggleKey);
+			ReadBool(entries, "Input.bOnScreenKeyboard", g_values.onScreenKeyboard);
 			ReadBool(entries, "Menus.bSystemMenuRow", g_values.systemMenuRow);
 
 			// Window profiles. Each field defaults to -1, which the renderer reads as "this profile
@@ -208,6 +209,10 @@ namespace settings
 				"; DirectInput scan code that toggles the framework menu. 59 (0x3B) = F1.\n"
 				"; 0 = no key at all, which is the way to leave F1 entirely to the game.\n"
 				"uToggleKey=" << g_values.toggleKey << "\n"
+				"; 1 = the on-screen keyboard for controller players: highlight a text box and press A,\n"
+				"; and a key grid appears across the bottom of the screen; the D-pad walks it, A types,\n"
+				"; B goes back to the box. 0 turns it off.\n"
+				"bOnScreenKeyboard=" << (g_values.onScreenKeyboard ? 1 : 0) << "\n"
 				"; Keyboard or controller navigation is DETECTED from whatever you last used, and is\n"
 				"; not a setting: press a key or move the mouse for keyboard navigation, touch the\n"
 				"; pad for controller navigation. The menu shows which one it is reading.\n"

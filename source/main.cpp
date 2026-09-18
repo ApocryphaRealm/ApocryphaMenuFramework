@@ -5,6 +5,7 @@
 #include "Input.h"
 #include "Persistence.h"
 #include "Registry.h"
+#include "Keyboard.h"
 #include "Renderer.h"
 #include "Settings.h"
 #include "Strings.h"
@@ -236,6 +237,23 @@ AMF_API bool AMF_OpenMenu(const char* a_modName)
 AMF_API void AMF_CloseMenu()
 {
 	renderer::SetMenuVisible(false, false);
+}
+
+AMF_API bool AMF_DrawThemeFrame(void* a_drawList, float a_x0, float a_y0, float a_x1, float a_y1)
+{
+	// 1.8.9: a consumer's own floating box gets the framework's theme frame (the Skyrim knotwork),
+	// so it matches the window and follows the theme. False = nothing drawn, draw your own line.
+	return renderer::DrawThemeFrameAround(static_cast<ImDrawList*>(a_drawList), a_x0, a_y0, a_x1, a_y1);
+}
+
+AMF_API void AMF_ShowKeyboard()
+{
+	keyboard::Show();
+}
+
+AMF_API void AMF_HideKeyboard()
+{
+	keyboard::Hide();
 }
 
 AMF_API bool AMF_SetPageVisible(const char* a_modName, const char* a_pageName, bool a_visible)

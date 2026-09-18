@@ -1,4 +1,5 @@
 #include "Renderer.h"
+#include "Keyboard.h"
 
 #include "ConsumerSurface.h"
 
@@ -683,6 +684,19 @@ namespace renderer
 							   "Off: the game's menu is left completely untouched and this menu is "
 							   "reached by its key alone."));
 			ImGui::TextDisabled("%s", TR("AMF_TakesEffectJournal", "Takes effect the next time the journal is opened."));
+			ImGui::Spacing();
+
+			// THE ON-SCREEN KEYBOARD (1.8.9, the owner, 2026-09-18): a framework feature, so every mod's
+			// search box gets it; a toggle here, drawn at the bottom of the screen, never over the page.
+			if (widgets::Toggle(TR("AMF_OnScreenKeyboard", "On-screen keyboard for controllers"), &values.onScreenKeyboard))
+			{
+				logger::info("settings page: on-screen keyboard -> {}", values.onScreenKeyboard);
+				settings::Save();
+			}
+			ImGui::TextWrapped("%s", TR("AMF_OnScreenKeyboardHelp", "On: highlight any text box on a mod's page with the D-pad and press A, "
+							   "and a key grid appears across the bottom of the screen. The D-pad walks the keys, A types one, B puts "
+							   "the highlight back on the box, X is shift and Y is backspace. It works in every mod's page. Off: text "
+							   "boxes take a real keyboard only."));
 			ImGui::Spacing();
 
 			// CUSTOM MENU ART IS OFF UNLESS ASKED FOR (the owner, 2026-09-10: "i dont want the custom
@@ -1704,6 +1718,9 @@ namespace renderer
 						DrawFrameworkWindow();
 					}
 				}
+				// The on-screen keyboard, after the window so this frame's text fields are known. It
+				// closes itself when the window is not up.
+				keyboard::Draw();
 
 				// LAST thing in the frame: the curtain covers the framework's own window and every
 				// consumer HUD element rather than being interleaved with them.
@@ -1955,6 +1972,19 @@ namespace renderer
 		return false;
 	}
 
+	// 1.8.9: the active theme's frame, for a consumer's own box (Item Explorer's 3D preview first): the
+	// Skyrim theme's knotwork, a UI author's frame art when configured, nothing under a theme without a
+	// frame. Drawn just outside the rect like the window's own. Returns whether anything was drawn, so
+	// the consumer can fall back to a plain line.
+	bool DrawThemeFrameAround(ImDrawList* a_drawList, float a_x0, float a_y0, float a_x1, float a_y1)
+	{
+		if (!a_drawList || a_x1 <= a_x0 || a_y1 <= a_y0) { return false; }
+		const bool knot = theme::GetActiveTheme().knotwork || skin::HasFrame();
+		if (!knot) { return false; }
+		DrawKnotworkAround(a_drawList, ImVec2(a_x0, a_y0), ImVec2(a_x1, a_y1));
+		return true;
+	}
+
 	std::string GetMenuStateJson()
 	{
 		std::string node, tab, tabName; int selMod, tabIndex, tabCount;
@@ -2039,6 +2069,7 @@ namespace renderer
 			   ",\"navId\":" + std::to_string(GImGui ? GImGui->NavId : 0u) +
 			   ",\"navWindow\":\"" + esc(GImGui && GImGui->NavWindow && GImGui->NavWindow->Name ? GImGui->NavWindow->Name : "") + "\"" +
 			   ",\"displayOrder\":[" + order + "]" +
-			   ",\"mods\":[" + mods + "]}";
+			   ",\"mods\":[" + mods + "]" +
+			   ",\"keyboard\":" + keyboard::StateJson() + "}";
 	}
 }

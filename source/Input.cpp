@@ -1,4 +1,5 @@
 #include "Input.h"
+#include "Keyboard.h"
 
 #include <chrono>
 #include <cmath>
@@ -678,6 +679,12 @@ namespace input
 					logger::debug("gamepad event: code=0x{:04X} down={} controllerMode={} -> imguiKey={}",
 								  record.code, record.down, controllerMode, static_cast<int>(key));
 					if (record.down) { NoteDevice(Device::kGamepad); }
+					// 1.8.9: the on-screen keyboard takes the pad while it is open (D-pad, A, B, X, Y), and
+					// takes the A that opens it on a highlighted text box; everything else falls through.
+					if (controllerMode && keyboard::HandleGamepad(record.code, record.down))
+					{
+						break;
+					}
 					if (controllerMode && key != ImGuiKey_None)
 					{
 						io.AddKeyEvent(key, record.down);
@@ -700,6 +707,10 @@ namespace input
 				// the scheme says is in charge:  nothing being edited -> LEFT (navigate);  an item
 				// taken hold of -> RIGHT (move the value). The idle stick is explicitly released so a
 				// resting-but-off-centre stick cannot leave a nav axis stuck down.
+				if (controllerMode && record.code == 0 && keyboard::HandleStick(record.x, record.y))
+				{
+					break;   // 1.8.9: the keyboard has the left stick while it is open
+				}
 				if (controllerMode)
 				{
 					const bool editing = g_itemActive.load(std::memory_order_relaxed);

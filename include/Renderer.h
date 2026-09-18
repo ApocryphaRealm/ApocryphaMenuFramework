@@ -2,6 +2,8 @@
 
 #include <string>
 
+struct ImDrawList;
+
 // ============================================================================================
 // M1: the render loop. Two trampoline call-hooks (survey §7.1), a probed D3D-init site
 // (Offsets.h explains the dispute), one ImGui context for the whole process.
@@ -74,6 +76,8 @@ namespace renderer
 	void ResetModOrder();
 
 	std::string GetMenuStateJson();
+	// 1.8.9: draw the active theme's frame around a rect on a consumer's draw list (see Renderer.cpp).
+	bool DrawThemeFrameAround(ImDrawList* a_drawList, float a_x0, float a_y0, float a_x1, float a_y1);
 
 	// In-process capture (ported from the Overhaul line, 2026-08-30): saves the NEXT presented
 	// frame - WITH the ImGui overlay - as a PNG at a_path. Blocks the calling (DevBench listener)
