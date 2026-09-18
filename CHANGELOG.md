@@ -21,7 +21,15 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
-## 1.8.9 - 2026-09-18 - untested
+## 1.9.0 - 2026-09-18 - untested
+
+### Changed
+- **A sideways D-pad or stick press inside a page never changes the tab** (the owner, 2026-09-18: *"i want the only way for the dpad to switch tabs in our mods is to select said tab and activate it, im tired of switching tabs by accident"*). The 1.8.8 rule (move to a widget first, step a tab only at the edge) and the 1.8.7 one before it (left steps back through tabs) are both gone: a press moves between widgets, a left press with nothing to move to returns to the mod list, and a tab - page tabs and a mod's declared inner tabs alike - changes only when the highlight is on the tab and A is pressed. AMF_DeclareInnerTabs still exists for compatibility but never asks a page to change tab.
+
+### Fixed
+- **The on-screen keyboard now opens on the framework's own text boxes** - the mod-list Search bar, the alias and position fields on the Settings page (the owner, 2026-09-18: *"the keyboard appears while in item explorer but not when using amfs own search bar"*). The hook that tells the keyboard "the highlight is on a text box" is injected into the C-API wrappers a mod's page draws through, and the framework's own boxes are drawn with ImGui directly, so they never registered; each of them now notes itself after it is drawn.
+
+## 1.8.9 - 2026-09-18 - working
 
 ### Added
 - **An on-screen keyboard for controller players, built into the framework so every mod's search box gets it** (the owner, 2026-09-18: *"add this in-game keyboard to AMF ... toggleable in the settings page ... if this keyboard would be effective on a search bar inside of another mod, even more so"*; on where it sits: *"separate from the AMF framework menu bounds and just bound to the screen and set at the bottom of the player's screen"*; and *"whenever they press circle, it teleports the controller nav box back to the search bar"*). Highlight any text box on a mod's page with the D-pad and press A: the box starts taking input and a key grid appears across the bottom of the screen - bound to the screen, not to the window, so it never covers the page. The D-pad and left stick walk the keys, A types one, B puts the highlight back on the box and gives the pad back to the page, X is shift, Y is backspace; Space, Back, Clear, Shift and Done sit on the bottom row. It works in every page because the framework exports the text-field calls themselves: the four `igInputText*` exports now report the item they drew, so the keyboard knows which highlighted item is a text box without any mod declaring anything. Off by `bOnScreenKeyboard=0` or the toggle on the Settings page. Two exports for a mod that wants to summon it itself: `AMF_ShowKeyboard()` and `AMF_HideKeyboard()`. `amf.menu op=state` carries a `keyboard` block (open, target, cursor, the text so far) so a driven test can read it.

@@ -920,6 +920,7 @@ namespace renderer
 			static char testBuffer[128] = "";
 			ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.7f);
 			ImGui::InputText("##persistValue", testBuffer, sizeof(testBuffer));
+			keyboard::NoteTextField(ImGui::GetItemID());
 			ImGui::SameLine();
 			if (ImGui::Button("Set"))
 			{
@@ -1007,6 +1008,7 @@ namespace renderer
 					// alias field beside this one already committed both ways; now they match.
 					const bool posEntered = ImGui::InputInt("##pos", &position, 0, 0,
 															ImGuiInputTextFlags_EnterReturnsTrue);
+					keyboard::NoteTextField(ImGui::GetItemID());
 					if ((posEntered || ImGui::IsItemDeactivatedAfterEdit()) && position != i + 1)
 					{
 						// RECORDED, not applied - see the note above the declaration. Applying here
@@ -1031,6 +1033,7 @@ namespace renderer
 					const bool committed =
 						ImGui::InputTextWithHint("##alias", row.modName.c_str(), buffer->second.data(),
 												 buffer->second.size(), ImGuiInputTextFlags_EnterReturnsTrue);
+						keyboard::NoteTextField(ImGui::GetItemID());
 					if (committed || ImGui::IsItemDeactivatedAfterEdit())
 					{
 						personalization::SetAlias(row.modName, buffer->second.data());
@@ -1362,6 +1365,11 @@ namespace renderer
 				ImGui::SetNextItemWidth(-FLT_MIN);
 				ImGui::InputTextWithHint("##modsearch", TR("AMF_SearchMods", "Search"),
 										 s_modFilter, sizeof(s_modFilter));
+				// The framework's OWN text boxes are drawn with ImGui directly, so the generator's
+				// amf_NoteTextField hook (which only the C-API wrappers carry) never sees them; each one
+				// notes itself, or the on-screen keyboard works on every mod's box except ours (the owner,
+				// 2026-09-18: "the keyboard appears while in item explorer but not when using amfs own search bar").
+				keyboard::NoteTextField(ImGui::GetItemID());
 				// Mirrored for the driving tool (report 2026-09-12: the box stops taking input after the
 				// text is erased). Rect so the REAL box can be clicked; active/text/key state so the
 				// failure is measured at the widget rather than guessed from a symptom.
@@ -1529,9 +1537,9 @@ namespace renderer
 						logger::debug("nav: list -> options");
 					}
 					// Inside the content pane a sideways press is ImGui's first: if there is a widget to that
-					// side, the cursor moves there and nothing else happens. Only a press that moved nothing
-					// steps a tab (the page's own inner tabs first, then the framework's), and only a left press
-					// that moved nothing and had no tab to step back through leaves for the mod list. The
+					// side, the cursor moves there and nothing else happens. A press that moved nothing never
+					// steps a tab (1.9.0 - tabs change only by selecting and activating them); a left press
+					// that moved nothing leaves for the mod list. The
 					// decision is taken one frame late, when ImGui has reported the move (NavJustMovedToId),
 					// so the two never race. A driven op=nav press moves no ImGui cursor and therefore always
 					// steps, which keeps the driving tool's proof of this path intact.
@@ -1553,31 +1561,15 @@ namespace renderer
 						{
 							logger::debug("nav: content lost focus before the step was decided; dropped");
 						}
-						else if (step > 0 && g_innerCount > 1 && g_innerIndex + 1 < g_innerCount)
-						{
-							g_innerRequest = g_innerIndex + 1;
-							logger::debug("nav: inner tab {} -> {} of {}", g_innerIndex, g_innerRequest, g_innerCount);
-						}
-						else if (step < 0 && g_innerCount > 1 && g_innerIndex > 0)
-						{
-							g_innerRequest = g_innerIndex - 1;
-							logger::debug("nav: inner tab {} -> {} of {}", g_innerIndex, g_innerRequest, g_innerCount);
-						}
-						else if (step < 0 && g_tabCount > 1 && g_tabIndex > 0)
-						{
-							// Still somewhere inside the tabs: step back one instead of dropping the
-							// player out of the menu they are reading.
-							g_tabRequest = g_tabIndex - 1;
-							logger::debug("nav: tab {} -> {} of {}", g_tabIndex, g_tabRequest, g_tabCount);
-						}
-						else if (step > 0 && g_tabIndex + 1 < g_tabCount)
-						{
-							g_tabRequest = g_tabIndex + 1;
-							logger::debug("nav: tab {} -> {} of {}", g_tabIndex, g_tabRequest, g_tabCount);
-						}
+						// 1.9.0: NO tab stepping here any more (the owner, 2026-09-18: "i want the only way for the
+						// dpad to switch tabs in our mods is to select said tab and activate it, im tired of switching
+						// tabs by accident"). A tab - the framework's page tabs and a page's own inner bar alike - changes
+						// only when the highlight is moved ONTO the tab and it is activated, which ImGui's own nav does.
+						// A right press that moved nothing now does nothing; a left press that moved nothing leaves for
+						// the mod list, whatever tab is open.
 						else if (step < 0)
 						{
-							// At the first tab, or in a pane that has no tabs at all: back to the list.
+							// Nothing to move to on the left: back to the list (from any tab).
 							g_focusPane = 1;
 							g_navToSelected = true;  // land on the open entry, not the last cursor position
 							logger::debug("nav: options -> list (returning to the open entry)");
