@@ -106,6 +106,28 @@ AMF_API void AMF_HideKeyboard();
 AMF_API bool AMF_SetPageVisible(const char* a_modName, const char* a_pageName, bool a_visible);
 
 // --------------------------------------------------------------------------------------------
+// THE THUMBSTICKS (1.9.5). The framework collapses both sticks onto ImGui's one set of gamepad nav
+// axes and decides which is in charge each frame, so a page cannot read them apart. These give a
+// page both of them, and a way to stop navigation while it has them.
+//
+//   AMF_SetSticksCaptured(true)   neither stick moves the selection any more; the page has them.
+//   AMF_GetStick(which, ...)      which: 0 = left, 1 = right. x/y are the raw axes in [-1,1],
+//                                 y positive is up. clicked is that stick's click (L3 / R3), held
+//                                 now. live is true when the stick is past the nav deadzone, so a
+//                                 resting stick reads as still. Returns false if the arguments are
+//                                 not usable.
+//   AMF_SetSticksCaptured(false)  give them back. ALWAYS do this when the page is done - though the
+//                                 framework also releases them by itself when its menu closes, so a
+//                                 mod that forgets cannot leave the pad stuck.
+//
+// L3 and R3 also reach ImGui as ImGuiKey_GamepadL3 / ImGuiKey_GamepadR3 from 1.9.5, so a page can
+// bind an action to a stick click without touching these calls at all.
+// Resolve all of them by name and null-check; an older framework has none of them.
+// --------------------------------------------------------------------------------------------
+AMF_API void AMF_SetSticksCaptured(bool a_captured);
+AMF_API bool AMF_GetStick(int a_which, float* a_x, float* a_y, bool* a_clicked, bool* a_live);
+
+// --------------------------------------------------------------------------------------------
 // ig* surface (M3): cimgui-compatible C exports generated from the PUBLIC cimgui definitions
 // (github.com/cimgui/cimgui, MIT). Consumers that already resolve names like "igText",
 // "igSliderFloat", "igTextDisabledV" keep working by resolving the same names from this DLL.

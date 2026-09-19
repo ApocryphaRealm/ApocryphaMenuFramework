@@ -1,5 +1,6 @@
 #include "Settings.h"
 
+#include "Bindings.h"
 #include "Personalization.h"
 #include "Theme.h"
 #include "utils/Logger.h"
@@ -168,6 +169,7 @@ namespace settings
 			ReadNumber(entries, "Log.uLogLevel", g_values.logLevel);
 			// Menu-shell personalization (aliases + custom order) lives in the same file.
 			personalization::LoadFrom(entries);
+			bindings::LoadFrom(entries);
 
 			logger::info("settings loaded: uToggleKey=0x{:X}, bSystemMenuRow={}, fTextScale={:.2f}, uLogLevel={}",
 						 g_values.toggleKey, g_values.systemMenuRow, g_values.textScale, g_values.logLevel);
@@ -303,6 +305,7 @@ namespace settings
 
 		// Menu-shell personalization writes its own two sections (aliases, custom order).
 		file << personalization::IniBlock();
+		file << bindings::IniBlock();
 
 		logger::debug("settings: saved to {}", kIniPath);
 	}

@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
 #include <mutex>
 #include <sstream>
 
@@ -21,6 +22,13 @@ namespace personalization
 		// not lose its place.
 		std::vector<std::string> g_order;
 		bool g_customOrder = false;
+
+		// Pinned menus, in the order the player favourited them. Like g_order this is keyed by MOD
+		// NAME, so a rename keeps the pin and uninstalling a mod does not lose its place.
+		std::vector<std::string> g_favourites;
+
+		// What the non-favourite remainder is sorted by (the sidebar's two toggles).
+		SortMode g_sortMode = SortMode::kListOrder;
 
 		std::string Lower(std::string a_text)
 		{
@@ -46,15 +54,47 @@ namespace personalization
 		// The display sequence of the CURRENTLY REGISTERED mods. In custom mode the stored
 		// sequence leads and anything new is inserted at its alphabetical position among the
 		// entries already there (the author: a later install must not just land at the end).
+		// Pinned names first, in FAVOURITE order, then everything else in the order it was already
+		// in. Applied last so the pin block survives every sort mode and the custom sequence alike -
+		// a favourite is a pin, not another way of typing a position number.
+		void HoistFavouritesLocked(std::vector<std::string>& a_sequence)
+		{
+			if (g_favourites.empty()) { return; }
+			std::vector<std::string> pinned;
+			pinned.reserve(g_favourites.size());
+			for (const std::string& name : g_favourites)
+			{
+				const auto at = std::find(a_sequence.begin(), a_sequence.end(), name);
+				if (at != a_sequence.end())
+				{
+					pinned.push_back(name);
+					a_sequence.erase(at);
+				}
+			}
+			a_sequence.insert(a_sequence.begin(), pinned.begin(), pinned.end());
+		}
+
 		std::vector<std::string> SequenceLocked(const std::vector<registry::Entry>& a_entries)
 		{
 			std::vector<std::string> present;
 			present.reserve(a_entries.size());
 			for (const registry::Entry& entry : a_entries) { present.push_back(entry.modName); }
 
+			// A forced sort overrides the custom sequence outright rather than rewriting it: the
+			// toggles are a way of LOOKING at the list, and turning them off must give the player
+			// back the order they had arranged by hand.
+			if (g_sortMode != SortMode::kListOrder)
+			{
+				std::sort(present.begin(), present.end(), AlphaLess);
+				if (g_sortMode == SortMode::kAlphaDesc) { std::reverse(present.begin(), present.end()); }
+				HoistFavouritesLocked(present);
+				return present;
+			}
+
 			if (!g_customOrder)
 			{
 				std::sort(present.begin(), present.end(), AlphaLess);
+				HoistFavouritesLocked(present);
 				return present;
 			}
 
@@ -82,6 +122,7 @@ namespace personalization
 											 [&](const std::string& existing) { return AlphaLess(name, existing); });
 				sequence.insert(at, name);
 			}
+			HoistFavouritesLocked(sequence);
 			return sequence;
 		}
 	}
@@ -148,6 +189,72 @@ namespace personalization
 					 a_modName, from + 1, target + 1, count);
 	}
 
+	bool IsFavourite(const std::string& a_modName)
+	{
+		std::scoped_lock lock(g_lock);
+		return std::find(g_favourites.begin(), g_favourites.end(), a_modName) != g_favourites.end();
+	}
+
+	void SetFavourite(const std::string& a_modName, bool a_favourite)
+	{
+		std::scoped_lock lock(g_lock);
+		const auto at = std::find(g_favourites.begin(), g_favourites.end(), a_modName);
+		if (a_favourite)
+		{
+			// Appended, never inserted: the pin block IS the favourite order, so a new favourite
+			// takes the position after the last one (the owner, 2026-09-19).
+			if (at == g_favourites.end())
+			{
+				g_favourites.push_back(a_modName);
+				logger::info("menu favourite: \"{}\" pinned at position {}", a_modName, g_favourites.size());
+			}
+			return;
+		}
+		if (at != g_favourites.end())
+		{
+			g_favourites.erase(at);
+			logger::info("menu favourite: \"{}\" unpinned ({} left)", a_modName, g_favourites.size());
+		}
+	}
+
+	void ToggleFavourite(const std::string& a_modName)
+	{
+		bool on = false;
+		{
+			std::scoped_lock lock(g_lock);
+			on = std::find(g_favourites.begin(), g_favourites.end(), a_modName) != g_favourites.end();
+		}
+		SetFavourite(a_modName, !on);
+	}
+
+	int FavouritePosition(const std::string& a_modName)
+	{
+		std::scoped_lock lock(g_lock);
+		const auto at = std::find(g_favourites.begin(), g_favourites.end(), a_modName);
+		return at == g_favourites.end() ? 0 : static_cast<int>(std::distance(g_favourites.begin(), at)) + 1;
+	}
+
+	std::size_t FavouriteCount()
+	{
+		std::scoped_lock lock(g_lock);
+		return g_favourites.size();
+	}
+
+	SortMode GetSortMode()
+	{
+		std::scoped_lock lock(g_lock);
+		return g_sortMode;
+	}
+
+	void SetSortMode(SortMode a_mode)
+	{
+		std::scoped_lock lock(g_lock);
+		if (g_sortMode == a_mode) { return; }
+		g_sortMode = a_mode;
+		logger::info("menu sort: {}", a_mode == SortMode::kAlphaAsc ? "A-Z" :
+					 a_mode == SortMode::kAlphaDesc ? "Z-A" : "list order");
+	}
+
 	bool IsCustomOrder()
 	{
 		std::scoped_lock lock(g_lock);
@@ -168,6 +275,8 @@ namespace personalization
 		g_alias.clear();
 		g_order.clear();
 		g_customOrder = false;
+		g_favourites.clear();
+		g_sortMode = SortMode::kListOrder;
 
 		constexpr std::string_view kAliasPrefix = "MenuAlias.";
 		for (const auto& [key, value] : a_iniEntries)
@@ -192,8 +301,28 @@ namespace personalization
 				if (!name.empty()) { g_order.push_back(name); }
 			}
 		}
-		logger::info("menu personalization loaded: {} alias(es), custom order {} ({} remembered position(s))",
-					 g_alias.size(), g_customOrder ? "on" : "off", g_order.size());
+		const auto readList = [&](const char* a_key, std::vector<std::string>& a_out) {
+			const auto it = a_iniEntries.find(a_key);
+			if (it == a_iniEntries.end() || it->second.empty()) { return; }
+			std::stringstream stream(it->second);
+			std::string name;
+			while (std::getline(stream, name, '|'))
+			{
+				if (!name.empty()) { a_out.push_back(name); }
+			}
+		};
+		readList("MenuFavourites.sFavourites", g_favourites);
+
+		if (const auto it = a_iniEntries.find("MenuOrder.iSort"); it != a_iniEntries.end())
+		{
+			const int raw = std::atoi(it->second.c_str());
+			g_sortMode = (raw == 1) ? SortMode::kAlphaAsc : (raw == 2) ? SortMode::kAlphaDesc : SortMode::kListOrder;
+		}
+
+		logger::info("menu personalization loaded: {} alias(es), custom order {} ({} remembered position(s)), "
+					 "{} favourite(s), sort {}",
+					 g_alias.size(), g_customOrder ? "on" : "off", g_order.size(), g_favourites.size(),
+					 g_sortMode == SortMode::kAlphaAsc ? "A-Z" : g_sortMode == SortMode::kAlphaDesc ? "Z-A" : "list order");
 	}
 
 	std::string IniBlock()
@@ -222,6 +351,23 @@ namespace personalization
 		{
 			if (i != 0) { text += "|"; }
 			text += g_order[i];
+		}
+		text +=
+			"\n; What the list is sorted by: 0 = the order above (or alphabetical when it is off),\n"
+			"; 1 = forced A-Z, 2 = forced Z-A. The two toggles under \"Mods\" in the menu set it.\n"
+			"iSort=";
+		text += std::to_string(static_cast<int>(g_sortMode));
+
+		text +=
+			"\n\n[MenuFavourites]\n"
+			"; Pinned menus, pipe-separated, in the order they were favourited. They sit at the top\n"
+			"; of the list whatever the sort is, and each shows a filled white box beside its name.\n"
+			"; Right-click a menu (or press Y on a controller) to pin or unpin it.\n"
+			"sFavourites=";
+		for (std::size_t i = 0; i < g_favourites.size(); ++i)
+		{
+			if (i != 0) { text += "|"; }
+			text += g_favourites[i];
 		}
 		text += "\n";
 		return text;

@@ -257,6 +257,25 @@ AMF_API void AMF_HideKeyboard()
 	keyboard::Hide();
 }
 
+AMF_API void AMF_SetSticksCaptured(bool a_captured)
+{
+	input::SetSticksCaptured(a_captured);
+}
+
+AMF_API bool AMF_GetStick(int a_which, float* a_x, float* a_y, bool* a_clicked, bool* a_live)
+{
+	// Null-checked like every other export (rule: a mod handing us something unexpected gets a
+	// harmless no-op, never a crash). Any argument may be null if the caller does not want it.
+	float x = 0.0f, y = 0.0f;
+	bool clicked = false, live = false;
+	input::GetStick(a_which, x, y, clicked, live);
+	if (a_x) { *a_x = x; }
+	if (a_y) { *a_y = y; }
+	if (a_clicked) { *a_clicked = clicked; }
+	if (a_live) { *a_live = live; }
+	return true;
+}
+
 AMF_API bool AMF_SetPageVisible(const char* a_modName, const char* a_pageName, bool a_visible)
 {
 	// 1.8.3 (Wheeler - Refined's Advanced settings switch: the owner, "the advanced settings toggle doesnt hide the

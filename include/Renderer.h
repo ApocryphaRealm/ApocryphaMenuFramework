@@ -36,6 +36,12 @@ namespace renderer
 	// present thunk. Atomic: touched from the input thread, read on the render thread.
 	void ToggleMainWindow();
 	bool IsMainWindowVisible();
+
+	// TRUE while an ImGui text field has the keyboard (io.WantTextInput), sampled once per frame.
+	// The input hook reads it on the game thread to turn the engine's own text entry on and off -
+	// without that the engine makes no CharEvent at all and every text box in the framework is
+	// deaf (the search bar report, phbd01 2026-09-19).
+	bool WantsTextInput();
 	// The game's window handle (HWND) as seen at D3DInit; null before the renderer is up.
 	void* GetGameWindow();
 

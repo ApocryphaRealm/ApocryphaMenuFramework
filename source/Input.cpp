@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cmath>
 
+#include "Bindings.h"
 #include "Compat.h"
 #include "Offsets.h"
 #include "Renderer.h"
@@ -11,6 +12,7 @@
 #include "utils/Logger.h"
 
 #include <imgui.h>
+#include <imgui_internal.h>   // GImGui: the active item is asked for directly, so a text field can keep the D-pad
 
 #include <atomic>
 #include <mutex>
@@ -78,6 +80,18 @@ namespace input
 						 wantsController ? "controller" : "keyboard");
 		}
 
+		// The sticks as they really are, kept so a consumer can read them apart (1.9.5). The
+		// translation below collapses them onto one set of nav axes; these are the raw values.
+		std::atomic<float> g_stickX[2]{};
+		std::atomic<float> g_stickY[2]{};
+		std::atomic<bool>  g_stickClicked[2]{};
+		std::atomic<bool>  g_sticksCaptured{ false };
+
+		// B pressed while a text field held the keyboard. The key itself is kept from ImGui (it
+		// would revert the text), so the renderer cannot ask ImGui whether it happened - it asks
+		// here instead, and the flag is consumed on read.
+		std::atomic<bool>  g_textFieldCancel{ false };
+
 		// Set by the renderer each frame: an item is being edited, so the right stick drives it.
 		std::atomic<bool> g_itemActive{ false };
 
@@ -96,6 +110,32 @@ namespace input
 		// button pressed INSIDE the menu was consumed on the down-edge but completed as a
 		// shout on the up-edge (the author's report). Keyed device<<32|idCode.
 		std::unordered_set<std::uint64_t> g_gameHeldButtons;
+
+		// ---- the engine's own text entry --------------------------------------------------
+		// Skyrim's keyboard device only turns the WM_CHAR queue into RE::CharEvent while
+		// ControlMap's text-entry count is above zero (ControlMap::AllowTextInput raises and lowers
+		// it). This framework has no WndProc hook, so a CharEvent is the ONLY way a typed letter
+		// ever reaches ImGui - which is why clicking the mod search bar and typing did nothing at
+		// all, while clicking, navigation and the on-screen keyboard (which calls
+		// io.AddInputCharacter directly) all worked (phbd01, 2026-09-19: "when I click on the
+		// search bar and try to type, nothing happens").
+		//
+		// Held exactly as long as an ImGui text field wants the keyboard, and raised/lowered here
+		// on the GAME thread, where PollInputDevices runs. The count is a counter, so every raise
+		// is matched by exactly one lower; closing the menu drops WantTextInput and releases it.
+		bool g_textInputHeld = false;
+
+		void SyncEngineTextInput()
+		{
+			const bool want = renderer::IsMainWindowVisible() && renderer::WantsTextInput();
+			if (want == g_textInputHeld) { return; }
+			auto* controls = RE::ControlMap::GetSingleton();
+			if (!controls) { return; }
+			controls->AllowTextInput(want);
+			g_textInputHeld = want;
+			logger::debug("input: engine text entry {} (a menu text field {} the keyboard)",
+						  want ? "raised" : "released", want ? "took" : "let go of");
+		}
 
 		std::uint64_t ButtonKey(const RE::ButtonEvent* a_button)
 		{
@@ -130,8 +170,59 @@ namespace input
 		// -----------------------------------------------------------------------------------
 		// DIK scancode -> ImGuiKey. The navigation-and-editing set; full text input is M4.
 		// -----------------------------------------------------------------------------------
+		// An action, as the ImGui key that performs it. This is the join between the Controls page's
+		// bindings and what ImGui's navigation actually reads: whatever the player bound "Move up"
+		// to arrives at ImGui as UpArrow/DpadUp, so nav needs no notion of bindings at all.
+		// True when an ImGui text field currently holds the keyboard AND this key would move nav.
+		// Those keys are dropped rather than fed, so typing survives them; everything else still
+		// reaches ImGui, so A, B and the shoulder buttons behave exactly as before.
+		bool TextFieldHasTheKeyboard(ImGuiKey a_key)
+		{
+			switch (a_key)
+			{
+			case ImGuiKey_GamepadDpadUp:
+			case ImGuiKey_GamepadDpadDown:
+			case ImGuiKey_GamepadDpadLeft:
+			case ImGuiKey_GamepadDpadRight:
+			// B is filtered too, and for a different reason. ImGui treats the gamepad cancel as an
+			// InputText CANCEL, which RESTORES THE TEXT THE FIELD HAD WHEN EDITING BEGAN - so
+			// pressing circle to leave the box threw away what had just been typed and put the
+			// previous search back (the owner, 2026-09-19: "it reverted the word that I'd made to the
+			// previous word that I'd searched ... It shouldn't revert the word"). Keeping it away
+			// from ImGui and ending the edit ourselves (Renderer's B handler calls ClearActiveID)
+			// leaves the buffer exactly as typed, which is what "leave the box" should mean.
+			case ImGuiKey_GamepadFaceRight:
+				break;
+			default:
+				return false;
+			}
+			return GImGui && GImGui->ActiveId != 0 && keyboard::IsTextField(GImGui->ActiveId);
+		}
+
+		ImGuiKey ActionToImGuiKey(bindings::Action a_action, bool a_gamepad)
+		{
+			switch (a_action)
+			{
+			case bindings::Action::kUp:       return a_gamepad ? ImGuiKey_GamepadDpadUp : ImGuiKey_UpArrow;
+			case bindings::Action::kDown:     return a_gamepad ? ImGuiKey_GamepadDpadDown : ImGuiKey_DownArrow;
+			case bindings::Action::kLeft:     return a_gamepad ? ImGuiKey_GamepadDpadLeft : ImGuiKey_LeftArrow;
+			case bindings::Action::kRight:    return a_gamepad ? ImGuiKey_GamepadDpadRight : ImGuiKey_RightArrow;
+			case bindings::Action::kActivate: return a_gamepad ? ImGuiKey_GamepadFaceDown : ImGuiKey_Enter;
+			case bindings::Action::kBack:     return a_gamepad ? ImGuiKey_GamepadFaceRight : ImGuiKey_Backspace;
+			case bindings::Action::kClose:    return a_gamepad ? ImGuiKey_None : ImGuiKey_Escape;
+			default:                          return ImGuiKey_None;
+			}
+		}
+
 		ImGuiKey ScancodeToImGuiKey(std::uint32_t a_scancode)
 		{
+			// A REBOUND key wins (1.9.6). The table below stays as the fallback, so every key that
+			// was not given a new job keeps the one it always had - a player who rebinds nothing
+			// notices no difference.
+			if (const auto act = bindings::FromKeyboard(a_scancode); act != bindings::Action::kCount)
+			{
+				if (const ImGuiKey mapped = ActionToImGuiKey(act, false); mapped != ImGuiKey_None) { return mapped; }
+			}
 			switch (a_scancode)
 			{
 			case 0x01: return ImGuiKey_Escape;
@@ -153,6 +244,24 @@ namespace input
 			case 0x9D: return ImGuiKey_RightCtrl;
 			case 0x38: return ImGuiKey_LeftAlt;
 			case 0xB8: return ImGuiKey_RightAlt;
+			case 0xD3: return ImGuiKey_Delete;
+			// Letters and digits. A typed character still arrives as a CharEvent - these are the
+			// KEY events, which is what ImGui's text field needs for the editing shortcuts
+			// (Ctrl+A select all, Ctrl+C/X/V, Ctrl+Z) and what a mod reading ImGui::IsKeyPressed
+			// needs to see. Without them Ctrl+A in the search bar did nothing.
+			case 0x1E: return ImGuiKey_A;  case 0x30: return ImGuiKey_B;  case 0x2E: return ImGuiKey_C;
+			case 0x20: return ImGuiKey_D;  case 0x12: return ImGuiKey_E;  case 0x21: return ImGuiKey_F;
+			case 0x22: return ImGuiKey_G;  case 0x23: return ImGuiKey_H;  case 0x17: return ImGuiKey_I;
+			case 0x24: return ImGuiKey_J;  case 0x25: return ImGuiKey_K;  case 0x26: return ImGuiKey_L;
+			case 0x32: return ImGuiKey_M;  case 0x31: return ImGuiKey_N;  case 0x18: return ImGuiKey_O;
+			case 0x19: return ImGuiKey_P;  case 0x10: return ImGuiKey_Q;  case 0x13: return ImGuiKey_R;
+			case 0x1F: return ImGuiKey_S;  case 0x14: return ImGuiKey_T;  case 0x16: return ImGuiKey_U;
+			case 0x2F: return ImGuiKey_V;  case 0x11: return ImGuiKey_W;  case 0x2D: return ImGuiKey_X;
+			case 0x15: return ImGuiKey_Y;  case 0x2C: return ImGuiKey_Z;
+			case 0x02: return ImGuiKey_1;  case 0x03: return ImGuiKey_2;  case 0x04: return ImGuiKey_3;
+			case 0x05: return ImGuiKey_4;  case 0x06: return ImGuiKey_5;  case 0x07: return ImGuiKey_6;
+			case 0x08: return ImGuiKey_7;  case 0x09: return ImGuiKey_8;  case 0x0A: return ImGuiKey_9;
+			case 0x0B: return ImGuiKey_0;
 			default:   return ImGuiKey_None;
 			}
 		}
@@ -163,6 +272,10 @@ namespace input
 		// -----------------------------------------------------------------------------------
 		ImGuiKey GamepadMaskToImGuiKey(std::uint32_t a_mask)
 		{
+			if (const auto act = bindings::FromGamepad(a_mask); act != bindings::Action::kCount)
+			{
+				if (const ImGuiKey mapped = ActionToImGuiKey(act, true); mapped != ImGuiKey_None) { return mapped; }
+			}
 			switch (a_mask)
 			{
 			case 0x0001: return ImGuiKey_GamepadDpadUp;
@@ -175,6 +288,10 @@ namespace input
 			case 0x8000: return ImGuiKey_GamepadFaceUp;
 			case 0x0100: return ImGuiKey_GamepadL1;
 			case 0x0200: return ImGuiKey_GamepadR1;
+			// The stick clicks. They were not mapped at all, so a page could not be given an
+			// action on one - which is what "press R3 on the list item" needs (1.9.5).
+			case 0x0040: return ImGuiKey_GamepadL3;
+			case 0x0080: return ImGuiKey_GamepadR3;
 			default:     return ImGuiKey_None;
 			}
 		}
@@ -324,6 +441,15 @@ namespace input
 					return;
 				}
 
+				SyncEngineTextInput();   // the engine makes no CharEvent unless we ask it to
+
+				// A page that took the sticks gets them taken back the moment the menu is not up,
+				// so a mod that forgets to release them cannot leave navigation dead (1.9.5).
+				if (!renderer::IsMainWindowVisible() && g_sticksCaptured.load(std::memory_order_acquire))
+				{
+					SetSticksCaptured(false);
+				}
+
 				inject::Service(a_events);   // driver-side presses/characters, ahead of everything below
 
 				const bool menuOpen = renderer::IsMainWindowVisible();
@@ -360,6 +486,24 @@ namespace input
 							static_cast<std::uint32_t>(button->GetDevice()), button->GetIDCode());
 					}
 
+					// THE CONTROLS PAGE'S CAPTURE (1.9.6) takes precedence over everything below while it
+					// is armed: the press it is waiting for must not also do whatever it is currently
+					// bound to. It consumes the event outright, so the game never sees it either.
+					if (button && bindings::IsCapturing())
+					{
+						const auto dev = button->GetDevice();
+						bool taken = false;
+						if (dev == RE::INPUT_DEVICE::kKeyboard)     { taken = bindings::OfferKeyboard(button->GetIDCode(), button->IsDown()); }
+						else if (dev == RE::INPUT_DEVICE::kMouse)   { taken = bindings::OfferMouse(button->GetIDCode(), button->IsDown()); }
+						else if (dev == RE::INPUT_DEVICE::kGamepad) { taken = bindings::OfferGamepad(button->GetIDCode(), button->IsDown()); }
+						if (taken)
+						{
+							settings::Save();
+							passThrough = false;
+							goto consumed;
+						}
+					}
+
 					if (awaitingRebind && button && button->GetDevice() == RE::INPUT_DEVICE::kKeyboard &&
 						button->IsDown())
 					{
@@ -380,15 +524,16 @@ namespace input
 						passThrough = false;
 					}
 					else if (button && button->GetDevice() == RE::INPUT_DEVICE::kKeyboard &&
-						button->GetIDCode() == toggleKey && button->IsDown() &&
-						compat::IsHotkeyEnabled())
+						bindings::FromKeyboard(button->GetIDCode()) == bindings::Action::kToggleMenu &&
+						button->IsDown() && compat::IsHotkeyEnabled())
 					{
 						renderer::ToggleMainWindow();
 						passThrough = false;  // the game never sees the framework's own key
 					}
 					else if (menuOpen && controllerMode && button &&
 						button->GetDevice() == RE::INPUT_DEVICE::kGamepad &&
-						button->GetIDCode() == kGamepadStart && button->IsDown())
+						bindings::FromGamepad(button->GetIDCode()) == bindings::Action::kClose &&
+						button->IsDown())
 					{
 						// Gamepad Start CLOSES the menu in controller mode - the way out with a
 						// controller (the author: "no way to use the controller to leave the menu"). It
@@ -468,6 +613,7 @@ namespace input
 						}
 					}
 
+				consumed:
 					if (passThrough && button)
 					{
 						// The game is about to see this edge - keep its held-state model current.
@@ -675,6 +821,8 @@ namespace input
 				// ImGui-side problem). If these lines are ABSENT while pressing buttons with the
 				// menu open, the events are not reaching the framework.
 				{
+					if (record.code == 0x0040) { g_stickClicked[0].store(record.down, std::memory_order_relaxed); }
+					if (record.code == 0x0080) { g_stickClicked[1].store(record.down, std::memory_order_relaxed); }
 					const ImGuiKey key = GamepadMaskToImGuiKey(record.code);
 					logger::debug("gamepad event: code=0x{:04X} down={} controllerMode={} -> imguiKey={}",
 								  record.code, record.down, controllerMode, static_cast<int>(key));
@@ -685,9 +833,22 @@ namespace input
 					{
 						break;
 					}
-					if (controllerMode && key != ImGuiKey_None)
+					// A TEXT FIELD OWNS THE D-PAD WHILE IT IS ACTIVE (2026-09-19). ImGui's InputText
+					// claims the keyboard arrow keys while you type, but NOT the gamepad D-pad - so a
+					// D-pad press moved nav to another item, and moving nav off an active text box
+					// deactivates it. From the player's side the box simply went dead, and the
+					// on-screen keyboard closed with it, because the D-pad is exactly what you press
+					// to walk that keyboard. Proven from the log: the frame the field died carried
+					// "GamepadDpadDown(d)" and a fresh navJustMovedTo id, and nothing else.
+					if (controllerMode && key != ImGuiKey_None && !TextFieldHasTheKeyboard(key))
 					{
 						io.AddKeyEvent(key, record.down);
+					}
+					else if (controllerMode && key == ImGuiKey_GamepadFaceRight && record.down &&
+							 TextFieldHasTheKeyboard(key))
+					{
+						// Kept from ImGui above; the renderer turns it into "let go of the box".
+						g_textFieldCancel.store(true, std::memory_order_release);
 					}
 				}
 				break;
@@ -695,6 +856,12 @@ namespace input
 				if (std::fabs(record.x) > kStickThreshold || std::fabs(record.y) > kStickThreshold)
 				{
 					NoteDevice(Device::kGamepad);
+				}
+				// Kept raw for GetStick() before anything is decided about navigation.
+				if (record.code < 2)
+				{
+					g_stickX[record.code].store(record.x, std::memory_order_relaxed);
+					g_stickY[record.code].store(record.y, std::memory_order_relaxed);
 				}
 				// Left stick -> ImGui gamepad-nav analog axes, so the stick moves the menu
 				// selection like the D-pad (the author used the stick to "switch menus"; it was not
@@ -715,9 +882,16 @@ namespace input
 				{
 					const bool editing = g_itemActive.load(std::memory_order_relaxed);
 					const bool isLeftStick = record.code == 0;
-					const bool inCharge = editing ? !isLeftStick : isLeftStick;
+					// A consumer holding the sticks takes BOTH out of navigation, so the selection
+					// cannot move while the player is handling whatever the page gave them (1.9.5).
+					const bool captured = g_sticksCaptured.load(std::memory_order_relaxed);
+					const bool inCharge = captured ? false : (editing ? !isLeftStick : isLeftStick);
 					constexpr float dz = 0.35f;
-					const float sx = inCharge ? record.x : 0.0f, sy = inCharge ? record.y : 0.0f;
+					float sx = inCharge ? record.x : 0.0f, sy = inCharge ? record.y : 0.0f;
+					// Same reasoning as the D-pad above: the nav axes are what move focus, so while a
+					// text field holds the keyboard the sticks are reported as centred.
+					const bool typing = GImGui && GImGui->ActiveId != 0 && keyboard::IsTextField(GImGui->ActiveId);
+					if (typing) { sx = 0.0f; sy = 0.0f; }
 					io.AddKeyAnalogEvent(ImGuiKey_GamepadLStickLeft,  sx < -dz, sx < -dz ? -sx : 0.0f);
 					io.AddKeyAnalogEvent(ImGuiKey_GamepadLStickRight, sx >  dz, sx >  dz ?  sx : 0.0f);
 					io.AddKeyAnalogEvent(ImGuiKey_GamepadLStickUp,    sy >  dz, sy >  dz ?  sy : 0.0f);
@@ -862,6 +1036,39 @@ namespace input
 		for (unsigned char c : a_utf8) {
 			g_deferred.push_back({ frame++, { Record::Kind::kCharacter, static_cast<std::uint32_t>(c), true, 0.0f, 0.0f } });
 		}
+	}
+
+	void SetSticksCaptured(bool a_captured)
+	{
+		const bool was = g_sticksCaptured.exchange(a_captured, std::memory_order_release);
+		if (was != a_captured)
+		{
+			// itemActive is reported with the release because it decides which stick drives
+			// navigation: while an item is being edited the RIGHT stick moves it and the LEFT one is
+			// held off. If it is still true after a page lets go, the left stick stays dead and the
+			// D-pad appears to be the only thing that works (the owner, 2026-09-19).
+			logger::info("input: the thumbsticks are {} by a mod's page (itemActive={})",
+						 a_captured ? "held" : "released", g_itemActive.load(std::memory_order_relaxed));
+		}
+	}
+
+	bool AreSticksCaptured()
+	{
+		return g_sticksCaptured.load(std::memory_order_acquire);
+	}
+
+	void GetStick(int a_which, float& a_x, float& a_y, bool& a_clicked, bool& a_live)
+	{
+		const int i = (a_which == 1) ? 1 : 0;
+		a_x = g_stickX[i].load(std::memory_order_relaxed);
+		a_y = g_stickY[i].load(std::memory_order_relaxed);
+		a_clicked = g_stickClicked[i].load(std::memory_order_relaxed);
+		a_live = std::fabs(a_x) > kStickThreshold || std::fabs(a_y) > kStickThreshold;
+	}
+
+	bool TakeTextFieldCancel()
+	{
+		return g_textFieldCancel.exchange(false, std::memory_order_acq_rel);
 	}
 
 	void GetCursor(float& a_x, float& a_y)

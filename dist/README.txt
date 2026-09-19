@@ -1,8 +1,8 @@
 ﻿ApocryphaRealm Menu Framework
 =============================
-Version 1.8.7
+Version 1.9.5
 
-An original, MIT-licensed in-game menu framework (embedding Dear ImGui) - a one-for-one
+An original, GPL-3.0-or-later in-game menu framework (embedding Dear ImGui) - a one-for-one
 replacement for SKSE Menu Framework's consumer surface, plus user-friendly features that do
 not overhaul the game. Mods built against the SMF header register and draw against AMF
 unchanged; AMF loads under its own module name.
@@ -199,7 +199,7 @@ stack frames; there is no separate symbols file to fetch.
 
 BUILDING FROM SOURCE
 --------------------
-MIT licensed, original work (not a fork of SKSE Menu Framework): https://github.com/ApocryphaRealm/ApocryphaMenuFramework.git
+GPL-3.0-or-later, original work (not a fork of SKSE Menu Framework): https://github.com/ApocryphaRealm/ApocryphaMenuFramework.git
 CommonLibSSE-NG via vcpkg; set VCPKG_ROOT, run configure.bat then build.bat. This build
 corresponds to tag v1.5.2.
 

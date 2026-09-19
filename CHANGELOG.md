@@ -21,6 +21,38 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## 1.9.5 - 2026-09-19 - untested
+
+### Fixed
+- **Text boxes took no typing at all.** phbd01 (2026-09-19, Nexus): *"when I click on the search bar and try to type,
+  nothing happens. I have to press 'Escape' first before I can type. This gets really frustrating... Never happened in
+  og menu."* Skyrim only turns a WM_CHAR into an `RE::CharEvent` while `ControlMap`'s text-entry count is above zero,
+  and this framework has no WndProc hook - a CharEvent is the ONLY way a typed letter reaches ImGui here. The
+  framework never called `ControlMap::AllowTextInput`, so whether typing worked at all depended on some other mod
+  happening to have raised that count and left it raised. It now raises the engine's text entry for exactly as long as
+  an ImGui text field wants the keyboard, and releases it when the field or the menu closes. (SKSE Menu Framework takes
+  WM_CHAR through the Win32 backend instead, which is why it never showed the fault.)
+- **Ctrl+A, Ctrl+C, Ctrl+X, Ctrl+V and Ctrl+Z did nothing in a text box.** Only navigation and editing keys were mapped
+  from scan codes to ImGui keys; letters and digits were not, so ImGui never saw the shortcut half of a chord.
+
+### Added
+- **Menu favourites.** Right-click a mod in the list - or press Y on a controller, which opens the same menu - to add
+  it to your favourites, rename it, or move it to the top. A favourite sits at the top of the list with a filled white
+  box beside its name, and favourites keep the order you added them in, so a new one lands after the last. They are
+  kept in the framework's own INI under `[MenuFavourites]`, alongside the rename and order settings that were already
+  there, and they work with a custom order and with either sort.
+- **Sorting the mod list.** Two switches on the "Mods" row itself: A-Z and Z-A. They are alternatives, and turning both
+  off gives back whatever order the list was arranged in by hand. Favourites stay pinned at the top under either.
+- **An instruction manual on the Help page**, in tabs (the owner: *"the help row should have tabs: controls, features,
+  readme, and others as you see fit"*): Controls, Features, Readme and Troubleshooting. The tab bar is submitted the
+  same way a mod's own page bar is, so the D-pad walks it the same way.
+- **The thumbsticks, for a consumer that wants them.** `AMF_SetSticksCaptured(bool)` lets a mod's page take both
+  sticks away from navigation while it is handling something, and `AMF_GetStick(which, x, y, clicked, live)` reads
+  them apart - the framework otherwise collapses both onto one set of navigation axes and decides which is in charge.
+  L3 and R3 now also reach ImGui as `ImGuiKey_GamepadL3` / `ImGuiKey_GamepadR3`; they were not mapped at all before.
+  The capture is released by the framework itself when its menu closes, so a mod that forgets cannot wedge the pad.
+  (Item Explorer's 3D preview is the first consumer: R3 on a row takes hold of the item.)
+
 ## 1.9.4 - 2026-09-18 - untested
 
 ### Fixed

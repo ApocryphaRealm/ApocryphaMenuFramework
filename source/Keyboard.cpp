@@ -47,7 +47,7 @@ namespace keyboard
 		int g_stickDirX = 0, g_stickDirY = 0;
 		std::uint32_t g_typed = 0, g_activations = 0;
 
-		bool IsTextField(std::uint32_t a_id)
+		bool IsTextField_(std::uint32_t a_id)
 		{
 			return a_id != 0 && (g_fieldsLastFrame.count(a_id) != 0 || g_fieldsThisFrame.count(a_id) != 0);
 		}
@@ -164,6 +164,16 @@ namespace keyboard
 			if (!st) { return {}; }
 			return std::string(st->TextA.Data ? st->TextA.Data : "", st->TextA.Data ? std::strlen(st->TextA.Data) : 0);
 		}
+	}
+
+	bool IsTextField(std::uint32_t a_id)
+	{
+		return IsTextField_(a_id);
+	}
+
+	bool WasSubmittedLastFrame(std::uint32_t a_id)
+	{
+		return a_id != 0 && g_fieldsLastFrame.count(a_id) != 0;
 	}
 
 	void NoteTextField(std::uint32_t a_itemId)

@@ -10,6 +10,7 @@
 #include "Persistence.h"
 #include "KnotworkBorder.h"
 #include "Skin.h"
+#include "Bindings.h"
 #include "Personalization.h"
 #include "Registry.h"
 #include "Settings.h"
@@ -237,6 +238,19 @@ namespace renderer
 		// rather than the press doing nothing visible. settings::Save() returns nothing, so there
 		// is no honest success/failure to report here - only that the write was asked for.
 		double g_menuListSavedAt = 0.0;
+
+		// Keyboard-loss diagnostic (1.9.5). Stamped WHEN THEY HAPPEN, read afterwards.
+		int g_frameFocusHere = -1;      // SetKeyboardFocusHere() was called on this frame
+		int g_frameWindowFocus = -1;    // SetNextWindowFocus() was called on this frame
+		int g_frameNavConsumed = -1;    // the nav-to-selected flag was consumed TRUE on this frame
+		int g_frameSearchDrawn = -1;    // the mod-search box was actually submitted on this frame
+
+		// The rename asked for from a mod row's right-click menu. The modal itself is drawn once,
+		// outside the list, because a popup opened from inside the loop would otherwise be
+		// submitted once per row and fight itself for the id.
+		std::string g_renameTarget;
+		char g_renameBuffer[64] = {};
+		bool g_renameOpenPending = false;
 	}
 
 	// Strings::SetLanguage and kDataLoaded ask for a new atlas holding the language's glyphs.
@@ -1058,45 +1072,293 @@ namespace renderer
 
 		// ---- nested game-menu leaf panes (the author's game-menu-replacement model, 2026-08-28) ----
 
-		// Controls: the vanilla System tab has a Controls entry; ours documents the framework's
-		// own bindings and hosts the toggle-key rebind (the same control as on Settings).
+		// ---- Controls: two tabs, keyboard and controller, every function reboundable -------
+		// The owner, 2026-09-19: "add a tab to the controls row to divide controller and keyboard
+		// and let them rebind the different functions to different buttons/stick/mouse". Each tab
+		// is one row per function: its name, what it is bound to now, and a button that captures
+		// the next press. The two halves are deliberately the SAME list of functions, so a player
+		// on a pad is never offered fewer controls than a player on a keyboard.
 		void DrawControlsPane()
 		{
 			auto& values = settings::Get();
 			ImGui::TextUnformatted(TR("AMF_Controls", "Controls"));
 			ImGui::Separator();
-			if (input::IsAwaitingRebind())
-			{
-				ImGui::TextUnformatted(TR("AMF_ToggleKeyPress", "Menu toggle key: press any key...  (Escape cancels)"));
-			}
-			else
-			{
-				if (values.toggleKey == 0x3B) { ImGui::TextUnformatted(TR("AMF_ToggleKeyF1", "Menu toggle key: F1")); }
-				else { ImGui::Text(TR("AMF_ToggleKeyCode", "Menu toggle key: scan code %d"), values.toggleKey); }
-				ImGui::SameLine();
-				if (ImGui::Button((std::string(TR("AMF_Rebind", "Rebind")) + "##controls").c_str())) { input::BeginRebindToggleKey(); }
-			}
+			ImGui::TextWrapped("%s", TR("AMF_ControlsHelp2", "These are the framework's own controls - what moves through this menu and what opens "
+							   "and closes it. A mod's own keys belong on that mod's page. Press Rebind and then the "
+							   "key, mouse button, pad button or stick direction you want."));
 			ImGui::Spacing();
-			ImGui::TextUnformatted(TR("AMF_KeyboardHelp", "Keyboard:  arrow keys move, Enter activates, Escape closes."));
-			ImGui::TextUnformatted(TR("AMF_ControllerHead", "Controller (controller mode on):"));
-			ImGui::BulletText("%s", TR("AMF_Ctrl1", "Left stick moves through the list and across to the options - no button needed."));
-			ImGui::BulletText("%s", TR("AMF_Ctrl2", "A takes hold of a slider; the RIGHT stick then moves it. A again lets go."));
-			ImGui::BulletText("%s", TR("AMF_Ctrl3", "A on a drop-down opens it; the sticks choose; A confirms."));
-			ImGui::BulletText("%s", TR("AMF_Ctrl4", "B cancels, START closes the menu. The D-pad does everything the left stick does."));
-			ImGui::BulletText("%s", TR("AMF_Ctrl5", "In a mod with several sections, left and right walk the tabs. Left at the first tab goes back to the list."));
+
+			if (!ImGui::BeginTabBar("##controlstabs", ImGuiTabBarFlags_FittingPolicyScroll)) { return; }
+
+			int index = 0;
+			const auto tab = [&](const char* a_label) {
+				const ImGuiTabItemFlags flags =
+					(index == g_tabRequest) ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
+				const bool open = ImGui::BeginTabItem(a_label, nullptr, flags);
+				if (ImGui::IsItemFocused()) { g_tabBarHasNav = true; }
+				if (open) { g_tabIndex = index; }
+				++index;
+				return open;
+			};
+
+			// One tab's worth of rows. gamepadSide picks which half of each binding is shown and
+			// which device the capture listens to; everything else is identical, on purpose.
+			const auto drawRows = [&](bool a_gamepadSide) {
+				if (!ImGui::BeginTable(a_gamepadSide ? "##padbinds" : "##keybinds", 3,
+									   ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
+				{
+					return;
+				}
+				ImGui::TableSetupColumn(TR("AMF_ColFunction", "Function"));
+				ImGui::TableSetupColumn(TR("AMF_ColBoundTo", "Bound to"));
+				ImGui::TableSetupColumn("##rebind", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFontSize() * 13.0f);
+				ImGui::TableHeadersRow();
+
+				for (int i = 0; i < static_cast<int>(bindings::Action::kCount); ++i)
+				{
+					const auto action = static_cast<bindings::Action>(i);
+					ImGui::TableNextRow();
+					ImGui::PushID(i + (a_gamepadSide ? 1000 : 0));
+
+					ImGui::TableSetColumnIndex(0);
+					ImGui::TextUnformatted(bindings::Label(action));
+					if (const char* help = bindings::Description(action); help && help[0])
+					{
+						ImGui::TextDisabled("%s", help);
+					}
+
+					ImGui::TableSetColumnIndex(1);
+					const std::string bound = a_gamepadSide ? bindings::PadText(action) : bindings::KeyText(action);
+					ImGui::TextUnformatted(bound.c_str());
+
+					ImGui::TableSetColumnIndex(2);
+					const bool capturingThis = bindings::IsCapturing() &&
+											   bindings::CapturingAction() == action &&
+											   bindings::CapturingGamepadSide() == a_gamepadSide;
+					if (capturingThis)
+					{
+						ImGui::TextUnformatted(TR("AMF_BindPress", "press..."));
+					}
+					else
+					{
+						if (ImGui::Button(TR("AMF_BindRebind", "Rebind")))
+						{
+							bindings::BeginCapture(action, a_gamepadSide);
+						}
+						// Unbind sits beside Rebind and is shown only when there is something to
+						// clear, so a row that is already unbound offers one button, not two.
+						const bool bound = a_gamepadSide
+							? bindings::Get(action).padKind != bindings::PadKind::kNone
+							: bindings::Get(action).keyKind != bindings::KeyKind::kNone;
+						if (bound)
+						{
+							ImGui::SameLine();
+							if (ImGui::Button(TR("AMF_BindUnbindBtn", "Unbind")))
+							{
+								bindings::Unbind(action, a_gamepadSide);
+								settings::Save();
+							}
+						}
+					}
+
+					ImGui::PopID();
+				}
+				ImGui::EndTable();
+
+				if (bindings::IsCapturing() && bindings::CapturingGamepadSide() == a_gamepadSide)
+				{
+					ImGui::Spacing();
+					ImGui::TextWrapped("%s", a_gamepadSide
+						? TR("AMF_BindPadPrompt", "Press a pad button, click a stick, or push a stick in the direction you want. B cancels.")
+						: TR("AMF_BindKeyPrompt", "Press a key or a mouse button. Escape cancels."));
+				}
+				if (const char* refused = bindings::LastRefusal(); refused && refused[0])
+				{
+					ImGui::Spacing();
+					ImGui::TextWrapped("%s", refused);
+				}
+			};
+
+			if (tab(TR("AMF_TabKeyboard", "Keyboard and mouse")))
+			{
+				ImGui::Spacing();
+				drawRows(false);
+				ImGui::EndTabItem();
+			}
+			if (tab(TR("AMF_TabController", "Controller")))
+			{
+				ImGui::Spacing();
+				drawRows(true);
+				ImGui::EndTabItem();
+			}
+
+			g_tabCount = index;
+			g_tabRequest = -1;
+			ImGui::EndTabBar();
+
+			ImGui::Spacing();
+			ImGui::Separator();
+			if (ImGui::Button(TR("AMF_BindSave", "Save controls")))
+			{
+				settings::Save();
+				g_menuListSavedAt = ImGui::GetTime();
+			}
+			if (g_menuListSavedAt > 0.0 && ImGui::GetTime() - g_menuListSavedAt < 3.0)
+			{
+				ImGui::SameLine();
+				ImGui::TextDisabled("%s", TR("AMF_MenuListSaved", "saved"));
+			}
+			ImGui::SameLine();
+			if (ImGui::Button(TR("AMF_BindReset", "Reset every control")))
+			{
+				bindings::ResetToDefaults();
+				settings::Save();
+			}
+			ImGui::SameLine();
+			ImGui::TextDisabled("%s", TR("AMF_BindNote", "Reserved keys are refused, and two functions that can be used at the same time cannot share a control."));
+			(void)values;
 		}
 
+		// ---- Help: the instruction manual, in tabs (the owner, 2026-09-19: "the help row should
+		// have tabs: controls, features, readme, and others as you see fit") -----------------
+		// A page a player can actually learn the menu from, rather than two paragraphs saying
+		// where things live. The bar is submitted exactly like a mod's own page bar, and reports
+		// the same tab count and index, so the D-pad walks these tabs the way it walks any other -
+		// onto the tab itself, never by stepping sideways off a control.
 		void DrawHelpPane()
 		{
 			ImGui::TextUnformatted(TR("AMF_Help", "Help"));
 			ImGui::Separator();
-			ImGui::TextWrapped("%s", TR("AMF_Help1", "ApocryphaRealm Menu Framework presents mod settings in one menu, laid out like "
-							   "the game's own: tabs across the top, a list down the side, and the "
-							   "selected entry's options here."));
-			ImGui::Spacing();
-			ImGui::TextWrapped("%s", TR("AMF_Help2", "Mod settings live under System -> Mod menus, the same place SkyUI puts Mod "
-							   "Configuration. Framework options are under System -> Settings, and key "
-							   "bindings under System -> Controls."));
+
+			const auto para = [](const char* a_text) { ImGui::TextWrapped("%s", a_text); ImGui::Spacing(); };
+			const auto bullet = [](const char* a_text) { ImGui::Bullet(); ImGui::SameLine(); ImGui::TextWrapped("%s", a_text); };
+
+			if (!ImGui::BeginTabBar("##helptabs", ImGuiTabBarFlags_FittingPolicyScroll)) { return; }
+
+			int index = 0;
+			const auto tab = [&](const char* a_label) {
+				const ImGuiTabItemFlags flags =
+					(index == g_tabRequest) ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
+				const bool open = ImGui::BeginTabItem(a_label, nullptr, flags);
+				if (ImGui::IsItemFocused()) { g_tabBarHasNav = true; }
+				if (open) { g_tabIndex = index; }
+				++index;
+				return open;
+			};
+
+			if (tab(TR("AMF_HelpTabControls", "Controls")))
+			{
+				ImGui::Spacing();
+				ImGui::SeparatorText(TR("AMF_ManOpening", "Opening and closing the menu"));
+				para(TR("AMF_ManOpening1", "Press F1 to open the menu and F1 again to close it. Escape closes it too. The key "
+						"is yours to change: Settings -> Menu toggle key -> Rebind, then press the key you want."));
+				para(TR("AMF_ManOpening2", "On a controller, Start closes the menu. There is no controller button that opens it - "
+						"open it from the journal instead: press Start, go to the System tab, and choose the "
+						"SKSE MENUS row. That row can be turned off under Settings if you would rather not have it."));
+				para(TR("AMF_ManOpening3", "While the menu is up the game does not see your keys or your mouse, so the camera and "
+						"your character stay still. Mods' own hotkeys are held off as well, so a key that opens "
+						"something else cannot fire while you are reading a page."));
+
+				ImGui::SeparatorText(TR("AMF_ManMoving", "Moving around"));
+				bullet(TR("AMF_ManMoving1", "Mouse: point and click, as anywhere else. The cursor is drawn by the menu itself."));
+				bullet(TR("AMF_ManMoving2", "Keyboard: the arrow keys move the highlight, Enter activates, Escape closes."));
+				bullet(TR("AMF_ManMoving3", "Controller: the D-pad and the left stick move the highlight, A activates, B goes back. "
+						  "Take hold of a slider with A and the RIGHT stick moves it, so adjusting a value never "
+						  "also moves the highlight."));
+				bullet(TR("AMF_ManMoving4", "Left and right cross between the list and the page beside it. Tabs at the top of a page "
+						  "are reached by moving the highlight onto the tab itself - moving sideways never changes "
+						  "the tab under you."));
+				bullet(TR("AMF_ManMoving6", "Right-click a mod in the list, or press Y on a controller, for its options."));
+				ImGui::Spacing();
+				para(TR("AMF_ManMoving5", "The menu follows whatever you last used: touch the pad and it switches to controller "
+						"navigation, touch the mouse or a key and it switches back. There is nothing to set."));
+
+				ImGui::SeparatorText(TR("AMF_ManTyping", "Typing"));
+				para(TR("AMF_ManTyping1", "Click a text box and type. Ctrl+A selects everything in it, and Ctrl+C, Ctrl+X, "
+						"Ctrl+V and Ctrl+Z work as they do anywhere."));
+				para(TR("AMF_ManTyping2", "On a controller, put the highlight on a text box and press A: a key grid appears "
+						"across the bottom of the screen. The D-pad walks it, A types, B puts the highlight back "
+						"on the box, X is shift and Y is backspace. It works on every mod's page, and it can be "
+						"turned off under Settings."));
+				ImGui::EndTabItem();
+			}
+
+			if (tab(TR("AMF_HelpTabFeatures", "Features")))
+			{
+				ImGui::Spacing();
+				ImGui::SeparatorText(TR("AMF_ManList", "The mod list"));
+				para(TR("AMF_ManList1", "Every mod that registers a page appears under Mods, with the framework's own Settings, "
+						"Controls and this Help page above it. Type in the Search box to narrow the list - two or "
+						"three letters is usually enough - and it matches whatever name the entry is showing."));
+				bullet(TR("AMF_ManList2", "A-Z and Z-A beside Mods sort the list. Turn both off and the list goes back to the order "
+						  "you arranged it in."));
+				bullet(TR("AMF_ManList3", "Right-click a mod (or press Y on a controller) for its options: add it to your "
+						  "favourites, rename it, or move it to the top."));
+				bullet(TR("AMF_ManList4", "A favourite sits at the top of the list with a filled white box beside its name. "
+						  "Favourites keep the order you added them in, so a new one lands after the last."));
+				bullet(TR("AMF_ManList5", "Renaming changes only what this menu shows. The mod itself never sees it, and the "
+						  "search box finds the entry by the name you gave it."));
+				ImGui::Spacing();
+				para(TR("AMF_ManList6", "Settings -> Menu list has the same controls as a table, with a position number you can "
+						"type into: put 3 in a row's number and it moves there, and everything else re-flows around it."));
+
+				ImGui::SeparatorText(TR("AMF_ManLook", "How it looks"));
+				bullet(TR("AMF_ManLook1", "Theme: Skyrim is the Nordic knotwork frame; the others are plainer. Settings -> Theme."));
+				bullet(TR("AMF_ManLook2", "Font: drop a .ttf into Data/SKSE/Plugins/ApocryphaMenuFramework/fonts and pick it under "
+						  "Settings -> Font."));
+				bullet(TR("AMF_ManLook3", "Text size scales on top of the automatic resolution scale, so the menu reads the same on "
+						  "a 1080p screen and a 4K one."));
+				bullet(TR("AMF_ManLook4", "Language: the framework's own text follows the game's language unless you force one."));
+				bullet(TR("AMF_ManLook5", "The window remembers where you leave it, separately for each way of opening it. Drag it "
+						  "by its title, drag a corner to resize."));
+				ImGui::EndTabItem();
+			}
+
+			if (tab(TR("AMF_HelpTabReadme", "Readme")))
+			{
+				ImGui::Spacing();
+				ImGui::TextWrapped("%s", TR("AMF_Help1", "ApocryphaRealm Menu Framework presents mod settings in one menu, laid out like "
+								   "the game's own: tabs across the top, a list down the side, and the "
+								   "selected entry's options here."));
+				ImGui::Spacing();
+				ImGui::TextWrapped("%s", TR("AMF_Help2", "Mod settings live under System -> Mod menus, the same place SkyUI puts Mod "
+								   "Configuration. Framework options are under System -> Settings, and key "
+								   "bindings under System -> Controls."));
+				ImGui::Spacing();
+				para(TR("AMF_ReadmeWhat", "It is one menu for every mod that asks for one. A mod does not have to know anything "
+						"about this framework's look, its themes or its controller support - it hands over its "
+						"settings and gets all of it."));
+				para(TR("AMF_ReadmeCompat", "Pages written for SKSE Menu Framework work here unchanged: the same API is answered, so "
+						"a mod built against either one is at home. Install only one of the two."));
+				para(TR("AMF_ReadmeAuthors", "For mod authors: the framework exports a C API and a single header. Register a section, "
+						"add pages to it, draw them with the ImGui calls the header wraps, and the menu does the "
+						"rest - layout, theme, font, translation, keyboard, controller and the on-screen keyboard."));
+				para(TR("AMF_ReadmeFiles", "Settings are kept in Data/SKSE/Plugins/ApocryphaMenuFramework.ini, beside the plugin, and "
+						"everything on the Settings page writes to it. The log is in "
+						"Documents/My Games/Skyrim Special Edition/SKSE/."));
+				ImGui::EndTabItem();
+			}
+
+			if (tab(TR("AMF_HelpTabTrouble", "Troubleshooting")))
+			{
+				ImGui::Spacing();
+				bullet(TR("AMF_ManTrouble1", "A mod's page is missing: the mod has not registered one, or it needs a newer framework "
+						  "than the one installed. Its own log will say."));
+				bullet(TR("AMF_ManTrouble2", "The menu will not open: something else may have taken F1. Rebind it under Settings, or "
+						  "open the menu from the journal's System tab instead."));
+				bullet(TR("AMF_ManTrouble3", "A key does nothing inside the menu: another mod may be claiming it. The framework's log "
+						  "names the device and key whenever that happens."));
+				bullet(TR("AMF_ManTrouble5", "Text boxes take no typing: update the framework. Before 1.9.5 the engine was never asked "
+						  "to turn key presses into characters while the menu was up."));
+				ImGui::Spacing();
+				para(TR("AMF_ManTrouble4", "The log is at Documents/My Games/Skyrim Special Edition/SKSE/ApocryphaMenuFramework.log. "
+						"Settings -> Log level decides how much it writes."));
+				ImGui::EndTabItem();
+			}
+
+			g_tabCount = index;
+			g_tabRequest = -1;
+			ImGui::EndTabBar();
 		}
 
 		void DrawFrameworkWindow()
@@ -1332,6 +1594,13 @@ namespace renderer
 					g_selExternal = false;
 				}
 				bool changed = false;  // set only by a real UI interaction this frame
+				// CONSUMED HERE, ONCE, whatever happens below. It used to be cleared only inside the
+				// branch that acts on it - which needs the selected entry to be DRAWN - so with any
+				// text in the search box the selected mod was filtered out, the flag was never
+				// cleared, and it sat armed until that row reappeared and stole the keyboard from
+				// the search box (the owner, 2026-09-19: "the typing indicator just disappears").
+				const bool navToSelected = g_navToSelected.exchange(false);
+				if (navToSelected) { g_frameNavConsumed = ImGui::GetFrameCount(); }
 				const std::vector<registry::Entry> entries = registry::Snapshot();
 				if (selMod >= static_cast<int>(entries.size())) { selMod = 0; }
 
@@ -1342,14 +1611,14 @@ namespace renderer
 				// gave asymmetric crossing - content->list worked, list->content never did. So nav stays
 				// contained in each pane and the crossing is done explicitly below, which is also exactly
 				// what the controller spec asks for.
-				if (g_focusPane == 1) { ImGui::SetNextWindowFocus(); g_focusPane = 0; }
+				if (g_focusPane == 1) { ImGui::SetNextWindowFocus(); g_focusPane = 0; g_frameWindowFocus = ImGui::GetFrameCount(); }
 				ImGui::BeginChild("##side", ImVec2(leftWidth, 0.0f), true);
 				auto sideItem = [&](const char* label, const char* id) {
 					const bool isOpen = (sel == id);
-					if (isOpen && g_navToSelected)
+					if (isOpen && navToSelected)
 					{
 						ImGui::SetKeyboardFocusHere();  // the next item submitted takes the nav cursor
-						g_navToSelected = false;
+						g_frameFocusHere = ImGui::GetFrameCount();
 					}
 					if (ImGui::Selectable(label, isOpen)) { sel = id; changed = true; }
 				};
@@ -1359,6 +1628,30 @@ namespace renderer
 				sideItem(TR("AMF_Help", "Help"),     "help");
 				ImGui::Separator();
 				ImGui::TextDisabled("%s", TR("AMF_Mods", "Mods"));
+
+				// Sorting, on the "Mods" row itself (the owner, 2026-09-19, from phbd01's request for
+				// more sorting options): two switches, A-Z and Z-A. They are alternatives, so turning
+				// one on turns the other off, and turning both off gives the list back whatever order
+				// the player arranged by hand. Favourites stay pinned at the top under either.
+				{
+					const auto mode = personalization::GetSortMode();
+					bool asc  = mode == personalization::SortMode::kAlphaAsc;
+					bool desc = mode == personalization::SortMode::kAlphaDesc;
+					ImGui::SameLine();
+					if (widgets::Toggle(TR("AMF_SortAsc", "A-Z"), &asc))
+					{
+						personalization::SetSortMode(asc ? personalization::SortMode::kAlphaAsc
+														 : personalization::SortMode::kListOrder);
+						settings::Save();
+					}
+					ImGui::SameLine();
+					if (widgets::Toggle(TR("AMF_SortDesc", "Z-A"), &desc))
+					{
+						personalization::SetSortMode(desc ? personalization::SortMode::kAlphaDesc
+														  : personalization::SortMode::kListOrder);
+						settings::Save();
+					}
+				}
 
 				// Search the list by name. Once a load order registers thirty or more pages the
 				// list is longer than the pane and finding one means scrolling; typing two or
@@ -1372,6 +1665,7 @@ namespace renderer
 				// notes itself, or the on-screen keyboard works on every mod's box except ours (the owner,
 				// 2026-09-18: "the keyboard appears while in item explorer but not when using amfs own search bar").
 				keyboard::NoteTextField(ImGui::GetItemID());
+				g_frameSearchDrawn = ImGui::GetFrameCount();
 				// Mirrored for the driving tool (report 2026-09-12: the box stops taking input after the
 				// text is erased). Rect so the REAL box can be clicked; active/text/key state so the
 				// failure is measured at the widget rather than guessed from a symptom.
@@ -1409,32 +1703,135 @@ namespace renderer
 					++shown;
 
 					const bool isOpen = (sel == "mod" && selMod == row.registryIndex);
-					if (isOpen && g_navToSelected)
+					if (isOpen && navToSelected)
 					{
 						ImGui::SetKeyboardFocusHere();
-						g_navToSelected = false;
+						g_frameFocusHere = ImGui::GetFrameCount();
 					}
-					if (ImGui::Selectable(row.displayName.c_str(), isOpen))
+
+					ImGui::PushID(row.modName.c_str());
+
+					// A FILLED WHITE BOX to the left of a favourited menu's name (the owner,
+					// 2026-09-19), in a gutter every row reserves so the names stay in one column
+					// whether or not they are pinned.
+					const bool favourite = personalization::IsFavourite(row.modName);
+					const float boxSide = ImGui::GetFontSize() * 0.55f;
+					const float gutter = boxSide + ImGui::GetStyle().ItemInnerSpacing.x * 2.0f;
+					const ImVec2 rowTopLeft = ImGui::GetCursorScreenPos();
+
+					ImGui::Indent(gutter);
+					const bool picked = ImGui::Selectable(row.displayName.c_str(), isOpen);
+					ImGui::Unindent(gutter);
+
+					if (favourite)
+					{
+						const float top = rowTopLeft.y + (ImGui::GetTextLineHeight() - boxSide) * 0.5f;
+						const float left = rowTopLeft.x + ImGui::GetStyle().ItemInnerSpacing.x * 0.5f;
+						ImGui::GetWindowDrawList()->AddRectFilled(
+							ImVec2(left, top), ImVec2(left + boxSide, top + boxSide),
+							IM_COL32(255, 255, 255, 255));
+					}
+
+					if (picked)
 					{
 						sel = "mod";
 						selMod = row.registryIndex;
 						changed = true;
 					}
+
+					// Y IS THE RIGHT-CLICK (the owner, 2026-09-19: "y should do the same as the right
+					// click"). One context menu, reached either way, so a controller player and a
+					// mouse player are told the same things in the same place.
+					if (ImGui::IsItemFocused() && ImGui::IsKeyPressed(ImGuiKey_GamepadFaceUp, false))
+					{
+						ImGui::OpenPopup("##modctx");
+					}
+
+					// RIGHT-CLICK: favourite/unfavourite, rename, and the two moves that a pinned
+					// list makes obvious. Rename hands off to the modal below, so the text field is
+					// drawn once rather than once per row.
+					if (ImGui::BeginPopupContextItem("##modctx"))
+					{
+						if (ImGui::MenuItem(favourite ? TR("AMF_Unfavourite", "Remove from favourites")
+													  : TR("AMF_Favourite", "Add to favourites")))
+						{
+							personalization::ToggleFavourite(row.modName);
+							settings::Save();
+						}
+						if (ImGui::MenuItem(TR("AMF_Rename", "Rename...")))
+						{
+							g_renameTarget = row.modName;
+							const std::string alias = personalization::GetAlias(row.modName);
+							std::snprintf(g_renameBuffer, sizeof(g_renameBuffer), "%s", alias.c_str());
+							g_renameOpenPending = true;
+						}
+						ImGui::Separator();
+						if (ImGui::MenuItem(TR("AMF_MoveToTop", "Move to the top")))
+						{
+							personalization::MoveTo(entries, row.modName,
+												   static_cast<int>(personalization::FavouriteCount()) + 1);
+							settings::Save();
+						}
+						ImGui::EndPopup();
+					}
+
+					ImGui::PopID();
 				}
 				if (entries.empty()) { ImGui::TextDisabled("%s", TR("AMF_NoneRegistered", "none registered")); }
 				else if (shown == 0) { ImGui::TextDisabled("%s", TR("AMF_NoMatch", "no mod matches that")); }
 				const bool sideHasNav = ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows);
 				ImGui::EndChild();
+				// Captured BEFORE the rename popup below: the knotwork is drawn around the side
+				// PANE, and a popup submitted in between would leave GetItemRect* describing the
+				// popup instead (the frame would jump to wherever the modal sat).
+				const ImVec2 sidePaneMin = ImGui::GetItemRectMin();
+				const ImVec2 sidePaneMax = ImGui::GetItemRectMax();
+
+				// The rename modal the right-click menu asks for. Opened and drawn OUT HERE, at the
+				// window's own id level, so it is one popup rather than one per row.
+				if (g_renameOpenPending)
+				{
+					ImGui::OpenPopup("##amf_rename");
+					g_renameOpenPending = false;
+				}
+				if (ImGui::BeginPopupModal("##amf_rename", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+				{
+					ImGui::TextUnformatted(TR("AMF_RenameTitle", "Show this menu as"));
+					ImGui::TextDisabled("%s", g_renameTarget.c_str());
+					ImGui::Spacing();
+					ImGui::SetNextItemWidth(ImGui::GetFontSize() * 18.0f);
+					const bool entered = ImGui::InputTextWithHint("##renamefield", g_renameTarget.c_str(),
+																  g_renameBuffer, sizeof(g_renameBuffer),
+																  ImGuiInputTextFlags_EnterReturnsTrue);
+					keyboard::NoteTextField(ImGui::GetItemID());
+					ImGui::TextDisabled("%s", TR("AMF_RenameHint", "Leave it empty to go back to the mod's own name."));
+					ImGui::Spacing();
+					const bool ok = ImGui::Button(TR("AMF_RenameOk", "Rename")) || entered;
+					ImGui::SameLine();
+					const bool cancel = ImGui::Button(TR("AMF_RenameCancel", "Cancel"));
+					if (ok)
+					{
+						personalization::SetAlias(g_renameTarget, g_renameBuffer);
+						settings::Save();
+					}
+					if (ok || cancel)
+					{
+						g_renameTarget.clear();
+						ImGui::CloseCurrentPopup();
+					}
+					ImGui::EndPopup();
+				}
+
 				if (knot)
 				{
-					DrawKnotworkAround(ImGui::GetWindowDrawList(), ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
+					DrawKnotworkAround(ImGui::GetWindowDrawList(), sidePaneMin, sidePaneMax);
 				}
 
 				// Room between the panes for both knotwork frames plus a breath of air.
 				ImGui::SameLine(0.0f, knot ? kKnotOutset * 4.0f : -1.0f);
 
 				// ---- CONTENT PANE -------------------------------------------------------------
-				if (g_focusPane == 2) { ImGui::SetNextWindowFocus(); g_focusPane = 0; }
+				if (g_focusPane == 2) { ImGui::SetNextWindowFocus(); g_focusPane = 0; g_frameWindowFocus = ImGui::GetFrameCount(); }
 				ImGui::BeginChild("##content", ImVec2(0.0f, 0.0f), true);
 				// Re-measured every frame. A pane with no tab bar leaves these at zero, so left
 				// falls straight back to the mod list exactly as it always did.
@@ -1685,6 +2082,102 @@ namespace renderer
 					io.BackendFlags &= ~ImGuiBackendFlags_HasGamepad;
 				}
 
+				// Does a text field hold the keyboard? Sampled here, every frame, because the input
+				// hook on the game thread turns the ENGINE's text entry on and off from it: Skyrim only
+				// turns WM_CHAR into a CharEvent while ControlMap's text-entry count is up, and a
+				// CharEvent is the only way a letter ever reaches ImGui in this framework (there is no
+				// WndProc hook). Without it the search bar and every mod's text box took clicks and
+				// navigation but not a single character (phbd01, 2026-09-19).
+				g_wantTextInput.store(visible && io.WantTextInput, std::memory_order_release);
+
+				// WHY THE KEYBOARD WAS LOST (1.9.5). ImGui drops ActiveId by itself when the item
+				// that holds it is NOT SUBMITTED in a frame - ActiveIdIsAlive stops matching
+				// ActiveId and NewFrame clears it. That is a different fault from something calling
+				// SetKeyboardFocusHere or focusing another window, and from the player clicking
+				// elsewhere, and the three are indistinguishable on screen. So the report names
+				// which of them it was, with each suspect stamped on the frame it actually fired.
+				{
+					static ImGuiID s_lastActive = 0;
+					static int s_lastAliveFrame = -1;
+					// Which window owned the field while it was alive, and which one holds nav now.
+					// A consumer mod draws its own windows every frame through the framework, and one
+					// of them taking focus would look exactly like this from the player's side.
+					static char s_ownerWindow[64] = "";
+					const int frame = ImGui::GetFrameCount();
+					const ImGuiID nowActive = GImGui ? GImGui->ActiveId : 0u;
+					if (s_lastActive != 0 && nowActive != s_lastActive && keyboard::IsTextField(s_lastActive))
+					{
+						const ImGuiIO& dio = ImGui::GetIO();
+						logger::info("input: text field {} lost the keyboard on frame {} -> active now {} | "
+									 "searchDrawnFrame={} (age {}), focusHereFrame={} (age {}), "
+									 "windowFocusFrame={} (age {}), navConsumedFrame={} (age {}) | "
+									 "mouseClicked={} mouseDown={} mousePos=({:.0f},{:.0f}) | "
+									 "navId={} hoveredWindowMatters={}",
+									 s_lastActive, frame, nowActive,
+									 g_frameSearchDrawn, frame - g_frameSearchDrawn,
+									 g_frameFocusHere, frame - g_frameFocusHere,
+									 g_frameWindowFocus, frame - g_frameWindowFocus,
+									 g_frameNavConsumed, frame - g_frameNavConsumed,
+									 dio.MouseClicked[0], dio.MouseDown[0],
+									 dio.MousePos.x, dio.MousePos.y,
+									 GImGui ? GImGui->NavId : 0u,
+									 s_lastAliveFrame);
+						// EVERY key ImGui saw on the frame it died. An InputText deactivates itself on
+						// Enter, on Escape, on Tab and on a nav CANCEL (B on a pad) - and from the
+						// player's side all of those look like the box simply going dead. Listing the
+						// keys is the only way to tell which, and whether the press was even real.
+						{
+							std::string keys;
+							for (int k = ImGuiKey_NamedKey_BEGIN; k < ImGuiKey_NamedKey_END; ++k)
+							{
+								const auto key = static_cast<ImGuiKey>(k);
+								if (ImGui::IsKeyPressed(key, false)) { keys += std::string(ImGui::GetKeyName(key)) + "(p) "; }
+								else if (ImGui::IsKeyDown(key)) { keys += std::string(ImGui::GetKeyName(key)) + "(d) "; }
+							}
+							if (keys.empty()) { keys = "(none)"; }
+							logger::info("input:   keys this frame: {} | navActive={} navActivateId={} navJustMovedTo={} wantCaptureKeyboard={}",
+										 keys, ImGui::GetIO().NavActive,
+										 GImGui ? GImGui->NavActivateId : 0u,
+										 GImGui ? GImGui->NavJustMovedToId : 0u,
+										 ImGui::GetIO().WantCaptureKeyboard);
+						}
+						logger::info("input:   THE FIELD WAS {} on the frame it died - so this is {}",
+									 keyboard::WasSubmittedLastFrame(s_lastActive) ? "STILL DRAWN" : "NOT DRAWN",
+									 keyboard::WasSubmittedLastFrame(s_lastActive)
+										 ? "something taking the focus, not the widget disappearing"
+										 : "the widget not being submitted - its page stopped drawing it");
+						logger::info("input:   owner window was \"{}\"; nav window now \"{}\"; hovered \"{}\"",
+									 s_ownerWindow,
+									 (GImGui && GImGui->NavWindow) ? GImGui->NavWindow->Name : "(none)",
+									 (GImGui && GImGui->HoveredWindow) ? GImGui->HoveredWindow->Name : "(none)");
+					}
+					s_lastActive = nowActive;
+					if (GImGui && GImGui->ActiveId != 0 && GImGui->ActiveIdWindow)
+					{
+						std::snprintf(s_ownerWindow, sizeof(s_ownerWindow), "%s", GImGui->ActiveIdWindow->Name);
+					}
+					s_lastAliveFrame = (GImGui && GImGui->ActiveIdIsAlive == GImGui->ActiveId) ? frame : s_lastAliveFrame;
+				}
+
+				// B / CIRCLE LETS GO OF A TEXT BOX (the owner, 2026-09-19: "the text is still
+				// highlighted in yellow, which requires me to press Y on controller to exit before I
+				// can move out of the box with the D-pad ... we need to make it so that it doesn't
+				// default to having the text highlighted after exiting the keyboard or search").
+				//
+				// This is the other half of a text field owning the D-pad while it is active: with
+				// the D-pad no longer able to navigate away, there has to be a deliberate way OUT of
+				// the box, and B is the one the whole menu already uses for "back". Done here rather
+				// than inside the field so it works for every mod's text box as well as ours.
+				// Asked of the input layer, not of ImGui: the B press never reaches ImGui while a text
+				// field is active, precisely so ImGui cannot revert the text with it.
+				if (visible && GImGui && GImGui->ActiveId != 0 && keyboard::IsTextField(GImGui->ActiveId) &&
+					input::TakeTextFieldCancel())
+				{
+					logger::debug("input: B released text field {} - navigation is free again", GImGui->ActiveId);
+					ImGui::ClearActiveID();
+					keyboard::Hide();
+				}
+
 				watchdog::Tick();  // liveness signal for the hang watchdog
 				ImGui::NewFrame();
 
@@ -1827,6 +2320,11 @@ namespace renderer
 	void* GetGameWindow()
 	{
 		return g_gameWindow.load(std::memory_order_acquire);
+	}
+
+	bool WantsTextInput()
+	{
+		return g_wantTextInput.load(std::memory_order_acquire);
 	}
 
 	bool IsMainWindowVisible()

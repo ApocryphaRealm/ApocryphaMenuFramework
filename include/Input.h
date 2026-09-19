@@ -78,6 +78,28 @@ namespace input
 	void QueueText(const std::string& a_utf8);      // one character record per byte (ASCII)
 	void GetCursor(float& a_x, float& a_y);
 
+	// TRUE once for each B press made while an ImGui text field held the keyboard. That key is
+	// deliberately kept from ImGui - ImGui reads a gamepad cancel on a text field as "revert what
+	// was typed" - so the renderer asks here and ends the edit itself, keeping the text.
+	bool TakeTextFieldCancel();
+
+	// ---- THE STICKS, FOR A CONSUMER THAT WANTS THEM (1.9.5) ------------------------------------
+	// The framework normally collapses BOTH thumbsticks onto ImGui's single set of nav axes and
+	// decides which one is in charge each frame, so a mod's page cannot read them apart. A page
+	// that lets the player handle something - Item Explorer's 3D preview is the first - needs both
+	// at once and needs navigation to stop while it has them.
+	//
+	// Capture is a request, not a seizure: while it is on, neither stick is fed to navigation, so
+	// the selection cannot move under the player's hands. A consumer MUST release it (the framework
+	// also releases it by itself when its menu closes, so a mod that forgets cannot wedge the pad).
+	void SetSticksCaptured(bool a_captured);
+	bool AreSticksCaptured();
+
+	// a_which: 0 = left stick, 1 = right stick. x and y are the raw axes in [-1, 1] (y positive is
+	// up, Skyrim's own convention), already past the navigation deadzone test in a_live. a_clicked
+	// is that stick's click - L3 or R3 - held down now.
+	void GetStick(int a_which, float& a_x, float& a_y, bool& a_clicked, bool& a_live);
+
 	// Render-thread notification that the menu just opened: centres the software cursor and
 	// clears any stale queued events from a previous open.
 	void OnMenuOpened();

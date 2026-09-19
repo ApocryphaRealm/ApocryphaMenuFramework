@@ -29,6 +29,16 @@ namespace keyboard
 {
 	// Called by the framework's igInputText / WithHint / Multiline exports, right after the item
 	// was submitted, so the keyboard knows which ImGui items are text fields this frame.
+	// Is this item id one of the text fields seen this frame or last? Used by the renderer's
+	// keyboard-loss diagnostic, so a field losing focus is reported as a field rather than as an
+	// anonymous id.
+	bool IsTextField(std::uint32_t a_id);
+
+	// Was this field SUBMITTED on the frame that just ended? IsTextField answers "this frame or
+	// last"; this one is exact, and it is what separates "the widget stopped being drawn" from
+	// "something took the focus off it" - two faults that look identical on screen.
+	bool WasSubmittedLastFrame(std::uint32_t a_id);
+
 	void NoteTextField(std::uint32_t a_itemId);
 
 	// Render thread, inside the frame, after the framework window (so this frame's text fields
