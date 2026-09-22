@@ -24,6 +24,11 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 ## 1.9.6 - 2026-09-19 - untested
 
 ### Fixed
+- **The right-click / Y menu on a mod row fits its three options** (the owner, 2026-09-21: *"fix the empty space ...
+  and make the outer bounds of the box smaller so it fits around the 3 options"*). Every window takes the theme's
+  padding - the knotwork corner plus 8 px, so the frame art has room - and the context menu, which has no frame art,
+  inherited it as an empty band around "Add to favourites", "Rename..." and "Move to the top". It now uses a tight
+  padding of its own (about a third of the text height).
 - **A text box could be cancelled the moment it opened, so nothing could be deleted or typed** (the owner, testing
   1.9.6 on 2026-09-21: *"I'm clicking the text box and it's not letting me delete the word anymore ... It did
   actually require me to press escape just now, and it started typing again"*). The log had 62 text-field deaths,

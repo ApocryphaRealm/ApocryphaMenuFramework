@@ -45,6 +45,7 @@ WHAT CHANGED
 ------------
 
 Version 1.9.6
+The right-click menu on a mod in the list now fits closely around its three options instead of sitting in a box with an empty band around them.
 Fixed text boxes being cancelled the moment they opened, so nothing could be typed or deleted until Escape was pressed. The menu thought Escape was still held after it had been used to close the menu; it now starts with no key held and releases any key the keyboard reports as up.
 The F1 window moves again by its top bar, opens where it was last left, and still grows evenly on both sides when resized.
 Fixed typing in the search bar and other text boxes stopping after a while, until Escape was pressed. Another mod can switch the game's text entry off while a box is focused; the framework now switches it back on every frame the box has focus, and notes the first time it happens in its log.

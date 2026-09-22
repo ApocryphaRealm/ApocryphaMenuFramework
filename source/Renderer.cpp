@@ -1805,7 +1805,15 @@ namespace renderer
 					// RIGHT-CLICK: favourite/unfavourite, rename, and the two moves that a pinned
 					// list makes obvious. Rename hands off to the modal below, so the text field is
 					// drawn once rather than once per row.
-					if (ImGui::BeginPopupContextItem("##modctx"))
+					// A TIGHT BOX (the owner, 2026-09-21: "fix the empty space ... make the outer bounds of the box smaller so
+					// it fits around the 3 options"). The theme pads every window by the knotwork corner + 8 px so the
+					// frame art has room; a context menu carries no frame art, so that padding was an empty band around
+					// three short items. The popup reads WindowPadding at Begin, so it is pushed just for that call.
+					const float ctxPad = ImGui::GetFontSize() * 0.35f;
+					ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(ctxPad, ctxPad));
+					const bool ctxOpen = ImGui::BeginPopupContextItem("##modctx");
+					ImGui::PopStyleVar();
+					if (ctxOpen)
 					{
 						if (ImGui::MenuItem(favourite ? TR("AMF_Unfavourite", "Remove from favourites")
 													  : TR("AMF_Favourite", "Add to favourites")))
