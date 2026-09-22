@@ -1,6 +1,6 @@
 ﻿ApocryphaRealm Menu Framework
 =============================
-Version 1.9.6
+Version 1.9.7
 
 An original, GPL-3.0-or-later in-game menu framework (embedding Dear ImGui) - a one-for-one
 replacement for SKSE Menu Framework's consumer surface, plus user-friendly features that do
@@ -44,6 +44,8 @@ reading.
 WHAT CHANGED
 ------------
 
+Version 1.9.7
+Added a setting to pause the game while this menu is open, the way the game's own menus do. It is on the Framework Settings page and off by default.
 Version 1.9.6
 The right-click menu on a mod in the list now fits closely around its three options instead of sitting in a box with an empty band around them.
 Fixed text boxes being cancelled the moment they opened, so nothing could be typed or deleted until Escape was pressed. The menu thought Escape was still held after it had been used to close the menu; it now starts with no key held and releases any key the keyboard reports as up.

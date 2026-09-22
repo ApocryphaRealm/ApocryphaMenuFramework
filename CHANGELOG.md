@@ -21,6 +21,16 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## 1.9.7 - 2026-09-22 - untested
+
+### Added
+- **Pause the game while the menu is open** (the owner, 2026-09-22: *"next amf update gets a toggle in settings to stop
+  time while menu is active"*). A toggle on the Framework Settings page, `[Menu] bPauseGame` in the INI, off by default.
+  On, the framework holds one count on the game's pause counter (`UI::numPausesGame`) while its window is open - the
+  same thing the game's own pausing menus do - and gives it back when the window closes or the toggle is turned off.
+  The count is only touched on the main thread and never more than once, so it cannot leave the game paused or take a
+  count another menu holds. Translated in all eleven languages.
+
 ## 1.9.6 - 2026-09-19 - untested
 
 ### Fixed

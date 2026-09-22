@@ -53,6 +53,12 @@ namespace settings
 		// See Keyboard.h. Off hides it entirely; consumer mods can still summon it by export.
 		bool onScreenKeyboard = true;    // bOnScreenKeyboard
 
+		// [Menu] bPauseGame (the owner, 2026-09-22: "next amf update gets a toggle in settings to stop time while
+		// menu is active"): while this window is open the game is paused the way its own menus pause it - world
+		// time, actors, weather and cooldowns stop. OFF by default, so nothing changes for anyone who does not turn
+		// it on. Opened from the System row the game is already paused by the journal; this adds nothing there.
+		bool pauseGameWhileOpen = false;
+
 		// [Display]
 		float textScale = 1.30f;         // extra font multiplier on top of the resolution scale (the author, 1.0.2 feedback round)
 		// Optional path to a .ttf to rasterise the menu text from. Empty = pick a clean system

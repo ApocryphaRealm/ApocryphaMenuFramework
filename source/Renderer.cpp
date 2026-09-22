@@ -74,6 +74,52 @@ namespace renderer
 		bool g_captureDone = false;
 		std::string g_captureError;
 		std::atomic<bool> g_windowVisible{ false };
+
+		// PAUSE WHILE OPEN (1.9.7, [Menu] bPauseGame). The window is an overlay, not a game menu, so it pauses the
+		// game the way a pausing menu does: by holding one count on UI::numPausesGame. The render thread notices the
+		// wanted state change; the count itself is only ever touched on the main thread, once up and once down, and
+		// g_pauseHeld says whether this framework is holding one - so a close, a toggle flip or a save/load between
+		// them can never leave the game paused, or take a count some other menu holds.
+		bool g_pauseHeld = false;   // main thread only
+
+		void SyncGamePause(bool a_want)
+		{
+			static bool lastWanted = false;   // render thread only
+			if (a_want == lastWanted)
+			{
+				return;
+			}
+			lastWanted = a_want;
+			auto* tasks = SKSE::GetTaskInterface();
+			if (!tasks)
+			{
+				logger::warn("pause: no SKSE task interface - the game is not {} with the menu", a_want ? "paused" : "unpaused");
+				return;
+			}
+			tasks->AddTask([a_want]() {
+				auto* ui = RE::UI::GetSingleton();
+				if (!ui)
+				{
+					logger::warn("pause: UI singleton not ready - pause {} skipped", a_want ? "on" : "off");
+					return;
+				}
+				if (a_want && !g_pauseHeld)
+				{
+					++ui->numPausesGame;
+					g_pauseHeld = true;
+					logger::info("pause: game paused while the menu is open (pause count now {})", ui->numPausesGame);
+				}
+				else if (!a_want && g_pauseHeld)
+				{
+					if (ui->numPausesGame > 0)
+					{
+						--ui->numPausesGame;
+					}
+					g_pauseHeld = false;
+					logger::info("pause: menu closed or setting off - game resumed (pause count now {})", ui->numPausesGame);
+				}
+			});
+		}
 		std::atomic<void*> g_gameWindow{ nullptr };   // the game's HWND, set at D3DInit; read by the watchdog
 		std::atomic<bool> g_justOpened{ false };  // set on the input thread, consumed on the render thread
 
@@ -698,6 +744,15 @@ namespace renderer
 							   "draws until its main menu is up, so the logo frames and the half-drawn menu behind it are never "
 							   "shown. It lifts the moment play begins, or after a couple of minutes if the main menu never "
 							   "appears, so a slow start can never leave you looking at nothing."));
+			ImGui::Spacing();
+
+			if (widgets::Toggle(TR("AMF_PauseGame", "Pause the game while this menu is open"), &values.pauseGameWhileOpen))
+			{
+				logger::info("settings page: pause the game while open -> {}", values.pauseGameWhileOpen);
+				settings::Save();
+			}
+			ImGui::TextWrapped("%s", TR("AMF_PauseGameHelp", "On: time stops while this menu is open, the way it does in the game's own "
+							   "menus - nothing moves, fights or ticks down behind it. Off: the game keeps running while you change settings."));
 			ImGui::Spacing();
 
 			if (widgets::Toggle(TR("AMF_FastExit", "Fast exit - end the process the moment the game exits"), &values.fastExit))
@@ -2129,6 +2184,8 @@ namespace renderer
 				compat::PumpExternalWindow();
 
 				const bool visible = g_windowVisible.load(std::memory_order_acquire);
+
+				SyncGamePause(visible && settings::Get().pauseGameWhileOpen);
 
 				// Open-transition work happens HERE, not in ToggleMainWindow - the toggle is
 				// flipped on the input thread, and cursor centring touches ImGui state.

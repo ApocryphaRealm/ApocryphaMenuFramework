@@ -126,6 +126,7 @@ namespace settings
 
 			ReadNumber(entries, "Input.uToggleKey", g_values.toggleKey);
 			ReadBool(entries, "Input.bOnScreenKeyboard", g_values.onScreenKeyboard);
+			ReadBool(entries, "Menu.bPauseGame", g_values.pauseGameWhileOpen);
 			ReadBool(entries, "Menus.bSystemMenuRow", g_values.systemMenuRow);
 
 			// Window profiles. Each field defaults to -1, which the renderer reads as "this profile
@@ -218,6 +219,12 @@ namespace settings
 				"; Keyboard or controller navigation is DETECTED from whatever you last used, and is\n"
 				"; not a setting: press a key or move the mouse for keyboard navigation, touch the\n"
 				"; pad for controller navigation. The menu shows which one it is reading.\n"
+				"\n"
+				"[Menu]\n"
+				"; 1 = pause the game while this menu is open, the way the game's own menus do:\n"
+				"; world time, actors and weather stop until it closes. 0 (the default) leaves the\n"
+				"; game running behind it.\n"
+				"bPauseGame=" << (g_values.pauseGameWhileOpen ? 1 : 0) << "\n"
 				"\n"
 				"[Display]\n"
 				"; Extra text scale on top of the automatic resolution scaling.\n"
