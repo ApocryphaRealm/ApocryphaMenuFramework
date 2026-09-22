@@ -276,6 +276,37 @@ namespace devbenchtool
 					"\",\"NavHighlight\":\"" + hex(c[ImGuiCol_NavHighlight]) + "\",\"WindowBg\":\"" + hex(c[ImGuiCol_WindowBg]) +
 					"\",\"TextSelectedBg\":\"" + hex(c[ImGuiCol_TextSelectedBg]) + "\",\"alpha\":" + std::to_string(ImGui::GetStyle().Alpha) + "}";
 			}
+			else if (op == "textentry")
+			{
+				// TEST HOOK (2026-09-21, phbd01's "typing stops after a while"): plays the part of another mod
+				// that releases text input it never took, by lowering ControlMap's text-entry count by "drop"
+				// (default 0 = just report). Marshalled to the game thread, where the count is read. The
+				// proof is then a REAL key typed into a focused field - this op only sets the stage.
+				const int drop = static_cast<int>(JsonNum(args, "drop", 0));
+				auto* controls = RE::ControlMap::GetSingleton();
+				if (!controls) { result = "{\"ok\":false,\"error\":\"no ControlMap\"}"; }
+				else
+				{
+					const int before = controls->GetRuntimeData().textEntryCount;
+					if (drop > 0)
+					{
+						if (auto* task = SKSE::GetTaskInterface())
+						{
+							task->AddTask([drop]() {
+								if (auto* c = RE::ControlMap::GetSingleton())
+								{
+									for (int i = 0; i < drop && i < 16; ++i) { c->AllowTextInput(false); }
+									logger::info("devbench: textentry test dropped the text-entry count by {} (now {})",
+												 drop, static_cast<int>(c->GetRuntimeData().textEntryCount));
+								}
+							});
+						}
+					}
+					result = "{\"ok\":true,\"op\":\"textentry\",\"count\":" + std::to_string(before) +
+							 ",\"drop\":" + std::to_string(drop) + ",\"wantsText\":" +
+							 (renderer::WantsTextInput() ? "true" : "false") + "}";
+				}
+			}
 			else if (op == "state" || op.empty())
 			{
 				result = renderer::GetMenuStateJson();

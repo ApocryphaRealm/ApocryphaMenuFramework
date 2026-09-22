@@ -525,6 +525,23 @@ namespace renderer
 				// and the last writer is always our integrated position.
 				ImGui::GetIO().ConfigInputTrickleEventQueue = false;
 
+				// THE WINDOW MOVES BY ITS TITLE BAR AND NOTHING ELSE (the owner, 2026-09-19: "We need to
+				// make it so you can't drag AMF by anything but the top bar of the entire menu interface
+				// because I can be pointing my cursor at the item in the preview pane and instead move the
+				// AMF menu around or move the menu around while moving the item and rotating it").
+				//
+				// Dear ImGui moves a window when its BODY is dragged, and a mod's page is all body - so a
+				// drag meant for a slider, a 3D preview or a row of items moved the framework's window
+				// instead. Worse, the move takes the active id on the very frame the button goes down, and
+				// while something is active every IsItemHovered() in the frame answers false: a plain
+				// left-click on a page's row therefore did nothing at all, which is the other half of the
+				// same report. One flag fixes both, for this window and for every consumer's.
+				ImGui::GetIO().ConfigWindowsMoveFromTitleBarOnly = true;
+				// Written to the log so the next test can settle it by reading rather than by feel: this
+				// only restricts a window that HAS a title bar, and a page that still drags from its body
+				// would mean something else is moving it.
+				logger::info("window move: title bar only = {}", ImGui::GetIO().ConfigWindowsMoveFromTitleBarOnly);
+
 				ImGui_ImplWin32_Init(hwnd);
 				ImGui_ImplDX11_Init(device, context);
 				g_swapChain = reinterpret_cast<IDXGISwapChain*>(window.swapChain);
@@ -1455,18 +1472,32 @@ namespace renderer
 			// applies to the nested window, which keeps the journal-panel placement below.
 			struct HotkeyConstraint { ImVec2 display{}; float aspect = 0.0f; };
 			static HotkeyConstraint s_hotkeyConstraint{};
+			// 1.9.6 (the owner, 2026-09-21: "the F1 called AMF does not [move], as it is fixed in position, which should
+			// still be movable if they grab it by the top"). The key-opened window now MOVES by its top bar like the
+			// System-row one (ConfigWindowsMoveFromTitleBarOnly keeps the body from dragging it). What stays from
+			// 2026-09-13 is the resize: an edge drag still grows both sides about the window's centre and a corner
+			// drag keeps its shape - the centre is simply wherever the player has put the window, not the screen's.
+			static ImVec2 s_hotCentre{ -1.0f, -1.0f };
+			ImGuiWindow* hotWindow = nested ? nullptr : ImGui::FindWindowByName(windowId);
+			const bool movingHot = hotWindow && GImGui->MovingWindow && GImGui->MovingWindow->RootWindow == hotWindow;
 			if (!nested)
 			{
-				windowFlags |= ImGuiWindowFlags_NoMove;
 				if (g_applyGeometry.load(std::memory_order_acquire))
 				{
 					const float gw = std::min(profile.IsSet() ? profile.w : dw, 1.0f);
 					const float gh = std::min(profile.IsSet() ? profile.h : dh, 1.0f);
 					ImGui::SetNextWindowSize(ImVec2(display.x * gw, display.y * gh), ImGuiCond_Always);
+					// Open where the player left it (its saved centre), else the screen centre - kept on screen.
+					float cx = profile.IsSet() ? (profile.x + gw * 0.5f) : 0.5f;
+					float cy = profile.IsSet() ? (profile.y + gh * 0.5f) : 0.5f;
+					cx = std::clamp(cx, gw * 0.5f, 1.0f - gw * 0.5f);
+					cy = std::clamp(cy, gh * 0.5f, 1.0f - gh * 0.5f);
+					s_hotCentre = ImVec2(display.x * cx, display.y * cy);
 					g_applyGeometry.store(false, std::memory_order_release);
 					appliedThisFrame = true;
 					s_hotkeyConstraint.aspect = 0.0f;
 				}
+				if (s_hotCentre.x < 0.0f) { s_hotCentre = ImVec2(display.x * 0.5f, display.y * 0.5f); }
 				s_hotkeyConstraint.display = display;
 				ImGui::SetNextWindowSizeConstraints(ImVec2(display.x * 0.2f, display.y * 0.2f), display,
 					+[](ImGuiSizeCallbackData* a_data) {
@@ -1485,7 +1516,9 @@ namespace renderer
 							a_data->DesiredSize.x = a_data->DesiredSize.y * c->aspect;   // the clamp held one side: keep the shape
 						}
 					}, &s_hotkeyConstraint);
-				ImGui::SetNextWindowPos(ImVec2(display.x * 0.5f, display.y * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+				// Held at its centre every frame EXCEPT while the title bar is being dragged, when ImGui's own move
+				// runs and the centre follows it (below). That is what keeps a resize symmetric.
+				if (!movingHot) { ImGui::SetNextWindowPos(s_hotCentre, ImGuiCond_Always, ImVec2(0.5f, 0.5f)); }
 			}
 			else if (g_applyGeometry.load(std::memory_order_acquire))
 			{
@@ -1516,6 +1549,11 @@ namespace renderer
 					ImGui::SetNextWindowSize(ImVec2(display.x * gw, display.y * gh), ImGuiCond_Always);
 					g_applyGeometry.store(false, std::memory_order_release);
 					appliedThisFrame = true;
+					// Evidence for the owner's standing requirement (2026-09-21): the System-row window reopens where
+					// the player left it, across game reloads. One line per opening says which geometry was used.
+					logger::info("window profile (nested) applied on open: {} x={:.3f} y={:.3f} w={:.3f} h={:.3f} (art '{}')",
+						useProfile ? "the player's saved position" : "the measured journal panel (no saved position for this art)",
+						gx, gy, gw, gh, artNow);
 				}
 			}
 
@@ -1529,6 +1567,11 @@ namespace renderer
 					if (!ImGui::IsMouseDown(ImGuiMouseButton_Left) && cur.x > 1.0f && cur.y > 1.0f)
 					{
 						s_hotkeyConstraint.aspect = cur.x / cur.y;
+					}
+					if (movingHot)
+					{
+						const ImVec2 wp = ImGui::GetWindowPos();
+						s_hotCentre = ImVec2(wp.x + cur.x * 0.5f, wp.y + cur.y * 0.5f);
 					}
 				}
 				// The author's background, before any content: ImGui has already painted the window's
@@ -1691,6 +1734,11 @@ namespace renderer
 
 				// Player-facing order and names (menu-shell personalization). The rows carry the
 				// REGISTRY index, so selection, the C API and DevBench addressing are unaffected.
+				// Consumed ONCE for the frame, then applied to whichever row has the highlight. Taken
+				// outside the loop so a single press cannot fire on several rows.
+				const bool rowContextMenu = bindings::TakeTriggered(bindings::Action::kContextMenu);
+				const bool rowFavourite = bindings::TakeTriggered(bindings::Action::kFavourite);
+
 				int shown = 0;
 				for (const personalization::DisplayEntry& row : personalization::Order(entries))
 				{
@@ -1740,11 +1788,18 @@ namespace renderer
 					}
 
 					// Y IS THE RIGHT-CLICK (the owner, 2026-09-19: "y should do the same as the right
-					// click"). One context menu, reached either way, so a controller player and a
-					// mouse player are told the same things in the same place.
-					if (ImGui::IsItemFocused() && ImGui::IsKeyPressed(ImGuiKey_GamepadFaceUp, false))
+					// click"), and from 1.9.6 it is an ordinary bindable action rather than a
+					// hard-wired key, so it can be moved from the Controls page like everything else.
+					// Favouriting the highlighted mod is a second action, for players who would
+					// rather not go through the menu at all.
+					if (ImGui::IsItemFocused())
 					{
-						ImGui::OpenPopup("##modctx");
+						if (rowContextMenu) { ImGui::OpenPopup("##modctx"); }
+						if (rowFavourite)
+						{
+							personalization::ToggleFavourite(row.modName);
+							settings::Save();
+						}
 					}
 
 					// RIGHT-CLICK: favourite/unfavourite, rename, and the two moves that a pinned
@@ -1996,6 +2051,29 @@ namespace renderer
 				{
 					std::scoped_lock l(g_selLock);
 					g_selTabName = curTabName; g_selTabIndex = g_tabIndex; g_selTabCount = g_tabCount;
+				}
+
+				// THE BUMPERS WALK THE TABS (the owner, 2026-09-19: "bumpers navigate tabs, dpad
+				// doesnt"). The D-pad deliberately never steps a tab - moving the highlight onto one
+				// and activating it is the other way, and the standing rule forbids stepping - so tab
+				// navigation gets controls of its own. The INNERMOST bar that exists takes the press:
+				// a mod's own tab bar if it drew one this frame, otherwise the framework's page bar.
+				{
+					const int step = (bindings::TakeTriggered(bindings::Action::kTabNext) ? 1 : 0) -
+									 (bindings::TakeTriggered(bindings::Action::kTabPrev) ? 1 : 0);
+					if (step != 0)
+					{
+						if (g_innerFresh && g_innerCount > 1)
+						{
+							g_innerRequest = (g_innerIndex + step + g_innerCount) % g_innerCount;
+							logger::debug("nav: bumper -> inner tab {}", g_innerRequest);
+						}
+						else if (g_tabCount > 1)
+						{
+							g_tabRequest = (g_tabIndex + step + g_tabCount) % g_tabCount;
+							logger::debug("nav: bumper -> tab {}", g_tabRequest);
+						}
+					}
 				}
 
 				// Controller scheme: while a slider/drag is ACTIVE the right stick moves it and the

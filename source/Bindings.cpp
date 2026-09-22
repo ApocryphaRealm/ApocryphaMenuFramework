@@ -55,6 +55,16 @@ namespace bindings
 			set(Action::kOskShift,     KeyKind::kNone,       -1, PadKind::kButton,   0x4000);   // X
 			set(Action::kOskBackspace, KeyKind::kNone,       -1, PadKind::kButton,   0x8000);   // Y
 			set(Action::kOskDone,      KeyKind::kNone,       -1, PadKind::kButton,   0x0020);   // Back
+			// The bumpers walk the tabs (the owner, 2026-09-19). They reached ImGui before and the
+			// framework did nothing with them, so nothing loses a control; and the D-pad keeps
+			// moving only the highlight, which is the standing rule.
+			set(Action::kTabPrev,      KeyKind::kKeyboard, 0xC9, PadKind::kButton,   0x0100);   // Page Up / L1
+			set(Action::kTabNext,      KeyKind::kKeyboard, 0xD1, PadKind::kButton,   0x0200);   // Page Down / R1
+			// Y opened the context menu as a hard-wired special case until now; it is an ordinary
+			// bindable action from 1.9.6. It shares Y with the on-screen keyboard's backspace, which
+			// the exclusivity rule allows because the keyboard's actions only act while it is open.
+			set(Action::kContextMenu,  KeyKind::kNone,       -1, PadKind::kButton,   0x8000);   // Y
+			set(Action::kFavourite,    KeyKind::kKeyboard, 0x21, PadKind::kButton,   0x0040);   // F / L3
 		}
 
 		// Two functions that can be live at the same moment must not share a binding. Everything
@@ -177,6 +187,10 @@ namespace bindings
 		case Action::kOskShift:     return TR("AMF_ActOskShift", "On-screen keyboard: shift");
 		case Action::kOskBackspace: return TR("AMF_ActOskBackspace", "On-screen keyboard: backspace");
 		case Action::kOskDone:      return TR("AMF_ActOskDone", "On-screen keyboard: done");
+		case Action::kTabPrev:      return TR("AMF_ActTabPrev", "Previous tab");
+		case Action::kTabNext:      return TR("AMF_ActTabNext", "Next tab");
+		case Action::kContextMenu:  return TR("AMF_ActContextMenu", "Open a mod's options");
+		case Action::kFavourite:    return TR("AMF_ActFavourite", "Favourite the highlighted mod");
 		default:                    return "";
 		}
 	}
@@ -189,8 +203,50 @@ namespace bindings
 		case Action::kClose:        return TR("AMF_ActCloseHelp", "Closes the menu without opening it, so the game keeps this control the rest of the time.");
 		case Action::kPaneLeft:     return TR("AMF_ActPaneLeftHelp", "From a mod's page, back to the list of mods. On the first section only.");
 		case Action::kPaneRight:    return TR("AMF_ActPaneRightHelp", "From the list of mods, into the page beside it.");
+		case Action::kTabNext:      return TR("AMF_ActTabNextHelp", "Walks the tabs across the top of a page. The D-pad never changes a tab - move the highlight onto one and activate it, or use these.");
+		case Action::kContextMenu:  return TR("AMF_ActContextMenuHelp", "The same menu a right-click opens: favourite, rename, move to the top.");
+		case Action::kFavourite:    return TR("AMF_ActFavouriteHelp", "Pins or unpins the highlighted mod without opening the menu first.");
 		default:                    return "";
 		}
+	}
+
+	namespace
+	{
+		std::array<bool, static_cast<std::size_t>(Action::kCount)> g_fired{};
+	}
+
+	void RaiseTriggered(Action a_action)
+	{
+		std::scoped_lock lock(g_lock);
+		const auto i = static_cast<std::size_t>(a_action);
+		if (i < g_fired.size()) { g_fired[i] = true; }
+	}
+
+	void RaiseAllFor(std::uint32_t a_code, bool a_gamepad)
+	{
+		// Only the actions that ARE commands: the navigation ones become ImGui keys instead and
+		// must not be raised as well, or a press would both move the cursor and fire a command.
+		static constexpr Action kCommands[] = {
+			Action::kTabPrev, Action::kTabNext, Action::kContextMenu, Action::kFavourite
+		};
+		std::scoped_lock lock(g_lock);
+		for (Action a : kCommands)
+		{
+			const Binding& b = g_bindings[static_cast<std::size_t>(a)];
+			const bool hit = a_gamepad
+				? (b.padKind == PadKind::kButton && b.padCode == static_cast<std::int32_t>(a_code))
+				: (b.keyKind == KeyKind::kKeyboard && b.keyCode == static_cast<std::int32_t>(a_code));
+			if (hit) { g_fired[static_cast<std::size_t>(a)] = true; }
+		}
+	}
+
+	bool TakeTriggered(Action a_action)
+	{
+		std::scoped_lock lock(g_lock);
+		const auto i = static_cast<std::size_t>(a_action);
+		if (i >= g_fired.size() || !g_fired[i]) { return false; }
+		g_fired[i] = false;
+		return true;
 	}
 
 	Binding Get(Action a_action)
@@ -428,7 +484,8 @@ namespace bindings
 	{
 		const char* kKeys[] = {
 			"ToggleMenu", "Close", "Up", "Down", "Left", "Right", "Activate", "Back",
-			"PaneLeft", "PaneRight", "OskShift", "OskBackspace", "OskDone"
+			"PaneLeft", "PaneRight", "OskShift", "OskBackspace", "OskDone",
+			"TabPrev", "TabNext", "ContextMenu", "Favourite"
 		};
 		static_assert(sizeof(kKeys) / sizeof(kKeys[0]) == static_cast<std::size_t>(Action::kCount));
 	}

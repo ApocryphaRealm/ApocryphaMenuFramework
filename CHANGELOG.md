@@ -21,6 +21,69 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## 1.9.6 - 2026-09-19 - untested
+
+### Fixed
+- **A text box could be cancelled the moment it opened, so nothing could be deleted or typed** (the owner, testing
+  1.9.6 on 2026-09-21: *"I'm clicking the text box and it's not letting me delete the word anymore ... It did
+  actually require me to press escape just now, and it started typing again"*). The log had 62 text-field deaths,
+  each with "keys this frame: Escape(d)": the menu believed Escape was still HELD. Escape closes this menu, and its
+  release arrives after the menu is hidden, so the release was never seen. A held key repeats, and Escape is a text
+  box's cancel, so every box opened afterwards was cancelled about 40 ms later. Pressing Escape again delivered a
+  release, which is why it came back. Opening the menu now starts with no key held. Each frame, any key the menu
+  still thinks is down but the keyboard reports up is released, and logged, whatever path lost its release. A key
+  typed into a text box also no longer fires a framework command (F favourites a mod, Page Up / Page Down switch tabs).
+- **The F1 window moves again, by its top bar** (the owner, 2026-09-21: *"the F1 called AMF does not, as it is fixed
+  in position, which should still be movable if they grab it by the top"*). It opens where it was last left (the
+  screen centre the first time), moves by its title bar only like the System-row window, and still grows both sides
+  evenly when an edge is dragged. The centre it grows about is now wherever the window has been put.
+
+### Fixed
+- **The window moves by its top bar and nothing else.** The owner, 2026-09-19: *"We need to make it so you can't drag
+  AMF by anything but the top bar of the entire menu interface because I can be pointing my cursor at the item in the
+  preview pane and instead move the AMF menu around or move the menu around while moving the item and rotating it."*
+  Dear ImGui moves a window when its BODY is dragged, and a mod's page is all body, so a drag meant for a slider, a 3D
+  preview or a row of items moved this window instead - the log shows three window positions saved in ten seconds
+  while he was trying to turn an item.
+
+  It also cost every page its left-click: the move takes the active id on the frame the button goes down, and while
+  something is active every `IsItemHovered()` in that frame answers false - so a plain click on a row did nothing at
+  all. One flag, `ConfigWindowsMoveFromTitleBarOnly`, fixes both, for this window and for every consumer's.
+
+### Fixed
+- **Typing could still be dead after 1.9.5, on a load order where another mod has driven the engine's text-entry
+  count negative.** phbd01 reported the same "I have to press Escape first" shape again after 1.9.5 shipped.
+  `ControlMap::AllowTextInput` moves a COUNTER, and the engine only produces characters while that counter is above
+  zero - so 1.9.5's single `+1` was not enough if some other mod had called it false more often than true and left the
+  count at, say, -2. The framework now READS the count and raises it until it is actually positive (bounded, and it
+  remembers how many raises it made so exactly that many are undone), and if it still cannot be made positive it says
+  so in the log with the number - which names the mod responsible instead of leaving the fault looking like ours.
+
+  **And it stays working while the box is focused** (phbd01 again, 2026-09-21: *"it is fixed at first now, but it
+  returns after some time, I can click but not type, I have to press escape again to type"*). The count was only
+  checked when a text field took focus, so if another mod lowered it while the field was still focused, typing died
+  until Escape dropped the focus and the next click raised it again. The framework now checks the count every frame
+  while a field holds focus and tops it back up, logging the first drop with the number. When the field lets go it
+  lowers the count only by what it added and never below zero, so a mod that reset the count is not left negative.
+
+### Added
+- **The bumpers walk the tabs** (the owner, 2026-09-19: *"bumpers navigate tabs, dpad doesnt"*). L1 goes to the
+  previous tab and R1 to the next, on a mod's own tab bar if it drew one and otherwise on the framework's page bar -
+  the innermost bar takes the press. The D-pad still never steps a tab: moving the highlight onto one and activating
+  it stays the other way, which is the standing rule it has followed since 1.9.0. Both are bindable like everything
+  else, and default to Page Up / Page Down on the keyboard side.
+- **"Open a mod's options" is now a bindable action** rather than Y being a hard-wired special case. It still defaults
+  to Y, and still opens the same menu a right-click opens; it can now be moved from the Controls page like every other
+  control. It shares Y with the on-screen keyboard's backspace, which the exclusivity rule allows because the
+  keyboard's own actions only act while the keyboard is open.
+- **"Favourite the highlighted mod"**, for players who would rather not go through the menu at all. L3 on a controller,
+  F on the keyboard.
+
+### Changed
+- Actions that are not a navigation key - the two tab steps, the context menu and the favourite command - are raised
+  as flags by the input hook and consumed once per frame by the renderer, rather than being read as ImGui keys. A
+  single press can therefore never fire on more than one row of the list.
+
 ## 1.9.5 - 2026-09-19 - untested
 
 ### Fixed

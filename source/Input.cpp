@@ -16,6 +16,7 @@
 
 #include <atomic>
 #include <mutex>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -124,17 +125,102 @@ namespace input
 		// on the GAME thread, where PollInputDevices runs. The count is a counter, so every raise
 		// is matched by exactly one lower; closing the menu drops WantTextInput and releases it.
 		bool g_textInputHeld = false;
+		int  g_textInputAdded = 0;   // how many raises we made, so exactly that many are undone
+		bool g_textInputDropLogged = false;   // one warning per hold, not one per frame
 
 		void SyncEngineTextInput()
 		{
 			const bool want = renderer::IsMainWindowVisible() && renderer::WantsTextInput();
-			if (want == g_textInputHeld) { return; }
 			auto* controls = RE::ControlMap::GetSingleton();
 			if (!controls) { return; }
-			controls->AllowTextInput(want);
+			// HELD, AND SOMETHING TOOK IT BACK (phbd01, 2026-09-21: "it is fixed at first now, but it
+			// returns after some time - I can click but not type, I have to press escape again").
+			// Raising the count once, when the field takes focus, is not enough: while the field is
+			// still focused another mod (or the engine closing some other menu) can lower the count
+			// back to zero, and from then on no CharEvent is made - typing dies with the box still
+			// focused, and only Escape (focus lost, then taken again, which re-runs the raise below)
+			// brings it back. So while we hold it, the count is checked every frame and topped up
+			// again, and the first drop in each hold is logged with the number.
+			if (want && g_textInputHeld)
+			{
+				auto& rdHeld = controls->GetRuntimeData();
+				if (rdHeld.textEntryCount <= 0)
+				{
+					const int before = rdHeld.textEntryCount;
+					int added = 0;
+					while (rdHeld.textEntryCount <= 0 && added < 8 && g_textInputAdded < 64)
+					{
+						controls->AllowTextInput(true);
+						++added;
+						++g_textInputAdded;
+					}
+					if (!g_textInputDropLogged)
+					{
+						g_textInputDropLogged = true;
+						logger::warn("input: ControlMap's text-entry count fell to {} while a text field had focus - "
+									 "another mod released text input it did not take. Raised it {} time(s) to {} "
+									 "so typing keeps working.",
+									 before, added, static_cast<int>(rdHeld.textEntryCount));
+					}
+				}
+				return;
+			}
+			if (want == g_textInputHeld) { return; }
+			// THE COUNT, NOT THE CALL (2026-09-19). AllowTextInput moves ControlMap's textEntryCount,
+			// and the engine only makes CharEvents while that count is ABOVE ZERO. A single +1 is
+			// therefore not enough if another mod has driven the count NEGATIVE - it has called
+			// AllowTextInput(false) more often than true, which nothing stops it doing - and from a
+			// player's side that is indistinguishable from the fault this code was written to fix:
+			// clicking the box does nothing, and some unrelated action that happens to reset the
+			// count (opening a menu, pressing Escape) makes typing start working. phbd01 reported
+			// exactly that shape again on 2026-09-19, after 1.9.5 shipped the single call.
+			//
+			// So the count is READ, and raised until it is actually positive - bounded, and we
+			// remember how many we added so exactly that many come back off. If it cannot be made
+			// positive the log says so with the number, which names the fault instead of leaving it
+			// looking like ours.
+			auto& rd = controls->GetRuntimeData();
+			if (want)
+			{
+				const int before = rd.textEntryCount;
+				int added = 0;
+				while (rd.textEntryCount <= 0 && added < 8)
+				{
+					controls->AllowTextInput(true);
+					++added;
+				}
+				if (added == 0) { controls->AllowTextInput(true); added = 1; }   // already positive: one, balanced
+				g_textInputAdded = added;
+				if (before < 0)
+				{
+					logger::warn("input: ControlMap's text-entry count was {} - another mod has released text "
+								 "input more often than it took it. Raised {} time(s) to reach {}. If this is "
+								 "still not positive, typing cannot work until that mod is found.",
+								 before, added, static_cast<int>(rd.textEntryCount));
+				}
+				else
+				{
+					logger::debug("input: engine text entry raised ({} -> {}, {} call(s))",
+								  before, static_cast<int>(rd.textEntryCount), added);
+				}
+			}
+			else
+			{
+				// Undo our own raises - but never below zero: if something RESET the count while we
+				// held it (rather than lowering it by one), lowering by everything we added would push
+				// it negative and break typing for the next mod that asks for it.
+				int released = 0;
+				while (released < g_textInputAdded && rd.textEntryCount > 0)
+				{
+					controls->AllowTextInput(false);
+					++released;
+				}
+				logger::debug("input: engine text entry released ({} of {} call(s), count now {})",
+							  released, g_textInputAdded, static_cast<int>(rd.textEntryCount));
+				g_textInputAdded = 0;
+				g_textInputDropLogged = false;
+			}
 			g_textInputHeld = want;
-			logger::debug("input: engine text entry {} (a menu text field {} the keyboard)",
-						  want ? "raised" : "released", want ? "took" : "let go of");
 		}
 
 		std::uint64_t ButtonKey(const RE::ButtonEvent* a_button)
@@ -733,6 +819,44 @@ namespace input
 		return true;
 	}
 
+	// ---- keys ImGui believes are held --------------------------------------------------
+	// A STUCK ESCAPE (the owner, 2026-09-21: clicking a text box "is not letting me delete the word anymore ...
+	// it did actually require me to press escape just now, and it started typing again"). The log showed 62
+	// text-field deaths with "keys this frame: Escape(d)" - ImGui thought Escape was HELD. Escape closes this
+	// menu, and the release arrives after the menu is hidden, so ImGui never heard it; a held key repeats, and
+	// every text field opened after that was cancelled by the repeat about 40 ms later (Escape is InputText's
+	// cancel). Pressing Escape again delivered a release and "fixed" it, exactly as reported.
+	// So every keyboard key sent DOWN is remembered, and each frame any key Windows reports as UP is released
+	// in ImGui too - whatever path lost its real release. Keys younger than 250 ms are left alone, so a
+	// driver-injected press (which Windows never sees) still lasts its intended frames.
+	struct HeldKey { std::uint32_t scancode; std::chrono::steady_clock::time_point since; };
+	std::unordered_map<int, HeldKey> g_heldKeys;   // ImGuiKey -> scancode it came from
+	void ReleaseStuckKeys(ImGuiIO& a_io)
+	{
+		if (g_heldKeys.empty()) { return; }
+		const auto now = std::chrono::steady_clock::now();
+		for (auto it = g_heldKeys.begin(); it != g_heldKeys.end();)
+		{
+			if (now - it->second.since < std::chrono::milliseconds(250)) { ++it; continue; }
+			const std::uint32_t sc = it->second.scancode;
+			const UINT scan = (sc & 0x80) ? (0xE000u | (sc & 0x7Fu)) : sc;   // DirectInput 0xC8 = E0 48
+			const UINT vk = ::MapVirtualKeyW(scan, MAPVK_VSC_TO_VK_EX);
+			if (vk != 0 && (::GetAsyncKeyState(static_cast<int>(vk)) & 0x8000) == 0)
+			{
+				const auto key = static_cast<ImGuiKey>(it->first);
+				a_io.AddKeyEvent(key, false);
+				if (key == ImGuiKey_LeftShift || key == ImGuiKey_RightShift) { a_io.AddKeyEvent(ImGuiMod_Shift, false); }
+				else if (key == ImGuiKey_LeftCtrl || key == ImGuiKey_RightCtrl) { a_io.AddKeyEvent(ImGuiMod_Ctrl, false); }
+				else if (key == ImGuiKey_LeftAlt || key == ImGuiKey_RightAlt) { a_io.AddKeyEvent(ImGuiMod_Alt, false); }
+				logger::info("input: key {} (scan 0x{:02X}) was still held in the menu but is up on the keyboard - "
+							 "its release was lost (usually because it closed the menu); released it",
+							 ImGui::GetKeyName(key), sc);
+				it = g_heldKeys.erase(it);
+			}
+			else { ++it; }
+		}
+	}
+
 	void ProcessQueuedEvents()
 	{
 		std::vector<Record> drained;
@@ -758,6 +882,7 @@ namespace input
 		ImGuiIO& io = ImGui::GetIO();
 		const ImVec2 display = io.DisplaySize;
 		const bool controllerMode = UsingController();
+		ReleaseStuckKeys(io);
 
 		for (const Record& record : drained)
 		{
@@ -797,10 +922,15 @@ namespace input
 			case Record::Kind::kKeyboard:
 				{
 					if (record.down) { NoteDevice(Device::kKeyboardMouse); }
+					// A key typed into a text field is text, not a command: F (favourite) and Page Up / Down
+					// (tabs) must not fire while the search bar or a mod's text box is being typed into.
+					if (record.down && !renderer::WantsTextInput()) { bindings::RaiseAllFor(record.code, false); }
 					const ImGuiKey key = ScancodeToImGuiKey(record.code);
 					if (key != ImGuiKey_None)
 					{
 						io.AddKeyEvent(key, record.down);
+						if (record.down) { g_heldKeys[static_cast<int>(key)] = HeldKey{ record.code, std::chrono::steady_clock::now() }; }
+						else { g_heldKeys.erase(static_cast<int>(key)); }
 
 						// Modifier flags tracked explicitly - "modifier keys are not left/right
 						// side conscious" (survey, ModExplorerMenu's translation notes).
@@ -827,6 +957,15 @@ namespace input
 					logger::debug("gamepad event: code=0x{:04X} down={} controllerMode={} -> imguiKey={}",
 								  record.code, record.down, controllerMode, static_cast<int>(key));
 					if (record.down) { NoteDevice(Device::kGamepad); }
+					// A binding whose action has no ImGui key of its own raises a flag the renderer
+					// consumes: the tab steps, the context menu and the favourite command are the
+					// framework's own commands, not navigation.
+					// EVERY action this input is bound to, not just the first. Two actions may share a
+					// control when they can never be live together - Y is the on-screen keyboard's
+					// backspace AND "open a mod's options" - but FromGamepad returns the first match
+					// in enum order, which is the backspace, so the context menu was never raised
+					// (the owner, 2026-09-19: "pressing Y doesn't, even though it's bound to it").
+					if (record.down) { bindings::RaiseAllFor(record.code, true); }
 					// 1.8.9: the on-screen keyboard takes the pad while it is open (D-pad, A, B, X, Y), and
 					// takes the A that opens it on a highlighted text box; everything else falls through.
 					if (controllerMode && keyboard::HandleGamepad(record.code, record.down))
@@ -924,6 +1063,10 @@ namespace input
 		g_cursorX = display.x * 0.5f;
 		g_cursorY = display.y * 0.5f;
 		ImGui::GetIO().AddMousePosEvent(g_cursorX, g_cursorY);
+
+		// Nothing is held when the menu opens: a release that arrived while it was hidden is gone for good.
+		ImGui::GetIO().ClearInputKeys();
+		g_heldKeys.clear();
 
 		std::scoped_lock lock(g_queueLock);
 		g_queue.clear();

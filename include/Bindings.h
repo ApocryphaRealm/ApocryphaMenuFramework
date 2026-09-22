@@ -48,6 +48,10 @@ namespace bindings
 		kOskShift,         // on-screen keyboard: shift
 		kOskBackspace,     // on-screen keyboard: backspace
 		kOskDone,          // on-screen keyboard: finish
+		kTabPrev,          // previous tab on whichever tab bar is innermost
+		kTabNext,          // next tab
+		kContextMenu,      // open the highlighted mod's context menu (was hard-wired to Y)
+		kFavourite,        // favourite/unfavourite the highlighted mod outright
 		kCount
 	};
 
@@ -115,6 +119,17 @@ namespace bindings
 	Action FromMouse(std::uint32_t a_button);
 	Action FromGamepad(std::uint32_t a_mask);
 	Action FromStick(int a_which, int a_direction);
+
+	// ---- actions that are not a navigation key ---------------------------------------------
+	// Up, Down, Activate and the rest become ImGui keys and ImGui does the work. These four have no
+	// ImGui equivalent - they are the framework's own commands - so the input hook RAISES a flag
+	// when their binding is pressed and the renderer consumes it on the next frame it draws.
+	void RaiseTriggered(Action a_action);
+	// Raise every command action bound to this input. Two actions may legitimately share one
+	// control when they can never be live together, so asking "which action is this?" is the wrong
+	// question - the right one is "which of them is this?".
+	void RaiseAllFor(std::uint32_t a_code, bool a_gamepad);
+	bool TakeTriggered(Action a_action);
 
 	// ---- INI, in the framework's own file like every other setting -------------------------
 	void LoadFrom(const std::unordered_map<std::string, std::string>& a_iniEntries);

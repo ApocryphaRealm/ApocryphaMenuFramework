@@ -1,6 +1,6 @@
 ﻿ApocryphaRealm Menu Framework
 =============================
-Version 1.9.5
+Version 1.9.6
 
 An original, GPL-3.0-or-later in-game menu framework (embedding Dear ImGui) - a one-for-one
 replacement for SKSE Menu Framework's consumer surface, plus user-friendly features that do
@@ -43,6 +43,14 @@ reading.
 
 WHAT CHANGED
 ------------
+
+Version 1.9.6
+Fixed text boxes being cancelled the moment they opened, so nothing could be typed or deleted until Escape was pressed. The menu thought Escape was still held after it had been used to close the menu; it now starts with no key held and releases any key the keyboard reports as up.
+The F1 window moves again by its top bar, opens where it was last left, and still grows evenly on both sides when resized.
+Fixed typing in the search bar and other text boxes stopping after a while, until Escape was pressed. Another mod can switch the game's text entry off while a box is focused; the framework now switches it back on every frame the box has focus, and notes the first time it happens in its log.
+Fixed typing never starting on load orders where another mod had left the game's text entry switched off more times than on.
+The window now moves only by its top bar, so dragging a slider, a 3D preview or a list no longer drags the whole menu, and a plain click on a row works again.
+Added: the bumpers switch tabs (L1 previous, R1 next; Page Up / Page Down on the keyboard), a bindable "open a mod's options" action (Y by default), and "favourite the highlighted mod" (L3, or F on the keyboard).
 
 Version 1.8.4
 Fixed the SKSE MENUS row in the game's System menu doing nothing when it is pressed. The row was recognised by the position it was added at, which moves when the game inserts its own Mod Manager row, and its press listener was skipped whenever the row was already in the menu. The row is now recognised by its own name, and its listener is attached every time the journal opens.
