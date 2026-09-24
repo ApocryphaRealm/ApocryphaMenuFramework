@@ -31,6 +31,15 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
   The count is only touched on the main thread and never more than once, so it cannot leave the game paused or take a
   count another menu holds. Translated in all eleven languages.
 
+### Fixed
+- **Crash at data load beside Theo's Render Pipeline** (reported by Soporatus, 2026-09-23). The SKSE Menu Framework alias
+  patched the import table of every DLL anywhere under `SKSE\Plugins`, including the NVIDIA Streamline runtime Theo's
+  Render Pipeline ships in its own subfolder, and overwrote import entries another plugin had already hooked. The alias
+  now patches only (a) DLLs directly in `SKSE\Plugins` - SKSE never loads a subfolder's DLLs as plugins - (b) that name
+  the framework somewhere in their image, which every consumer must because the name is what it looks the framework up
+  by, and (c) only import entries that still point at kernel32 / kernelbase: an entry another plugin redirected is left
+  alone. The log's alias line now counts the plugins skipped as non-consumers and the entries left as another plugin's hook.
+
 ## 1.9.6 - 2026-09-19 - untested
 
 ### Fixed
@@ -883,12 +892,12 @@ captured reserved, observe-only confirmed at the main menu)
 ## 1.3.0 - 2026-08-27 - untested
 
 ### Added
-- Theme registry (decisions doc S8/S10): AMF's original identity ships as the "Untarnished" theme; a new "MO2 Skyrim" theme, colours read directly from Mod Organizer 2's own real stylesheet (C:\Modlists\Apostasy\stylesheets\Transparent-Style-Skyrim-Trosski.qss - #b0b0b0 dominant grey, solid black background per the project's non-negotiable full-opacity rule), is now the DEFAULT for the current test per the author. Selectable live from the Framework Settings page; additively scans Data/SKSE/Plugins/ApocryphaMenuFramework/themes/*.ini for user-added themes, never overwriting another entry.
+- Theme registry (decisions doc S8/S10): AMF's original identity ships as the "Untarnished" theme; a new "MO2 Skyrim" theme, colours read directly from Mod Organizer 2's own real stylesheet (the Trosski "Transparent-Style-Skyrim" stylesheet, Transparent-Style-Skyrim-Trosski.qss - #b0b0b0 dominant grey, solid black background per the project's non-negotiable full-opacity rule), is now the DEFAULT for the current test per the author. Selectable live from the Framework Settings page; additively scans Data/SKSE/Plugins/ApocryphaMenuFramework/themes/*.ini for user-added themes, never overwriting another entry.
 - AMF-owned per-save persistence channel (decisions doc S10): hooks kSaveGame/kPostLoadGame (the save's own filename is the message payload), writes/reads a plain-text sibling file next to the save mirroring co-save's SCOPING without its binary format. A shared key-value surface (SetValue/GetValue) any registered mod's page can use. A debug test harness on the Framework Settings page exercises the full round trip (set, save, quit, reload, confirm) without a Papyrus compiler.
 - Papyrus native-function binding (decisions doc S3, Path A): AMF_Ping/AMF_SetTestValue/AMF_GetTestValue registered against the game's own Papyrus VM via RE::BSScript::IVirtualMachine::RegisterFunction, proving the native-binding path this project will use for AMF-hosted scripted events instead of embedding a second language.
 
 ### Notes
-- Priority reset per the author 2026-08-27: other-mod-pipeline work (conversions, the rule-15 verdict backlog) is paused; this version is the direct build-out of the identity/persistence/scripting decisions from the same evening. A dedicated, isolated MO2 test instance (D:\Modlists\AMF-Test) was set up for this and future drastic-change testing, separate from Apostasy/SME.
+- Priority reset per the author 2026-08-27: other-mod-pipeline work (conversions, the rule-15 verdict backlog) is paused; this version is the direct build-out of the identity/persistence/scripting decisions from the same evening. A dedicated, isolated MO2 test instance (AMF-Test) was set up for this and future drastic-change testing, separate from Apostasy/SME.
 - Papyrus round-trip verification is PARTIAL, updated: an adversarial sub-agent root-caused the "hang" - the compiler is a .NET Framework 2.0/CLR2 binary and this machine lacks .NET 3.5 (crashes instantly in the native hosting shim before any output is possible; looked like a hang under Start-Process -Wait). AMFTest.psc was successfully compiled to AMFTest.pex via a reflection-based bypass (loading the assembly into an already-running CLR4 host) and deployed into the test instance's Scripts folder. Durable fix recorded for next session: `DISM /Online /Enable-Feature /FeatureName:NetFx3 /All /NoRestart` (needs elevation, not available this session). What remains unverified: actually CALLING AMFTest.RunTest() in game - blocked by a second, unrelated finding: SendKeys cannot navigate Skyrim's own menus (DirectInput, not Win32 messages), so a fresh test instance's main menu could not be advanced past without a real play session.
 
 ## 1.2.1 - 2026-08-27 - untested

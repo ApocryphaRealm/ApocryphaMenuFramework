@@ -572,20 +572,116 @@ namespace
 	// __std_fs_get_stats, and it is msvcp140's import of GetFileAttributesExW that has to be
 	// answered. Every alias passes any other name straight through, so patching the runtime
 	// changes nothing for its other users.
-	bool IsPatchTarget(const wchar_t* a_path, std::size_t a_len)
+	//
+	// 1.9.8 narrowed it twice more (Soporatus's report, 2026-09-23: Theo's Render Pipeline crashed at
+	// kDataLoaded). "Anything under SKSE\Plugins" also took TheosRenderPipeline\NVIDIA\Streamline\*.dll -
+	// libraries a plugin ships in its own subfolder, which SKSE never loads as plugins and which verify
+	// their own import tables. So: (a) an SKSE plugin is a DLL DIRECTLY in SKSE\Plugins, nothing deeper;
+	// (b) a plugin is patched only when its image names the framework (see NamesFramework) - every
+	// consumer has to, because the name is what it looks the framework up by; and (c) PatchThunk never
+	// overwrites an entry another plugin already redirected (see IsUnhookedTarget).
+	enum class Target { kNone, kPlugin, kRuntime };
+
+	Target PatchTargetKind(const wchar_t* a_path, std::size_t a_len)
 	{
 		if (!a_path || a_len == 0) {
-			return false;
+			return Target::kNone;
 		}
 		const auto lowered = Lowered(std::wstring_view(a_path, a_len));
-		if (lowered.find(L"\\skse\\plugins\\") != std::wstring::npos) {
-			return true;
+		constexpr std::wstring_view kPluginsDir = L"\\skse\\plugins\\";
+		if (const auto at = lowered.rfind(kPluginsDir); at != std::wstring::npos) {
+			const std::wstring_view rest(lowered.data() + at + kPluginsDir.size(), lowered.size() - at - kPluginsDir.size());
+			// a DLL in a subfolder of SKSE\Plugins is a library some plugin ships, never an SKSE plugin
+			return rest.find_first_of(L"\\/") == std::wstring_view::npos ? Target::kPlugin : Target::kNone;
 		}
 		std::wstring_view base(lowered);
 		if (const auto slash = base.find_last_of(L"\\/"); slash != std::wstring_view::npos) {
 			base.remove_prefix(slash + 1);
 		}
-		return base.starts_with(L"msvcp140");
+		return base.starts_with(L"msvcp140") ? Target::kRuntime : Target::kNone;
+	}
+
+	// ---- (b) does this module name the framework anywhere in its initialised data? ----------------
+	// A consumer resolves the framework by NAME - GetModuleHandle(L"SKSEMenuFramework"), a file test
+	// for "...\\SKSEMenuFramework.dll", a static import of it, or our own mods' "ApocryphaMenuFramework".
+	// That string sits in the image's data, so a module without it cannot be a consumer and is left
+	// exactly as it loaded. Plain C, no C++ objects: it runs under the loader lock and inside __try.
+	bool MatchCaseless(const unsigned char* a_p, std::size_t a_left, const char* a_needle, std::size_t a_n, std::size_t a_step)
+	{
+		if (a_left < a_n * a_step) {
+			return false;
+		}
+		for (std::size_t i = 0; i < a_n; ++i) {
+			unsigned char c = a_p[i * a_step];
+			if (c >= 'A' && c <= 'Z') {
+				c = static_cast<unsigned char>(c - 'A' + 'a');
+			}
+			if (c != static_cast<unsigned char>(a_needle[i])) {
+				return false;
+			}
+			if (a_step == 2 && a_p[i * 2 + 1] != 0) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	bool NamesFramework(HMODULE a_module)
+	{
+		static const char kSmfA[] = "sksemenuframework";
+		static const char kAmfA[] = "apocryphamenuframework";
+		__try {
+			auto* const base = reinterpret_cast<const unsigned char*>(a_module);
+			const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
+			if (dos->e_magic != IMAGE_DOS_SIGNATURE) {
+				return false;
+			}
+			const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(base + dos->e_lfanew);
+			if (nt->Signature != IMAGE_NT_SIGNATURE) {
+				return false;
+			}
+			const auto* sec = IMAGE_FIRST_SECTION(nt);
+			for (WORD s = 0; s < nt->FileHeader.NumberOfSections; ++s, ++sec) {
+				if (!(sec->Characteristics & IMAGE_SCN_CNT_INITIALIZED_DATA) || (sec->Characteristics & IMAGE_SCN_MEM_EXECUTE)) {
+					continue;
+				}
+				const auto* p = base + sec->VirtualAddress;
+				const std::size_t size = sec->Misc.VirtualSize;
+				for (std::size_t i = 0; i < size; ++i) {
+					const unsigned char c = p[i] | 0x20;
+					if (c != 's' && c != 'a') {
+						continue;
+					}
+					const std::size_t left = size - i;
+					if (MatchCaseless(p + i, left, kSmfA, sizeof(kSmfA) - 1, 1) || MatchCaseless(p + i, left, kAmfA, sizeof(kAmfA) - 1, 1) ||
+						MatchCaseless(p + i, left, kSmfA, sizeof(kSmfA) - 1, 2) || MatchCaseless(p + i, left, kAmfA, sizeof(kAmfA) - 1, 2)) {
+						return true;
+					}
+				}
+			}
+		} __except (EXCEPTION_EXECUTE_HANDLER) {
+			return false;   // unreadable: treat as not a consumer - leaving a module alone is always safe
+		}
+		return false;
+	}
+
+	std::atomic<std::size_t> g_notConsumers{ 0 };      // SKSE plugins left untouched: they never name the framework
+	std::atomic<std::size_t> g_foreignHooks{ 0 };      // import entries left untouched: another plugin redirected them first
+
+	bool IsPatchTarget(const wchar_t* a_path, std::size_t a_len, HMODULE a_module)
+	{
+		switch (PatchTargetKind(a_path, a_len)) {
+		case Target::kRuntime:
+			return true;   // msvcp140: the runtime a /MD consumer's std::filesystem::exists runs in
+		case Target::kPlugin:
+			if (NamesFramework(a_module)) {
+				return true;
+			}
+			g_notConsumers.fetch_add(1, std::memory_order_relaxed);
+			return false;
+		default:
+			return false;
+		}
 	}
 
 	bool IsPatchTarget(HMODULE a_module)
@@ -595,7 +691,42 @@ namespace
 		if (len == 0 || len >= std::size(path)) {
 			return false;
 		}
-		return IsPatchTarget(path, len);
+		return IsPatchTarget(path, len, a_module);
+	}
+
+	// ---- (c) an import entry is ours to replace only while it still points at kernel32/kernelbase ----
+	// If it points anywhere else, another plugin (Theo's Render Pipeline, an overlay, a profiler) has
+	// hooked that import and depends on it staying hooked; overwriting it would silently unhook them.
+	// The ranges are filled in Install() before anything is patched; empty ranges mean "unknown", and
+	// then nothing foreign can be told apart, so the old behaviour (patch) stands.
+	std::uintptr_t g_k32Lo = 0, g_k32Hi = 0, g_kbLo = 0, g_kbHi = 0;
+
+	void ImageRange(HMODULE a_module, std::uintptr_t& a_lo, std::uintptr_t& a_hi)
+	{
+		a_lo = a_hi = 0;
+		if (!a_module) {
+			return;
+		}
+		const auto* base = reinterpret_cast<const std::byte*>(a_module);
+		const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
+		if (dos->e_magic != IMAGE_DOS_SIGNATURE) {
+			return;
+		}
+		const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(base + dos->e_lfanew);
+		if (nt->Signature != IMAGE_NT_SIGNATURE) {
+			return;
+		}
+		a_lo = reinterpret_cast<std::uintptr_t>(base);
+		a_hi = a_lo + nt->OptionalHeader.SizeOfImage;
+	}
+
+	bool IsUnhookedTarget(ULONGLONG a_current)
+	{
+		if (g_k32Lo == 0 && g_kbLo == 0) {
+			return true;
+		}
+		const auto p = static_cast<std::uintptr_t>(a_current);
+		return (p >= g_k32Lo && p < g_k32Hi) || (p >= g_kbLo && p < g_kbHi);
 	}
 
 	// ----------------------------------------------------------------------------------------
@@ -649,7 +780,7 @@ namespace
 		if (!name || !name->Buffer) {
 			return;
 		}
-		if (!IsPatchTarget(name->Buffer, name->Length / sizeof(wchar_t))) {
+		if (!IsPatchTarget(name->Buffer, name->Length / sizeof(wchar_t), static_cast<HMODULE>(a_data->Loaded.DllBase))) {
 			return;
 		}
 
@@ -680,6 +811,10 @@ namespace
 	{
 		if (reinterpret_cast<void*>(a_thunk->u1.Function) == a_replacement) {
 			return;   // already ours - Install() is meant to be re-run
+		}
+		if (!IsUnhookedTarget(a_thunk->u1.Function)) {
+			g_foreignHooks.fetch_add(1, std::memory_order_relaxed);
+			return;   // another plugin's hook: leave it in place (1.9.8)
 		}
 
 		DWORD previous = 0;
@@ -812,6 +947,11 @@ namespace smf_alias
 				g_realA = nullptr;
 				return 0;
 			}
+			// the images an unhooked import resolves into - kernel32, and kernelbase for forwarded exports
+			ImageRange(k32, g_k32Lo, g_k32Hi);
+			ImageRange(g_realW(L"kernelbase.dll"), g_kbLo, g_kbHi);
+			logger::debug("SMF alias: kernel32 [{:#x}, {:#x}), kernelbase [{:#x}, {:#x}) - an import pointing elsewhere is another plugin's hook and is left alone",
+						  g_k32Lo, g_k32Hi, g_kbLo, g_kbHi);
 		}
 
 		// Registered once, at the first Install() - which is AMF's own SKSEPlugin_Load, so every
@@ -849,10 +989,11 @@ namespace smf_alias
 			++scanned;
 		}
 
-		logger::info("SMF alias: scanned {} module(s) (SKSE plugins + msvcp140), redirected {} import entr(ies) this pass ({} total; {} module(s) / {} entr(ies) patched at load time; {} module-name hit(s), {} file-name hit(s) so far)",
+		logger::info("SMF alias: scanned {} module(s) (SKSE plugins that name the framework + msvcp140), redirected {} import entr(ies) this pass ({} total; {} module(s) / {} entr(ies) patched at load time; {} module-name hit(s), {} file-name hit(s) so far; {} plugin check(s) skipped as not consumers, {} import entr(ies) left alone as another plugin's hook)",
 					  scanned, patchedNow, g_patched.load(std::memory_order_relaxed),
 					  g_loadTimePatched.load(std::memory_order_relaxed), g_loadTimeEntries.load(std::memory_order_relaxed),
-					  g_hits.load(std::memory_order_relaxed), g_fileHits.load(std::memory_order_relaxed));
+					  g_hits.load(std::memory_order_relaxed), g_fileHits.load(std::memory_order_relaxed),
+					  g_notConsumers.load(std::memory_order_relaxed), g_foreignHooks.load(std::memory_order_relaxed));
 
 		return patchedNow;
 	}
