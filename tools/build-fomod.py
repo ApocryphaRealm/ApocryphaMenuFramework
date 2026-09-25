@@ -148,6 +148,24 @@ def main(out_root=None):
         fail("no ApocryphaMenuFramework.ini in dist/SKSE/Plugins/ or dist/")
     copy_into(ini, os.path.join(common, "SKSE", "Plugins"))
 
+    # The shipped themes (1.9.8: Vel'dun and Oathvein) - each an INI plus the art it names. A theme
+    # whose art did not come along would show up in the picker and draw nothing, so every file an
+    # INI points at must be in the package or the build stops.
+    themes_src = os.path.join(REPO, "dist", "SKSE", "Plugins", "ApocryphaMenuFramework", "themes")
+    themes_dst = os.path.join(common, "SKSE", "Plugins", "ApocryphaMenuFramework", "themes")
+    if not os.path.isdir(themes_src) or not any(f.endswith(".ini") for f in os.listdir(themes_src)):
+        fail("no theme INIs in dist/SKSE/Plugins/ApocryphaMenuFramework/themes (run tools/make-theme-art.py)")
+    shutil.copytree(themes_src, themes_dst, dirs_exist_ok=True)
+    for name in os.listdir(themes_dst):
+        if not name.endswith(".ini"):
+            continue
+        for line in open(os.path.join(themes_dst, name), encoding="utf-8"):
+            key, _, val = line.strip().partition("=")
+            if key in ("sSkinFrame", "sSkinBackground") and val:
+                rel = val.replace("SKSE/Plugins/ApocryphaMenuFramework/themes/", "", 1)
+                if not os.path.isfile(os.path.join(themes_dst, rel.replace("/", os.sep))):
+                    fail("theme %s names %s, which is not in the package" % (name, val))
+
     # English is not optional - it is the fallback every other language falls back TO.
     trans = os.path.join(REPO, "dist", "Interface", "Translations")
     copy_into(os.path.join(trans, "ApocryphaMenuFramework_english.txt"),

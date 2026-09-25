@@ -628,8 +628,11 @@ namespace renderer
 				}
 
 				theme::Apply();
+				// Again now the theme registry exists: the first Reload above ran before theme::Apply
+				// had registered anything, so an active theme's own art is only found on this one.
+				skin::Reload();
 
-				g_uiScale = window.windowHeight > 0 ? static_cast<float>(window.windowHeight) / 1080.0f : 1.0f;
+				g_uiScale =window.windowHeight > 0 ? static_cast<float>(window.windowHeight) / 1080.0f : 1.0f;
 				if (g_uiScale < 1.0f)
 				{
 					g_uiScale = 1.0f;  // never shrink below the 1080p baseline
@@ -863,6 +866,7 @@ namespace renderer
 			{
 				theme::SetActiveTheme(themes[currentIndex].id);
 				theme::Apply();
+				skin::Reload();   // the new theme's own frame and background, if it has any
 				values.themeId = themes[currentIndex].id;
 				settings::Save();
 			}
@@ -2550,6 +2554,7 @@ namespace renderer
 			{
 				theme::SetActiveTheme(a_themeId);
 				theme::Apply();
+				skin::Reload();
 				settings::Get().themeId = a_themeId;
 				settings::Save();
 				logger::info("theme switched to \"{}\" (DevBench)", a_themeId);

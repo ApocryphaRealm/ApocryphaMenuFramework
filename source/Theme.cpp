@@ -36,22 +36,30 @@ namespace theme
 			{
 				a_hex.remove_prefix(1);
 			}
-			if (a_hex.size() != 6)
+			// RRGGBBAA as well (1.9.8), so a theme can ask for a slightly translucent panel the way
+			// Vel'dun UI's own ImGui style does (#1D1A17F4).
+			if (a_hex.size() != 6 && a_hex.size() != 8)
 			{
 				return false;
 			}
 
-			std::uint32_t rgb = 0;
-			const auto result = std::from_chars(a_hex.data(), a_hex.data() + a_hex.size(), rgb, 16);
+			std::uint32_t value = 0;
+			const auto result = std::from_chars(a_hex.data(), a_hex.data() + a_hex.size(), value, 16);
 			if (result.ec != std::errc{})
 			{
 				return false;
 			}
 
-			const std::uint32_t r = (rgb >> 16) & 0xFF;
-			const std::uint32_t g = (rgb >> 8) & 0xFF;
-			const std::uint32_t b = rgb & 0xFF;
-			a_out = 0xFF000000u | (b << 16) | (g << 8) | r;  // ABGR
+			std::uint32_t a = 0xFF;
+			if (a_hex.size() == 8)
+			{
+				a = value & 0xFF;
+				value >>= 8;
+			}
+			const std::uint32_t r = (value >> 16) & 0xFF;
+			const std::uint32_t g = (value >> 8) & 0xFF;
+			const std::uint32_t b = value & 0xFF;
+			a_out = (a << 24) | (b << 16) | (g << 8) | r;  // ABGR
 			return true;
 		}
 
@@ -194,6 +202,24 @@ namespace theme
 					if (std::from_chars(value.data(), value.data() + value.size(), v).ec == std::errc{})
 					{
 						palette.borderThickness = v;
+					}
+				}
+				// 1.9.8: the refined colour roles and the theme's own art, so an INI theme can be as
+				// complete as a built-in one. Every key is optional; an absent one keeps the fallback.
+				else if (key == "sBorder") { ParseColor(value, palette.border); }
+				else if (key == "sText") { ParseColor(value, palette.text); }
+				else if (key == "sTextDim") { ParseColor(value, palette.textDim); }
+				else if (key == "sAccent") { ParseColor(value, palette.accent); }
+				else if (key == "bKnotwork") { palette.knotwork = (value == "1" || value == "true"); }
+				else if (key == "sSkinFrame") { palette.skinFrame = std::string(value); }
+				else if (key == "sSkinBackground") { palette.skinBackground = std::string(value); }
+				else if (key == "sSkinPlates") { palette.skinPlates = std::string(value); }
+				else if (key == "uSkinFrameCorner")
+				{
+					std::uint32_t v{};
+					if (std::from_chars(value.data(), value.data() + value.size(), v).ec == std::errc{} && v > 0)
+					{
+						palette.skinFrameCorner = v;
 					}
 				}
 			}

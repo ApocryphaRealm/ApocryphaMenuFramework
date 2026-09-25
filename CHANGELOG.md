@@ -21,6 +21,35 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## 1.9.8 - 2026-09-25 - working
+
+### Added
+- **Four new themes: Vel'dun, Oathvein, Norden and Norden - Black** (the owner, 2026-09-25: *"Download velduun ui, oathvein ui, and make amf themes
+  based on them"*). Pick any of them from the Theme list on the Framework Settings page. Each brings its own frame, background
+  grain and toggle-switch shape along with its colours:
+  - **Vel'dun** - bone-coloured double lines with cut corners and small diamonds on a warm dark-brown panel, tan headings
+    and selection. The colours are Vel'dun UI's own ImGui style (Nithog, Nexus 176230).
+  - **Oathvein** - a thin grey line with crossed scratch marks at the corners on charcoal, and a blood-red selection.
+    Colours sampled from Oathvein UI (Nithog, Nexus 160916).
+  - **Norden** and **Norden - Black** (the owner, same day: *"Add a norden theme and norden black theme as well"*) - a
+    thin slate line with bright corner ticks, silver-grey highlights and Norden UI's `#333333` panel (Nithog, Nexus 166086);
+    Norden - Black takes the panel to black by the same rule as our Norden UI - Black recolour and shares the Norden art.
+  The art was drawn for AMF (`tools/make-theme-art.py` regenerates it); no files from any of the three UIs are included,
+  and none of them is required.
+- **A theme INI can now be a complete theme.** Besides `sName`, `sBackground`, `sFrame` and `fBorderThickness`, a file in
+  `SKSE/Plugins/ApocryphaMenuFramework/themes/` may set `sBorder`, `sText`, `sTextDim`, `sAccent`, `bKnotwork`, and its own
+  art - `sSkinFrame`, `uSkinFrameCorner`, `sSkinBackground`, `sSkinPlates` - which draws whenever that theme is picked.
+  Colours take `#RRGGBBAA` as well as `#RRGGBB`, so a panel can be slightly see-through. A player's own `[Skin]` art, when
+  switched on, still takes precedence over a theme's.
+
+### Fixed
+- The `amf.process op=skin` test reply wrote art paths with a bare backslash (`Data\SKSE/...`), so it was not valid JSON
+  whenever any art was loaded. Paths and errors are escaped now.
+
+### Verified
+- SE 1.5.97 (Njordlinger Test) and 1.7.104 (Line-17): each of the four themes picked in game loads its frame, background
+  and toggle plate and draws them on the Framework Settings page; switching back to Skyrim returns the knotwork.
+
 ## 1.9.7 - 2026-09-22 - untested
 
 ### Added

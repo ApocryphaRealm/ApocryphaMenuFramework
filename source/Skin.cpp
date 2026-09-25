@@ -4,6 +4,7 @@
 
 #include "ConsumerSurface.h"
 #include "Settings.h"
+#include "Theme.h"
 
 #include "utils/Logger.h"
 
@@ -101,27 +102,50 @@ namespace skin
 	{
 		const auto& v = settings::Get();
 
-		// The master switch is honoured HERE rather than at each draw site, so exactly one place
-		// decides whether custom art exists at all. With it off every Has*() below reports false and
-		// the built-in look draws - which is what a player who installed no art replacer must get,
-		// including when paths are still sitting in the INI from somebody's experiment.
-		if (!v.skinEnabled)
+		// WHERE THE ART COMES FROM. The master switch is honoured HERE rather than at each draw site,
+		// so exactly one place decides whether custom art exists at all. On, the player's own [Skin]
+		// art draws. Off, the ACTIVE THEME's art draws if it has any (1.9.8: a theme picked in the
+		// Theme list is itself the request for that theme's look), and otherwise nothing does - which
+		// is what a player who installed no art replacer must get, including when paths are still
+		// sitting in the INI from somebody's experiment.
+		std::string   frame, background, plates;
+		std::uint32_t corner = 64;
+		const char*   source = "none";
+		if (v.skinEnabled)
 		{
-			g_frame = Entry{};
-			g_background = Entry{};
-			for (std::size_t i = 0; i < g_plates.size(); ++i) { g_plates[i] = Entry{}; }
-			return;
+			frame = v.skinFrame;
+			background = v.skinBackground;
+			plates = v.skinPlates;
+			corner = v.skinFrameCorner;
+			source = "[Skin]";
+		}
+		else if (!theme::ListThemes().empty())   // the registry fills at theme::Apply; D3D init can run first
+		{
+			const theme::Palette& t = theme::GetActiveTheme();
+			frame = t.skinFrame;
+			background = t.skinBackground;
+			plates = t.skinPlates;
+			corner = t.skinFrameCorner;
+			source = "theme";
 		}
 
-		Load(g_frame, Resolve(v.skinFrame), "frame");
-		Load(g_background, Resolve(v.skinBackground), "background");
+		g_frame = Entry{};
+		g_background = Entry{};
+		for (std::size_t i = 0; i < g_plates.size(); ++i) { g_plates[i] = Entry{}; }
+		if (frame.empty() && background.empty() && plates.empty())
+		{
+			return;
+		}
+		logger::info("skin: loading art from {}", source);
+
+		Load(g_frame, Resolve(frame), "frame");
+		Load(g_background, Resolve(background), "background");
 
 		// Plates live by fixed name inside one folder, so the author has one path to get right
 		// and can supply any subset of the three.
-		for (std::size_t i = 0; i < g_plates.size(); ++i) { g_plates[i] = Entry{}; }
-		if (!v.skinPlates.empty())
+		if (!plates.empty())
 		{
-			const std::filesystem::path dir(Resolve(v.skinPlates));
+			const std::filesystem::path dir(Resolve(plates));
 			for (std::size_t i = 0; i < g_plates.size(); ++i)
 			{
 				const auto file = (dir / kPlateFile[i]).string();
@@ -134,7 +158,7 @@ namespace skin
 		// Clamp the corner so two of them always fit inside the frame texture. An artist who
 		// types 64 for a 96px image would otherwise get flipped middle slices, which looks like
 		// corrupt art rather than a bad number.
-		g_frameCorner = static_cast<float>(v.skinFrameCorner);
+		g_frameCorner = static_cast<float>(corner);
 		if (g_frame.srv && g_frame.size.x > 0.0f && g_frame.size.y > 0.0f)
 		{
 			const float maxCorner = std::min(g_frame.size.x, g_frame.size.y) * 0.5f - 1.0f;
@@ -183,9 +207,21 @@ namespace skin
 
 	std::string StatusJson()
 	{
-		auto one = [](const char* a_name, const Entry& a_e) {
+		// 1.9.8: a resolved path is "Data\SKSE/..." - the backslash went out unescaped and the reply was not valid
+		// JSON (found when the new themes first loaded art through this op). Escape \ and " in every string.
+		auto esc = [](const std::string& a_s) {
+			std::string out;
+			out.reserve(a_s.size());
+			for (const char c : a_s)
+			{
+				if (c == '\\' || c == '"') { out += '\\'; }
+				out += c;
+			}
+			return out;
+		};
+		auto one = [&esc](const char* a_name, const Entry& a_e) {
 			return std::format(R"({{"what":"{}","path":"{}","loaded":{},"w":{:.0f},"h":{:.0f},"error":"{}"}})",
-							   a_name, a_e.path, a_e.srv ? "true" : "false", a_e.size.x, a_e.size.y, a_e.error);
+							   a_name, esc(a_e.path), a_e.srv ? "true" : "false", a_e.size.x, a_e.size.y, esc(a_e.error));
 		};
 		std::string plates;
 		for (std::size_t i = 0; i < g_plates.size(); ++i)

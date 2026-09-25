@@ -15,7 +15,7 @@
 
 project(
 	ApocryphaMenuFramework
-	VERSION 1.9.7
+	VERSION 1.9.8
 	LANGUAGES CXX
 )
 

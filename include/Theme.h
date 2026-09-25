@@ -47,6 +47,16 @@ namespace theme
 		// Draw the Nordic knotwork frame (border-image.png, embedded) around the window. The
 		// Trosski MO2 style's defining feature; off for plain themes like Untarnished.
 		bool knotwork = false;
+
+		// The theme's own ART (1.9.8, the owner, 2026-09-25: AMF themes built on Vel'dun UI and
+		// Oathvein UI). A theme in this project means replacement art, so a theme INI may name the
+		// same pieces [Skin] does - frame, background, control plates - and they draw whenever that
+		// theme is picked. Paths resolve under Data like [Skin]'s. Empty = the theme has no art of
+		// that kind. A player's own [Skin] art, when switched on, still wins over these.
+		std::string   skinFrame;
+		std::uint32_t skinFrameCorner = 64;
+		std::string   skinBackground;
+		std::string   skinPlates;
 	};
 
 	// Registers a theme additively. Re-registering an existing id REPLACES that entry only

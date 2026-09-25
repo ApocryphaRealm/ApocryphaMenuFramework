@@ -1,6 +1,6 @@
 # Custom menu art for Apocrypha Menu Framework
 
-<!-- DOC-VERSION: 1.0.0 | 2026-09-09 -->
+<!-- DOC-VERSION: 1.0.1 | 2026-09-25 -->
 
 How to make the framework's menu wear your interface's artwork instead of its built-in look. Written
 for a UI author who has never seen this codebase.
@@ -107,6 +107,37 @@ files. An absolute path also works, which is handy while you are still moving a 
 file around outside the mod folder.
 
 All four keys are optional. Leave one empty and that piece keeps the built-in look.
+
+### Or ship it as a THEME (1.9.8)
+
+`[Skin]` is the player's own override and is off until they switch it on. If you want your look to
+appear in the **Theme** list on the Framework Settings page instead, so that picking it is all a player
+does, ship a theme INI in `Data/SKSE/Plugins/ApocryphaMenuFramework/themes/`. The file name (without
+`.ini`) is the theme's id. Every key is optional:
+
+```ini
+[Theme]
+sName=Your UI             ; shown in the Theme list
+sBackground=#1D1A17F4     ; panel colour, #RRGGBB or #RRGGBBAA
+sFrame=#D1C7AE            ; the one colour a simple theme gives; the four below refine it
+sBorder=#D1C7AE           ; lines and separators
+sText=#E4DDCC             ; text
+sTextDim=#A39C8A          ; secondary and disabled text
+sAccent=#AAA07A           ; selection, tabs, slider grabs, tick marks
+fBorderThickness=1.0
+bKnotwork=0               ; 1 = the built-in Nordic knotwork frame (ignored when you ship a frame)
+sSkinFrame=SKSE/Plugins/ApocryphaMenuFramework/themes/yourui/frame.png
+uSkinFrameCorner=26
+sSkinBackground=SKSE/Plugins/ApocryphaMenuFramework/themes/yourui/background.png
+sSkinPlates=SKSE/Plugins/ApocryphaMenuFramework/themes/yourui
+```
+
+The art keys mean exactly what their `[Skin]` namesakes do, and draw whenever that theme is picked.
+A player who has switched `[Skin]` on still sees their own art instead. The themes AMF ships -
+`veldun.ini`, `oathvein.ini`, `norden.ini` and `norden-black.ini` - are complete worked examples (two themes may
+share one art folder, as the two Norden themes do); their frames are 78x78 with a 26px corner,
+the same size as the built-in knotwork, which keeps a frame hugging every window and pane at the same
+distance the knotwork does.
 
 ---
 
