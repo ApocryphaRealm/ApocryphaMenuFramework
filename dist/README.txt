@@ -1,6 +1,6 @@
 ﻿ApocryphaRealm Menu Framework
 =============================
-Version 1.9.7
+Version 1.9.8
 
 An original, GPL-3.0-or-later in-game menu framework (embedding Dear ImGui) - a one-for-one
 replacement for SKSE Menu Framework's consumer surface, plus user-friendly features that do
@@ -20,9 +20,12 @@ WHAT YOU GET
   * Your list, your way: rename any mod's entry and set the order of the list. It starts
     alphabetical and every entry shows its number; type a new number and the rest re-flow
     around it. One button puts it back.
-  * Two themes - Skyrim (the knotwork frame, the default) and Untarnished (the same layout
-    with clean lines and no frame art) - plus a font picker (drop a .ttf into
-    Data/SKSE/Plugins/ApocryphaMenuFramework/fonts) and a text-size slider.
+  * Six themes - Skyrim (the knotwork frame, the default), Untarnished (the same layout with
+    clean lines and no frame art), and four made to sit beside other interfaces, each with its
+    own frame, background and switches: Vel'dun, Oathvein, Norden and Norden - Black - plus a
+    font picker (drop a .ttf into Data/SKSE/Plugins/ApocryphaMenuFramework/fonts) and a
+    text-size slider. A theme is one INI and a few PNGs, so you can add your own
+    (CUSTOM-MENU-ART.md).
   * Full controller navigation. Keyboard or controller is detected from whatever you last
     used - there is nothing to configure and nothing to switch on.
   * Menu-key rebinding (default F1), per-save persistence of menu state, and a hang watchdog
@@ -44,6 +47,9 @@ reading.
 WHAT CHANGED
 ------------
 
+Version 1.9.8
+Added four themes, picked from the Theme list on the Framework Settings page: Vel'dun (bone-coloured lines with cut corners on warm dark brown), Oathvein (thin grey lines with crossed scratch marks on charcoal, and a blood-red highlight), Norden (slate lines with bright corner ticks on grey) and Norden - Black (the same on black). Each is made to sit beside the interface of the same name by Nithog; none of their files are included and none of them is needed.
+A theme file can now carry its own frame, background and switch art and a full set of colours, so a theme you drop into the themes folder can look as complete as the built-in ones.
 Version 1.9.7
 Added a setting to pause the game while this menu is open, the way the game's own menus do. It is on the Framework Settings page and off by default.
 Version 1.9.6
