@@ -378,6 +378,11 @@ namespace input
 			// action on one - which is what "press R3 on the list item" needs (1.9.5).
 			case 0x0040: return ImGuiKey_GamepadL3;
 			case 0x0080: return ImGuiKey_GamepadR3;
+			// The triggers. Skyrim does not carry them as XInput bits: its ButtonEvent for LT is id 0x9 and for RT
+			// 0xA, down once pulled past its threshold. They were missing, so no page could see them - a mod's
+			// "press a button to bind" window never caught L2 (the owner, 2026-09-28, Show Player In Inventory).
+			case 0x0009: return ImGuiKey_GamepadL2;
+			case 0x000A: return ImGuiKey_GamepadR2;
 			default:     return ImGuiKey_None;
 			}
 		}

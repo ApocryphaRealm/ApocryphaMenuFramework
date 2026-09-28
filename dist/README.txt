@@ -1,6 +1,6 @@
 ﻿ApocryphaRealm Menu Framework
 =============================
-Version 1.9.8
+Version 1.9.9
 
 An original, GPL-3.0-or-later in-game menu framework (embedding Dear ImGui) - a one-for-one
 replacement for SKSE Menu Framework's consumer surface, plus user-friendly features that do
@@ -47,6 +47,8 @@ reading.
 WHAT CHANGED
 ------------
 
+Version 1.9.9
+The controller triggers now reach the menu. L2 and R2 were never passed on, so a mod's page could not see them - a "press a button to bind" window, such as Show Player In Inventory's rotate key, never caught L2. Nothing else changes: the framework's own controls do not use the triggers.
 Version 1.9.8
 Added four themes, picked from the Theme list on the Framework Settings page: Vel'dun (bone-coloured lines with cut corners on warm dark brown), Oathvein (thin grey lines with crossed scratch marks on charcoal, and a blood-red highlight), Norden (slate lines with bright corner ticks on grey) and Norden - Black (the same on black). Each is made to sit beside the interface of the same name by Nithog; none of their files are included and none of them is needed.
 A theme file can now carry its own frame, background and switch art and a full set of colours, so a theme you drop into the themes folder can look as complete as the built-in ones.
