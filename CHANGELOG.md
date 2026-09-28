@@ -21,7 +21,7 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
-## 1.9.9 - 2026-09-28 - untested
+## 1.9.9 - 2026-09-28 - working
 
 ### Fixed
 - **The controller triggers reach the menus.** L2 and R2 never got to ImGui: Skyrim reports them as button ids 0x9 and 0xA,
