@@ -44,16 +44,27 @@ namespace devbenchtool
 		// shape - no dependency on a JSON library.
 		std::string JsonStr(const std::string& a_json, const char* a_key)
 		{
+			// A KEY is the quoted name followed by a colon. Finding the quoted name alone matched a VALUE first: in
+			// {"op": "separator", "separator": "::sep:2"} the lookup of "separator" hit op's value and returned the
+			// next field's ("collapse"), so amf.menu op separator collapse / send failed (found in the Oblivion port,
+			// 2026-10-02).
 			const std::string key = std::string("\"") + a_key + "\"";
-			auto pos = a_json.find(key);
-			if (pos == std::string::npos)
+			std::string::size_type pos = 0;
+			for (;;)
 			{
-				return "";
-			}
-			pos = a_json.find(':', pos + key.size());
-			if (pos == std::string::npos)
-			{
-				return "";
+				pos = a_json.find(key, pos);
+				if (pos == std::string::npos)
+				{
+					return "";
+				}
+				auto after = pos + key.size();
+				while (after < a_json.size() && (a_json[after] == ' ' || a_json[after] == '\t')) { ++after; }
+				if (after < a_json.size() && a_json[after] == ':')
+				{
+					pos = after;
+					break;
+				}
+				pos += key.size();
 			}
 			++pos;
 			while (pos < a_json.size() && (a_json[pos] == ' ' || a_json[pos] == '\t'))
