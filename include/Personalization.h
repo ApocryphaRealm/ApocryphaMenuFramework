@@ -89,6 +89,10 @@ namespace personalization
 	// it's in. That way it's distinct from favoriting"): the first place in its own group - right under its separator, or
 	// the head of the loose mods when it is in none.
 	bool MoveToGroupTop(const std::vector<registry::Entry>& a_entries, const std::string& a_modName);
+	// "Reorder" (the owner, 2026-10-02: "two little arrows on it which moves the mod up or down by one position"): one step
+	// up (a_direction -1) or down (+1) past the next VISIBLE row - a folded group's hidden mods are stepped over, and
+	// stepping past a separator carries the mod into or out of that group, as in MO2. false at either end.
+	bool Nudge(const std::vector<registry::Entry>& a_entries, const std::string& a_modName, int a_direction);
 	struct SeparatorInfo
 	{
 		std::string id;

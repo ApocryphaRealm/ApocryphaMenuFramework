@@ -2062,6 +2062,24 @@ namespace renderer
 							personalization::MoveToGroupTop(entries, row.modName);
 							settings::Save();
 						}
+						// REORDER (the owner, 2026-10-02): a little window to the right with an up and a down arrow, one place per
+						// press. Arrow BUTTONS, not menu items, so the window stays open and the mod can be walked several
+						// places in a row; the Menu list page's numbers follow (they read the same order).
+						if (ImGui::BeginMenu(TR("AMF_Reorder", "Reorder")))
+						{
+							if (ImGui::ArrowButton("##nudgeup", ImGuiDir_Up))
+							{
+								if (personalization::Nudge(entries, row.modName, -1)) { settings::Save(); }
+							}
+							if (ImGui::IsItemHovered()) { ImGui::SetTooltip("%s", TR("AMF_MoveUp", "Move up one place")); }
+							ImGui::SameLine();
+							if (ImGui::ArrowButton("##nudgedown", ImGuiDir_Down))
+							{
+								if (personalization::Nudge(entries, row.modName, 1)) { settings::Save(); }
+							}
+							if (ImGui::IsItemHovered()) { ImGui::SetTooltip("%s", TR("AMF_MoveDown", "Move down one place")); }
+							ImGui::EndMenu();
+						}
 						// SEPARATORS (the owner, 2026-10-02): make one above this mod, or send this mod into one.
 						if (ImGui::MenuItem(TR("AMF_NewSeparatorAbove", "New separator above")))
 						{

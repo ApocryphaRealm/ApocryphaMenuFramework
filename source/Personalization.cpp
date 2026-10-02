@@ -384,6 +384,30 @@ namespace personalization
 		return true;
 	}
 
+	bool Nudge(const std::vector<registry::Entry>& a_entries, const std::string& a_modName, int a_direction)
+	{
+		int target = 0;
+		{
+			std::scoped_lock lock(g_lock);
+			const std::vector<DisplayEntry> display = DisplayLocked(a_entries);
+			std::vector<int> visible;   // indices into display of the rows the side list shows
+			for (int i = 0; i < static_cast<int>(display.size()); ++i)
+			{
+				if (!display[static_cast<std::size_t>(i)].hidden) { visible.push_back(i); }
+			}
+			int at = -1;
+			for (int v = 0; v < static_cast<int>(visible.size()); ++v)
+			{
+				if (display[static_cast<std::size_t>(visible[static_cast<std::size_t>(v)])].modName == a_modName) { at = v; break; }
+			}
+			const int to = at + (a_direction < 0 ? -1 : 1);
+			if (at < 0 || to < 0 || to >= static_cast<int>(visible.size())) { return false; }
+			target = visible[static_cast<std::size_t>(to)] + 1;   // MoveTo takes the 1-based display position
+		}
+		MoveTo(a_entries, a_modName, target);
+		return true;
+	}
+
 	std::vector<SeparatorInfo> Separators()
 	{
 		std::scoped_lock lock(g_lock);
