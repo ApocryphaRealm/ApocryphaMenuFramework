@@ -2134,7 +2134,12 @@ namespace renderer
 						// REORDER (the owner, 2026-10-02): a little window to the right with an up and a down arrow, one place per
 						// press. Arrow BUTTONS, not menu items, so the window stays open and the mod can be walked several
 						// places in a row; the Menu list page's numbers follow (they read the same order).
-						if (ImGui::BeginMenu(TR("AMF_Reorder", "Reorder")))
+						// the submenus get the context menu's tight padding too - the theme's frame padding left an empty band
+						// round the two arrows and the separator names (seen in the 2.0.0 release captures)
+						ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(ctxPad, ctxPad));
+						const bool reorderOpen = ImGui::BeginMenu(TR("AMF_Reorder", "Reorder"));
+						ImGui::PopStyleVar();
+						if (reorderOpen)
 						{
 							if (ImGui::ArrowButton("##nudgeup", ImGuiDir_Up))
 							{
@@ -2155,7 +2160,10 @@ namespace renderer
 							BeginNewSeparator(entries, row.modName);
 						}
 						const auto separators = personalization::Separators();
-						if (ImGui::BeginMenu(TR("AMF_SendTo", "Send to"), !separators.empty() || row.depth > 0))
+						ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(ctxPad, ctxPad));
+						const bool sendToOpen = ImGui::BeginMenu(TR("AMF_SendTo", "Send to"), !separators.empty() || row.depth > 0);
+						ImGui::PopStyleVar();
+						if (sendToOpen)
 						{
 							for (const auto& sep : separators)
 							{

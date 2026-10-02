@@ -227,6 +227,15 @@ namespace devbenchtool
 				input::QueueText(text);
 				result = "{\"ok\":true,\"op\":\"type\",\"chars\":" + std::to_string(text.size()) + "}";
 			}
+			else if (op == "stick")
+			{
+				// Push a thumbstick and let it go: which 0 left | 1 right, x/y in -1..1 (y > 0 is up), hold in frames.
+				const int which = static_cast<int>(JsonNum(args, "which", 1));
+				const float x = static_cast<float>(JsonNum(args, "x", 0)), y = static_cast<float>(JsonNum(args, "y", 0));
+				const int hold = static_cast<int>(JsonNum(args, "hold", 6));
+				input::QueueStick(which, x, y, hold);
+				result = "{\"ok\":true,\"op\":\"stick\",\"which\":" + std::to_string(which) + ",\"hold\":" + std::to_string(hold) + "}";
+			}
 			else if (op == "key")
 			{
 				// Press one key by DirectInput scan code (Backspace 0x0E, Enter 0x1C, Escape 0x01 ...).

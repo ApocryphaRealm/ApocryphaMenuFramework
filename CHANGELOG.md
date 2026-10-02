@@ -21,7 +21,9 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
-## Unreleased - separators in the mod list (test build, unversioned per rule 48) - 2026-10-02 - untested
+## 2.0.0 - 2026-10-01 - working
+
+Separators, grab-and-move and a window that fits its names.
 
 The owner, 2026-10-02: "add to the next AMF update for Oblivion and Skyrim that we want to add a press Y on controller or
 right click on mouse to create a separator and the separator should function just like a mod in the rename and reorder
@@ -78,6 +80,11 @@ Skyrim one."
   R3 again, B, or moving the highlight off it puts it down. A move bound to a button or key steps once per press. New
   keys AMF_ActGrabMod / AMF_ActGrabUp / AMF_ActGrabDown / AMF_ActGrabModHelp / AMF_ActGrabMoveHelp; INI
   Bindings.sGrabMod / sGrabUp / sGrabDown.
+- amf.menu op stick {which 0|1, x, y, hold frames}: a thumbstick pushed and let go through the same record a real
+  stick event becomes, so the grab-and-move is driven headlessly.
+- The Reorder and Send to submenus take the context menu's tight padding (the release captures showed the theme's
+  frame padding as an empty band round the two arrows and the separator names).
+- Numbered 2.0.0, not 1.10.0 (the owner: "Wrong version number.") - at x.9.9 the major rolls.
 
 ## 1.9.9 - 2026-09-28 - working
 
