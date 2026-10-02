@@ -46,6 +46,25 @@ Skyrim one."
   separators (collapsed, children) and each mod's depth / hidden.
 - Ten new strings in all eleven languages.
 
+### Changed (the same test build, the owner watching the captures, 2026-10-02)
+- The side pane fits its names ("make it so that the names are always fully visible ... by making the left pane auto
+  adjust its width"): its width is the widest name shown (a separator with its arrow and count, a mod under one with
+  its indent) plus the gutter, padding and scrollbar - no longer a flat 30%.
+- The window grows instead of squeezing the page ("the right pane ... now you can't see hardly anything"): the page
+  pane keeps at least 28 characters' width, and when both do not fit the window widens itself once, up to 98% of the
+  screen. The width comes from the names alone, so it does not change with the mod picked ("I don't want it to
+  dynamically change per mod selected").
+- No title bar ("get rid of that top bar with the arrow ... fill it in with the Nordic knotwork ... we don't need a
+  way to hide the menu aside from the hotkey or pressing the start button"): the knotwork frame runs round the whole
+  window, the collapse arrow is gone.
+- One centred window ("AMF is still locked to the center of the screen" and "make the system row version of AMF also
+  not specific to the journal bounds"): the key-opened and the System-row window share one geometry - centred, not
+  movable, one remembered size; the journal-panel fit is retired. The settings page's window section and the System
+  row's help say so (new keys AMF_WindowSize / AMF_WindowSizeHelp / AMF_ResetSize / AMF_SizeDefault /
+  AMF_SystemRowHelp2 in all eleven languages; the four retired keys removed).
+- The separator's fold arrow is ImGui's own drawn arrow; a separator moved next to a loose or pinned mod goes to the
+  head of the separators instead of swallowing the loose mods below it.
+
 ## 1.9.9 - 2026-09-28 - working
 
 ### Fixed

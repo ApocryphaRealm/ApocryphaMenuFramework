@@ -768,8 +768,8 @@ namespace renderer
 				logger::info("settings page: system menu row -> {}", values.systemMenuRow);
 				settings::Save();
 			}
-			ImGui::TextWrapped("%s", TR("AMF_SystemRowHelp", "On: a SKSE MENUS row is added to the journal's System tab, beside SAVE, "
-							   "LOAD and SETTINGS, and opens this menu sized to the journal around it. "
+			ImGui::TextWrapped("%s", TR("AMF_SystemRowHelp2", "On: a SKSE MENUS row is added to the journal's System tab, beside SAVE, "
+							   "LOAD and SETTINGS, and opens this menu in the middle of the screen. "
 							   "The row is added to the menu as it opens rather than by replacing any "
 							   "game file, so it works with whatever menu artwork you have installed. "
 							   "Off: the game's menu is left completely untouched and this menu is "
@@ -806,31 +806,29 @@ namespace renderer
 							   "artwork made for it."));
 			ImGui::Spacing();
 
-			// WINDOW PROFILES. Each way in remembers where it was left; this is the way back to the
-			// starting geometry, which matters because the default for the nested window is the
-			// journal panel measured live - something the player cannot reproduce by dragging.
+			// WINDOW SIZE (2026-10-02: one centred window for both ways of opening - see the window code). The size is all
+			// that is remembered now; this is the way back to the default.
 			{
 				auto& v = settings::Get();
 				const bool anySet = v.nestedWindow.IsSet() || v.hotkeyWindow.IsSet();
-				ImGui::TextUnformatted(TR("AMF_WindowPosSize", "Window position and size"));
-				ImGui::TextWrapped("%s", TR("AMF_WindowProfilesHelp", "Each way of opening this menu remembers where you leave it: one for the "
-								   "System menu row, one for the key. They start fitted to the journal panel "
-								   "and centred on the screen respectively - move or resize either and it "
-								   "keeps what you chose."));
+				ImGui::TextUnformatted(TR("AMF_WindowSize", "Window size"));
+				ImGui::TextWrapped("%s", TR("AMF_WindowSizeHelp", "The menu sits in the middle of the screen, from its key and from the "
+								   "System menu row alike, and opens wide enough to show the menu names and the page in full. Drag "
+								   "its edges to resize it; the size you choose is kept."));
 				ImGui::BeginDisabled(!anySet);
-				if (ImGui::Button(TR("AMF_ResetBoth", "Reset both to default")))
+				if (ImGui::Button(TR("AMF_ResetSize", "Reset to the default size")))
 				{
 					v.nestedWindow.Clear();
 					v.hotkeyWindow.Clear();
 					settings::Save();
 					g_applyGeometry.store(true, std::memory_order_release);
-					logger::info("settings page: window profiles reset to their defaults");
+					logger::info("settings page: window size reset to the default");
 				}
 				ImGui::EndDisabled();
 				if (!anySet)
 				{
 					ImGui::SameLine();
-					ImGui::TextDisabled("%s", TR("AMF_BothDefault", "(both are at their defaults)"));
+					ImGui::TextDisabled("%s", TR("AMF_SizeDefault", "(at the default size)"));
 				}
 			}
 			ImGui::Spacing();
@@ -1588,13 +1586,17 @@ namespace renderer
 			const bool nested = g_nested.load(std::memory_order_acquire);
 			const char* windowId = nested ? "ApocryphaRealm Menu Framework###amf-nested"
 										  : "ApocryphaRealm Menu Framework###amf-main";
-			settings::WindowGeometry& profile =
-				nested ? settings::Get().nestedWindow : settings::Get().hotkeyWindow;
+			// ONE CENTRED WINDOW (the owner, 2026-10-02: "AMF is still locked to the center of the screen and ... automatically
+			// increases its ... width to fit both the left and right panes ... I don't want it to dynamically change per mod
+			// selected", and "make the system row version of AMF also not specific to the journal bounds, because otherwise
+			// it's going to be too small to see"). Both ways of opening share the key-opened window's geometry: centred on the
+			// screen, not movable, one remembered size; the journal-panel fit of the System-row window is retired.
+			settings::WindowGeometry& profile = settings::Get().hotkeyWindow;
 
 			// ---- this profile's default, in screen fractions ----
 			float dx = 0.0f, dy = 0.0f, dw = 0.55f, dh = 0.70f;
 			bool haveDefault = false;
-			if (nested)
+			if (false)   // the journal-panel measurement (System-row window) - retired 2026-10-02, kept for reference
 			{
 				// The panel is measured off the LIVE movie rather than assumed: its size differs
 				// under every art replacer, which is the same reason the row is injected rather
@@ -1633,7 +1635,12 @@ namespace renderer
 			// frame. If the nested measurement is not ready yet the flag is left set and the next
 			// frame tries again, rather than falling back to the centre and jumping later.
 			bool appliedThisFrame = false;
-			ImGuiWindowFlags windowFlags = ImGuiWindowFlags_None;
+			// NO TITLE BAR (the owner, 2026-10-02: "get rid of that top bar with the arrow pointing down ... Let's just fill it
+			// in with the Nordic knotwork, and we don't need a way to hide the menu aside from the hotkey or pressing the start
+			// button"). The knotwork frame now runs round the window's own top edge, and the collapse arrow is gone. The window
+			// still MOVES (the owner's 2026-09-21 requirement): ImGui's ConfigWindowsMoveFromTitleBarOnly does not apply to a
+			// window without a title bar, so a drag on its frame or any empty part of it moves it.
+			ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove;
 			// 1.7.7/1.7.8 (the owner, 2026-09-13): the KEY-OPENED window is fixed to the screen centre; an
 			// edge drag grows both sides (the centre never moves); a corner drag keeps the window's SHAPE
 			// and grows it - the text does not scale ("it should just increase the size of the window
@@ -1649,18 +1656,19 @@ namespace renderer
 			// 2026-09-13 is the resize: an edge drag still grows both sides about the window's centre and a corner
 			// drag keeps its shape - the centre is simply wherever the player has put the window, not the screen's.
 			static ImVec2 s_hotCentre{ -1.0f, -1.0f };
-			ImGuiWindow* hotWindow = nested ? nullptr : ImGui::FindWindowByName(windowId);
+			ImGuiWindow* hotWindow = ImGui::FindWindowByName(windowId);
 			const bool movingHot = hotWindow && GImGui->MovingWindow && GImGui->MovingWindow->RootWindow == hotWindow;
-			if (!nested)
+			constexpr bool kCentred = true;   // both modes (see above)
+			if (kCentred)
 			{
 				if (g_applyGeometry.load(std::memory_order_acquire))
 				{
 					const float gw = std::min(profile.IsSet() ? profile.w : dw, 1.0f);
 					const float gh = std::min(profile.IsSet() ? profile.h : dh, 1.0f);
 					ImGui::SetNextWindowSize(ImVec2(display.x * gw, display.y * gh), ImGuiCond_Always);
-					// Open where the player left it (its saved centre), else the screen centre - kept on screen.
-					float cx = profile.IsSet() ? (profile.x + gw * 0.5f) : 0.5f;
-					float cy = profile.IsSet() ? (profile.y + gh * 0.5f) : 0.5f;
+					// Locked to the screen centre (2026-10-02) - a position saved by an older version is not used.
+					float cx = 0.5f;
+					float cy = 0.5f;
 					cx = std::clamp(cx, gw * 0.5f, 1.0f - gw * 0.5f);
 					cy = std::clamp(cy, gh * 0.5f, 1.0f - gh * 0.5f);
 					s_hotCentre = ImVec2(display.x * cx, display.y * cy);
@@ -1730,7 +1738,7 @@ namespace renderer
 
 			if (ImGui::Begin(windowId, nullptr, windowFlags))
 			{
-				if (!nested)
+				if (kCentred)
 				{
 					// The shape a corner drag keeps is the shape the window had when the drag began:
 					// refreshed every frame the mouse is up, frozen while it is down.
@@ -1794,7 +1802,42 @@ namespace renderer
 				// has asked for a frame, and it replaces the knotwork rather than adding to it.
 				const bool knot = theme::GetActiveTheme().knotwork || skin::HasFrame();
 
-				const float leftWidth = ImGui::GetContentRegionAvail().x * 0.30f;
+				const std::vector<registry::Entry> entries = registry::Snapshot();
+				// THE SIDE PANE FITS ITS NAMES (the owner, 2026-10-02: "make it so that the names are always fully visible
+				// ... by making the left pane auto adjust its width to fit the names of the menus"). It used to be a flat
+				// 30% of the window, which clipped "ApocryphaRealm Lock Interaction Overhaul" to "ApocryphaR". Now it is the
+				// widest name actually shown - a mod under a separator with its indent, a separator with its fold arrow and
+				// count - plus the pinned-box gutter, the window padding and a scrollbar; never under the old 30%.
+				float leftWidth = 0.0f;
+				{
+					const float avail = ImGui::GetContentRegionAvail().x;
+					const ImGuiStyle& st = ImGui::GetStyle();
+					const float gutter = ImGui::GetFontSize() * 0.55f + st.ItemInnerSpacing.x * 2.0f;
+					float widest = ImGui::CalcTextSize(TR("AMF_Framework", "Framework")).x;
+					for (const personalization::DisplayEntry& row : personalization::Order(entries))
+					{
+						float w = ImGui::CalcTextSize(row.displayName.c_str()).x;
+						if (row.separator) { w += ImGui::GetFontSize() * 1.1f + ImGui::CalcTextSize("  (000)").x; }
+						else if (row.depth > 0) { w += ImGui::GetFontSize() * 0.9f; }
+						widest = std::max(widest, w);
+					}
+					const float needed = widest + gutter + st.WindowPadding.x * 2.0f + st.ScrollbarSize + st.ItemSpacing.x * 2.0f;
+					// THE WINDOW GROWS RATHER THAN SQUEEZING THE PAGE (the owner, 2026-10-02, after the names pane took the
+					// room: "we're gonna have to have the right pane automatically fit its mod menus by size as well ... now
+					// you can't see hardly anything on the right side"). The page pane keeps at least 28 characters' width;
+					// when the names and that minimum do not both fit, the window widens itself once (up to 98% of the screen;
+					// it is centred, so it grows both ways) - from the names alone, so it does not change with the mod picked.
+					const float rightMin = ImGui::GetFontSize() * 28.0f;
+					const float between = ImGui::GetStyle().ItemSpacing.x + kKnotOutset * 4.0f;
+					if (avail < needed + rightMin + between)
+					{
+						ImGuiWindow* self = ImGui::GetCurrentWindow();
+						const float grown = std::min(self->Size.x + (needed + rightMin + between - avail), display.x * 0.98f);
+						if (grown > self->Size.x + 0.5f) { ImGui::SetWindowSize(ImVec2(grown, self->Size.y)); }
+					}
+					const float most = std::max(avail * 0.30f, avail - rightMin - between);
+					leftWidth = std::clamp(needed, avail * 0.30f, most);
+				}
 
 				// SMF SHAPE (design decision, 2026-08-30): a one-for-one replacement of SKSE Menu Framework's
 				// window - a SIDE LIST of the registered mods (plus the framework's own entries) and a
@@ -1815,7 +1858,7 @@ namespace renderer
 				// the search box (the owner, 2026-09-19: "the typing indicator just disappears").
 				const bool navToSelected = g_navToSelected.exchange(false);
 				if (navToSelected) { g_frameNavConsumed = ImGui::GetFrameCount(); }
-				const std::vector<registry::Entry> entries = registry::Snapshot();
+				// (the registry snapshot is taken above, before the side pane's width is measured from it)
 				if (selMod >= static_cast<int>(entries.size())) { selMod = 0; }
 
 				// ---- SIDE LIST -------------------------------------------------------------------
