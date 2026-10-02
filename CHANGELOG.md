@@ -21,6 +21,31 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## Unreleased - separators in the mod list (test build, unversioned per rule 48) - 2026-10-02 - untested
+
+The owner, 2026-10-02: "add to the next AMF update for Oblivion and Skyrim that we want to add a press Y on controller or
+right click on mouse to create a separator and the separator should function just like a mod in the rename and reorder
+function ... mods menus are children of the separator above them like in mo2"; "the mods can be collapsed into the
+separator and ... a send to option for sending the selected mod to a separator"; "let's make the A to Z sorting ignore
+mods in a separator ... you can also favorite separators ... favorite mods stay at the top"; "Go ahead and build the
+Skyrim one."
+
+### Added
+- Separators in the side list. Y / right-click on a row: "New separator above" (named at once in the rename window,
+  default "New separator"); on a mod: "Send to" > every separator, or "No separator" out of its group. A separator row
+  shows a fold arrow and its name; A or a click folds / unfolds it (folded it shows how many menus it holds); its own
+  menu has Expand/Collapse, favourite, Rename, New separator above, Move to the top and Delete separator (its menus join
+  the separator above).
+- Separators are entries in the saved order ([MenuOrder] sOrder, named ::sep:<n>, their names in [MenuAlias]); the
+  mods after one, up to the next, are its mods - MO2's model. Folded ones in [MenuSeparators] sCollapsed. Typing a
+  position on the Menu list page moves a separator WITH its mods; a mod typed next to a group's mod joins that group.
+- Display order: favourite mods first, then favourite separators with their mods, then the loose mods, then the other
+  separators. A-Z / Z-A sort the loose mods only. Searching shows a flat list of matches, folded groups included.
+- Reset to alphabetical keeps the separators (empty, at the end) instead of deleting them.
+- amf.menu op separator {action add | remove | send | collapse | favourite}; the state's order rows say which are
+  separators (collapsed, children) and each mod's depth / hidden.
+- Ten new strings in all eleven languages.
+
 ## 1.9.9 - 2026-09-28 - working
 
 ### Fixed

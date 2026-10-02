@@ -159,6 +159,12 @@ namespace devbenchtool
 				result = std::string("{\"ok\":") + (ok ? "true" : "false") +
 						 ",\"op\":\"move\",\"mod\":\"" + mod + "\",\"position\":" + std::to_string(position) + "}";
 			}
+			else if (op == "separator")
+			{
+				// 2026-10-02: separators in the mod list - action add {name, mod: the row it goes above} | remove
+				// {separator} | send {mod, separator: "" = out of every group} | collapse {separator} | favourite {separator}
+				result = renderer::SeparatorOp(JsonStr(args, "action"), JsonStr(args, "name"), JsonStr(args, "mod"), JsonStr(args, "separator"));
+			}
 			else if (op == "resetorder")
 			{
 				renderer::ResetModOrder();
@@ -501,7 +507,7 @@ namespace devbenchtool
 		constexpr const char* descriptor =
 			"{"
 			"\"description\":\"Drive and inspect the Apocrypha Menu Framework window for testing. "
-			"op: open|close|select|activate|state|alias|move|resetorder|theme|language|font|nav|focus|cursor|click "
+			"op: open|close|select|activate|state|alias|move|separator (action add|remove|send|collapse|favourite)|resetorder|theme|language|font|nav|focus|cursor|click "
 			"(args language: a translation file name or auto). For select, node is a path: settings, controls, help "
 			"(pre-1.4.4 system/... paths are still accepted) or mod:<index>. "
 			"activate is a no-op in the SMF shape (kept for compatibility). alias renames a mod's menu entry "
