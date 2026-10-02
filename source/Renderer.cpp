@@ -1045,15 +1045,20 @@ namespace renderer
 			const float gutter = boxSide + ImGui::GetStyle().ItemInnerSpacing.x * 2.0f;
 			const ImVec2 rowTopLeft = ImGui::GetCursorScreenPos();
 
-			// the arrow and the name are one label, so the row reads "v  Name" / ">  Name (4)" and stays one nav stop
+			// the name (and, folded, how many menus it holds) is the row's one label - one nav stop; the fold arrow is drawn
+			// in front of it, ImGui's own tree arrow (down when open, right when folded)
 			char label[160];
-			if (a_row.collapsed) { std::snprintf(label, sizeof(label), "%s  %s  (%d)", ">", a_row.displayName.c_str(), a_row.children); }
-			else { std::snprintf(label, sizeof(label), "%s  %s", "v", a_row.displayName.c_str()); }
-			ImGui::Indent(gutter);
+			if (a_row.collapsed) { std::snprintf(label, sizeof(label), "%s  (%d)", a_row.displayName.c_str(), a_row.children); }
+			else { std::snprintf(label, sizeof(label), "%s", a_row.displayName.c_str()); }
+			const float arrowRoom = ImGui::GetFontSize() * 1.1f;
+			const ImVec2 arrowAt(rowTopLeft.x + gutter, rowTopLeft.y);
+			ImGui::Indent(gutter + arrowRoom);
 			ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
 			const bool picked = ImGui::Selectable(label, false);
 			ImGui::PopStyleColor();
-			ImGui::Unindent(gutter);
+			ImGui::Unindent(gutter + arrowRoom);
+			ImGui::RenderArrow(ImGui::GetWindowDrawList(), arrowAt, ImGui::GetColorU32(ImGuiCol_Text),
+							   a_row.collapsed ? ImGuiDir_Right : ImGuiDir_Down, 0.8f);
 			// a hairline under the separator, from the end of its name to the pane's edge
 			{
 				const ImVec2 mn = ImGui::GetItemRectMin(), mx = ImGui::GetItemRectMax();

@@ -284,7 +284,18 @@ namespace personalization
 			canonical.erase(std::find(canonical.begin(), canonical.end(), a_modName));
 		}
 		auto at = std::find(canonical.begin(), canonical.end(), anchor);
-		if (at != canonical.end() && target > from) { ++at; }   // moving down: below the anchor
+		if (IsSeparator(a_modName))
+		{
+			// A separator dropped next to a LOOSE mod or a pinned mod would otherwise swallow the loose mods below it as
+			// its own (MO2's positional rule). It goes to the head of the separators instead - "Move to the top" of a
+			// separator means the first group (test 2026-10-02: it stayed put under a pinned separator).
+			const auto firstSeparator = std::find_if(canonical.begin(), canonical.end(), [](const std::string& n) { return IsSeparator(n); });
+			const bool anchorLoose = at == canonical.end() || at < firstSeparator;
+			const bool anchorPinnedMod = !IsSeparator(anchor) && Contains(g_favourites, anchor);
+			if (anchorLoose || anchorPinnedMod) { at = firstSeparator; }
+			else if (target > from) { ++at; }
+		}
+		else if (at != canonical.end() && target > from) { ++at; }   // moving down: below the anchor
 		canonical.insert(at, block.begin(), block.end());
 
 		g_order = canonical;
