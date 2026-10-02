@@ -9,7 +9,9 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstring>
 #include <format>
+#include <fstream>
 #include <filesystem>
 #include <system_error>
 #include <vector>
@@ -96,7 +98,51 @@ namespace curtain
 		int  g_imageH = 0;
 		bool g_imageTried = false;
 
-		void LoadImageOnce(ID3D11Device* a_device)
+		// A PNG's pixel size, read from its IHDR chunk (bytes 16-23, big-endian) - enough to choose between splash
+		// shapes without decoding every candidate. 0x0 when the file is not a PNG.
+		void PngSize(const std::filesystem::path& a_path, std::uint32_t& a_w, std::uint32_t& a_h)
+		{
+			a_w = a_h = 0;
+			std::ifstream f(a_path, std::ios::binary);
+			unsigned char b[24]{};
+			if (!f.read(reinterpret_cast<char*>(b), sizeof(b))) { return; }
+			static const unsigned char kSig[8] = { 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A };
+			if (std::memcmp(b, kSig, 8) != 0) { return; }
+			a_w = (std::uint32_t(b[16]) << 24) | (std::uint32_t(b[17]) << 16) | (std::uint32_t(b[18]) << 8) | b[19];
+			a_h = (std::uint32_t(b[20]) << 24) | (std::uint32_t(b[21]) << 16) | (std::uint32_t(b[22]) << 8) | b[23];
+		}
+
+		// SPLASH AT EVERY SCREEN SHAPE (the owner, 2026-10-02: the splash "doesnt fill the screen all the way on
+		// different resolutions"). A modlist may ship its art at several shapes in a "splash" folder beside
+		// splash.png (splash-16x9.png, splash-21x9.png, ...; the same folder Njordlinger's MO2 plugin Splash Fit
+		// reads). The one whose shape is closest to the game's screen is used; splash.png itself competes too.
+		std::filesystem::path ClosestSplash(const std::filesystem::path& a_splash, float a_screenAspect)
+		{
+			std::filesystem::path best = a_splash;
+			double bestDiff = 1e9;
+			auto consider = [&](const std::filesystem::path& a_p) {
+				std::uint32_t w = 0, h = 0;
+				PngSize(a_p, w, h);
+				if (w == 0 || h == 0) { return; }
+				const double diff = std::fabs(std::log((double(w) / double(h)) / double(a_screenAspect)));
+				if (diff < bestDiff) { bestDiff = diff; best = a_p; }
+			};
+			consider(a_splash);
+			std::error_code ec;
+			const std::filesystem::path folder = a_splash.parent_path() / "splash";
+			if (std::filesystem::is_directory(folder, ec))
+			{
+				for (const auto& e : std::filesystem::directory_iterator(folder, ec))
+				{
+					std::string n = e.path().filename().string();
+					std::transform(n.begin(), n.end(), n.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+					if (n.rfind("splash-", 0) == 0 && n.size() > 4 && n.compare(n.size() - 4, 4, ".png") == 0) { consider(e.path()); }
+				}
+			}
+			return best;
+		}
+
+		void LoadImageOnce(ID3D11Device* a_device, float a_screenAspect)
 		{
 			if (g_imageTried) { return; }
 			g_imageTried = true;
@@ -139,8 +185,9 @@ namespace curtain
 					const std::filesystem::path candidate = dir / "splash.png";
 					if (std::filesystem::exists(candidate))
 					{
-						path = candidate;
-						logger::info("startup curtain: using the modlist's own splash art at {} (set sCurtainImage to override, or 'none' for plain black)", path.string());
+						path = ClosestSplash(candidate, a_screenAspect);
+						logger::info("startup curtain: using the modlist's own splash art at {} - the closest shape to the {:.3f} screen (set sCurtainImage to override, or 'none' for plain black)",
+									 path.string(), a_screenAspect);
 						break;
 					}
 					if (!dir.has_parent_path() || dir.parent_path() == dir) { break; }
@@ -357,7 +404,7 @@ namespace curtain
 					view->GetDevice(&device);
 				}
 			}
-			LoadImageOnce(device);
+			LoadImageOnce(device, io.DisplaySize.x / io.DisplaySize.y);
 			if (device) { device->Release(); }
 		}
 
@@ -375,6 +422,27 @@ namespace curtain
 		// composition, and filling the screen would cut it. It fades with the curtain, on the same alpha.
 		if (g_imageSRV && g_imageW > 0 && g_imageH > 0 && io.DisplaySize.x > 0.0f && io.DisplaySize.y > 0.0f)
 		{
+			// A picture made for this screen's shape (within 3%) FILLS it - a hair is trimmed so no line of black
+			// shows at an edge. Any other shape is fitted inside, as before, so lettering is never cut.
+			const float screenAspect = io.DisplaySize.x / io.DisplaySize.y;
+			const float imageAspect = static_cast<float>(g_imageW) / static_cast<float>(g_imageH);
+			if (std::fabs(imageAspect / screenAspect - 1.0f) <= 0.03f)
+			{
+				ImVec2 uv0(0.0f, 0.0f), uv1(1.0f, 1.0f);
+				if (imageAspect > screenAspect)
+				{
+					const float keep = screenAspect / imageAspect;
+					uv0.x = (1.0f - keep) * 0.5f; uv1.x = 1.0f - uv0.x;
+				}
+				else
+				{
+					const float keep = imageAspect / screenAspect;
+					uv0.y = (1.0f - keep) * 0.5f; uv1.y = 1.0f - uv0.y;
+				}
+				draw->AddImage(reinterpret_cast<ImTextureID>(g_imageSRV), ImVec2(0.0f, 0.0f), io.DisplaySize, uv0, uv1,
+							   IM_COL32(255, 255, 255, a));
+				return;
+			}
 			const float scale = (std::min)(io.DisplaySize.x / static_cast<float>(g_imageW),
 										   io.DisplaySize.y / static_cast<float>(g_imageH));
 			const float w = static_cast<float>(g_imageW) * scale;

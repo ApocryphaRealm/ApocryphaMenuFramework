@@ -21,6 +21,18 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## 2.0.2 - 2026-10-02 - working
+
+### Changed
+- The start-up curtain fills screens of any shape (the owner: the splash "doesnt fill the screen all the way on
+  different resolutions"). A modlist may ship its splash art at several shapes in a `splash` folder beside
+  `splash.png` - `splash-16x9.png`, `splash-21x9.png`, `splash-4x3.png` and so on. The curtain takes the one whose shape
+  is closest to the game's screen (`splash.png` itself competes, so a list without the folder behaves as before) and
+  names it in the log. A picture within 3% of the screen's shape now FILLS the screen edge to edge, trimming a hair;
+  any other shape is still fitted inside, so lettering is never cut. An explicit `[Startup] sCurtainImage` is used
+  as it is.
+- The same folder feeds Njordlinger's MO2 plugin Splash Fit, which sizes MO2's own start-up splash to the monitor.
+
 ## 2.0.1 - 2026-10-01 - working
 
 The first release of the 2.0 work on Nexus. 2.0.0 was tagged before the finalize gate ran and was never posted; its

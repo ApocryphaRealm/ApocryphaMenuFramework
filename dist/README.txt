@@ -1,6 +1,6 @@
 ﻿ApocryphaRealm Menu Framework
 =============================
-Version 2.0.1
+Version 2.0.2
 
 An original, GPL-3.0-or-later in-game menu framework (embedding Dear ImGui) - a one-for-one
 replacement for SKSE Menu Framework's consumer surface, plus user-friendly features that do
@@ -46,6 +46,9 @@ reading.
 
 WHAT CHANGED
 ------------
+
+Version 2.0.2
+The start-up curtain fills screens of any shape. A modlist can ship its splash art at several shapes in a "splash" folder beside splash.png (splash-16x9.png, splash-21x9.png, splash-4x3.png, ...); the curtain uses the one closest to your screen and fills the screen with it. Lists without the folder look as before.
 
 Version 2.0.1 (the first release of 2.0 - 2.0.0 was not released on its own)
 Separators in the mod list. Right-click a row (Y on a controller) and pick "New separator above": the menus below it, up to the next separator, are its group, as in Mod Organizer 2. A separator folds and unfolds with A or a click (folded, it shows how many menus it holds), can be renamed, favourited, moved and deleted, and "Send to" on any mod moves it into a group or out of every group. A-Z and Z-A sort only the mods outside separators; favourite mods stay at the top.
