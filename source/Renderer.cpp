@@ -1034,6 +1034,42 @@ namespace renderer
 
 		// A separator row: a fold arrow, the name, how many menus it holds when folded, a white box when pinned. A (or a
 		// click) folds and unfolds it; Y (or a right-click) opens its menu - the same binding a mod row uses.
+		// GRAB AND MOVE (the owner, 2026-10-02). The mod picked up with the grab action, empty when none is.
+		std::string g_grabbedMod;
+
+		// The move actions bound to a stick direction are polled rather than raised: one step as the stick is pushed,
+		// then a step every 0.12 s while it is held past a 0.35 s pause. A move bound to a button or key is raised
+		// like any command instead and steps once per press. Called every frame so a held stick is not mistaken for
+		// a fresh push the moment a mod is picked up.
+		int GrabStickStep()
+		{
+			static int s_lastDir = 0;
+			static double s_nextAt = 0.0;
+			const auto held = [](bindings::Action a_action) {
+				const bindings::Binding b = bindings::Get(a_action);
+				if (b.padKind != bindings::PadKind::kStickDir) { return false; }
+				float x = 0.0f, y = 0.0f;
+				bool clicked = false, live = false;
+				input::GetStick((b.padCode >> 4) & 0xF, x, y, clicked, live);
+				constexpr float kPush = 0.5f;   // y > 0 is up, as for the left stick's navigation
+				switch (b.padCode & 0xF)
+				{
+				case 0: return y > kPush;
+				case 1: return y < -kPush;
+				case 2: return x < -kPush;
+				case 3: return x > kPush;
+				default: return false;
+				}
+			};
+			const int dir = held(bindings::Action::kGrabUp) ? -1 : (held(bindings::Action::kGrabDown) ? 1 : 0);
+			const double now = ImGui::GetTime();
+			int step = 0;
+			if (dir != 0 && dir != s_lastDir) { step = dir; s_nextAt = now + 0.35; }
+			else if (dir != 0 && now >= s_nextAt) { step = dir; s_nextAt = now + 0.12; }
+			s_lastDir = dir;
+			return step;
+		}
+
 		void DrawSeparatorRow(const std::vector<registry::Entry>& a_entries, const personalization::DisplayEntry& a_row,
 							  bool a_contextMenu, bool a_favouriteKey)
 		{
@@ -1952,6 +1988,16 @@ namespace renderer
 				// outside the loop so a single press cannot fire on several rows.
 				const bool rowContextMenu = bindings::TakeTriggered(bindings::Action::kContextMenu);
 				const bool rowFavourite = bindings::TakeTriggered(bindings::Action::kFavourite);
+				// GRAB AND MOVE (the owner, 2026-10-02: "pressing right stick will select the mod and then going and
+				// moving the stick up or down will move its position up or down. And this should be rebindable"). The
+				// grab picks the highlighted mod up; the two moves walk it one place at a time (Nudge - the same step as
+				// the Reorder arrows); the grab again, B, or the highlight leaving it puts it down.
+				const bool rowGrab = bindings::TakeTriggered(bindings::Action::kGrabMod);
+				int grabStep = 0;
+				if (bindings::TakeTriggered(bindings::Action::kGrabUp)) { grabStep = -1; }
+				if (bindings::TakeTriggered(bindings::Action::kGrabDown)) { grabStep = 1; }
+				if (const int stickStep = GrabStickStep(); grabStep == 0) { grabStep = stickStep; }
+				bool grabbedFocused = false;
 
 				int shown = 0;
 				const std::vector<personalization::DisplayEntry> displayRows = personalization::Order(entries);
@@ -1997,6 +2043,15 @@ namespace renderer
 					const bool picked = ImGui::Selectable(row.displayName.c_str(), isOpen);
 					ImGui::Unindent(rowIndent);
 
+					// the picked-up mod is boxed, so it reads as held rather than merely highlighted
+					if (!g_grabbedMod.empty() && g_grabbedMod == row.modName)
+					{
+						const ImVec2 mn = ImGui::GetItemRectMin(), mx = ImGui::GetItemRectMax();
+						ImDrawList* dl = ImGui::GetWindowDrawList();
+						dl->AddRectFilled(mn, mx, IM_COL32(255, 255, 255, 40));
+						dl->AddRect(mn, mx, ImGui::GetColorU32(ImGuiCol_Text), 0.0f, 0, 2.0f);
+					}
+
 					if (favourite)
 					{
 						const float top = rowTopLeft.y + (ImGui::GetTextLineHeight() - boxSide) * 0.5f;
@@ -2026,6 +2081,20 @@ namespace renderer
 							personalization::ToggleFavourite(row.modName);
 							settings::Save();
 						}
+						if (rowGrab)
+						{
+							if (g_grabbedMod == row.modName)
+							{
+								g_grabbedMod.clear();
+								logger::info("menu order: put \"{}\" down", row.modName);
+							}
+							else
+							{
+								g_grabbedMod = row.modName;
+								logger::info("menu order: picked \"{}\" up", row.modName);
+							}
+						}
+						if (g_grabbedMod == row.modName) { grabbedFocused = true; }
 					}
 
 					// RIGHT-CLICK: favourite/unfavourite, rename, and the two moves that a pinned
@@ -2113,6 +2182,24 @@ namespace renderer
 					}
 
 					ImGui::PopID();
+				}
+				if (!g_grabbedMod.empty())
+				{
+					if (!grabbedFocused)
+					{
+						logger::info("menu order: put \"{}\" down (the highlight left it)", g_grabbedMod);
+						g_grabbedMod.clear();
+					}
+					else if (ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false))
+					{
+						logger::info("menu order: put \"{}\" down (B)", g_grabbedMod);
+						g_grabbedMod.clear();
+					}
+					else if (grabStep != 0 && personalization::Nudge(entries, g_grabbedMod, grabStep))
+					{
+						settings::Save();
+						logger::info("menu order: \"{}\" stepped {}", g_grabbedMod, grabStep < 0 ? "up" : "down");
+					}
 				}
 				if (entries.empty()) { ImGui::TextDisabled("%s", TR("AMF_NoneRegistered", "none registered")); }
 				else if (shown == 0) { ImGui::TextDisabled("%s", TR("AMF_NoMatch", "no mod matches that")); }

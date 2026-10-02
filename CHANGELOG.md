@@ -65,6 +65,20 @@ Skyrim one."
 - The separator's fold arrow is ImGui's own drawn arrow; a separator moved next to a loose or pinned mod goes to the
   head of the separators instead of swallowing the loose mods below it.
 
+### Added (the same test build, after the owner's controller test, 2026-10-02)
+- "Move to the top" on a mod goes to the top of its own separator ("moves it to the top of the separator that it's in.
+  That way it's distinct from favoriting"); a loose mod goes to the head of the loose mods.
+- "Reorder" in a mod's options: a small window with an up and a down arrow, one place per press, the window staying
+  open so a mod can be walked several places. Stepping past a separator carries the mod into or out of that group; a
+  folded group is stepped over. New keys AMF_Reorder / AMF_MoveUp / AMF_MoveDown.
+- Grab and move ("pressing right stick will select the mod and then going and moving the stick up or down will move its
+  position up or down. And this should be rebindable"): three new actions on the Controls page - "Pick up a mod to
+  move it" (R3), "Move the picked-up mod up" / "down" (right stick up / down). R3 on a highlighted mod boxes it as held;
+  each push of the stick moves it one place (the same step as Reorder), repeating every 0.12 s after a 0.35 s hold;
+  R3 again, B, or moving the highlight off it puts it down. A move bound to a button or key steps once per press. New
+  keys AMF_ActGrabMod / AMF_ActGrabUp / AMF_ActGrabDown / AMF_ActGrabModHelp / AMF_ActGrabMoveHelp; INI
+  Bindings.sGrabMod / sGrabUp / sGrabDown.
+
 ## 1.9.9 - 2026-09-28 - working
 
 ### Fixed
