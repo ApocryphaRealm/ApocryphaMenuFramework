@@ -85,6 +85,10 @@ namespace personalization
 	// Sends a mod to the end of a separator's group; an empty a_separator sends it out of every group (the end of the
 	// mods above the first separator).
 	bool SendTo(const std::vector<registry::Entry>& a_entries, const std::string& a_modName, const std::string& a_separator);
+	// "Move to the top" for a MOD (the owner, 2026-10-02: "the move to top button moves it to the top of the separator that
+	// it's in. That way it's distinct from favoriting"): the first place in its own group - right under its separator, or
+	// the head of the loose mods when it is in none.
+	bool MoveToGroupTop(const std::vector<registry::Entry>& a_entries, const std::string& a_modName);
 	struct SeparatorInfo
 	{
 		std::string id;

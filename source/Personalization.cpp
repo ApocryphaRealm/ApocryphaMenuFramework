@@ -360,6 +360,30 @@ namespace personalization
 		return true;
 	}
 
+	bool MoveToGroupTop(const std::vector<registry::Entry>& a_entries, const std::string& a_modName)
+	{
+		std::scoped_lock lock(g_lock);
+		if (IsSeparator(a_modName)) { return false; }
+		std::vector<std::string> canonical = CanonicalLocked(a_entries);
+		const auto self = std::find(canonical.begin(), canonical.end(), a_modName);
+		if (self == canonical.end()) { return false; }
+		// its group's head: just after the nearest separator above it, or the very start (the loose mods)
+		std::size_t head = 0;
+		for (auto it = self; it != canonical.begin();)
+		{
+			--it;
+			if (IsSeparator(*it)) { head = static_cast<std::size_t>(std::distance(canonical.begin(), it)) + 1; break; }
+		}
+		const std::size_t from = static_cast<std::size_t>(std::distance(canonical.begin(), self));
+		if (from == head) { return true; }
+		canonical.erase(self);
+		canonical.insert(canonical.begin() + static_cast<std::ptrdiff_t>(head), a_modName);
+		g_order = canonical;
+		g_customOrder = true;
+		logger::info("menu order: \"{}\" moved to the top of {}", a_modName, head == 0 ? std::string("the loose mods") : "separator " + canonical[head - 1]);
+		return true;
+	}
+
 	std::vector<SeparatorInfo> Separators()
 	{
 		std::scoped_lock lock(g_lock);

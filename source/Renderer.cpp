@@ -1955,13 +1955,6 @@ namespace renderer
 
 				int shown = 0;
 				const std::vector<personalization::DisplayEntry> displayRows = personalization::Order(entries);
-				// "Move to the top" lands right under the pinned MODS (separators can be pinned too - they follow them).
-				int pinnedMods = 0;
-				for (const auto& r : displayRows)
-				{
-					if (r.separator || !personalization::IsFavourite(r.modName)) { break; }
-					++pinnedMods;
-				}
 				for (const personalization::DisplayEntry& row : displayRows)
 				{
 					// The name the player actually reads is what they will type at, so the filter
@@ -2062,9 +2055,11 @@ namespace renderer
 							g_renameOpenPending = true;
 						}
 						ImGui::Separator();
+						// the top of ITS OWN group, not of the list - pinning is what puts a mod at the very top (the owner,
+						// 2026-10-02: "That way it's distinct from favoriting")
 						if (ImGui::MenuItem(TR("AMF_MoveToTop", "Move to the top")))
 						{
-							personalization::MoveTo(entries, row.modName, pinnedMods + 1);
+							personalization::MoveToGroupTop(entries, row.modName);
 							settings::Save();
 						}
 						// SEPARATORS (the owner, 2026-10-02): make one above this mod, or send this mod into one.
