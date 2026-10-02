@@ -21,6 +21,18 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## 2.0.1 - 2026-10-01 - working
+
+The first release of the 2.0 work on Nexus. 2.0.0 was tagged before the finalize gate ran and was never posted; its
+fixes could not reuse the tagged number, so they are 2.0.1.
+
+### Fixed (the finalize gate)
+- The log ships at info: uLogLevel=2 in the compiled default and the shipped INI, whose comment now lists every level
+  (rule 14, 2026-09-26). A report still asks for 0.
+- The Text size slider is a precise slider - one 0.01 step per keyboard or D-pad press instead of ImGui's 1% of the range
+  (rule 68; include/PreciseSlider.h, the same header as the Oblivion framework's).
+- The package README names the version and lists what 2.0 changed.
+
 ## 2.0.0 - 2026-10-01 - working
 
 Separators, grab-and-move and a window that fits its names.

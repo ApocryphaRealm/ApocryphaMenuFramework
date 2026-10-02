@@ -123,7 +123,7 @@ namespace settings
 		// [Debug]
 
 		// [Log]
-		std::int32_t logLevel = 0;       // spdlog level: 0 = trace (project rule: ship the most comprehensive level)
+		std::int32_t logLevel = 2;       // spdlog level: 2 = info, the shipped default (rule 14, 2026-09-26); 0 = trace for a report
 	};
 
 	// The live values. Read freely from any thread; written by Load() at plugin init and by the

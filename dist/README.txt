@@ -1,6 +1,6 @@
 ﻿ApocryphaRealm Menu Framework
 =============================
-Version 1.9.9
+Version 2.0.1
 
 An original, GPL-3.0-or-later in-game menu framework (embedding Dear ImGui) - a one-for-one
 replacement for SKSE Menu Framework's consumer surface, plus user-friendly features that do
@@ -46,6 +46,14 @@ reading.
 
 WHAT CHANGED
 ------------
+
+Version 2.0.1 (the first release of 2.0 - 2.0.0 was not released on its own)
+Separators in the mod list. Right-click a row (Y on a controller) and pick "New separator above": the menus below it, up to the next separator, are its group, as in Mod Organizer 2. A separator folds and unfolds with A or a click (folded, it shows how many menus it holds), can be renamed, favourited, moved and deleted, and "Send to" on any mod moves it into a group or out of every group. A-Z and Z-A sort only the mods outside separators; favourite mods stay at the top.
+"Move to the top" now moves a mod to the top of its own separator, so it is no longer the same as favouriting it.
+"Reorder" in a mod's options opens a small window with an up and a down arrow that move the mod one place per press.
+Grab and move on a controller: R3 picks up the highlighted mod, the right stick moves it one place per push (held, it keeps going), and R3 or B puts it down. All three are rebindable on the Controls page.
+The menu has no title bar any more - the frame runs round the whole window - and it sits in the middle of the screen whether opened by its key or from the System menu row. The mod list widens to show every name in full, and the window widens once to fit both panes.
+The Text size slider moves one step (0.01) per keyboard or D-pad press. The log ships at info (uLogLevel=2); set 0 for a full log when reporting a bug.
 
 Version 1.9.9
 The controller triggers now reach the menu. L2 and R2 were never passed on, so a mod's page could not see them - a "press a button to bind" window, such as Show Player In Inventory's rotate key, never caught L2. Nothing else changes: the framework's own controls do not use the triggers.

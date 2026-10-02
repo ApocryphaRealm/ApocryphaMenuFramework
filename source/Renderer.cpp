@@ -31,6 +31,7 @@
 
 #include <imgui.h>
 #include <imgui_internal.h>
+#include "PreciseSlider.h"
 #include <vector>
 // The vcpkg imgui port installs the binding headers FLAT at the include root, not under
 // backends/ as in the upstream repo layout.
@@ -952,7 +953,7 @@ namespace renderer
 			ImGui::Spacing();
 
 			ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
-			if (ImGui::SliderFloat(TR("AMF_TextSize", "Text size"), &values.textScale, 1.0f, 2.0f, "%.2f"))
+			if (precise::SliderFloat(TR("AMF_TextSize", "Text size"), &values.textScale, 1.0f, 2.0f, "%.2f"))
 			{
 				// applied live via FontGlobalScale each frame
 			}
