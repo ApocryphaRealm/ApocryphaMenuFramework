@@ -21,7 +21,7 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
-## 2.0.4 - 2026-10-03 - untested
+## 2.0.4 - 2026-10-03 - working
 
 ### Fixed
 - A mod's own window now gets the mouse, the keyboard and the controller. Mods that open a window of their own
