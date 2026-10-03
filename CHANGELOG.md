@@ -36,12 +36,17 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
   framework menu over such a window, and closing the menu leaves the window with the input. The framework menu's own
   command keys (favourite, tab steps, grab) no longer latch while only a mod's window is up.
 - A passive overlay never takes the game's input. The SKSE Menu Framework header marks every window it creates as
-  blocking by default, so an always-on window drawn during play - StepUpOnto SKSE's NPC perf overlay - looked like a
-  window wanting the player, and the first 2.0.4 build took all of the game's input for it (found in testing before
-  release). A mod's window now gets the input only when it is open, asks to block input AND draws a window that takes
-  the mouse; a window drawn with ImGui's NoMouseInputs / NoInputs (an overlay the mouse passes through) is left on
-  screen and the game keeps its controls. The log names the window that takes the input, and says once when an open,
-  blocking window is passed over as an overlay.
+  blocking by default, so the first 2.0.4 build would have taken all of the game's input for any always-on window
+  drawn during play (found in testing before release, with StepUpOnto SKSE's NPC perf overlay). A mod's window now
+  gets the input only when it is open, asks to block input AND draws a window that takes the mouse; a window drawn
+  with ImGui's NoMouseInputs / NoInputs (an overlay the mouse passes through) is left on screen and the game keeps its
+  controls. StepUpOnto's overlay does take the mouse, so while it is shown it holds the input, as a clickable overlay
+  does. The log names the window that takes the input, and says once when an open, blocking window is passed over as
+  an overlay.
+- The console key still reaches the game while a mod's window holds the input. Opening RaceMenu from the console
+  (showracemenu) left the console stuck open behind RaceMenu Atelier, because its ~ never got through (the owner's
+  screenshot, 2026-10-03). The key the game's controls map to the console (~ by default) now passes to the game unless
+  a text box is being typed in.
 - RaceMenu Atelier's icons, and those of other SKSE Menu Framework mods, drew as "?". Those mods draw Font Awesome icons
   after asking for a Font Awesome face by name ("fa-solid-900", or PushSolid / PushRegular / PushBrands), and AMF had only
   its text face. AMF now ships Font Awesome Free 6.7.2's solid, regular and brands fonts
@@ -56,10 +61,22 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
   no scan.
 
 ### Added
+- An SDK for mod authors (optional file "Apocrypha Menu Framework 2.0.4 - SDK"): AMF.h, the one header shared with the
+  Oblivion Remastered framework, PreciseSlider.h and a complete SKSE example plugin with its build files, MIT. On
+  Skyrim, AMF::UseFrameworkImGui() shares the framework's Dear ImGui through its cimgui exports (framework 1.7.2+); the
+  example pins Dear ImGui 1.90.8 docking with the framework's own vcpkg overlay port, because the stock port gives
+  1.90.2 and the header then refuses to share (it checks). It replaces the Custom Menu Art Preview file.
 - amf.menu op=state reports consumerInput: whether a mod's window holds the input as the input hook sees it. The log
   says when a mod's window takes the input and hands it back. Each entry in consumerWindows also lists acceptsMouse and
   submitted - the top-level ImGui windows that mod drew on the last frame, with their flags (hex), noMouseInputs,
   noInputs, position and size.
+
+### Tested (2026-10-03, SE 1.5.97, Njordlinger Test, RaceMenu Atelier 1.0.0)
+- Under 2.0.3 the bug reproduced: Atelier registered ("registered with SKSE Menu Framework 3.70"), its window open and
+  blocking, no cursor, no input. Under 2.0.4: the cursor is shown, a real mouse move moved it, F4 reached Atelier and
+  swapped to the stock RaceMenu with the input handed back at once, the framework menu opened and closed over the
+  panel, and closing RaceMenu gave the game its controls back. The owner saw the icons draw (his screenshot).
+- The SDK example drew its page with the framework's Dear ImGui; a build against 1.90.2 was refused, as designed.
 
 ## 2.0.3 - 2026-10-02 - untested
 

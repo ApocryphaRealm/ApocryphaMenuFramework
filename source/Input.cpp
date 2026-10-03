@@ -532,6 +532,27 @@ namespace input
 			// 2.0.4 only our menu came through here, and a mod's AddWindow window drew with no input at all
 			// unless our menu happened to be open too (mmmizuhara, 2026-10-03, RaceMenu Atelier).
 			// Returns true when the event still reaches the game. a_holder names who has the input, for the log.
+			// The game's console key (ControlMap's "Console" user event, ~ by default). A mod's window that holds the
+			// input must not keep it from the game: a player who opens RaceMenu from the console (showracemenu) is left
+			// with the console stuck open behind RaceMenu Atelier otherwise (the owner's screenshot, 2026-10-03).
+			static bool IsGameConsoleKey(const RE::ButtonEvent* a_button)
+			{
+				if (!a_button || a_button->GetDevice() != RE::INPUT_DEVICE::kKeyboard) { return false; }
+				std::uint32_t key = RE::ControlMap::kInvalid;
+				const auto*   controls = RE::ControlMap::GetSingleton();
+				const auto*   events = RE::UserEvents::GetSingleton();
+				if (controls && events)
+				{
+					key = controls->GetMappedKey(events->console, RE::INPUT_DEVICE::kKeyboard, RE::UserEvents::INPUT_CONTEXT_ID::kGameplay);
+					if (key == RE::ControlMap::kInvalid)
+					{
+						key = controls->GetMappedKey(events->console, RE::INPUT_DEVICE::kKeyboard, RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode);
+					}
+				}
+				if (key == RE::ControlMap::kInvalid) { key = 0x29; }   // the game's default, the key under Escape
+				return a_button->GetIDCode() == key;
+			}
+
 			static bool TakeForImGui(RE::InputEvent* a_event, const RE::ButtonEvent* a_button, const char* a_holder)
 			{
 				// SMF-compat input callbacks (e.g. DEM's "Press a key..." bind capture, RaceMenu Atelier's
@@ -701,7 +722,15 @@ namespace input
 						// still opens our menu over the window; Start (controller close) does not apply,
 						// it closes only our menu. The moment the window closes, the renderer publishes
 						// false and the next dispatch takes the branch below - the game has its input back.
-						passThrough = TakeForImGui(current, button, "a mod's window");
+						// The console key alone still reaches the game, unless a text box is being typed in.
+						if (IsGameConsoleKey(button) && !renderer::WantsTextInput())
+						{
+							passThrough = true;
+						}
+						else
+						{
+							passThrough = TakeForImGui(current, button, "a mod's window");
+						}
 					}
 					else
 					{

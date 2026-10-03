@@ -1,6 +1,6 @@
 ﻿ApocryphaRealm Menu Framework
 =============================
-Version 2.0.2
+Version 2.0.4
 
 An original, GPL-3.0-or-later in-game menu framework (embedding Dear ImGui) - a one-for-one
 replacement for SKSE Menu Framework's consumer surface, plus user-friendly features that do
@@ -46,6 +46,12 @@ reading.
 
 WHAT CHANGED
 ------------
+
+Version 2.0.4
+A mod's own window now gets the mouse, the keyboard and the controller. Mods that open a window of their own - RaceMenu Atelier's editor, FSMP, Equip or Unequip All - drew with no cursor and ignored clicks, keys and typing unless the framework menu was open too. The game is not paused for such a window, the mod's own hotkeys (Atelier's F4) still reach it, the console key still reaches the game, and the game has its controls back the moment the window closes. An always-on overlay the mouse passes through never takes the game's input.
+Icons from Font Awesome now draw in mods that use them (RaceMenu Atelier's buttons showed "?"). Font Awesome Free 6.7.2 ships in SKSE\Plugins\ApocryphaMenuFramework\icons (SIL OFL 1.1, licence beside it) and is only loaded when a mod asks for it.
+Less work per frame for mods that look up every drawing call by name.
+For mod authors: the SDK optional file - AMF.h (the same header as the Oblivion Remastered framework's), PreciseSlider.h and a complete example plugin, MIT.
 
 Version 2.0.3
 Your settings survive updates. Everything you set in the menu - theme, text size, window positions, keys, and the mod list's order, separators, favourites and names - is saved to SKSE\Plugins\ApocryphaMenuFramework\User.ini, a file the download never contains, so an update cannot replace it. The ApocryphaMenuFramework.ini beside the DLL now holds only the defaults.

@@ -53,6 +53,7 @@ COMMON_DOCS = [
     ("THIRD_PARTY_NOTICES.md", "THIRD_PARTY_NOTICES.md"),
     ("LICENSE", "LICENSE-ApocryphaMenuFramework-GPL-3.0.txt"),
     ("docs/CUSTOM-MENU-ART.md", "CUSTOM-MENU-ART.md"),
+    ("CHANGELOG.md", "CHANGELOG.md"),   # 2.0.3's hand-assembled package carried it; 2.0.4's first build did not
 ]
 
 
