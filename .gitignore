@@ -6,3 +6,4 @@ swf/HUDMenu/
 
 # Font Awesome npm tarball - kept locally, URL and hashes in extern/fontawesome-free-6.7.2/SOURCE.txt
 extern/fontawesome-free-6.7.2/*.tgz
+sdk/example/build/

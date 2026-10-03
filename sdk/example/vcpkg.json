@@ -1,0 +1,17 @@
+{
+    "name": "amfexample",
+    "version-string": "1.0.0",
+    "description": "AMF Example - the smallest complete Skyrim mod with pages in the Apocrypha Menu Framework.",
+    "license": "MIT",
+    "dependencies": [
+        "commonlibsse-ng",
+        "spdlog",
+        {
+            "name": "imgui",
+            "features": [
+                "docking-experimental"
+            ]
+        }
+    ],
+    "builtin-baseline": "8d3649ba34aab36914ddd897958599aa0a91b08e"
+}
