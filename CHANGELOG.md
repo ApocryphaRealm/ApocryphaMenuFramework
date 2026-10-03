@@ -21,6 +21,15 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## 2.0.3 - 2026-10-02 - untested
+
+### Changed
+- Your settings survive updates. Everything set in the menu - theme, text size, window positions, keys, and the mod list's order, separators, favourites and renames - is now saved to SKSE\Plugins\ApocryphaMenuFramework\User.ini, a file the download never contains, so an update cannot replace it (under Mod Organizer 2 it lands in overwrite). The shipped ApocryphaMenuFramework.ini now holds only the defaults and is never written. xLenax's request via the owner, 2026-10-02.
+
+### Added
+- An installer question for anyone updating from 2.0.2 or earlier, whose settings are still in the old INI: "Updating - keep my current settings" leaves that file where it is (Mod Organizer 2: choose Merge, not Replace), and AMF moves its values into User.ini the first time a setting changes.
+- Layout presets on Framework Settings > Menu list: save the list's order, separators, favourites and names under a name, load it back, or delete it. Stored in SKSE\Plugins\ApocryphaMenuFramework\Presets\. amf.menu op=preset (save | load | delete | list) drives it for testing. All 11 languages.
+
 ## 2.0.2 - 2026-10-02 - working
 
 ### Changed

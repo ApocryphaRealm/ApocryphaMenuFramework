@@ -285,6 +285,10 @@ namespace renderer
 		// rather than the press doing nothing visible. settings::Save() returns nothing, so there
 		// is no honest success/failure to report here - only that the write was asked for.
 		double g_menuListSavedAt = 0.0;
+		// Layout presets (2.0.3): the name being typed, and the last action's result for a few seconds.
+		char g_presetName[64] = {};
+		std::string g_presetStatus;
+		double g_presetStatusAt = 0.0;
 
 		// Keyboard-loss diagnostic (1.9.5). Stamped WHEN THEY HAPPEN, read afterwards.
 		int g_frameFocusHere = -1;      // SetKeyboardFocusHere() was called on this frame
@@ -1196,6 +1200,53 @@ namespace renderer
 				ImGui::SameLine();
 				ImGui::TextDisabled("%s", TR("AMF_MenuListSaved", "saved"));
 			}
+
+			// Layout presets (2.0.3, xLenax via the owner, 2026-10-02): the list's order, separators, favourites and
+			// renames saved under a name, to load back later or keep a second arrangement. Every preset can be deleted
+			// (the owner's standing rule for presets).
+			ImGui::Spacing();
+			ImGui::TextUnformatted(TR("AMF_LayoutPresets", "Layout presets"));
+			ImGui::TextWrapped("%s", TR("AMF_LayoutPresetsHelp", "Save this list - its order, separators, favourites and names - "
+							   "under a name, and load it back any time. Your settings are kept in a file the download never "
+							   "contains, so an update does not reset them."));
+			ImGui::SetNextItemWidth(ImGui::GetFontSize() * 14.0f);
+			ImGui::InputTextWithHint("##presetName", TR("AMF_PresetNameHint", "Preset name"), g_presetName, sizeof(g_presetName));
+			keyboard::NoteTextField(ImGui::GetItemID());
+			ImGui::SameLine();
+			if (ImGui::Button(TR("AMF_SavePreset", "Save as preset")))
+			{
+				const std::string name = g_presetName;
+				g_presetStatus = settings::SaveLayoutPreset(name) ? TR("AMF_PresetSaved", "Saved.") : TR("AMF_PresetNotSaved", "Not saved - type a name first.");
+				g_presetStatusAt = ImGui::GetTime();
+			}
+			const std::vector<std::string> presets = settings::ListLayoutPresets();
+			if (presets.empty())
+			{
+				ImGui::TextDisabled("%s", TR("AMF_NoPresets", "No presets saved yet."));
+			}
+			for (const std::string& preset : presets)
+			{
+				ImGui::PushID(preset.c_str());
+				ImGui::BulletText("%s", preset.c_str());
+				ImGui::SameLine();
+				if (ImGui::SmallButton(TR("AMF_LoadPreset", "Load")))
+				{
+					g_presetStatus = settings::LoadLayoutPreset(preset) ? TR("AMF_PresetLoaded", "Loaded.") : TR("AMF_PresetNotLoaded", "Could not be read - see the log.");
+					g_presetStatusAt = ImGui::GetTime();
+				}
+				ImGui::SameLine();
+				if (ImGui::SmallButton(TR("AMF_DeletePreset", "Delete")))
+				{
+					g_presetStatus = settings::DeleteLayoutPreset(preset) ? TR("AMF_PresetDeleted", "Deleted.") : TR("AMF_PresetNotDeleted", "Could not be deleted - see the log.");
+					g_presetStatusAt = ImGui::GetTime();
+				}
+				ImGui::PopID();
+			}
+			if (!g_presetStatus.empty() && ImGui::GetTime() - g_presetStatusAt < 4.0)
+			{
+				ImGui::TextDisabled("%s", g_presetStatus.c_str());
+			}
+			ImGui::Spacing();
 
 			if (entries.empty())
 			{

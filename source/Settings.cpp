@@ -5,17 +5,31 @@
 #include "Theme.h"
 #include "utils/Logger.h"
 
+#include <algorithm>
+#include <cctype>
 #include <charconv>
+#include <filesystem>
 #include <fstream>
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <vector>
 
 namespace settings
 {
 	namespace
 	{
+		// The SHIPPED file: the defaults, replaced by every update. Read first, never written (2.0.3).
 		constexpr const char* kIniPath = "Data/SKSE/Plugins/ApocryphaMenuFramework.ini";
+		// The PLAYER'S file: everything set in the menu - theme, text size, windows, keys, and the mod list's order,
+		// separators, favourites and renames. The download never contains it, so no update can replace it (xLenax via
+		// the owner, 2026-10-02: the menu order was lost on every update). Under Mod Organizer 2 it is written to
+		// overwrite, which a reinstall does not touch; under any other manager it is a file the manager never installed.
+		constexpr const char* kUserDir = "Data/SKSE/Plugins/ApocryphaMenuFramework";
+		constexpr const char* kUserPath = "Data/SKSE/Plugins/ApocryphaMenuFramework/User.ini";
+		// Saved menu-list layouts, one INI each, holding the [MenuAlias] [MenuOrder] [MenuFavourites] [MenuSeparators]
+		// sections. Also never shipped.
+		constexpr const char* kPresetDir = "Data/SKSE/Plugins/ApocryphaMenuFramework/Presets";
 
 		Values g_values;
 
@@ -114,15 +128,34 @@ namespace settings
 
 	void Load()
 	{
-		std::ifstream file(kIniPath);
-
-		if (!file.is_open())
+		// The shipped INI gives the defaults; User.ini, when it exists, overrides every key it holds. A key a later
+		// version adds is missing from an older User.ini and so comes from the shipped file. Renames are a set rather
+		// than single keys: once User.ini exists its [MenuAlias] is the whole set, so one the player cleared does not
+		// come back from an old shipped file kept by the installer's "updating" option.
+		std::unordered_map<std::string, std::string> entries;
+		bool haveShipped = false;
+		bool haveUser = false;
+		if (std::ifstream shipped(kIniPath); shipped.is_open())
 		{
-			logger::info("settings: {} not found; compiled defaults in effect (they match the shipped INI, rule 16)", kIniPath);
+			entries = ParseFile(shipped);
+			haveShipped = true;
+		}
+		if (std::ifstream user(kUserPath); user.is_open())
+		{
+			const auto userEntries = ParseFile(user);
+			std::erase_if(entries, [](const auto& a_entry) { return a_entry.first.rfind("MenuAlias.", 0) == 0; });
+			for (const auto& [key, value] : userEntries) { entries[key] = value; }
+			haveUser = true;
+		}
+		logger::info("settings: defaults from {} ({}); your settings from {} ({})", kIniPath, haveShipped ? "read" : "not found",
+			kUserPath, haveUser ? "read" : "not saved yet - written the first time a setting changes");
+
+		if (!haveShipped && !haveUser)
+		{
+			logger::info("settings: no settings file; compiled defaults in effect (they match the shipped INI, rule 16)");
 		}
 		else
 		{
-			const auto entries = ParseFile(file);
 
 			ReadNumber(entries, "Input.uToggleKey", g_values.toggleKey);
 			ReadBool(entries, "Input.bOnScreenKeyboard", g_values.onScreenKeyboard);
@@ -190,16 +223,20 @@ namespace settings
 
 	void Save()
 	{
-		std::ofstream file(kIniPath, std::ios::trunc);
+		std::error_code ec;
+		std::filesystem::create_directories(kUserDir, ec);
+		std::ofstream file(kUserPath, std::ios::trunc);
 
 		if (!file.is_open())
 		{
-			logger::error("settings: could not open {} for writing; the change will not survive this session", kIniPath);
+			logger::error("settings: could not open {} for writing; the change will not survive this session", kUserPath);
 			return;
 		}
 
-		file << "; ApocryphaRealm Menu Framework - settings. Rewritten by the in-game settings page;\n"
-				"; edits made here while the game is closed are honoured on the next load.\n"
+		file << "; ApocryphaRealm Menu Framework - YOUR settings. Rewritten by the in-game settings page;\n"
+				"; edits made here while the game is closed are honoured on the next load. The download never\n"
+				"; contains this file, so an update cannot replace it; SKSE\\Plugins\\ApocryphaMenuFramework.ini\n"
+				"; beside the DLL holds only the defaults.\n"
 				"\n"
 				"[Menus]\n"
 				"; 1 = add a SKSE MENUS row to the game's own System menu, next to SAVE, LOAD and\n"
@@ -314,6 +351,80 @@ namespace settings
 		file << personalization::IniBlock();
 		file << bindings::IniBlock();
 
-		logger::debug("settings: saved to {}", kIniPath);
+		logger::debug("settings: saved to {}", kUserPath);
+	}
+
+	// ---- Menu-list layout presets (2.0.3) ------------------------------------------------------------------------------
+	std::string PresetFileName(const std::string& a_name)
+	{
+		// Letters, digits, spaces and - _ ' ( ) only; a name is a file name and must stay one.
+		std::string clean;
+		for (const char c : a_name)
+		{
+			const auto u = static_cast<unsigned char>(c);
+			if (std::isalnum(u) || c == ' ' || c == '-' || c == '_' || c == '\'' || c == '(' || c == ')') { clean += c; }
+		}
+		while (!clean.empty() && clean.back() == ' ') { clean.pop_back(); }
+		while (!clean.empty() && clean.front() == ' ') { clean.erase(clean.begin()); }
+		if (clean.size() > 48) { clean.resize(48); }
+		return clean;
+	}
+
+	std::vector<std::string> ListLayoutPresets()
+	{
+		std::vector<std::string> names;
+		std::error_code ec;
+		for (std::filesystem::directory_iterator it(kPresetDir, ec), end; !ec && it != end; it.increment(ec))
+		{
+			if (it->is_regular_file(ec) && it->path().extension() == ".ini") { names.push_back(it->path().stem().string()); }
+		}
+		std::sort(names.begin(), names.end());
+		return names;
+	}
+
+	bool SaveLayoutPreset(const std::string& a_name)
+	{
+		const std::string name = PresetFileName(a_name);
+		if (name.empty()) { return false; }
+		std::error_code ec;
+		std::filesystem::create_directories(kPresetDir, ec);
+		const std::string path = std::string(kPresetDir) + "/" + name + ".ini";
+		std::ofstream file(path, std::ios::trunc);
+		if (!file.is_open())
+		{
+			logger::error("presets: could not write {}", path);
+			return false;
+		}
+		file << "; ApocryphaRealm Menu Framework - a saved menu-list layout (order, separators, favourites, renames).\n"
+				"; Load it from Framework Settings > Menu list > Layout presets.\n";
+		file << personalization::IniBlock();
+		logger::info("presets: the menu list was saved as \"{}\" ({})", name, path);
+		return true;
+	}
+
+	bool LoadLayoutPreset(const std::string& a_name)
+	{
+		const std::string name = PresetFileName(a_name);
+		const std::string path = std::string(kPresetDir) + "/" + name + ".ini";
+		std::ifstream file(path);
+		if (name.empty() || !file.is_open())
+		{
+			logger::warn("presets: \"{}\" was not found at {}", a_name, path);
+			return false;
+		}
+		personalization::LoadFrom(ParseFile(file));
+		Save();
+		logger::info("presets: \"{}\" loaded - the menu list now follows it", name);
+		return true;
+	}
+
+	bool DeleteLayoutPreset(const std::string& a_name)
+	{
+		const std::string name = PresetFileName(a_name);
+		std::error_code ec;
+		const bool removed = !name.empty() && std::filesystem::remove(std::string(kPresetDir) + "/" + name + ".ini", ec);
+		if (removed) { logger::info("presets: \"{}\" deleted", name); }
+		else { logger::warn("presets: \"{}\" could not be deleted ({})", a_name, ec ? ec.message() : "not found"); }
+		return removed;
 	}
 }

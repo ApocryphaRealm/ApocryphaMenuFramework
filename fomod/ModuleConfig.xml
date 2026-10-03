@@ -31,6 +31,29 @@
 				</group>
 			</optionalFileGroups>
 		</installStep>
+		<installStep name="New install or update?">
+			<optionalFileGroups order="Explicit">
+				<group name="Your settings" type="SelectExactlyOne">
+					<plugins order="Explicit">
+						<plugin name="New install - default settings">
+							<description>Installs the default settings file. Choose this for a first install, or to start again from the defaults. Your own settings (from 2.0.3 on) live in SKSE\Plugins\ApocryphaMenuFramework\User.ini, which this download never contains, so they are kept either way.</description>
+							<files>
+								<folder source="Settings-Default" destination="" priority="0" />
+							</files>
+							<typeDescriptor>
+								<type name="Recommended" />
+							</typeDescriptor>
+						</plugin>
+						<plugin name="Updating - keep my current settings">
+							<description>For an update from 2.0.2 or earlier, whose mod order, separators, favourites, names and other settings are still in the old ApocryphaMenuFramework.ini: this leaves that file as it is, and the framework copies its values into User.ini the first time a setting changes. In Mod Organizer 2, choose Merge (not Replace) when it asks how to install over the old version - Replace deletes the old file before this installer runs.</description>
+							<typeDescriptor>
+								<type name="Optional" />
+							</typeDescriptor>
+						</plugin>
+					</plugins>
+				</group>
+			</optionalFileGroups>
+		</installStep>
 		<installStep name="Language">
 			<optionalFileGroups order="Explicit">
 				<group name="Language of the framework's own pages" type="SelectExactlyOne">

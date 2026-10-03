@@ -181,6 +181,25 @@ namespace devbenchtool
 				renderer::ResetModOrder();
 				result = "{\"ok\":true,\"op\":\"resetorder\"}";
 			}
+			else if (op == "preset")
+			{
+				// 2.0.3: menu-list layout presets - action save|load|delete {name} | list. The same calls the Settings
+				// page's buttons make.
+				const std::string action = JsonStr(args, "action");
+				const std::string name = JsonStr(args, "name");
+				bool ok = true;
+				if (action == "save") { ok = settings::SaveLayoutPreset(name); }
+				else if (action == "load") { ok = settings::LoadLayoutPreset(name); }
+				else if (action == "delete") { ok = settings::DeleteLayoutPreset(name); }
+				else if (action != "list") { ok = false; }
+				result = std::string("{\"ok\":") + (ok ? "true" : "false") + ",\"op\":\"preset\",\"action\":\"" + action + "\",\"presets\":[";
+				const auto presets = settings::ListLayoutPresets();
+				for (std::size_t i = 0; i < presets.size(); ++i)
+				{
+					result += (i ? ",\"" : "\"") + presets[i] + "\"";
+				}
+				result += "]}";
+			}
 			else if (op == "nav")
 			{
 				// 1.6.7: drive the navigation exactly as the D-pad does - args dir left|right.

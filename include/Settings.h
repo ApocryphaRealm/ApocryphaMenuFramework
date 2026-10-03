@@ -10,6 +10,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace settings
 {
@@ -131,12 +132,22 @@ namespace settings
 	// value is multi-word), so no lock - matching how every mod in this project treats INI state.
 	Values& Get();
 
-	// Reads Data/SKSE/Plugins/ApocryphaMenuFramework.ini (plain file read, file-first - the file
-	// is the source of truth, rule 16's persistence half). Missing file or missing key keeps the
-	// compiled default and logs which happened. Applies the log level.
+	// Reads the shipped Data/SKSE/Plugins/ApocryphaMenuFramework.ini as the defaults, then the player's
+	// Data/SKSE/Plugins/ApocryphaMenuFramework/User.ini over it (plain file reads - the files are the source of
+	// truth, rule 16's persistence half). A missing file or key keeps the compiled default and logs which
+	// happened. Applies the log level.
 	void Load();
 
-	// Rewrites the INI with the current values, comments included, so a settings-page change
-	// survives the next game load (rule 16). Logs on failure, never throws.
+	// Writes User.ini with the current values, comments included, so a settings-page change survives the next
+	// game load (rule 16) AND the next update - the download never ships User.ini (2.0.3). Logs on failure,
+	// never throws.
 	void Save();
+
+	// Menu-list layout presets (2.0.3): the order, separators, favourites and renames saved under a name in
+	// Data/SKSE/Plugins/ApocryphaMenuFramework/Presets/<name>.ini. Names are cleaned to letters, digits, spaces
+	// and - _ ' ( ); loading one replaces the current layout and saves it as the player's.
+	std::vector<std::string> ListLayoutPresets();
+	bool SaveLayoutPreset(const std::string& a_name);
+	bool LoadLayoutPreset(const std::string& a_name);
+	bool DeleteLayoutPreset(const std::string& a_name);
 }
