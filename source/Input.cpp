@@ -130,7 +130,9 @@ namespace input
 
 		void SyncEngineTextInput()
 		{
-			const bool want = renderer::IsMainWindowVisible() && renderer::WantsTextInput();
+			// Our menu, or a mod's own blocking window (2.0.4) - a text field in either needs the engine's typing.
+			const bool want = (renderer::IsMainWindowVisible() || renderer::ConsumerWindowOwnsInput()) &&
+							  renderer::WantsTextInput();
 			auto* controls = RE::ControlMap::GetSingleton();
 			if (!controls) { return; }
 			// HELD, AND SOMETHING TOOK IT BACK (phbd01, 2026-09-21: "it is fixed at first now, but it
@@ -390,9 +392,10 @@ namespace input
 		// -----------------------------------------------------------------------------------
 		// The hook. Decides three things per event, in order:
 		//   1. toggle key pressed -> flip the menu, consume the event
-		//   2. menu open -> copy the event for ImGui, then pass RELEASES through to the game
-		//      (stuck-key prevention) and consume everything else (camera/movement halt)
-		//   3. menu closed -> pass everything through untouched
+		//   2. menu open, or (2.0.4) a mod's blocking window open -> copy the event for ImGui, then
+		//      pass RELEASES through to the game (stuck-key prevention) and consume everything else
+		//      (camera/movement halt)
+		//   3. otherwise -> pass everything through, bar what a consumer input callback claims
 		// -----------------------------------------------------------------------------------
 	// ---- driver-side event injection (DevBench) -------------------------------------------
 	// Splices REAL engine event nodes (RE::ButtonEvent / RE::CharEvent) at the head of the list
@@ -524,6 +527,55 @@ namespace input
 				}
 			}
 
+			// THE INPUT IS TAKEN FROM THE GAME - one event, while our menu OR a mod's own blocking window
+			// (2.0.4) holds the player's input. One body for both, so the two can never drift apart: until
+			// 2.0.4 only our menu came through here, and a mod's AddWindow window drew with no input at all
+			// unless our menu happened to be open too (mmmizuhara, 2026-10-03, RaceMenu Atelier).
+			// Returns true when the event still reaches the game. a_holder names who has the input, for the log.
+			static bool TakeForImGui(RE::InputEvent* a_event, const RE::ButtonEvent* a_button, const char* a_holder)
+			{
+				// SMF-compat input callbacks (e.g. DEM's "Press a key..." bind capture, RaceMenu Atelier's
+				// F4 that swaps it for the stock RaceMenu) get first look; a callback that consumes the
+				// event keeps it from ImGui as well. The game sees it in neither case.
+				if (!compat::DispatchInputEvent(a_event))
+				{
+					CopyForImGui(a_event);
+				}
+				else if (a_button && a_button->IsDown())
+				{
+					// A consumer's input callback CLAIMED this press while ImGui has the input, so no
+					// widget sees it. Logged because from the player's side this is indistinguishable from
+					// the menu freezing (report 2026-09-12: the search box stopped taking input) - the log
+					// names the device and key so the claiming mod can be found by what it consumes.
+					logger::info("input: a consumer input callback claimed device {} code {} while {} has the input - the widgets will not see it",
+						static_cast<std::uint32_t>(a_button->GetDevice()), a_button->GetIDCode(), a_holder);
+				}
+
+				bool passThrough = false;
+
+				if (a_button && a_button->IsUp())
+				{
+					// Pass the release ONLY if the game saw the press (held across the open
+					// transition). A stray release for a key the game never saw down would be a
+					// no-op anyway - but shout-style release-triggered actions make an
+					// unconditional pass actively dangerous. This is also what keeps a key from
+					// sticking in the game when a window takes the input while it is held.
+					const auto held = g_gameHeldButtons.find(ButtonKey(a_button));
+					if (held != g_gameHeldButtons.end())
+					{
+						g_gameHeldButtons.erase(held);
+						passThrough = true;
+					}
+				}
+
+				// Everything else is consumed - THIS is what halts the camera, the scroll-zoom and
+				// movement while the input is taken. (An unconditional `passThrough = IsUp()` used to sit
+				// here and overwrote the held-set decision above, so EVERY release reached the game -
+				// the 1.1.2 behaviour the held set was written to end: a shout key pressed inside the
+				// menu completed as a shout on its release. Queue row 2026-09-12; fixed 2026-09-12.)
+				return passThrough;
+			}
+
 			static void thunk(RE::BSTEventSource<RE::InputEvent*>* a_dispatcher, RE::InputEvent** a_events)
 			{
 				if (!a_events)
@@ -544,6 +596,9 @@ namespace input
 				inject::Service(a_events);   // driver-side presses/characters, ahead of everything below
 
 				const bool menuOpen = renderer::IsMainWindowVisible();
+				// A mod's own window that is open and blocking (2.0.4), as the renderer published it. Read
+				// once per dispatch like menuOpen, so one list is never split between two owners.
+				const bool consumerInput = !menuOpen && renderer::ConsumerWindowOwnsInput();
 				const auto toggleKey = static_cast<std::uint32_t>(settings::Get().toggleKey);
 				const bool controllerMode = UsingController();
 				const bool awaitingRebind = g_awaitingRebind.load(std::memory_order_acquire);
@@ -635,45 +690,18 @@ namespace input
 					}
 					else if (menuOpen)
 					{
-						// SMF-compat input callbacks (e.g. DEM's "Press a key..." bind capture)
-						// get first look; a callback that consumes the event keeps it from the
-						// menu's own widgets as well. The game sees it in neither case.
-						if (!compat::DispatchInputEvent(current))
-						{
-							CopyForImGui(current);
-						}
-						else if (button && button->IsDown())
-						{
-							// A consumer's input callback CLAIMED this press while the menu is up, so the
-							// menu's own widgets never see it. Logged because from the player's side this is
-							// indistinguishable from the menu freezing (report 2026-09-12: the search box
-							// stopped taking input) - the log names the device and key so the claiming mod
-							// can be found by what it consumes.
-							logger::info("input: a consumer input callback claimed device {} code {} while the menu is open - the menu's widgets will not see it",
-								static_cast<std::uint32_t>(button->GetDevice()), button->GetIDCode());
-						}
-
-						passThrough = false;
-
-						if (button && button->IsUp())
-						{
-							// Pass the release ONLY if the game saw the press (held across the
-							// open transition). A stray release for a key the game never saw
-							// down would be a no-op anyway - but shout-style release-triggered
-							// actions make an unconditional pass actively dangerous.
-							const auto held = g_gameHeldButtons.find(ButtonKey(button));
-							if (held != g_gameHeldButtons.end())
-							{
-								g_gameHeldButtons.erase(held);
-								passThrough = true;
-							}
-						}
-
-						// Everything else is consumed - THIS is what halts the camera, the scroll-zoom and
-						// movement while the menu is up. (An unconditional `passThrough = IsUp()` used to sit
-						// here and overwrote the held-set decision above, so EVERY release reached the game -
-						// the 1.1.2 behaviour the held set was written to end: a shout key pressed inside the
-						// menu completed as a shout on its release. Queue row 2026-09-12; fixed 2026-09-12.)
+						passThrough = TakeForImGui(current, button, "the menu");
+					}
+					else if (consumerInput)
+					{
+						// OUR MENU IS CLOSED BUT A MOD'S WINDOW HAS THE INPUT (2.0.4) - RaceMenu Atelier's
+						// editor, FSMP, Equip or Unequip All. The same body as our menu: the mod's input
+						// callbacks first (so its own hotkey, Atelier's F4, still reaches it), then ImGui,
+						// and the game keeps only the releases of keys it saw pressed. The toggle key above
+						// still opens our menu over the window; Start (controller close) does not apply,
+						// it closes only our menu. The moment the window closes, the renderer publishes
+						// false and the next dispatch takes the branch below - the game has its input back.
+						passThrough = TakeForImGui(current, button, "a mod's window");
 					}
 					else
 					{
@@ -929,7 +957,10 @@ namespace input
 					if (record.down) { NoteDevice(Device::kKeyboardMouse); }
 					// A key typed into a text field is text, not a command: F (favourite) and Page Up / Down
 					// (tabs) must not fire while the search bar or a mod's text box is being typed into.
-					if (record.down && !renderer::WantsTextInput()) { bindings::RaiseAllFor(record.code, false); }
+					// And only while OUR menu is up (2.0.4): a mod's window gets the input too now, and a
+					// raised command is LATCHED until our menu takes it - F pressed in RaceMenu Atelier would
+					// otherwise favourite a mod the next time the menu opened.
+					if (record.down && renderer::IsMainWindowVisible() && !renderer::WantsTextInput()) { bindings::RaiseAllFor(record.code, false); }
 					const ImGuiKey key = ScancodeToImGuiKey(record.code);
 					if (key != ImGuiKey_None)
 					{
@@ -970,7 +1001,8 @@ namespace input
 					// backspace AND "open a mod's options" - but FromGamepad returns the first match
 					// in enum order, which is the backspace, so the context menu was never raised
 					// (the owner, 2026-09-19: "pressing Y doesn't, even though it's bound to it").
-					if (record.down) { bindings::RaiseAllFor(record.code, true); }
+					// Our menu's commands, so only while our menu is up - latched otherwise (see the keyboard case).
+					if (record.down && renderer::IsMainWindowVisible()) { bindings::RaiseAllFor(record.code, true); }
 					// 1.8.9: the on-screen keyboard takes the pad while it is open (D-pad, A, B, X, Y), and
 					// takes the A that opens it on a highlighted text box; everything else falls through.
 					if (controllerMode && keyboard::HandleGamepad(record.code, record.down))

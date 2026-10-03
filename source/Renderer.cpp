@@ -76,6 +76,16 @@ namespace renderer
 		std::string g_captureError;
 		std::atomic<bool> g_windowVisible{ false };
 
+		// A MOD'S OWN WINDOW HAS THE INPUT (2.0.4). True while any window a mod registered through AddWindow is
+		// open AND asked to block the player's input (BlockUserInput) - sampled once per frame on the render thread
+		// and published here for the input thread, which then feeds ImGui and holds the game's input exactly as it
+		// does for our own menu. Until 2.0.4 only our own menu did that, so such a window drew every frame with no
+		// cursor and no input at all unless the framework menu happened to be open too (mmmizuhara, 2026-10-03:
+		// RaceMenu Atelier "isn't working ... It works fine when I switch back to SKSE Menu Framework"). Published by
+		// the render thread rather than asked of the registry by the input thread, so the two sides agree: the input
+		// thread only queues events for ImGui once the renderer has already taken the rising edge and cleared the queue.
+		std::atomic<bool> g_consumerInput{ false };
+
 		// PAUSE WHILE OPEN (1.9.7, [Menu] bPauseGame). The window is an overlay, not a game menu, so it pauses the
 		// game the way a pausing menu does: by holding one count on UI::numPausesGame. The render thread notices the
 		// wanted state change; the count itself is only ever touched on the main thread, once up and once down, and
@@ -2556,28 +2566,61 @@ namespace renderer
 
 				const bool visible = g_windowVisible.load(std::memory_order_acquire);
 
+				// TWO STATES, NOT ONE (2.0.4). `visible` is OUR menu: it alone pauses the game, takes
+				// Escape as "close" and draws the framework window. `interactive` is "someone on screen
+				// has the player's input" - our menu, or a mod's own window that is open and blocking -
+				// and it is what feeds ImGui, draws the cursor and turns text entry on. A mod's window
+				// never pauses the game: [Menu] bPauseGame is the player's setting for OUR menu, and a
+				// mod that wants the world stopped behind its window is the one to decide that.
+				const bool consumerOwnsInput = consumer::AnyBlockingWindowOpen();
+				const bool interactive = visible || consumerOwnsInput;
+				{
+					static bool s_lastConsumer = false;   // render thread only; transition log
+					if (consumerOwnsInput != s_lastConsumer)
+					{
+						s_lastConsumer = consumerOwnsInput;
+						logger::info("input: a mod's window {} the input (framework menu {}){}",
+									 consumerOwnsInput ? "took" : "handed back",
+									 visible ? "open" : "closed",
+									 consumerOwnsInput ? " - cursor shown, game input held; the game is not paused" : "");
+					}
+				}
+
 				SyncGamePause(visible && settings::Get().pauseGameWhileOpen);
 
 				// Open-transition work happens HERE, not in ToggleMainWindow - the toggle is
 				// flipped on the input thread, and cursor centring touches ImGui state.
-				if (g_justOpened.exchange(false, std::memory_order_acq_rel))
+				// It runs on the rising edge of INPUT OWNERSHIP, so a mod's window that takes the
+				// input gets the same centred cursor and clean key state as our menu. Our menu opening
+				// over a mod's window that already has the input is NOT a new edge: ImGui has been
+				// fed all along, so nothing is stale, and the cursor stays where the player has it.
 				{
-					input::OnMenuOpened();
+					static bool s_wasInteractive = false;   // render thread only
+					const bool justOpened = g_justOpened.exchange(false, std::memory_order_acq_rel);
+					if (interactive && (!s_wasInteractive || (justOpened && !consumerOwnsInput)))
+					{
+						input::OnMenuOpened();
+					}
+					s_wasInteractive = interactive;
 				}
+				// Published only AFTER the rising edge has cleared the queue, so nothing the input thread
+				// queues for a mod's window can be thrown away as stale by the edge that let it in.
+				g_consumerInput.store(consumerOwnsInput, std::memory_order_release);
 
 				// Translation runs after the backends' NewFrame (so our queued io.Add*Event
 				// calls land after, and therefore win over, the Win32 backend's own
 				// GetCursorPos-based mouse update) and before ImGui::NewFrame consumes them.
-				if (visible)
+				if (interactive)
 				{
 					input::ProcessQueuedEvents();
 				}
 
 				ImGuiIO& io = ImGui::GetIO();
 
-				// Software cursor while the menu is open - the game hides and recentres the OS
-				// cursor at will, so ImGui draws its own at the position we integrate.
-				io.MouseDrawCursor = visible;
+				// Software cursor while the menu (or a mod's blocking window) has the input - the game
+				// hides and recentres the OS cursor at will, so ImGui draws its own at the position we
+				// integrate. RaceMenu Atelier hides the game's own cursor for exactly this reason.
+				io.MouseDrawCursor = interactive;
 
 				// Nav mode follows the EXPLICIT setting live (the toggle sits on the settings
 				// page itself). Never auto-detected - that is the nav-focus-drift bug.
@@ -2602,7 +2645,8 @@ namespace renderer
 				// CharEvent is the only way a letter ever reaches ImGui in this framework (there is no
 				// WndProc hook). Without it the search bar and every mod's text box took clicks and
 				// navigation but not a single character (phbd01, 2026-09-19).
-				g_wantTextInput.store(visible && io.WantTextInput, std::memory_order_release);
+				// A mod's own window counts too (2.0.4): RaceMenu Atelier's name field types through here.
+				g_wantTextInput.store(interactive && io.WantTextInput, std::memory_order_release);
 
 				// WHY THE KEYBOARD WAS LOST (1.9.5). ImGui drops ActiveId by itself when the item
 				// that holds it is NOT SUBMITTED in a frame - ActiveIdIsAlive stops matching
@@ -2684,7 +2728,7 @@ namespace renderer
 				// than inside the field so it works for every mod's text box as well as ours.
 				// Asked of the input layer, not of ImGui: the B press never reaches ImGui while a text
 				// field is active, precisely so ImGui cannot revert the text with it.
-				if (visible && GImGui && GImGui->ActiveId != 0 && keyboard::IsTextField(GImGui->ActiveId) &&
+				if (interactive && GImGui && GImGui->ActiveId != 0 && keyboard::IsTextField(GImGui->ActiveId) &&
 					input::TakeTextFieldCancel())
 				{
 					logger::debug("input: B released text field {} - navigation is free again", GImGui->ActiveId);
@@ -2705,6 +2749,15 @@ namespace renderer
 				// decide through the IsOpen flag it was handed - not ours.
 				consumer::DrawHudElements();
 				consumer::DrawWindows();
+
+				// Which stick drives ImGui follows "is an item being edited" (the controller scheme in
+				// Input.cpp). The framework window samples it while it draws; with only a mod's window
+				// up it is sampled here instead, so a value left over from our menu cannot hold the
+				// left stick off a mod's window.
+				if (!visible && interactive)
+				{
+					input::SetItemActive(ImGui::IsAnyItemActive());
+				}
 
 				if (visible)
 				{
@@ -2844,6 +2897,11 @@ namespace renderer
 	bool IsMainWindowVisible()
 	{
 		return g_windowVisible.load(std::memory_order_relaxed);
+	}
+
+	bool ConsumerWindowOwnsInput()
+	{
+		return g_consumerInput.load(std::memory_order_acquire);
 	}
 
 	// A page declares its own tab bar, and takes back the tab the D-pad asked for (-1 = nothing asked).
@@ -3113,6 +3171,10 @@ namespace renderer
 			   ",\"visible\":" + (visible ? "true" : "false") +
 			   ",\"blockingWindowOpen\":" + ((visible || anyBlocking) ? "true" : "false") +
 			   ",\"consumerWindows\":[" + windows + "]" +
+			   // 2.0.4: what the input hook acts on - a mod's window holds the input (cursor, ImGui,
+			   // game input held) as the renderer last published it, which can trail blockingWindowOpen
+			   // by one frame.
+			   ",\"consumerInput\":" + (g_consumerInput.load(std::memory_order_acquire) ? "true" : "false") +
 			   ",\"tab\":\"" + esc(tab) + "\",\"selected\":\"" + esc(node) + "\",\"selectedMod\":" + std::to_string(selMod) +
 			   ",\"page\":\"" + esc(tabName) + "\",\"pageIndex\":" + std::to_string(tabIndex) +
 			   ",\"pageCount\":" + std::to_string(tabCount) +

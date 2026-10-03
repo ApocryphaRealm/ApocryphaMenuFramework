@@ -21,6 +21,28 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## 2.0.4 - 2026-10-03 - untested
+
+### Fixed
+- A mod's own window now gets the mouse, the keyboard and the controller. Mods that open a window of their own
+  through the SKSE Menu Framework API (AddWindow) and ask for the player's input - RaceMenu Atelier's editor, FSMP,
+  Equip or Unequip All - drew on screen with no cursor, and clicks, dragging, the wheel, their hotkeys and typing did
+  nothing unless the framework menu happened to be open as well (mmmizuhara, 2026-10-03: RaceMenu Atelier "isn't
+  working ... It works fine when I switch back to SKSE Menu Framework"). While such a window is open the cursor is
+  drawn, the window takes the input and typing, and the game's own controls are held, exactly as with the framework
+  menu; the mod's own hotkeys (Atelier's F4) still reach it first. The game is NOT paused for it - the pause setting
+  stays the framework menu's. When the window closes the game has its input back on the next frame, and a key the
+  game saw pressed before the window opened is still released to it, so nothing sticks. The menu key still opens the
+  framework menu over such a window, and closing the menu leaves the window with the input. The framework menu's own
+  command keys (favourite, tab steps, grab) no longer latch while only a mod's window is up.
+- Less work per frame for mods whose ImGui wrappers look up every function on every call (about a thousand lookups a
+  frame for RaceMenu Atelier): a name already seen is now found with a shared lock and one hash, with no allocation and
+  no scan.
+
+### Added
+- amf.menu op=state reports consumerInput: whether a mod's window holds the input as the input hook sees it. The log
+  says when a mod's window takes the input and hands it back.
+
 ## 2.0.3 - 2026-10-02 - untested
 
 ### Re-uploaded 2026-10-03 (same number, the owner's exception: installer and documentation only)

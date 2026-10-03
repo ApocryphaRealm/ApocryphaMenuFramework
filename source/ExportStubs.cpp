@@ -5,15 +5,26 @@
 #include <atomic>
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <mutex>
+#include <shared_mutex>
 #include <string>
+#include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace
 {
+	// Hashes a string_view, so a lookup by the caller's const char* builds no std::string (2.0.4).
+	struct NameHash
+	{
+		using is_transparent = void;
+		std::size_t operator()(std::string_view a_name) const noexcept { return std::hash<std::string_view>{}(a_name); }
+	};
+
 	std::mutex g_lock;
-	std::unordered_map<std::string, void*> g_stubs;   // name -> generated thunk
+	std::unordered_map<std::string, void*, NameHash, std::equal_to<>> g_stubs;   // name -> generated thunk
 	std::vector<std::string> g_names;                  // index -> name, for the handler
 	std::atomic<std::size_t> g_known{ 0 };
 	std::atomic<std::size_t> g_missing{ 0 };
@@ -88,11 +99,14 @@ namespace export_stubs
 {
 	void* StubFor(const char* a_name)
 	{
-		const std::string name = a_name ? a_name : "";
+		// A consumer whose wrapper resolves on every call asks for a missing name every frame too, so
+		// the repeat is looked up by view - the std::string is built only for a name never seen before.
+		const std::string_view view = a_name ? std::string_view(a_name) : std::string_view();
 		std::scoped_lock lock(g_lock);
-		if (const auto it = g_stubs.find(name); it != g_stubs.end()) {
+		if (const auto it = g_stubs.find(view); it != g_stubs.end()) {
 			return it->second;
 		}
+		const std::string name(view);
 		const auto index = static_cast<int>(g_names.size());
 		g_names.push_back(name);
 		void* thunk = BuildThunk(index);
@@ -115,20 +129,35 @@ namespace export_stubs
 
 namespace export_stubs::detail
 {
+	namespace
+	{
+		std::shared_mutex g_seenLock;
+		std::unordered_set<std::string, NameHash, std::equal_to<>> g_seen;
+	}
+
 	// Called by the GetProcAddress redirect for every name a consumer resolves from our module
 	// that we DO export, so the inventory covers both halves.
+	//
+	// THE HOT PATH (2.0.4). The stock consumer header's wrappers call GetProcAddress on EVERY call -
+	// RaceMenu Atelier's do, around a thousand times a frame - and every one lands here. This used to
+	// lock a mutex, build a std::string and walk a vector of every name seen so far on each of them.
+	// A name already seen now costs a shared (reader) lock and one hash: no allocation, no scan, and
+	// readers never wait on each other. Only a name's FIRST sighting takes the writer lock and allocates.
 	void NoteKnown(const char* a_name)
 	{
-		static std::mutex once;
-		static std::vector<std::string> seen;
-		std::scoped_lock lock(once);
-		const std::string name = a_name ? a_name : "";
-		for (const auto& s : seen) {
-			if (s == name) {
+		const std::string_view name = a_name ? std::string_view(a_name) : std::string_view();
+		{
+			std::shared_lock read(g_seenLock);
+			if (g_seen.find(name) != g_seen.end()) {
 				return;
 			}
 		}
-		seen.push_back(name);
+		{
+			std::unique_lock write(g_seenLock);
+			if (!g_seen.emplace(name).second) {
+				return;   // another thread noted it between the two locks
+			}
+		}
 		g_known.fetch_add(1, std::memory_order_relaxed);
 		logger::debug("export listener: \"{}\" resolved by a consumer", name);
 	}
