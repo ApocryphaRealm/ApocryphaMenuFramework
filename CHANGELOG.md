@@ -23,6 +23,12 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 
 ## 2.0.3 - 2026-10-02 - untested
 
+### Re-uploaded 2026-10-03 (same number, the owner's exception: installer and documentation only)
+- The installer's "New install or update?" question is removed again - not for this version (the owner,
+  2026-10-03). The installer asks two questions and always installs the default ApocryphaMenuFramework.ini.
+  Updating from 2.0.2 or older, the mod order and other settings reset once; from then on they are kept in
+  User.ini, which no update replaces. Both DLLs are the 2.0.3 binaries recorded working, unchanged.
+
 ### Changed
 - Your settings survive updates. Everything set in the menu - theme, text size, window positions, keys, and the mod list's order, separators, favourites and renames - is now saved to SKSE\Plugins\ApocryphaMenuFramework\User.ini, a file the download never contains, so an update cannot replace it (under Mod Organizer 2 it lands in overwrite). The shipped ApocryphaMenuFramework.ini now holds only the defaults and is never written. xLenax's request via the owner, 2026-10-02.
 

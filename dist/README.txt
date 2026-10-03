@@ -50,7 +50,7 @@ WHAT CHANGED
 Version 2.0.3
 Your settings survive updates. Everything you set in the menu - theme, text size, window positions, keys, and the mod list's order, separators, favourites and names - is saved to SKSE\Plugins\ApocryphaMenuFramework\User.ini, a file the download never contains, so an update cannot replace it. The ApocryphaMenuFramework.ini beside the DLL now holds only the defaults.
 Layout presets: Framework Settings > Menu list can save the list under a name, load it back, or delete it.
-Updating from 2.0.2 or earlier: pick "New install - default settings" in the installer - the update option only works from the next version on. Your mod order resets once with this update; from then on it stays in User.ini.
+Updating from 2.0.2 or older: your mod order and other settings reset once with this update. Set them again and they are saved to User.ini, which no update replaces.
 
 Version 2.0.2
 The start-up curtain fills screens of any shape. A modlist can ship its splash art at several shapes in a "splash" folder beside splash.png (splash-16x9.png, splash-21x9.png, splash-4x3.png, ...); the curtain uses the one closest to your screen and fills the screen with it. Lists without the folder look as before.
