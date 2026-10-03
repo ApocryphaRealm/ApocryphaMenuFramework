@@ -679,9 +679,12 @@ namespace input
 						const std::uint32_t code = button->GetIDCode();
 						if (code != kDIKEscape)
 						{
-							settings::Get().toggleKey = static_cast<std::int32_t>(code);
-							settings::Save();
-							logger::info("menu toggle key rebound to scan code {}", code);
+							// Through settings (2.0.5): the key that opens the menu is Controls' binding, and this
+							// used to change only uToggleKey - the label moved, the menu key did not.
+							if (settings::SetToggleKey(static_cast<std::int32_t>(code)))
+							{
+								logger::info("menu toggle key rebound to scan code {}", code);
+							}
 						}
 						else
 						{

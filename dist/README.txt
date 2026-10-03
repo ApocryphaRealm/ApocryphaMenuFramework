@@ -1,6 +1,6 @@
 ﻿ApocryphaRealm Menu Framework
 =============================
-Version 2.0.4
+Version 2.0.5
 
 An original, GPL-3.0-or-later in-game menu framework (embedding Dear ImGui) - a one-for-one
 replacement for SKSE Menu Framework's consumer surface, plus user-friendly features that do
@@ -46,6 +46,12 @@ reading.
 
 WHAT CHANGED
 ------------
+
+Version 2.0.5
+The menu key works again after an update, and editing it in the INI takes effect. Your User.ini now holds only what you changed in the menu; everything else comes from the shipped ApocryphaMenuFramework.ini, so the two files no longer fight each other. A User.ini from 2.0.3 or 2.0.4 that copied every setting is cleaned up the next time a setting is saved, without losing anything you changed.
+uToggleKey and Controls > Open and close the menu are now one key: setting either one changes the key that opens the menu. uToggleKey may be written in hex (0x3B) as well as decimal (59), and a value that is not a usable key falls back to F1 with a note in the log.
+The log names every setting your User.ini sets over a different shipped value, and where the menu key came from.
+Thanks to HadToRegister for the report.
 
 Version 2.0.4
 A mod's own window now gets the mouse, the keyboard and the controller. Mods that open a window of their own - RaceMenu Atelier's editor, FSMP, Equip or Unequip All - drew with no cursor and ignored clicks, keys and typing unless the framework menu was open too. The game is not paused for such a window, the mod's own hotkeys (Atelier's F4) still reach it, the console key still reaches the game, and the game has its controls back the moment the window closes. An always-on overlay the mouse passes through never takes the game's input.

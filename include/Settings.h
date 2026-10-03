@@ -138,10 +138,27 @@ namespace settings
 	// happened. Applies the log level.
 	void Load();
 
-	// Writes User.ini with the current values, comments included, so a settings-page change survives the next
-	// game load (rule 16) AND the next update - the download never ships User.ini (2.0.3). Logs on failure,
-	// never throws.
+	// Writes User.ini, comments included, so a settings-page change survives the next game load (rule 16) AND the
+	// next update - the download never ships User.ini (2.0.3). Since 2.0.5 it holds only what the player changed:
+	// a scalar key at the shipped value (or the compiled default, for a key the shipped file lacks) is left out, so
+	// the shipped file goes on deciding it. The list-shaped sections are written whole. Logs on failure, never throws.
 	void Save();
+
+	// THE MENU KEY (2.0.5, HadToRegister's report). [Input] uToggleKey and Controls' "Open and close the menu" are
+	// one key; where its value came from on the last load or save, for the DevBench report and the log.
+	enum class ToggleKeySource : int
+	{
+		kDefault = 0,    // the compiled default - neither file has uToggleKey
+		kShipped,        // the shipped ApocryphaMenuFramework.ini
+		kUser,           // User.ini's uToggleKey, which differs from the shipped value
+		kUserControls,   // User.ini's [Bindings] sToggleMenu, set on the Controls page
+		kFallback,       // the value given was not a usable key, so F1 (or no key, if F1 is taken)
+	};
+	ToggleKeySource GetToggleKeySource();
+	const char* ToggleKeySourceName(ToggleKeySource a_source);
+	// The settings page's Rebind: moves the menu key and saves. False (nothing changed) for Escape, a code no key
+	// can have, or a key another function already holds.
+	bool SetToggleKey(std::int32_t a_scancode);
 
 	// Menu-list layout presets (2.0.3): the order, separators, favourites and renames saved under a name in
 	// Data/SKSE/Plugins/ApocryphaMenuFramework/Presets/<name>.ini. Names are cleaned to letters, digits, spaces

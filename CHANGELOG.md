@@ -21,6 +21,41 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## 2.0.5 - 2026-10-03 - untested
+
+HadToRegister, Nexus, 2026-10-03: *"Updated to 2.04: it refuses to open with F1. It's set in the INI file as F1 ... The
+settings in BOTH INI files try and cancel each other out; ... I couldn't open the menu with F1 until I deleted the INI file
+in Data/SKSE/Plugins/ApocryphaMenuFramework"*.
+
+### Fixed
+- User.ini holds only what you changed. Since 2.0.3 the first change in the menu copied EVERY setting into
+  SKSE\Plugins\ApocryphaMenuFramework\User.ini, and User.ini wins every key it holds - so from then on the shipped
+  ApocryphaMenuFramework.ini, which still read like the settings file, was ignored for every key and an edit there did
+  nothing. A setting is now written to User.ini only when it differs from the shipped value (or, for a key the shipped
+  file does not carry, the built-in default), and on load a User.ini value equal to the shipped one is not counted as
+  yours; an existing 2.0.3/2.0.4 User.ini is cleaned up the next time a setting is saved. The mod list's renames, order,
+  favourites and separators are kept whole, as before, and a key a later version adds still comes from the shipped file.
+- The menu key is one key. The menu opens on Controls > "Open and close the menu"; [Input] uToggleKey was a second copy
+  that only the settings page's label and the reserved-key list read, so editing it - in either file - never changed the
+  key that opens the menu, and the settings page's Rebind moved the label but not the key. uToggleKey now sets that
+  binding (it wins when User.ini gives both and they differ; a Controls-page rebind alone is still honoured), and both
+  rebind paths change the same key.
+- uToggleKey accepts hex: "0x3B" read as 0 - no key at all - because the number parser stopped at the "x" and called
+  that a success. Whole-number settings take decimal or 0x hex, and a value with anything left over is refused with a
+  warning instead of half-read. A uToggleKey that is not a usable key (above 255, Escape, or a key another menu function
+  holds) falls back to F1 with a warning naming the value; 0 is still "no key".
+- With neither INI present the default controls were never put in place, so no key opened the menu.
+
+### Added
+- The log says, once per load, each setting your User.ini sets over a DIFFERENT shipped value
+  ("settings: [Input] uToggleKey - your User.ini says 42 (Left Shift) over the shipped 59 (F1); User.ini wins"), how many
+  User.ini values merely repeat the shipped ones, and where the menu key came from.
+- amf.menu op=state reports menuKey {uToggleKey, bound, name, source}; amf.keybind op=state reports toggleKeySource.
+  source is user, user-controls, shipped, default or fallback.
+- The shipped INI's header says where your settings go: User.ini holds only what you changed and wins; edit User.ini (or
+  the shipped file, for anything not changed in the menu); delete User.ini to go back to the defaults. User.ini's own
+  header says it holds only what you changed.
+
 ## 2.0.4 - 2026-10-03 - working
 
 ### Fixed

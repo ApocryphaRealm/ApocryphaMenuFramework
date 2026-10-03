@@ -37,10 +37,14 @@ namespace bindings
 
 		// The defaults are exactly what the framework used before any of this existed, so an
 		// update changes nobody's muscle memory.
-		void SetDefaultsLocked()
+		using BindingSet = std::array<Binding, static_cast<std::size_t>(Action::kCount)>;
+
+		// Fills a set with the shipped defaults. Separate from the live set (2.0.5) so Settings can ask what the
+		// defaults ARE - to leave out of User.ini every binding the player never changed - without touching it.
+		void FillDefaults(BindingSet& a_set)
 		{
-			auto set = [](Action a, KeyKind kk, std::int32_t kc, PadKind pk, std::int32_t pc) {
-				g_bindings[static_cast<std::size_t>(a)] = Binding{ kk, kc, pk, pc };
+			auto set = [&a_set](Action a, KeyKind kk, std::int32_t kc, PadKind pk, std::int32_t pc) {
+				a_set[static_cast<std::size_t>(a)] = Binding{ kk, kc, pk, pc };
 			};
 			set(Action::kToggleMenu,   KeyKind::kKeyboard, 0x3B, PadKind::kNone,     -1);       // F1
 			set(Action::kClose,        KeyKind::kKeyboard, 0x01, PadKind::kButton,   0x0010);   // Escape / Start
@@ -72,6 +76,8 @@ namespace bindings
 			set(Action::kGrabUp,       KeyKind::kNone,       -1, PadKind::kStickDir, 0x10);     // right stick up
 			set(Action::kGrabDown,     KeyKind::kNone,       -1, PadKind::kStickDir, 0x11);     // right stick down
 		}
+
+		void SetDefaultsLocked() { FillDefaults(g_bindings); }
 
 		// Two functions that can be live at the same moment must not share a binding. Everything
 		// here is live together inside the menu, except the on-screen keyboard's three, which only
@@ -527,10 +533,11 @@ namespace bindings
 					 read, g_bindings.size());
 	}
 
-	std::string IniBlock()
+	namespace
 	{
-		std::scoped_lock lock(g_lock);
-		std::string text =
+		std::string BlockFor(const BindingSet& a_set)
+		{
+			std::string text =
 			"\n[Bindings]\n"
 			"; The framework's own controls, one line per function:\n"
 			";   s<Function>=<keyKind>,<keyCode>,<padKind>,<padCode>\n"
@@ -538,14 +545,66 @@ namespace bindings
 			"; padKind 0 = none, 1 = pad button (XInput mask; L3 = 64, R3 = 128), 2 = stick direction\n"
 			";         (code = stick * 16 + direction; stick 0 = left, 1 = right; direction 0 = up,\n"
 			";          1 = down, 2 = left, 3 = right).\n"
-			"; Set these from Controls in the menu - its two tabs capture the key or button you press.\n";
-		for (std::size_t i = 0; i < g_bindings.size(); ++i)
-		{
-			const Binding& b = g_bindings[i];
-			text += std::string("s") + kKeys[i] + "=" +
-					std::to_string(static_cast<int>(b.keyKind)) + "," + std::to_string(b.keyCode) + "," +
-					std::to_string(static_cast<int>(b.padKind)) + "," + std::to_string(b.padCode) + "\n";
+			"; Set these from Controls in the menu - its two tabs capture the key or button you press.\n"
+			"; Only the functions you changed are written to User.ini (2.0.5); the rest are the shipped defaults.\n"
+			"; The keyboard key of sToggleMenu is the menu key, [Input] uToggleKey; uToggleKey wins if they differ.\n";
+			for (std::size_t i = 0; i < a_set.size(); ++i)
+			{
+				const Binding& b = a_set[i];
+				text += std::string("s") + kKeys[i] + "=" +
+						std::to_string(static_cast<int>(b.keyKind)) + "," + std::to_string(b.keyCode) + "," +
+						std::to_string(static_cast<int>(b.padKind)) + "," + std::to_string(b.padCode) + "\n";
+			}
+			return text;
 		}
-		return text;
+	}
+
+	std::string IniBlock()
+	{
+		std::scoped_lock lock(g_lock);
+		return BlockFor(g_bindings);
+	}
+
+	std::string DefaultIniBlock()
+	{
+		BindingSet defaults{};
+		FillDefaults(defaults);
+		return BlockFor(defaults);
+	}
+
+	std::int32_t ToggleKeyboardCode()
+	{
+		std::scoped_lock lock(g_lock);
+		const Binding& b = g_bindings[static_cast<std::size_t>(Action::kToggleMenu)];
+		return (b.keyKind == KeyKind::kKeyboard && b.keyCode > 0) ? b.keyCode : 0;
+	}
+
+	bool SetToggleKeyboard(std::int32_t a_scancode, std::string* a_holder)
+	{
+		std::scoped_lock lock(g_lock);
+		// The same clash rule as a Controls-page capture: a key another simultaneously-live function holds is
+		// refused, or FromKeyboard's first match would decide which of the two a press does.
+		if (a_scancode > 0)
+		{
+			for (std::size_t i = 0; i < g_bindings.size(); ++i)
+			{
+				const auto other = static_cast<Action>(i);
+				if (other == Action::kToggleMenu || !ExclusiveTogether(Action::kToggleMenu, other)) { continue; }
+				if (g_bindings[i].keyKind == KeyKind::kKeyboard && g_bindings[i].keyCode == a_scancode)
+				{
+					if (a_holder) { *a_holder = Label(other); }
+					return false;
+				}
+			}
+		}
+		Binding& b = g_bindings[static_cast<std::size_t>(Action::kToggleMenu)];
+		if (a_scancode > 0) { b.keyKind = KeyKind::kKeyboard; b.keyCode = a_scancode; }
+		else                { b.keyKind = KeyKind::kNone; b.keyCode = -1; }
+		return true;
+	}
+
+	std::string KeyName(std::uint32_t a_scancode)
+	{
+		return ScanCodeName(a_scancode);
 	}
 }

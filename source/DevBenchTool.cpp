@@ -512,6 +512,7 @@ namespace devbenchtool
 					",\"armed\":" + (input::IsKeyCaptureArmed() ? "true" : "false") +
 					",\"rebindArmed\":" + (input::IsAwaitingRebind() ? "true" : "false") +
 					",\"toggleKey\":" + std::to_string(settings::Get().toggleKey) +
+					",\"toggleKeySource\":\"" + settings::ToggleKeySourceName(settings::GetToggleKeySource()) + "\"" +
 					",\"captured\":" + captured + "}";
 				a_write(a_sink, reply.c_str());
 				return;

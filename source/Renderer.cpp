@@ -3287,6 +3287,13 @@ namespace renderer
 			   ",\"tab\":\"" + esc(tab) + "\",\"selected\":\"" + esc(node) + "\",\"selectedMod\":" + std::to_string(selMod) +
 			   ",\"page\":\"" + esc(tabName) + "\",\"pageIndex\":" + std::to_string(tabIndex) +
 			   ",\"pageCount\":" + std::to_string(tabCount) +
+			   // 2.0.5 (HadToRegister's F1 report): the menu key, the key the input hook really opens on, and
+			   // which file it came from - user (User.ini's uToggleKey), user-controls (its [Bindings]
+			   // sToggleMenu), shipped, default, or fallback (the value given was not a usable key).
+			   ",\"menuKey\":{\"uToggleKey\":" + std::to_string(settings::Get().toggleKey) +
+			   ",\"bound\":" + std::to_string(bindings::ToggleKeyboardCode()) +
+			   ",\"name\":\"" + esc(settings::Get().toggleKey > 0 ? bindings::KeyName(static_cast<std::uint32_t>(settings::Get().toggleKey)) : std::string("none")) + "\"" +
+			   ",\"source\":\"" + settings::ToggleKeySourceName(settings::GetToggleKeySource()) + "\"}" +
 			   ",\"controllerMode\":" + (input::UsingController() ? "true" : "false") +
 			   ",\"lastDevice\":\"" + (input::LastDevice() == input::Device::kGamepad ? "gamepad" :
 										   input::LastDevice() == input::Device::kKeyboardMouse ? "keyboard" : "none") + "\"" +
