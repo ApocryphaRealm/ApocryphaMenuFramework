@@ -166,6 +166,15 @@ def main(out_root=None):
                 if not os.path.isfile(os.path.join(themes_dst, rel.replace("/", os.sep))):
                     fail("theme %s names %s, which is not in the package" % (name, val))
 
+    # The Font Awesome icon faces (2.0.4) and their SIL OFL 1.1 licence text, which the OFL requires
+    # to travel with the fonts. A missing face only costs icons in game, so the build stops instead.
+    icons_src = os.path.join(REPO, "dist", "SKSE", "Plugins", "ApocryphaMenuFramework", "icons")
+    icons_dst = os.path.join(common, "SKSE", "Plugins", "ApocryphaMenuFramework", "icons")
+    for name in ("fa-solid-900.ttf", "fa-regular-400.ttf", "fa-brands-400.ttf", "LICENSE-FontAwesome-Free.txt"):
+        if not os.path.isfile(os.path.join(icons_src, name)):
+            fail("dist/SKSE/Plugins/ApocryphaMenuFramework/icons/%s is missing (see extern/fontawesome-free-6.7.2/SOURCE.txt)" % name)
+        copy_into(os.path.join(icons_src, name), icons_dst)
+
     # English is not optional - it is the fallback every other language falls back TO.
     trans = os.path.join(REPO, "dist", "Interface", "Translations")
     copy_into(os.path.join(trans, "ApocryphaMenuFramework_english.txt"),

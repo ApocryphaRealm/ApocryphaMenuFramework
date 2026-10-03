@@ -1,0 +1,23 @@
+Font Awesome Free 6.7.2 - the icon faces AMF builds for SKSE Menu Framework consumers (2.0.4)
+
+Source: the official npm package @fortawesome/fontawesome-free 6.7.2 (the newest 6.x release on
+2026-10-03; the npm "latest" tag is 7.3.1, which is a different major).
+  URL:       https://registry.npmjs.org/@fortawesome/fontawesome-free/-/fontawesome-free-6.7.2.tgz
+  size:      4975734 bytes
+  SHA-256:   794284b4ac7f3e30825bbeea1a073f542c45dff83f8146625f600f1015c9d52b
+  SHA-1:     8249de9b7e22fcb3ceb5e66090c30a1d5492b81a (matches the registry's dist.shasum)
+  integrity: sha512-JUOtgFW6k9u4Y+xeIaEiLr3+cjoUPiAuLXoyKOJSia6Duzb7pq+A76P9ZdPDoAoxHdHzq6gE9/jKBGXlZT8FbA==
+             (matches the registry's dist.integrity)
+The tarball itself is kept beside this file on the build machine and is not committed (5 MB);
+the three files below were extracted from it unchanged (package/webfonts/, package/LICENSE.txt).
+
+  fa-solid-900.ttf    426112 bytes  SHA-256 d2f0593540b0e33ba6de255a54f272d466e31144806956bea8cfdbf7edffc9bd
+                      "Font Awesome 6 Free Solid", 1403 glyphs, 1079 in U+F000-F8FF, 356 in U+E000-EFFF
+  fa-regular-400.ttf   68064 bytes  SHA-256 54cf6086f7bb21f9d072ad494a19b4681fa516dd0a14cee52da01d3651a913a3
+                      "Font Awesome 6 Free Regular", 212 glyphs, 225 codepoints in U+F000-F8FF
+  fa-brands-400.ttf   210792 bytes  SHA-256 808443ae6c8204395add8543da8a90a60b9376fb0f87ed8e8ea37d109596d805
+                      "Font Awesome 6 Brands Regular", 544 glyphs, 447 in U+F000-F8FF, 72 in U+E000-EFFF
+  LICENSE.txt         the package's licence: fonts SIL OFL 1.1, icons CC BY 4.0, code MIT
+
+Verified with fontTools: each file parses, unitsPerEm 512, and the cmap holds the icon codepoints above.
+Shipped copies: dist/SKSE/Plugins/ApocryphaMenuFramework/icons/ (LICENSE.txt as LICENSE-FontAwesome-Free.txt).

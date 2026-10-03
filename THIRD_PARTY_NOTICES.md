@@ -28,6 +28,17 @@ WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEM
 COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
 OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+## Font Awesome Free 6.7.2 - icon fonts (`SKSE/Plugins/ApocryphaMenuFramework/icons/`)
+
+https://fontawesome.com - `fa-solid-900.ttf`, `fa-regular-400.ttf` and `fa-brands-400.ttf` from the official npm package
+@fortawesome/fontawesome-free 6.7.2, unmodified (source and hashes: `extern/fontawesome-free-6.7.2/SOURCE.txt`). They are
+separate font files read at run time, not part of the program, and ship under their own licence:
+
+Copyright (c) 2024 Fonticons, Inc. (https://fontawesome.com) with Reserved Font Name: "Font Awesome". The font files are
+licensed under the SIL Open Font License, Version 1.1 (the icons in the package's SVG/JS forms are CC BY 4.0, its code
+MIT). The full licence text ships beside the fonts as `LICENSE-FontAwesome-Free.txt`. Brand icons are trademarks of their
+respective owners.
+
 ## DevBench consumer API (`include/DevBench/`, `source/DevBench/`)
 
 MIT - the notice is `include/DevBench/DevBenchAPI.LICENSE.txt`, kept with the files.

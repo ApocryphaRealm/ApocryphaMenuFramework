@@ -27,6 +27,7 @@
 
 struct ID3D11Device;
 struct ImVec2;
+struct ImFont;
 
 namespace consumer
 {
@@ -74,7 +75,16 @@ namespace consumer
 	// PushFont(name) and the three family pushes are always balanced by Pop(): an unknown name
 	// pushes the CURRENT font rather than nothing, because a consumer that pushed and popped
 	// symmetrically must not be able to unbalance ImGui's stack through us.
+	// 2.0.4: the Font Awesome names ("fa-solid-900", "fa-regular-400", "fa-brands-400", and the
+	// family pushes PushSolid / PushRegular / PushBrands) push an ICON FACE - the framework's text
+	// face with that Font Awesome style merged in - once the renderer has built it.
 	void PushNamedFont(const char* a_name);
+
+	// The icon faces. Built on demand: the first push of a face marks it wanted and asks the renderer
+	// for a new atlas, so a load order with no icon-using mod pays nothing in atlas size. Render thread.
+	enum IconFace : int { kIconSolid = 0, kIconRegular = 1, kIconBrands = 2, kIconFaceCount = 3 };
+	bool IconFaceWanted(int a_face);
+	void SetIconFont(int a_face, ImFont* a_font);   // null on every atlas Clear(); set by BuildFonts
 	void PushRegular();
 	void PushSolid();
 	void PushBrands();

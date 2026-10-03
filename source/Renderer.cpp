@@ -403,6 +403,10 @@ namespace renderer
 
 			io.Fonts->Clear();
 			ImFont* loaded = nullptr;
+			std::string loadedPath;   // the text face's file, which every icon face is built on (2.0.4)
+			// Clear() freed every ImFont - a consumer must not be handed a dead icon face.
+			for (int f = 0; f < consumer::kIconFaceCount; ++f) { consumer::SetIconFont(f, nullptr); }
+			ImFont* iconFonts[consumer::kIconFaceCount] = {};
 
 			// GLYPH RANGES (1.6.4, language support): the atlas holds the default Latin set plus
 			// every character that appears in the loaded translation - Cyrillic, Polish and Czech
@@ -440,12 +444,13 @@ namespace renderer
 			{
 				loaded = io.Fonts->AddFontFromFileTTF(custom.c_str(), px, nullptr, s_ranges.Data);
 				if (!loaded) { logger::warn("font: sFontPath \"{}\" could not be loaded; falling back", custom); }
+				else { loadedPath = custom; }
 			}
 			for (const char* cand : kFontCandidates)
 			{
 				if (loaded) { break; }
 				loaded = io.Fonts->AddFontFromFileTTF(cand, px, nullptr, s_ranges.Data);
-				if (loaded) { logger::info("font: rasterised \"{}\" at {:.1f}px", cand, px); }
+				if (loaded) { loadedPath = cand; logger::info("font: rasterised \"{}\" at {:.1f}px", cand, px); }
 			}
 			// A FALLBACK FACE merged in for the glyphs the chosen face lacks (MergeMode adds only what
 			// is missing): the Latin faces above carry Cyrillic and Latin Extended but no kana or
@@ -478,6 +483,66 @@ namespace renderer
 						}
 					}
 				}
+
+				// FONT AWESOME ICON FACES (2.0.4). SKSE Menu Framework consumers push a Font Awesome face by
+				// name and draw its icons (U+E000-U+F8FF); RaceMenu Atelier's buttons drew as "?" because only
+				// the text face existed (mmmizuhara, 2026-10-03). Each face is a font of its own - solid and
+				// regular share codepoints, so they cannot share one - made of the text face (Latin, Latin
+				// Extended-A and Cyrillic only, so "<icon> Label" works without copying a CJK set three times)
+				// with that style's icons merged in. Only the faces a mod has actually pushed are built
+				// (consumer::IconFaceWanted), so a load order with no icon-using mod keeps the atlas it had.
+				//
+				// SIZE AND BASELINE. A merged glyph sits on the text face's baseline (ImGui offsets every
+				// glyph by the first font's ascent), so no GlyphOffset is needed. ImGui sizes a face by
+				// ascent - descent: Segoe UI's is 1.33 em, Font Awesome's 534 of 512 units. At 0.8 of the text
+				// size an icon is one text em tall - the size Font Awesome draws beside text of the same size
+				// on a web page. Measured offline with this ImGui build at the owner's 34.7 px: "H" spans rows
+				// 10-28 of the 35 px line, the user icon 4-32, so the icon is centred on the line and on the
+				// capitals within a pixel. GlyphMinAdvanceX gives every icon at least a square cell, centred,
+				// so a column of icons lines up. OversampleH 1: icons are pixel-snapped shapes that gain
+				// nothing from horizontal oversampling, and it halves the atlas space they take.
+				//
+				// Files: Data/SKSE/Plugins/ApocryphaMenuFramework/icons/, shipped in the package with the
+				// SIL OFL 1.1 text beside them. A missing file is logged once and that face keeps the old
+				// behaviour (the current font is pushed).
+				struct IconFile { int face; const char* file; };
+				static constexpr IconFile kIconFiles[] = {
+					{ consumer::kIconSolid, "fa-solid-900.ttf" },
+					{ consumer::kIconRegular, "fa-regular-400.ttf" },
+					{ consumer::kIconBrands, "fa-brands-400.ttf" },
+				};
+				static const ImWchar kIconTextRanges[] = { 0x0020, 0x00FF, 0x0100, 0x017F, 0x0400, 0x04FF, 0 };
+				static const ImWchar kIconRanges[] = { 0xE000, 0xF8FF, 0 };
+				static bool s_missingLogged[consumer::kIconFaceCount] = {};
+				const float iconPx = std::round(px * 0.8f);
+				for (const IconFile& ic : kIconFiles)
+				{
+					if (!consumer::IconFaceWanted(ic.face)) { continue; }
+					const std::string path = std::string("Data/SKSE/Plugins/ApocryphaMenuFramework/icons/") + ic.file;
+					std::error_code ec;
+					if (!std::filesystem::exists(path, ec))
+					{
+						if (!s_missingLogged[ic.face])
+						{
+							s_missingLogged[ic.face] = true;
+							logger::warn("font: \"{}\" is missing - a mod asked for that Font Awesome face, so its icons "
+										 "draw as \"?\" (reinstall Apocrypha Menu Framework)", path);
+						}
+						continue;
+					}
+					ImFont* const iconFont = io.Fonts->AddFontFromFileTTF(loadedPath.c_str(), px, nullptr, kIconTextRanges);
+					if (!iconFont) { continue; }
+					ImFontConfig icons;
+					icons.MergeMode = true;
+					icons.PixelSnapH = true;
+					icons.OversampleH = 1;
+					icons.GlyphMinAdvanceX = iconPx;
+					if (!io.Fonts->AddFontFromFileTTF(path.c_str(), iconPx, &icons, kIconRanges))
+					{
+						logger::warn("font: \"{}\" could not be read as a font - that icon face stays text only", path);
+					}
+					iconFonts[ic.face] = iconFont;
+				}
 			}
 			if (!loaded)
 			{
@@ -489,7 +554,30 @@ namespace renderer
 			}
 
 			io.FontGlobalScale = 1.0f;  // native size - no magnification, so no pixelation
+			// THE ATLAS HEIGHT IS NOT ROUNDED UP TO A POWER OF TWO (2.0.4). ImGui does that by default,
+			// and with the icon faces it nearly doubled the texture for nothing (measured offline at the
+			// owner's 34.7 px: English with all three faces 2048x2048 -> 2048x1397, Japanese without any
+			// 2048x4096 -> 2048x2857). D3D11 takes any texture height, so this also trims the CJK atlas
+			// every Japanese and Chinese player already had.
+			io.Fonts->Flags |= ImFontAtlasFlags_NoPowerOfTwoHeight;
 			io.Fonts->Build();
+
+			// Hand the icon faces to the consumer surface and say once per atlas which are in it. Atlas
+			// builds are rare (start-up, a language, face or size change, a face first asked for), so
+			// this is not a per-frame line.
+			{
+				std::string faces;
+				static constexpr const char* kFaceNames[consumer::kIconFaceCount] = { "solid", "regular", "brands" };
+				for (int f = 0; f < consumer::kIconFaceCount; ++f)
+				{
+					consumer::SetIconFont(f, iconFonts[f]);
+					if (!iconFonts[f]) { continue; }
+					const int icons = iconFonts[f]->FindGlyphNoFallback(f == consumer::kIconBrands ? 0xF09B : 0xF007) ? 1 : 0;
+					faces += (faces.empty() ? "" : ", ") + std::string(kFaceNames[f]) + " (" +
+							 std::to_string(iconFonts[f]->Glyphs.Size) + " glyphs" + (icons ? "" : ", NO icon glyphs") + ")";
+				}
+				if (!faces.empty()) { logger::info("font: Font Awesome icon faces in the atlas: {}", faces); }
+			}
 
 			// What the atlas can draw, one probe glyph per script (1.8.9): hiragana A, hangul HAN, the
 			// hanzi for water, Cyrillic ZHE. Read back by the driving tool so a language switch is

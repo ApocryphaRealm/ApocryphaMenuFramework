@@ -15,7 +15,10 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
+
+namespace renderer { void RequestFontRebuild(); }   // Renderer.cpp - a new atlas at the next frame's start
 
 namespace
 {
@@ -56,6 +59,36 @@ namespace
 	// How many fonts WE pushed. Pop() only pops what we are responsible for, so a consumer
 	// calling Pop() more often than it pushed cannot unbalance the framework's own stack.
 	int g_fontDepth = 0;
+
+	// The Font Awesome icon faces (2.0.4). Render thread only: asked for by PushNamedFont, built by the
+	// renderer's BuildFonts, which hands the ImFont pointers back after every atlas build.
+	ImFont* g_iconFonts[consumer::kIconFaceCount] = {};
+	bool g_iconWanted[consumer::kIconFaceCount] = {};
+	constexpr const char* kIconFaceNames[consumer::kIconFaceCount] = { "solid", "regular", "brands" };
+
+	// A consumer's font name -> icon face, or -1 for any other name (which keeps the old behaviour).
+	// Font Awesome's own file stems, without and with ".ttf", and the family names the SMF header's
+	// PushSolid / PushRegular / PushBrands stand for. Case does not matter.
+	int IconFaceFor(const char* a_name)
+	{
+		if (!a_name || !*a_name) {
+			return -1;
+		}
+		static constexpr std::pair<const char*, int> kNames[] = {
+			{ "fa-solid-900", consumer::kIconSolid }, { "fa-solid-900.ttf", consumer::kIconSolid },
+			{ "fa-solid", consumer::kIconSolid }, { "solid", consumer::kIconSolid },
+			{ "fa-regular-400", consumer::kIconRegular }, { "fa-regular-400.ttf", consumer::kIconRegular },
+			{ "fa-regular", consumer::kIconRegular }, { "regular", consumer::kIconRegular },
+			{ "fa-brands-400", consumer::kIconBrands }, { "fa-brands-400.ttf", consumer::kIconBrands },
+			{ "fa-brands", consumer::kIconBrands }, { "brands", consumer::kIconBrands },
+		};
+		for (const auto& [name, face] : kNames) {
+			if (_stricmp(a_name, name) == 0) {
+				return face;
+			}
+		}
+		return -1;
+	}
 
 	std::mutex g_warnLock;
 	std::vector<std::string> g_warnedTextures;   // one warning per path, not per frame
@@ -252,16 +285,46 @@ namespace consumer
 		return {};
 	}
 
+	bool IconFaceWanted(int a_face)
+	{
+		return a_face >= 0 && a_face < kIconFaceCount && g_iconWanted[a_face];
+	}
+
+	void SetIconFont(int a_face, ImFont* a_font)
+	{
+		if (a_face >= 0 && a_face < kIconFaceCount) {
+			g_iconFonts[a_face] = a_font;
+		}
+	}
+
 	void PushNamedFont(const char* a_name)
 	{
-		// AMF builds ONE atlas font (the shell's face, rebuilt on scale change), so there is no
-		// second face to switch to yet. Pushing the current font keeps every consumer's
-		// Push/Pop pair balanced, which is what actually matters for the frames around it - a
-		// mismatched name changes appearance, never correctness.
+		// FONT AWESOME (2.0.4). SKSE Menu Framework consumers draw their icons as Font Awesome glyphs
+		// (U+E000-U+F8FF) after pushing one of its faces by name - RaceMenu Atelier pushes "fa-solid-900"
+		// - and with only the text face in the atlas every icon drew as "?" (mmmizuhara, 2026-10-03). A
+		// Font Awesome name now pushes the matching icon face: the text face with that style's icons merged
+		// in, so "<icon> Label" strings draw both. The face is built the first time a mod asks for it.
+		const int face = IconFaceFor(a_name);
+		if (face >= 0 && !g_iconWanted[face]) {
+			g_iconWanted[face] = true;
+			renderer::RequestFontRebuild();
+			logger::info("PushFont (SMF-compat): \"{}\" asked for the Font Awesome {} face - adding it to the font atlas",
+						 a_name, kIconFaceNames[face]);
+		}
+		if (face >= 0 && g_iconFonts[face]) {
+			ImGui::PushFont(g_iconFonts[face]);
+			++g_fontDepth;
+			return;
+		}
+
+		// Any other name (or an icon face not built yet, or whose file is missing): AMF has no second
+		// face to switch to, so the current font is pushed. That keeps every consumer's Push/Pop pair
+		// balanced, which is what actually matters for the frames around it - a mismatched name
+		// changes appearance, never correctness.
 		ImGui::PushFont(ImGui::GetFont());
 		++g_fontDepth;
 
-		if (a_name && *a_name) {
+		if (face < 0 && a_name && *a_name) {
 			static std::mutex once;
 			static std::vector<std::string> logged;
 			std::scoped_lock lock(once);

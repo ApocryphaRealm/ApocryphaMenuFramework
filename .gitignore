@@ -3,3 +3,6 @@ build/
 swf/HUDMenu/
 # Packaging outputs - built from fomod/ + fomod-options/ + the compiled DLL, never sources
 *.zip
+
+# Font Awesome npm tarball - kept locally, URL and hashes in extern/fontawesome-free-6.7.2/SOURCE.txt
+extern/fontawesome-free-6.7.2/*.tgz

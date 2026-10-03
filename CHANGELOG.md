@@ -42,6 +42,15 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
   the mouse; a window drawn with ImGui's NoMouseInputs / NoInputs (an overlay the mouse passes through) is left on
   screen and the game keeps its controls. The log names the window that takes the input, and says once when an open,
   blocking window is passed over as an overlay.
+- RaceMenu Atelier's icons, and those of other SKSE Menu Framework mods, drew as "?". Those mods draw Font Awesome icons
+  after asking for a Font Awesome face by name ("fa-solid-900", or PushSolid / PushRegular / PushBrands), and AMF had only
+  its text face. AMF now ships Font Awesome Free 6.7.2's solid, regular and brands fonts
+  (SKSE\Plugins\ApocryphaMenuFramework\icons\, SIL OFL 1.1, licence text beside them) and builds a face the first time a
+  mod asks for it: the menu's text face with that style's icons merged in, so an icon and a label draw in one line, sized
+  and placed on the text's baseline. A load order with no icon-using mod keeps the font atlas it had. Any other font
+  name still gets the current font; a missing icon file is logged once and that face keeps the old behaviour. The
+  font atlas is no longer rounded up to a power-of-two height, which keeps the icons' cost down and also trims the
+  Japanese and Chinese atlas everyone already had (at 1800p: Japanese 2048x4096 -> 2048x2857, measured offline).
 - Less work per frame for mods whose ImGui wrappers look up every function on every call (about a thousand lookups a
   frame for RaceMenu Atelier): a name already seen is now found with a shared lock and one hash, with no allocation and
   no scan.

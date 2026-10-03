@@ -21,6 +21,8 @@ The Skyrim 1.7.x build statically links CommonLibSSE-NG 7.2.0 (https://github.co
 whose README requires a linking plugin to be GPL-3.0-or-later or GPL-compatible. From 2026-09-13 the whole work, both
 build lines and the source, is GPL-3.0-or-later; earlier versions carried an MIT licence in error.
 
-Components under other licences, with their notices: `THIRD_PARTY_NOTICES.md`.
+Components under other licences, with their notices: `THIRD_PARTY_NOTICES.md`. The Font Awesome Free icon fonts in
+`SKSE/Plugins/ApocryphaMenuFramework/icons/` (from 2.0.4) are separate font files under the SIL Open Font License 1.1,
+Copyright (c) 2024 Fonticons, Inc., Reserved Font Name "Font Awesome"; the licence text ships beside them.
 
 Source code: https://github.com/ApocryphaRealm/ApocryphaMenuFramework
