@@ -21,7 +21,7 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
-## 2.0.5 - 2026-10-03 - untested
+## 2.0.5 - 2026-10-03 - working
 
 HadToRegister, Nexus, 2026-10-03: *"Updated to 2.04: it refuses to open with F1. It's set in the INI file as F1 ... The
 settings in BOTH INI files try and cancel each other out; ... I couldn't open the menu with F1 until I deleted the INI file
@@ -55,6 +55,16 @@ in Data/SKSE/Plugins/ApocryphaMenuFramework"*.
 - The shipped INI's header says where your settings go: User.ini holds only what you changed and wins; edit User.ini (or
   the shipped file, for anything not changed in the menu); delete User.ini to go back to the defaults. User.ini's own
   header says it holds only what you changed.
+
+### Tested (2026-10-03, SE 1.5.97, Njordlinger Test, through DevBench - the key presses injected into AMF's input path)
+- A 2.0.4-era User.ini (172 lines, every key): 13 values counted as the player's and named in the log, 37 that only
+  repeated the shipped values no longer pin them; menu key F1 from the shipped file; F1 opens the menu, F2 does not.
+  After a theme change User.ini was rewritten with only the changed values and the list sections (67 lines).
+- Controls-page rebind to F4: one key written to both lines (uToggleKey=62, sToggleMenu=1,62,0,-1); F4 opens, F1 not.
+- User.ini uToggleKey 60 with sToggleMenu 61: the "two keys" warning, F2 wins and opens, F3 and F1 do not.
+- A Controls rebind alone (sToggleMenu 61): F3, source user-controls, opens.
+- No User.ini, shipped uToggleKey=0x3C: read as F2 (hex), and the hand edit to the shipped file takes effect.
+- User.ini uToggleKey=300: refused with a warning, F1 instead, F1 opens.
 
 ## 2.0.4 - 2026-10-03 - working
 
