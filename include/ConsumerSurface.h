@@ -57,7 +57,18 @@ namespace consumer
 
 	// True when a consumer window is up AND taking input - folded into the framework's own
 	// IsAnyBlockingWindowOpened answer so a launcher gets one truthful answer for the process.
+	// The flags only (open && BlockUserInput), which is what that export has always answered.
 	bool AnyBlockingWindowOpen();
+
+	// True when a consumer window should be HANDED THE PLAYER'S INPUT (2.0.4): open, BlockUserInput,
+	// AND at least one top-level ImGui window its render function submitted on the last drawn frame
+	// accepts the mouse (no ImGuiWindowFlags_NoMouseInputs). The flags alone are not enough - the
+	// stock header's AddWindow(render, doesWindowPauseGame = true) sets BlockUserInput on every window
+	// it creates, so a passive always-on overlay (StepUpOnto SKSE's NPC perf overlay) reads as blocking
+	// and took all of the game's input during play. Render thread; one frame behind DrawWindows.
+	bool AnyWindowOwnsInput();
+	// The ImGui name of the first window that makes AnyWindowOwnsInput() true, for the transition log.
+	std::string InputOwnerName();
 
 	// ---- fonts ----------------------------------------------------------------------------
 	// PushFont(name) and the three family pushes are always balanced by Pop(): an unknown name
@@ -92,11 +103,24 @@ namespace consumer
 	// The aggregate alone is not enough to act on: with several windows registered, "true" does not
 	// say WHICH one is latched open, and guessing among them is what has made this defect take three
 	// passes. Each entry names itself so one measurement identifies the culprit.
+	// One top-level ImGui window a consumer's render function submitted on the last drawn frame
+	// (2.0.4 probe) - what the input gate above decides on, readable over DevBench.
+	struct SubmittedWindow
+	{
+		char name[64]{};               // fixed, so the per-frame probe allocates nothing
+		int flags{ 0 };
+		bool noMouseInputs{ false };   // ImGuiWindowFlags_NoMouseInputs - the input gate's test
+		bool noInputs{ false };        // all of ImGuiWindowFlags_NoInputs
+		float x{ 0.0f }, y{ 0.0f }, w{ 0.0f }, h{ 0.0f };
+	};
+
 	struct WindowState
 	{
 		bool open{ false };
 		bool blocking{ false };
+		bool acceptsMouse{ false };    // 2.0.4: a submitted window takes the mouse
 		std::string view;   // AddWindowWithView's name; empty for a plain AddWindow
+		std::vector<SubmittedWindow> submitted;
 	};
 
 	std::vector<WindowState> WindowStates();

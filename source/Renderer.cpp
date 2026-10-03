@@ -77,7 +77,8 @@ namespace renderer
 		std::atomic<bool> g_windowVisible{ false };
 
 		// A MOD'S OWN WINDOW HAS THE INPUT (2.0.4). True while any window a mod registered through AddWindow is
-		// open AND asked to block the player's input (BlockUserInput) - sampled once per frame on the render thread
+		// open, asked to block the player's input (BlockUserInput) AND drew a window last frame that takes the
+		// mouse (consumer::AnyWindowOwnsInput says why the flags alone are not enough) - sampled once per frame on the render thread
 		// and published here for the input thread, which then feeds ImGui and holds the game's input exactly as it
 		// does for our own menu. Until 2.0.4 only our own menu did that, so such a window drew every frame with no
 		// cursor and no input at all unless the framework menu happened to be open too (mmmizuhara, 2026-10-03:
@@ -2572,14 +2573,18 @@ namespace renderer
 				// and it is what feeds ImGui, draws the cursor and turns text entry on. A mod's window
 				// never pauses the game: [Menu] bPauseGame is the player's setting for OUR menu, and a
 				// mod that wants the world stopped behind its window is the one to decide that.
-				const bool consumerOwnsInput = consumer::AnyBlockingWindowOpen();
+				// The gate is the flags AND what the window really is (see consumer::AnyWindowOwnsInput): open,
+				// BlockUserInput, and a window it drew last frame that takes the mouse. The flags alone made
+				// StepUpOnto SKSE's passive NPC perf overlay take the whole game's input during play.
+				const bool consumerOwnsInput = consumer::AnyWindowOwnsInput();
 				const bool interactive = visible || consumerOwnsInput;
 				{
 					static bool s_lastConsumer = false;   // render thread only; transition log
 					if (consumerOwnsInput != s_lastConsumer)
 					{
 						s_lastConsumer = consumerOwnsInput;
-						logger::info("input: a mod's window {} the input (framework menu {}){}",
+						logger::info("input: a mod's window{} {} the input (framework menu {}){}",
+									 consumerOwnsInput ? " \"" + consumer::InputOwnerName() + "\"" : std::string(),
 									 consumerOwnsInput ? "took" : "handed back",
 									 visible ? "open" : "closed",
 									 consumerOwnsInput ? " - cursor shown, game input held; the game is not paused" : "");
@@ -3159,9 +3164,25 @@ namespace renderer
 			{
 				if (states[i].open && states[i].blocking) { anyBlocking = true; }
 				if (i) { windows += ","; }
+				// 2.0.4 probe: the top-level ImGui windows this entry drew on the last frame, with the
+				// flags the input gate decides on (acceptsMouse = one of them lacks NoMouseInputs).
+				std::string submitted;
+				for (const consumer::SubmittedWindow& sw : states[i].submitted)
+				{
+					char flags[16];
+					std::snprintf(flags, sizeof(flags), "0x%08X", static_cast<unsigned int>(sw.flags));
+					if (!submitted.empty()) { submitted += ","; }
+					submitted += "{\"name\":\"" + esc(sw.name) + "\",\"flags\":\"" + flags + "\"" +
+								 ",\"noMouseInputs\":" + (sw.noMouseInputs ? "true" : "false") +
+								 ",\"noInputs\":" + (sw.noInputs ? "true" : "false") +
+								 ",\"pos\":[" + std::to_string(static_cast<int>(sw.x)) + "," + std::to_string(static_cast<int>(sw.y)) + "]" +
+								 ",\"size\":[" + std::to_string(static_cast<int>(sw.w)) + "," + std::to_string(static_cast<int>(sw.h)) + "]}";
+				}
 				windows += "{\"open\":" + std::string(states[i].open ? "true" : "false") +
 						   ",\"blocking\":" + (states[i].blocking ? "true" : "false") +
-						   ",\"view\":\"" + esc(states[i].view) + "\"}";
+						   ",\"acceptsMouse\":" + (states[i].acceptsMouse ? "true" : "false") +
+						   ",\"view\":\"" + esc(states[i].view) + "\"" +
+						   ",\"submitted\":[" + submitted + "]}";
 			}
 		}
 

@@ -3,12 +3,14 @@
 #include "utils/Logger.h"
 
 #include <imgui.h>
+#include <imgui_internal.h>   // GImGui->Windows: which windows each consumer submitted (2.0.4 input gate)
 
 #include <d3d11.h>
 #include <WICTextureLoader.h>
 
 #include <algorithm>
 #include <atomic>
+#include <cstdio>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -22,6 +24,12 @@ namespace
 		std::unique_ptr<consumer::WindowInterface> iface;
 		consumer::RenderFunction render{ nullptr };
 		std::string view;   // AddWindowWithView's name; empty for a plain AddWindow
+
+		// The 2.0.4 probe: the top-level ImGui windows this entry's render function submitted on the
+		// last drawn frame, and whether any of them takes the mouse. Written by DrawWindows under g_lock.
+		std::vector<consumer::SubmittedWindow> submitted;
+		bool acceptsMouse{ false };
+		bool passiveLogged{ false };   // "open and blocking but takes no mouse" said once per opening
 	};
 
 	struct HudEntry
@@ -109,21 +117,84 @@ namespace consumer
 		// Snapshot under the lock, call outside it: a consumer's render function may register
 		// another window, and re-entering this mutex from inside it would deadlock the render
 		// thread - which presents as the game freezing on a frame, not as an error.
-		std::vector<RenderFunction> due;
+		// Render thread only, so the scratch vectors are reused frame to frame rather than allocated.
+		static std::vector<std::pair<std::size_t, RenderFunction>> due;
+		due.clear();
+		std::size_t count = 0;
 		{
 			std::scoped_lock lock(g_lock);
-			due.reserve(g_windows.size());
-			for (const auto& w : g_windows) {
+			count = g_windows.size();
+			for (std::size_t i = 0; i < g_windows.size(); ++i) {
+				const auto& w = g_windows[i];
 				if (w.render && w.iface->IsOpen.load(std::memory_order_acquire)) {
-					due.push_back(w.render);
+					due.emplace_back(i, w.render);
 				}
 			}
 		}
 
-		for (const auto fn : due) {
+		// WHICH IMGUI WINDOWS DID EACH CONSUMER SUBMIT (2.0.4). The flags a mod hands us do not say
+		// whether its window wants the player: the stock header's AddWindow(render, doesWindowPauseGame
+		// = true) sets BlockUserInput on every window it makes, so StepUpOnto SKSE's always-on NPC perf
+		// overlay arrived open AND blocking during ordinary play, and the first 2.0.4 build took all of
+		// the game's input for it (the main session, in game, 2026-10-03). What a window really wants is
+		// in how the mod DRAWS it: an overlay that must not catch the mouse says so to ImGui with
+		// NoMouseInputs (NoInputs includes it), and ImGui then lets every click pass through it. So the
+		// windows each render function begins are observed here - every non-child window that became
+		// active this frame while that function ran - and the input gate (AnyWindowOwnsInput) asks
+		// whether any of them takes the mouse. Windows already active before the call (HUD elements,
+		// ImGui's implicit Debug window) are excluded, so nothing is credited to the wrong mod.
+		ImGuiContext* const g = GImGui;
+		static std::vector<ImGuiWindow*> seen;
+		static std::vector<std::vector<SubmittedWindow>> results;
+		seen.clear();
+		if (results.size() < count) { results.resize(count); }
+		for (auto& r : results) { r.clear(); }
+		const int frame = g ? g->FrameCount : -1;
+		if (g) {
+			for (ImGuiWindow* w : g->Windows) {
+				if (w && w->LastFrameActive == frame) { seen.push_back(w); }
+			}
+		}
+
+		for (const auto& [index, fn] : due) {
 			// The consumer's callback opens its own ImGui window - SMF's contract, and the
 			// reason nothing is begun for it here.
 			fn();
+
+			if (!g) { continue; }
+			for (ImGuiWindow* w : g->Windows) {
+				if (!w || w->LastFrameActive != frame || (w->Flags & ImGuiWindowFlags_ChildWindow) != 0 ||
+					std::find(seen.begin(), seen.end(), w) != seen.end()) {
+					continue;
+				}
+				seen.push_back(w);
+				SubmittedWindow s;
+				std::snprintf(s.name, sizeof(s.name), "%s", w->Name ? w->Name : "");
+				s.flags = static_cast<int>(w->Flags);
+				s.noMouseInputs = (w->Flags & ImGuiWindowFlags_NoMouseInputs) != 0;
+				s.noInputs = (w->Flags & ImGuiWindowFlags_NoInputs) == ImGuiWindowFlags_NoInputs;
+				s.x = w->Pos.x; s.y = w->Pos.y; s.w = w->Size.x; s.h = w->Size.y;
+				results[index].push_back(s);
+			}
+		}
+
+		std::scoped_lock lock(g_lock);
+		for (std::size_t i = 0; i < g_windows.size(); ++i) {
+			auto& e = g_windows[i];
+			if (i < results.size()) { e.submitted = results[i]; } else { e.submitted.clear(); }
+			e.acceptsMouse = std::any_of(e.submitted.begin(), e.submitted.end(),
+				[](const SubmittedWindow& s) { return !s.noMouseInputs; });
+
+			const bool open = e.iface->IsOpen.load(std::memory_order_acquire);
+			if (!open) {
+				e.passiveLogged = false;
+			} else if (!e.passiveLogged && !e.submitted.empty() && !e.acceptsMouse &&
+					   e.iface->BlockUserInput.load(std::memory_order_acquire)) {
+				e.passiveLogged = true;
+				logger::info("input: a mod's window \"{}\" is open and asks to block input, but takes no mouse input "
+							 "(NoMouseInputs) - a passive overlay; the game keeps its input",
+							 e.submitted.front().name);
+			}
 		}
 	}
 
@@ -152,6 +223,33 @@ namespace consumer
 			return w.iface->IsOpen.load(std::memory_order_acquire) &&
 				   w.iface->BlockUserInput.load(std::memory_order_acquire);
 		});
+	}
+
+	bool AnyWindowOwnsInput()
+	{
+		// IsOpen is read NOW, so a window that has just closed hands the input back at once; only the
+		// "takes the mouse" half is a frame old, because it comes from the last drawn frame.
+		std::scoped_lock lock(g_lock);
+		return std::any_of(g_windows.begin(), g_windows.end(), [](const WindowEntry& w) {
+			return w.acceptsMouse &&
+				   w.iface->IsOpen.load(std::memory_order_acquire) &&
+				   w.iface->BlockUserInput.load(std::memory_order_acquire);
+		});
+	}
+
+	std::string InputOwnerName()
+	{
+		std::scoped_lock lock(g_lock);
+		for (const auto& w : g_windows) {
+			if (!w.acceptsMouse || !w.iface->IsOpen.load(std::memory_order_acquire) ||
+				!w.iface->BlockUserInput.load(std::memory_order_acquire)) {
+				continue;
+			}
+			for (const auto& s : w.submitted) {
+				if (!s.noMouseInputs) { return s.name; }
+			}
+		}
+		return {};
 	}
 
 	void PushNamedFont(const char* a_name)
@@ -300,7 +398,9 @@ namespace consumer
 			WindowState s;
 			s.open = w.iface->IsOpen.load(std::memory_order_acquire);
 			s.blocking = w.iface->BlockUserInput.load(std::memory_order_acquire);
+			s.acceptsMouse = w.acceptsMouse;
 			s.view = w.view;
+			s.submitted = w.submitted;
 			states.push_back(std::move(s));
 		}
 		return states;

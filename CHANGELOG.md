@@ -35,13 +35,22 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
   game saw pressed before the window opened is still released to it, so nothing sticks. The menu key still opens the
   framework menu over such a window, and closing the menu leaves the window with the input. The framework menu's own
   command keys (favourite, tab steps, grab) no longer latch while only a mod's window is up.
+- A passive overlay never takes the game's input. The SKSE Menu Framework header marks every window it creates as
+  blocking by default, so an always-on window drawn during play - StepUpOnto SKSE's NPC perf overlay - looked like a
+  window wanting the player, and the first 2.0.4 build took all of the game's input for it (found in testing before
+  release). A mod's window now gets the input only when it is open, asks to block input AND draws a window that takes
+  the mouse; a window drawn with ImGui's NoMouseInputs / NoInputs (an overlay the mouse passes through) is left on
+  screen and the game keeps its controls. The log names the window that takes the input, and says once when an open,
+  blocking window is passed over as an overlay.
 - Less work per frame for mods whose ImGui wrappers look up every function on every call (about a thousand lookups a
   frame for RaceMenu Atelier): a name already seen is now found with a shared lock and one hash, with no allocation and
   no scan.
 
 ### Added
 - amf.menu op=state reports consumerInput: whether a mod's window holds the input as the input hook sees it. The log
-  says when a mod's window takes the input and hands it back.
+  says when a mod's window takes the input and hands it back. Each entry in consumerWindows also lists acceptsMouse and
+  submitted - the top-level ImGui windows that mod drew on the last frame, with their flags (hex), noMouseInputs,
+  noInputs, position and size.
 
 ## 2.0.3 - 2026-10-02 - untested
 
