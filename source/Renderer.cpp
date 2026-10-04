@@ -2175,7 +2175,26 @@ namespace renderer
 				bool grabbedFocused = false;
 
 				int shown = 0;
-				const std::vector<personalization::DisplayEntry> displayRows = personalization::Order(entries);
+				std::vector<personalization::DisplayEntry> displayRows = personalization::Order(entries);
+
+				// EXPERIMENTAL (exp/mcm-loader): an entry whose every page is hidden draws no row (below). It KEEPS its
+				// place in the saved order and under its separator - only the drawing skips it, so it returns to the same
+				// spot when a page is shown again - and a separator's "(n)" counts only the rows it actually shows; a
+				// separator whose mods are all hidden still draws, as an empty one does (Main Agent's two conditions,
+				// 2026-10-04).
+				auto allPagesHidden = [&](const personalization::DisplayEntry& r) {
+					if (r.separator || r.registryIndex < 0 || r.registryIndex >= static_cast<int>(entries.size())) { return false; }
+					const auto& pages = entries[r.registryIndex].pages;
+					return !pages.empty() && std::all_of(pages.begin(), pages.end(), [](const registry::Page& p) { return p.hidden; });
+				};
+				{
+					personalization::DisplayEntry* separator = nullptr;
+					for (auto& r : displayRows)
+					{
+						if (r.separator) { separator = &r; separator->children = 0; continue; }
+						if (separator && r.depth > 0 && !allPagesHidden(r)) { ++separator->children; }
+					}
+				}
 				for (const personalization::DisplayEntry& row : displayRows)
 				{
 					// The name the player actually reads is what they will type at, so the filter
@@ -2191,11 +2210,7 @@ namespace renderer
 					// EXPERIMENTAL (exp/mcm-loader): an entry whose every page is hidden has nothing to show, so it has no
 					// row - the MCM loader's off switch hides all of its entries' pages. (Before this an all-hidden entry
 					// kept an empty row; worth confirming with the main AMF line before this merges.)
-					if (!row.separator && row.registryIndex >= 0 && row.registryIndex < static_cast<int>(entries.size()))
-					{
-						const auto& pages = entries[row.registryIndex].pages;
-						if (!pages.empty() && std::all_of(pages.begin(), pages.end(), [](const registry::Page& p) { return p.hidden; })) { continue; }
-					}
+					if (allPagesHidden(row)) { continue; }
 
 					if (row.separator)
 					{
