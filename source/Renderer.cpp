@@ -882,8 +882,8 @@ namespace renderer
 			ImGui::TextDisabled("%s", TR("AMF_TakesEffectJournal", "Takes effect the next time the journal is opened."));
 			ImGui::Spacing();
 
-			// EXPERIMENTAL (exp/mcm-loader): the MCM Helper loader's two switches (the owner, 2026-10-04).
-			if (widgets::Toggle(TR("AMF_McmLoad", "MCM Helper menus here (experimental)"), &values.loadMcmHelperConfigs))
+			// The MCM loader's switches (the owner, 2026-10-04): MCM Helper menus, SkyUI script menus, SkyUI's list.
+			if (widgets::Toggle(TR("AMF_McmLoad", "MCM Helper menus here"), &values.loadMcmHelperConfigs))
 			{
 				logger::info("settings page: MCM Helper menus -> {}", values.loadMcmHelperConfigs);
 				settings::Save();
@@ -892,7 +892,7 @@ namespace renderer
 			ImGui::TextWrapped("%s", TR("AMF_McmLoadHelp", "On: every mod that uses MCM Helper also gets its menu here, read from "
 							   "the mod's own files. A change goes through MCM Helper exactly as it does in SkyUI's menu."));
 			// phase 3: SkyUI menus written only in Papyrus (the owner, 2026-10-04: "do phase 3 for the SkyUI script menus")
-			if (widgets::Toggle(TR("AMF_McmScripts", "SkyUI script menus here (experimental)"), &values.loadSkyUIScriptMenus))
+			if (widgets::Toggle(TR("AMF_McmScripts", "SkyUI script menus here"), &values.loadSkyUIScriptMenus))
 			{
 				logger::info("settings page: SkyUI script menus -> {}", values.loadSkyUIScriptMenus);
 				settings::Save();
@@ -2187,7 +2187,7 @@ namespace renderer
 				int shown = 0;
 				std::vector<personalization::DisplayEntry> displayRows = personalization::Order(entries);
 
-				// EXPERIMENTAL (exp/mcm-loader): an entry whose every page is hidden draws no row (below). It KEEPS its
+				// MCM loader: an entry whose every page is hidden draws no row (below). It KEEPS its
 				// place in the saved order and under its separator - only the drawing skips it, so it returns to the same
 				// spot when a page is shown again - and a separator's "(n)" counts only the rows it actually shows; a
 				// separator whose mods are all hidden still draws, as an empty one does (Main Agent's two conditions,
@@ -2217,7 +2217,7 @@ namespace renderer
 					// a folded separator hides its mods (MO2's collapse - the owner, 2026-10-02)
 					if (needle.empty() && row.hidden) { continue; }
 
-					// EXPERIMENTAL (exp/mcm-loader): an entry whose every page is hidden has nothing to show, so it has no
+					// MCM loader: an entry whose every page is hidden has nothing to show, so it has no
 					// row - the MCM loader's off switch hides all of its entries' pages. (Before this an all-hidden entry
 					// kept an empty row; worth confirming with the main AMF line before this merges.)
 					if (allPagesHidden(row)) { continue; }
@@ -2889,7 +2889,7 @@ namespace renderer
 
 				watchdog::Tick();  // liveness signal for the hang watchdog
 				ImGui::NewFrame();
-				mcmloader::Frame();  // EXPERIMENTAL (exp/mcm-loader): OnConfigClose when an MCM entry stops being drawn
+				mcmloader::Frame();  // MCM loader: OnConfigClose when an MCM entry stops being drawn
 
 				// The game's own HUD opacity, re-read every frame so the options slider is
 				// followed live (theme spec point 3), applied as the ONE global multiplier.

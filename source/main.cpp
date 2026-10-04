@@ -103,7 +103,7 @@ namespace
 			// string_view over it (that dereferenced (void*)0x1 and crashed, 1.3.3). The name was
 			// captured at kPreLoadGame; restore it only if the load actually succeeded.
 			persistence::OnPostLoadGame(a_msg->data != nullptr);
-			mcmloader::OnGameLoaded();  // EXPERIMENTAL: config scripts belong to the game just loaded
+			mcmloader::OnGameLoaded();  // MCM loader: config scripts belong to the game just loaded
 			break;
 		case SKSE::MessagingInterface::kNewGame:
 			mcmloader::OnGameLoaded();
@@ -126,7 +126,7 @@ namespace
 			// readable by now, and the atlas is rebuilt for the language's glyphs before the next frame.
 			strings::Load();
 			renderer::RequestFontRebuild();
-			// EXPERIMENTAL (exp/mcm-loader): MCM Helper mods' menus as AMF entries. kDataLoaded is the first point
+			// MCM loader: MCM Helper mods' menus as AMF entries. kDataLoaded is the first point
 			// at which every plugin's load state can be asked (a config whose plugin is not loaded is skipped).
 			mcmloader::Load();
 			if (g_staleOldCopy.load(std::memory_order_acquire)) {

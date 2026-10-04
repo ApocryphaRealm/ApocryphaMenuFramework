@@ -30,7 +30,7 @@
 
 #undef GetObject
 
-// See McmScripts.h. Everything here is EXPERIMENTAL. SkyUI's side of every call below was read from SKI_ConfigBase.psc
+// See McmScripts.h. Part of the MCM loader. SkyUI's side of every call below was read from SKI_ConfigBase.psc
 // and SKI_ConfigManager.psc (SkyUI SE 5.2, as carried in MCM Helper's MIT repo under scripts/private).
 
 namespace mcmloader::scripts
@@ -1062,7 +1062,7 @@ namespace mcmloader::scripts
 				break;
 			}
 			default:
-				ImGui::TextDisabled("%s (SkyUI option type %d)", label.c_str(), o.type);
+				ImGui::TextDisabled(TR("AMF_McmUnknownOption", "%s (SkyUI option type %d)"), label.c_str(), o.type);
 				break;
 			}
 			if (disabled) { ImGui::EndDisabled(); }
@@ -1126,7 +1126,7 @@ namespace mcmloader::scripts
 					if (mod.pages[i] == a_rawPage) { page = static_cast<int>(i); }
 				}
 			}
-			ImGui::TextDisabled(TR("AMF_McmScriptNote", "Drawn from %s's own SkyUI script (experimental). Changes go to that script, as in SkyUI's menu."),
+			ImGui::TextDisabled(TR("AMF_McmScriptNote", "Drawn from %s's own SkyUI script. Changes go to that script, as in SkyUI's menu."),
 				plugin.c_str());
 			if (page == -3)
 			{
@@ -1206,8 +1206,8 @@ namespace mcmloader::scripts
 			for (const auto& raw : wanted)
 			{
 				if (mod.tabs.contains(raw)) { continue; }
-				std::string name = raw.empty() ? std::string("Settings") : Tr(&mod.translations, raw);
-				if (name.empty()) { name = "Settings"; }
+				std::string name = raw.empty() ? std::string(TR("AMF_McmSettingsTab", "Settings")) : Tr(&mod.translations, raw);
+				if (name.empty()) { name = TR("AMF_McmSettingsTab", "Settings"); }
 				const std::string base = name;
 				for (int n = 2; used.contains(name); ++n) { name = base + " (" + std::to_string(n) + ")"; }
 				used.insert(name);

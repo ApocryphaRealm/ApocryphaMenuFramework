@@ -78,11 +78,11 @@ namespace settings
 		// Injected into the live menu at runtime, so it works over whatever menu artwork is
 		// installed and collides with none of it.
 		bool systemMenuRow = true;
-		// EXPERIMENTAL (exp/mcm-loader): [MCM] bLoadMcmHelperConfigs - draw MCM Helper mods' menus as AMF pages.
+		// MCM loader: [MCM] bLoadMcmHelperConfigs - draw MCM Helper mods' menus as AMF pages.
 		bool loadMcmHelperConfigs = true;
-		// EXPERIMENTAL, phase 3: [MCM] bLoadSkyUIScriptMenus - draw SkyUI menus written only in Papyrus as AMF pages.
+		// MCM loader, phase 3: [MCM] bLoadSkyUIScriptMenus - draw SkyUI menus written only in Papyrus as AMF pages.
 		bool loadSkyUIScriptMenus = true;
-		// EXPERIMENTAL: [MCM] bHideInSkyUI - take the mods AMF draws completely out of SkyUI's own MCM list.
+		// MCM loader: [MCM] bHideInSkyUI - take the mods AMF draws completely out of SkyUI's own MCM list.
 		bool hideMcmInSkyUI = false;
 		bool watchdogEnabled = true;
 		// Fast exit (the author, 2026-09-05: "a way to deal with this on exit no kill function issue"):

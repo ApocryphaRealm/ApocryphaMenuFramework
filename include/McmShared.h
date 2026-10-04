@@ -1,6 +1,6 @@
 #pragma once
 
-// EXPERIMENTAL (exp/mcm-loader). Helpers shared by the MCM Helper loader (McmLoader.cpp, phases 1-2) and the SkyUI
+// MCM loader. Helpers shared by the MCM Helper loader (McmLoader.cpp, phases 1-2) and the SkyUI
 // script-menu loader (McmScripts.cpp, phase 3). Internal to AMF - not part of its API.
 
 #include <cstdint>

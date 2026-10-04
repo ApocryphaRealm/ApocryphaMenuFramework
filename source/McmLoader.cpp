@@ -28,7 +28,7 @@
 #include <thread>
 #include <unordered_map>
 
-// See McmLoader.h for what this is and the plan it follows. Everything here is EXPERIMENTAL.
+// See McmLoader.h for what this is and the plan it follows. Part of the MCM loader.
 
 namespace mcmloader
 {
@@ -1158,9 +1158,9 @@ namespace mcmloader
 				ImGui::BeginDisabled();
 				ImGui::TextUnformatted(label.c_str());
 				ImGui::SameLine();
-				ImGui::TextDisabled("(%s - set it in SkyUI's MCM)",
-					(a_c.hasAction && !a_c.action) ? "an action type AMF does not run" :
-					a_c.sourceTypeName.empty() ? "no value source" : a_c.sourceTypeName.c_str());
+				ImGui::TextDisabled(strings::TR("AMF_McmSetInSkyUI", "(%s - set it in SkyUI's MCM)"),
+					(a_c.hasAction && !a_c.action) ? strings::TR("AMF_McmActionNotRun", "an action type AMF does not run") :
+					a_c.sourceTypeName.empty() ? strings::TR("AMF_McmNoSource", "no value source") : a_c.sourceTypeName.c_str());
 				ImGui::EndDisabled();
 				return;
 			}
@@ -1282,14 +1282,14 @@ namespace mcmloader
 				const bool waiting = g_capturing && g_capturing->first == a_mod && g_capturing->second == a_c.id;
 				ImGui::TextUnformatted(label.c_str());
 				ImGui::SameLine();
-				const std::string button = (waiting ? std::string("Press a key...") : KeyName(static_cast<std::int32_t>(ParseInt(a_value)))) + "##key" + a_c.id;
+				const std::string button = (waiting ? std::string(strings::TR("AMF_McmPressKey", "Press a key...")) : KeyName(static_cast<std::int32_t>(ParseInt(a_value)))) + "##key" + a_c.id;
 				if (ImGui::Button(button.c_str()) && !waiting)
 				{
 					g_capturing = std::make_pair(a_mod, a_c.id);
 					input::ArmKeyCapture();
 				}
 				ImGui::SameLine();
-				if (ImGui::Button(("Clear##clr" + a_c.id).c_str())) { Apply(a_mod, a_c, "-1"); }
+				if (ImGui::Button((std::string(strings::TR("AMF_McmClear", "Clear")) + "##clr" + a_c.id).c_str())) { Apply(a_mod, a_c, "-1"); }
 				if (waiting && !input::IsKeyCaptureArmed())
 				{
 					// LastCapturedKey: (device << 32) | code - 0 keyboard (DirectInput scan code), 1 mouse, 2 gamepad
@@ -1311,7 +1311,7 @@ namespace mcmloader
 				break;  // never drawn; it still drives its group
 			case Kind::kUnknown:
 			default:
-				ImGui::TextDisabled("%s (MCM type \"%s\" is not drawn yet)", label.c_str(), a_c.typeName.c_str());
+				ImGui::TextDisabled(strings::TR("AMF_McmNotDrawn", "%s (MCM type \"%s\" is not drawn yet)"), label.c_str(), a_c.typeName.c_str());
 				break;
 			}
 		}
@@ -1358,11 +1358,11 @@ namespace mcmloader
 			const Page& page = mod->pages[a_page];
 			g_table = &mod->translations;
 
-			ImGui::TextDisabled("Read from %s's MCM Helper files (experimental). Changes go through MCM Helper, as in its own menu.",
+			ImGui::TextDisabled(strings::TR("AMF_McmHelperNote", "Read from %s's MCM Helper files. Changes go through MCM Helper, as in its own menu."),
 				mod->modName.c_str());
 			if (page.customContent)
 			{
-				ImGui::TextDisabled("This MCM page is a custom picture or SWF - not drawable here.");
+				ImGui::TextDisabled("%s", strings::TR("AMF_McmCustomPage", "This MCM page is a custom picture or SWF - not drawable here."));
 				return;
 			}
 
@@ -1525,8 +1525,8 @@ namespace mcmloader
 				std::set<std::string> used;
 				for (std::size_t p = 0; p < mod.pages.size(); ++p)
 				{
-					std::string name = mod.pages[p].name.empty() ? std::string("Settings") : Translate(mod.pages[p].name);
-					if (name.empty()) { name = "Settings"; }
+					std::string name = mod.pages[p].name.empty() ? std::string(strings::TR("AMF_McmSettingsTab", "Settings")) : Translate(mod.pages[p].name);
+					if (name.empty()) { name = strings::TR("AMF_McmSettingsTab", "Settings"); }
 					for (int n = 2; used.contains(name); ++n) { name = name + " (" + std::to_string(n) + ")"; }
 					used.insert(name);
 					if (registry::RegisterFn(mod.entryName.c_str(), name.c_str(), [m, p]() { DrawPage(m, p); }))
@@ -1558,7 +1558,7 @@ namespace mcmloader
 			return;
 		}
 
-		logger::info("MCM loader (EXPERIMENTAL, exp/mcm-loader): reading MCM Helper configs from {}", root.string());
+		logger::info("MCM loader: reading MCM Helper configs from {}", root.string());
 		for (const auto& entry : fs::directory_iterator(root, ec))
 		{
 			if (!entry.is_directory(ec)) { continue; }

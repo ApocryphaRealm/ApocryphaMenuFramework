@@ -19,7 +19,7 @@ namespace registry
 	struct Page
 	{
 		std::string pageName;
-		// exp/mcm-loader: a std::function, so a page AMF builds itself from a data file (McmLoader) carries the mod and
+		// MCM loader: a std::function, so a page AMF builds itself from a data file (McmLoader) carries the mod and
 		// page it draws in its closure. A consumer's plain AMF_RenderCallback is wrapped unchanged.
 		std::function<void()> render;
 		bool hidden = false;  // 1.8.3: AMF_SetPageVisible(false) leaves the page out of the menu until shown again
@@ -36,7 +36,7 @@ namespace registry
 	// duplicate (mod, page) pair - both logged.
 	bool Register(const char* a_modName, const char* a_pageName, AMF_RenderCallback a_render);
 
-	// exp/mcm-loader: the same registration for a page AMF draws itself, with no consumer DLL behind it.
+	// MCM loader: the same registration for a page AMF draws itself, with no consumer DLL behind it.
 	bool RegisterFn(const char* a_modName, const char* a_pageName, std::function<void()> a_render);
 
 	// 1.8.3: hide or show one registered page (AMF_SetPageVisible). False when the (mod, page) pair is not

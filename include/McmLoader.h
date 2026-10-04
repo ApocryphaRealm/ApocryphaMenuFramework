@@ -1,8 +1,8 @@
 #pragma once
 
 // ============================================================================================
-// EXPERIMENTAL (exp/mcm-loader, the owner 2026-10-04: "this wont go in the next update and is
-// experimental for now"). Plan: D:\Claude output\4. plans\amf-mcm-loader\PLAN.md.
+// The MCM loader (the owner, 2026-10-04: built as an experiment, released the same day once its
+// tests passed). Plan: 4. plans\amf-mcm-loader\PLAN.md.
 //
 // MCM Helper menus drawn as AMF pages, read from the mods' own files at run time - nothing of
 // theirs is shipped, the way Dynamic Interface Patcher works on other authors' interface files:

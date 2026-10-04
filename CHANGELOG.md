@@ -21,6 +21,58 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## Unreleased - MCM menus as AMF pages
+
+The owner, 2026-10-04, asked for a tool like Dynamic Interface Patcher that turns MCM menus into AMF menus. He set it
+experimental at first, then released it the same day once its tests had passed. Every mod with an MCM menu now also
+gets that menu as a page here. AMF reads the mod's own files and scripts while the game runs; nothing of the mod's is
+edited or shipped.
+
+### Added
+- **MCM Helper menus** (`Data\MCM\Config\<mod>\config.json`). Each one is an AMF entry, "<Mod> (MCM)", with its MCM pages
+  as tabs:
+  - Every control is drawn: toggles, precise sliders, steppers and dropdowns, text fields, colours, key binds, headers,
+    text rows and action buttons. A control's group conditions grey out or hide it, as in MCM Helper's own menu.
+  - A change goes through MCM Helper itself (its live store and `MCM\Settings\<mod>.ini`). Then the mod is told, through
+    OnSettingChange and the action. OnConfigOpen / OnConfigClose are sent as the page opens and closes, so mods that
+    apply their settings only when the menu closes (TrueHUD, True Directional Movement, Precision) apply them too.
+  - Global variables and script properties are read and written live, and action buttons call the mod's own functions.
+  - Labels come from the mod's own translation file, in the game's language.
+- **SkyUI menus written only in a mod's script** (a quest script on `SKI_ConfigBase`, with no config.json). AMF makes the
+  same calls on the mod's script that SkyUI's own menu makes, one at a time, and reads each page from the script itself:
+  - toggles, sliders with the mod's own range, dropdowns (their lists fetched when opened), text rows, colours, text
+    input and key binds;
+  - Reset to default (right-click), and each option's help text on hover;
+  - the mod's yes/no questions, shown as AMF popups.
+- **Settings page.** Three switches, kept in `[MCM]`:
+  - `bLoadMcmHelperConfigs` (default 1): MCM Helper menus.
+  - `bLoadSkyUIScriptMenus` (default 1): SkyUI script menus.
+  - `bHideInSkyUI` (default 0): takes the menus drawn here out of SkyUI's own MCM list. Only the menus AMF itself took
+    out are ever put back. They are listed in `ApocryphaMenuFramework\McmHiddenInSkyUI.txt`, and SkyUI keeps its list
+    in the save. `setstage SKI_ConfigManagerInstance 1` restores every menu in SkyUI.
+- **DevBench `amf.mcm`.** For MCM Helper menus: list, controls, get, set, press, refresh, script and switch. For script
+  menus, `op=skyui`: list, open, page, options, select, slider, menu, menuoptions, color, key, input, default, info,
+  answer and close.
+- **Languages.** 22 strings in all eleven languages. A mod's own labels stay in that mod's language.
+
+### Tested in game (Njordlinger, 2026-10-04)
+- **Found:** 33 MCM Helper mods and 51 script-only SkyUI menus.
+- **Changes applied live, read back from the game or the mod's own state:**
+  - Simple Offence Suppression's game settings, and FEC's death-camera time (`fPlayerDeathReloadTime`).
+  - TrueHUD's loot popup.
+  - Vivid Routines' globals.
+  - FEC's reset button.
+  - Precision's script properties.
+  - SkyUI's own Unequip Armor setting.
+  - Pick Up Radius: a toggle, a slider, a dropdown list, help text, and its "Load saved JSON preset?" question.
+  - Equipment Manager: a text input, a key bind, Reset to default, and a colour, on all 13 of its pages.
+
+### Limits
+- Key binds take keyboard and mouse only; there is no controller button yet. A mod's own "this key is already used"
+  warning does not fire.
+- An MCM page that is a custom picture or SWF is not drawn. A control whose source type MCM Helper names but AMF does
+  not read stays read-only, with a note.
+
 ## 2.0.6 - 2026-10-03 - working
 
 C0kAdam, author of dMenu NG (Nexus 166751), 2026-10-03: under AMF the Font Awesome icon dMenu draws on each collapsing

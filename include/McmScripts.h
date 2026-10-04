@@ -1,7 +1,7 @@
 #pragma once
 
 // ============================================================================================
-// EXPERIMENTAL (exp/mcm-loader), phase 3 - the owner, 2026-10-04: "do phase 3 for the SkyUI
+// MCM loader, phase 3 - the owner, 2026-10-04: "do phase 3 for the SkyUI
 // script menus". Plan: D:\Claude output\4. plans\amf-mcm-loader\PLAN.md, "Phase 3".
 //
 // SkyUI menus written only in Papyrus (a quest script extending SKI_ConfigBase, no MCM Helper
