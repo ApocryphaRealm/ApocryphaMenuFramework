@@ -41,6 +41,7 @@ namespace mcmloader::scripts
 		RE::BSTSmartPointer<RE::BSScript::Object> config;
 		std::string modName;  // the ModName property, as the config registers itself with
 		std::size_t index;
+		std::string key;      // "script|<plugin>|<ModName>" - its line in the hidden-by-AMF ledger
 	};
 	std::vector<HideTarget> HideTargets();
 	void SetHidden(std::size_t a_index, bool a_hidden);

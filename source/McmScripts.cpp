@@ -1390,7 +1390,10 @@ namespace mcmloader::scripts
 		std::scoped_lock lock(g_mutex);
 		for (std::size_t i = 0; i < g_mods.size(); ++i)
 		{
-			if (g_mods[i]->present && g_mods[i]->script) { out.push_back({ g_mods[i]->script, g_mods[i]->modName, i }); }
+			if (g_mods[i]->present && g_mods[i]->script)
+			{
+				out.push_back({ g_mods[i]->script, g_mods[i]->modName, i, "script|" + g_mods[i]->plugin + "|" + g_mods[i]->modName });
+			}
 		}
 		return out;
 	}

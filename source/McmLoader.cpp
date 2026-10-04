@@ -902,6 +902,48 @@ namespace mcmloader
 		}
 
 		std::atomic<int> g_hiddenCount{ 0 };
+
+		// The menus AMF itself took out of SkyUI's list, kept across sessions (the list lives in the save). Only these are
+		// ever given back: on 2026-10-04 a give-back that sent RegisterMod for EVERY config added Honed Metal, which was not
+		// in SkyUI's list at all, and would undo what other mods do to the list (MenuMaid2 hides entries the same way).
+		// One key per line: "mcmhelper|<mod>" or "script|<plugin>|<ModName>".
+		constexpr const char* kLedgerPath = "Data/SKSE/Plugins/ApocryphaMenuFramework/McmHiddenInSkyUI.txt";
+		std::mutex g_ledgerMutex;
+		std::set<std::string> g_ledger;
+		bool g_ledgerLoaded = false;
+
+		void LoadLedgerLocked()
+		{
+			if (g_ledgerLoaded) { return; }
+			g_ledgerLoaded = true;
+			std::ifstream in(kLedgerPath, std::ios::binary);
+			std::string line;
+			while (std::getline(in, line))
+			{
+				line = Trim(line);
+				if (!line.empty() && line[0] != ';') { g_ledger.insert(line); }
+			}
+			logger::debug("MCM loader: {} menu(s) in the hidden-by-AMF ledger", g_ledger.size());
+		}
+
+		bool InLedger(const std::string& a_key)
+		{
+			std::scoped_lock lock(g_ledgerMutex);
+			LoadLedgerLocked();
+			return g_ledger.contains(a_key);
+		}
+
+		void SetInLedger(const std::string& a_key, bool a_in)
+		{
+			std::scoped_lock lock(g_ledgerMutex);
+			LoadLedgerLocked();
+			if ((a_in ? g_ledger.insert(a_key).second : g_ledger.erase(a_key) > 0) == false) { return; }
+			std::error_code ec;
+			fs::create_directories(fs::path(kLedgerPath).parent_path(), ec);
+			std::ofstream out(kLedgerPath, std::ios::binary | std::ios::trunc);
+			out << "; Menus Apocrypha Menu Framework took out of SkyUI's MCM list - only these are given back.\n";
+			for (const auto& key : g_ledger) { out << key << "\n"; }
+		}
 		std::atomic<unsigned> g_hideGeneration{ 0 };
 		std::atomic<bool> g_skyuiBusy{ false };   // a call came back -2: SkyUI's manager was BUSY (its Journal is open)
 
@@ -963,8 +1005,8 @@ namespace mcmloader
 		}
 
 		// a_hide: UnregisterMod every hideable mod of a loader that is switched on; otherwise (and for a loader switched off)
-		// RegisterMod every one - the save may hold them hidden from an earlier session. MCM Helper mods (phases 1-2) and
-		// script-only menus (phase 3) each follow their own switch.
+		// RegisterMod the ones the ledger says AMF hid - the save may hold them hidden from an earlier session. MCM Helper mods
+		// (phases 1-2) and script-only menus (phase 3) each follow their own switch.
 		void SyncSkyUI(bool a_hide)
 		{
 			const bool hideHelper = a_hide && settings::Get().loadMcmHelperConfigs;
@@ -991,16 +1033,22 @@ namespace mcmloader
 			for (std::size_t m = 0; m < g_mods.size(); ++m)
 			{
 				if (!g_mods[m]->hideable) { continue; }
+				const std::string key = "mcmhelper|" + g_mods[m]->modName;
+				if (!hideHelper && !InLedger(key)) { continue; }  // not hidden by AMF: SkyUI's list is not ours to change
 				auto config = EnsureScript(m);
 				if (!config) { continue; }
 				VarArgs args;
 				const std::string modName = g_mods[m]->modName;
-				RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> then{ new ResultThen([m, hideHelper, modName](std::int32_t a_result) {
+				RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> then{ new ResultThen([m, hideHelper, modName, key](std::int32_t a_result) {
 					if (a_result == -2)
 					{
 						g_skyuiBusy.store(true);  // the Journal is open: nothing happened; RetryWhileBusy tries again
 						return;
 					}
+					// hide: >= 0 means AMF took it out (remember it); -1 means it was not in the list (not ours to give back).
+					// give back: >= 0 means it is back; -1 means SkyUI's list is full (kept in the ledger, tried again next time).
+					if (a_result >= 0) { SetInLedger(key, hideHelper); }
+					else if (!hideHelper) { logger::warn("MCM loader: SkyUI refused to take {} back (its list is full)", modName); }
 					{
 						std::scoped_lock lock(g_mutex);
 						// hide: a slot (>= 0) came out, or -1 - it was not in the list; either way it is out now
@@ -1030,12 +1078,16 @@ namespace mcmloader
 				VarArgs args;
 				const std::size_t index = target.index;
 				const std::string modName = target.modName;
-				RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> then{ new ResultThen([index, hideScripts, modName](std::int32_t a_result) {
+				const std::string key = target.key;
+				if (!hideScripts && !InLedger(key)) { continue; }  // not hidden by AMF: left exactly as SkyUI (or MenuMaid2) has it
+				RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> then{ new ResultThen([index, hideScripts, modName, key](std::int32_t a_result) {
 					if (a_result == -2)
 					{
 						g_skyuiBusy.store(true);
 						return;
 					}
+					if (a_result >= 0) { SetInLedger(key, hideScripts); }
+					else if (!hideScripts) { logger::warn("MCM loader: SkyUI refused to take {} back (its list is full)", modName); }
 					scripts::SetHidden(index, hideScripts);
 					logger::debug("MCM loader: SkyUI {} {} (script menu) -> {}", hideScripts ? "UnregisterMod" : "RegisterMod", modName, a_result);
 				}) };
