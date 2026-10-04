@@ -1219,7 +1219,7 @@ namespace mcmloader::scripts
 			}
 			for (const auto& [raw, tab] : mod.tabs)
 			{
-				const bool show = std::find(wanted.begin(), wanted.end(), raw) != wanted.end();
+				const bool show = settings::Get().loadSkyUIScriptMenus && std::find(wanted.begin(), wanted.end(), raw) != wanted.end();
 				registry::SetPageVisible(mod.entryName.c_str(), tab.c_str(), show);
 			}
 		}
@@ -1235,7 +1235,7 @@ namespace mcmloader::scripts
 				return;
 			}
 			if (g_skyuiTable.empty()) { g_skyuiTable = LoadTranslations("SkyUI_SE"); }
-			InstallRecorder();
+			if (settings::Get().loadSkyUIScriptMenus) { InstallRecorder(); }
 
 			int found = 0;
 			int added = 0;
@@ -1355,7 +1355,8 @@ namespace mcmloader::scripts
 
 	void Discover()
 	{
-		if (!settings::Get().loadSkyUIScriptMenus) { return; }
+		// Runs with the switch off too: the configs it finds are what the SkyUI-list give-back returns. Off, no tab shows
+		// and the recorder stays out.
 		try { DiscoverNow(); }
 		catch (const std::exception& e) { logger::error("MCM scripts: discovery failed - {}", e.what()); }
 	}
@@ -1394,8 +1395,7 @@ namespace mcmloader::scripts
 
 	std::vector<HideTarget> HideTargets()
 	{
-		std::vector<HideTarget> out;
-		if (!settings::Get().loadSkyUIScriptMenus) { return out; }
+		std::vector<HideTarget> out;  // with the switch off too: a menu AMF hid must still be given back
 		std::scoped_lock lock(g_mutex);
 		for (std::size_t i = 0; i < g_mods.size(); ++i)
 		{
@@ -1568,5 +1568,13 @@ namespace mcmloader::scripts
 				"' (list, open, page, options, select, slider, menu, menuoptions, color, key, input, default, info, answer, close)" } }.dump();
 		}
 		return json{ { "ok", true }, { "queued", action }, { "slot", slot } }.dump();
+	}
+}
+
+namespace mcmloader::detail
+{
+	RE::BSScript::Variable* ScriptVar(const RE::BSTSmartPointer<RE::BSScript::Object>& a_object, std::string_view a_name)
+	{
+		return ::mcmloader::scripts::Var(a_object, a_name);
 	}
 }

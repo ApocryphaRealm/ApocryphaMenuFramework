@@ -23,6 +23,9 @@ namespace mcmloader::detail
 	// game's resource streams. Main thread, once per mod.
 	Table LoadTranslations(const std::string& a_plugin);
 
+	// A script variable by name through the type chain (MCM Helper's ScriptObject::GetVariable). Null when absent.
+	RE::BSScript::Variable* ScriptVar(const RE::BSTSmartPointer<RE::BSScript::Object>& a_object, std::string_view a_name);
+
 	// SkyUI's config manager script object (SkyUI_SE.esp), or empty. Main thread.
 	RE::BSTSmartPointer<RE::BSScript::Object> FindSkyUIManager();
 

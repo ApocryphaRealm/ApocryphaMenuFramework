@@ -1,5 +1,7 @@
 #include "McmLoader.h"
 
+#undef GetObject  // windows.h maps it to GetObjectW; CommonLib's Variable::GetObject is meant
+
 #include "Keyboard.h"
 #include "Input.h"
 #include "McmScripts.h"
@@ -19,6 +21,7 @@
 #include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -926,6 +929,13 @@ namespace mcmloader
 			logger::debug("MCM loader: {} menu(s) in the hidden-by-AMF ledger", g_ledger.size());
 		}
 
+		std::vector<std::string> LedgerKeys()
+		{
+			std::scoped_lock lock(g_ledgerMutex);
+			LoadLedgerLocked();
+			return { g_ledger.begin(), g_ledger.end() };
+		}
+
 		bool InLedger(const std::string& a_key)
 		{
 			std::scoped_lock lock(g_ledgerMutex);
@@ -1004,9 +1014,30 @@ namespace mcmloader
 			}).detach();
 		}
 
+		// Is this config in SkyUI's list right now? Read from the manager's own _modConfigs array (VM thread or main thread)
+		// - the truth, where a RegisterMod / UnregisterMod result can come back None (Njordlinger, 2026-10-04: every result
+		// of an 84-call pass was None, so a result-driven ledger recorded nothing and switching off gave nothing back).
+		bool InSkyUIList(const RE::BSTSmartPointer<RE::BSScript::Object>& a_manager, const RE::BSTSmartPointer<RE::BSScript::Object>& a_config)
+		{
+			const auto var = detail::ScriptVar(a_manager, "_modConfigs");
+			const auto array = var && var->IsArray() ? var->GetArray() : nullptr;
+			if (!array || !a_config) { return false; }
+			for (std::uint32_t i = 0; i < array->size(); ++i)
+			{
+				const auto& v = (*array)[i];
+				if (v.IsObject() && v.GetObject().get() == a_config.get()) { return true; }
+			}
+			return false;
+		}
+
 		// a_hide: UnregisterMod every hideable mod of a loader that is switched on; otherwise (and for a loader switched off)
 		// RegisterMod the ones the ledger says AMF hid - the save may hold them hidden from an earlier session. MCM Helper mods
 		// (phases 1-2) and script-only menus (phase 3) each follow their own switch.
+		//
+		// The ledger records the INTENT before the call (a menu AMF is about to take out is AMF's to give back, whatever the
+		// call returns), and an entry leaves it only when SkyUI's own _modConfigs shows the menu back. Each call's outcome is
+		// judged from _modConfigs, never from its return value; a call that changed nothing (SkyUI busy while its Journal is
+		// open) leaves the retry running.
 		void SyncSkyUI(bool a_hide)
 		{
 			const bool hideHelper = a_hide && settings::Get().loadMcmHelperConfigs;
@@ -1029,7 +1060,16 @@ namespace mcmloader
 				return;
 			}
 			const auto baseType = baseInfo->GetRawType();
-			int sent = 0;
+
+			struct Target
+			{
+				RE::BSTSmartPointer<RE::BSScript::Object> config;
+				std::string regName;   // the name the config registers itself with (its ModName property)
+				std::string key;       // its ledger line
+				bool hide;
+				std::function<void(bool)> setHidden;
+			};
+			std::vector<Target> targets;
 			for (std::size_t m = 0; m < g_mods.size(); ++m)
 			{
 				if (!g_mods[m]->hideable) { continue; }
@@ -1037,67 +1077,77 @@ namespace mcmloader
 				if (!hideHelper && !InLedger(key)) { continue; }  // not hidden by AMF: SkyUI's list is not ours to change
 				auto config = EnsureScript(m);
 				if (!config) { continue; }
-				VarArgs args;
-				const std::string modName = g_mods[m]->modName;
-				RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> then{ new ResultThen([m, hideHelper, modName, key](std::int32_t a_result) {
-					if (a_result == -2)
-					{
-						g_skyuiBusy.store(true);  // the Journal is open: nothing happened; RetryWhileBusy tries again
-						return;
-					}
-					// hide: >= 0 means AMF took it out (remember it); -1 means it was not in the list (not ours to give back).
-					// give back: >= 0 means it is back; -1 means SkyUI's list is full (kept in the ledger, tried again next time).
-					if (a_result >= 0) { SetInLedger(key, hideHelper); }
-					else if (!hideHelper) { logger::warn("MCM loader: SkyUI refused to take {} back (its list is full)", modName); }
-					{
-						std::scoped_lock lock(g_mutex);
-						// hide: a slot (>= 0) came out, or -1 - it was not in the list; either way it is out now
-						if (m < g_mods.size()) { g_mods[m]->hiddenInSkyUI = hideHelper; }
-					}
-					logger::debug("MCM loader: SkyUI {} {} -> {}", hideHelper ? "UnregisterMod" : "RegisterMod", modName, a_result);
-					RecountHidden();
-				}) };
-				if (hideHelper)
-				{
-					args.args.resize(1);
-					args.args[0].SetObject(config, baseType);
-					if (vm->DispatchMethodCall(manager, "UnregisterMod", &args, then)) { ++sent; }
-				}
-				else
-				{
-					const auto name = config->GetProperty("ModName");
-					args.args.resize(2);
-					args.args[0].SetObject(config, baseType);
-					args.args[1].SetString(name && name->IsString() ? name->GetString() : std::string_view(g_mods[m]->modName));
-					if (vm->DispatchMethodCall(manager, "RegisterMod", &args, then)) { ++sent; }
-				}
+				const auto name = config->GetProperty("ModName");
+				targets.push_back({ config, name && name->IsString() ? std::string(name->GetString()) : g_mods[m]->modName, key, hideHelper,
+					[m](bool a_hidden) {
+						{
+							std::scoped_lock lock(g_mutex);
+							if (m < g_mods.size()) { g_mods[m]->hiddenInSkyUI = a_hidden; }
+						}
+						RecountHidden();
+					} });
 			}
-			int sentScripts = 0;
-			for (const auto& target : scripts::HideTargets())
+			// An MCM Helper menu AMF hid while its loader was on, with the loader off since the game started (no entry was
+			// read): found from the ledger line itself, so it still goes back.
+			for (const auto& key : LedgerKeys())
 			{
-				VarArgs args;
-				const std::size_t index = target.index;
-				const std::string modName = target.modName;
-				const std::string key = target.key;
-				if (!hideScripts && !InLedger(key)) { continue; }  // not hidden by AMF: left exactly as SkyUI (or MenuMaid2) has it
-				RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> then{ new ResultThen([index, hideScripts, modName, key](std::int32_t a_result) {
-					if (a_result == -2)
-					{
-						g_skyuiBusy.store(true);
-						return;
-					}
-					if (a_result >= 0) { SetInLedger(key, hideScripts); }
-					else if (!hideScripts) { logger::warn("MCM loader: SkyUI refused to take {} back (its list is full)", modName); }
-					scripts::SetHidden(index, hideScripts);
-					logger::debug("MCM loader: SkyUI {} {} (script menu) -> {}", hideScripts ? "UnregisterMod" : "RegisterMod", modName, a_result);
-				}) };
-				args.args.resize(hideScripts ? 1 : 2);
-				args.args[0].SetObject(target.config, baseType);
-				if (!hideScripts) { args.args[1].SetString(target.modName); }
-				if (vm->DispatchMethodCall(manager, hideScripts ? "UnregisterMod" : "RegisterMod", &args, then)) { ++sentScripts; }
+				if (key.rfind("mcmhelper|", 0) != 0) { continue; }
+				const std::string modName = key.substr(10);
+				if (std::any_of(g_mods.begin(), g_mods.end(), [&](const auto& m) { return m->modName == modName; })) { continue; }
+				RE::FormID questId = 0;
+				auto config = FindConfigScript(modName, questId);
+				if (!config) { continue; }
+				const auto name = config->GetProperty("ModName");
+				targets.push_back({ config, name && name->IsString() ? std::string(name->GetString()) : modName, key, false, [](bool) {} });
 			}
-			logger::info("MCM loader: SkyUI's MCM list - {} MCM Helper mod(s) {}, {} script menu(s) {}; results counted as they come back",
-				sent, hideHelper ? "UnregisterMod" : "RegisterMod", sentScripts, hideScripts ? "UnregisterMod" : "RegisterMod");
+			for (const auto& t : scripts::HideTargets())
+			{
+				if (!hideScripts && !InLedger(t.key)) { continue; }  // not hidden by AMF: left exactly as SkyUI (or MenuMaid2) has it
+				const std::size_t index = t.index;
+				targets.push_back({ t.config, t.modName, t.key, hideScripts, [index](bool a_hidden) { scripts::SetHidden(index, a_hidden); } });
+			}
+
+			int hides = 0;
+			int givebacks = 0;
+			for (auto& t : targets)
+			{
+				const bool inList = InSkyUIList(manager, t.config);
+				if (t.hide && !inList)
+				{
+					t.setHidden(true);  // already out: nothing to send (and nothing new for the ledger unless AMF took it out)
+					continue;
+				}
+				if (!t.hide && inList)
+				{
+					SetInLedger(t.key, false);  // already back
+					t.setHidden(false);
+					continue;
+				}
+				if (t.hide) { SetInLedger(t.key, true); }  // the intent, before the call
+				VarArgs args;
+				args.args.resize(t.hide ? 1 : 2);
+				args.args[0].SetObject(t.config, baseType);
+				if (!t.hide) { args.args[1].SetString(t.regName); }
+				RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> then{ new ResultThen(
+					[manager, config = t.config, hide = t.hide, key = t.key, name = t.regName, setHidden = t.setHidden](std::int32_t a_result) {
+						const bool inNow = InSkyUIList(manager, config);
+						const bool done = hide ? !inNow : inNow;
+						if (!done)
+						{
+							// SkyUI busy (-2, its Journal open), a full list on give-back, or a call that never ran: retried
+							g_skyuiBusy.store(true);
+							logger::info("MCM loader: SkyUI {} {} did not take (result {}) - tried again", hide ? "UnregisterMod" : "RegisterMod", name, a_result);
+							return;
+						}
+						if (!hide) { SetInLedger(key, false); }
+						setHidden(hide);
+						logger::debug("MCM loader: SkyUI {} {} - {} SkyUI's list (result {})", hide ? "UnregisterMod" : "RegisterMod", name,
+							hide ? "out of" : "back in", a_result);
+					}) };
+				if (vm->DispatchMethodCall(manager, t.hide ? "UnregisterMod" : "RegisterMod", &args, then)) { ++(t.hide ? hides : givebacks); }
+			}
+			logger::info("MCM loader: SkyUI's MCM list - {} menu(s) being taken out, {} being given back ({} considered)",
+				hides, givebacks, targets.size());
 			RetryWhileBusy(a_hide);
 		}
 
@@ -1595,8 +1645,8 @@ namespace mcmloader
 			}
 		}
 		g_hiddenCount.store(0);
-		if (!settings::Get().loadMcmHelperConfigs && !settings::Get().loadSkyUIScriptMenus) { return; }
-		if (settings::Get().hideMcmInSkyUI)
+		// No early return when both loaders are off: the give-back below still returns whatever the ledger says AMF hid.
+		if (settings::Get().hideMcmInSkyUI && (settings::Get().loadMcmHelperConfigs || settings::Get().loadSkyUIScriptMenus))
 		{
 			ScheduleHideAfterLoad();
 		}
@@ -1606,8 +1656,12 @@ namespace mcmloader
 			// (RegisterMod returns at once for one already in the list, so this costs nothing when nothing was hidden)
 			const unsigned generation = ++g_hideGeneration;
 			std::thread([generation]() {
-				std::this_thread::sleep_for(std::chrono::seconds(10));
-				if (g_hideGeneration.load() == generation && !settings::Get().hideMcmInSkyUI) { QueueSyncSkyUI(false); }
+				for (const int gap : { 10, 20 })  // at 10 and 30 s: a config registers in the first half-minute after a load
+				{
+					std::this_thread::sleep_for(std::chrono::seconds(gap));
+					if (g_hideGeneration.load() != generation) { return; }
+					QueueSyncSkyUI(false);
+				}
 			}).detach();
 		}
 	}
@@ -1623,7 +1677,7 @@ namespace mcmloader
 			for (const auto& page : mod->pageNames) { registry::SetPageVisible(mod->entryName.c_str(), page.c_str(), a_on); }
 		}
 		logger::info("MCM loader: switched {} on the settings page ({} entries {})", a_on ? "on" : "off", g_mods.size(), a_on ? "shown" : "hidden");
-		if (settings::Get().hideMcmInSkyUI) { QueueSyncSkyUI(true); }  // each loader's mods follow its own switch: off gives them back
+		QueueSyncSkyUI(settings::Get().hideMcmInSkyUI);  // each loader's mods follow its own switch: off gives them back
 	}
 
 	void SetHideInSkyUI(bool a_on)
@@ -1670,6 +1724,41 @@ namespace mcmloader
 
 		json out;
 		if (op == "skyui") { return scripts::ToolJson(a_argsJson); }  // phase 3: script-only SkyUI menus
+		if (op == "skyuilist")
+		{
+			// SkyUI's own list (the manager's _modNames / _modConfigs), read on the main thread - the proof that a menu is in
+			// or out of SkyUI, independent of SkyUI's Journal (which stalls Papyrus in some lists) and of AMF's own counters.
+			auto promise = std::make_shared<std::promise<std::string>>();
+			auto future = promise->get_future();
+			const auto tasks = SKSE::GetTaskInterface();
+			if (!tasks) { return R"({"ok":false,"error":"no SKSE task interface"})"; }
+			tasks->AddTask([promise]() {
+				json r{ { "ok", true } };
+				auto manager = FindSkyUIManager();
+				const auto names = manager ? detail::ScriptVar(manager, "_modNames") : nullptr;
+				const auto configs = manager ? detail::ScriptVar(manager, "_modConfigs") : nullptr;
+				const auto namesArr = names && names->IsArray() ? names->GetArray() : nullptr;
+				const auto configsArr = configs && configs->IsArray() ? configs->GetArray() : nullptr;
+				if (!manager || !namesArr || !configsArr)
+				{
+					promise->set_value(R"({"ok":false,"error":"SkyUI's config manager or its arrays are not readable yet"})");
+					return;
+				}
+				json list = json::array();
+				for (std::uint32_t i = 0; i < configsArr->size(); ++i)
+				{
+					const auto& c = (*configsArr)[i];
+					if (!c.IsObject() || !c.GetObject()) { continue; }  // an empty slot is an object-typed None that IsNoneObject does not report
+					const std::string name = i < namesArr->size() && (*namesArr)[i].IsString() ? std::string((*namesArr)[i].GetString()) : std::string();
+					list.push_back(name);
+				}
+				r["count"] = list.size();
+				r["names"] = list;
+				promise->set_value(r.dump());
+			});
+			if (future.wait_for(std::chrono::seconds(3)) != std::future_status::ready) { return R"({"ok":false,"error":"no game frame within 3 s"})"; }
+			return future.get();
+		}
 		if (op == "switch")
 		{
 			// the settings page's three toggles, the same calls and the same save: name load | scripts | hideskyui, on true/false

@@ -50,6 +50,10 @@ edited or shipped.
   - `bHideInSkyUI` (default 0): takes the menus drawn here out of SkyUI's own MCM list. Only the menus AMF itself took
     out are ever put back. They are listed in `ApocryphaMenuFramework\McmHiddenInSkyUI.txt`, and SkyUI keeps its list
     in the save. `setstage SKI_ConfigManagerInstance 1` restores every menu in SkyUI.
+  - **Turning the feature off gives every menu back to SkyUI.** It does not matter whether a switch is turned off on the
+    page or in the INI with the game closed, or whether the save holds the menus hidden. A menu is written down before it
+    is taken out. It leaves the list only once SkyUI's own registered-menu array shows it back; what SkyUI's call
+    returns is not trusted, because in a large list those calls can come back empty.
 - **DevBench `amf.mcm`.** For MCM Helper menus: list, controls, get, set, press, refresh, script and switch. For script
   menus, `op=skyui`: list, open, page, options, select, slider, menu, menuoptions, color, key, input, default, info,
   answer and close.
@@ -66,6 +70,15 @@ edited or shipped.
   - SkyUI's own Unequip Armor setting.
   - Pick Up Radius: a toggle, a slider, a dropdown list, help text, and its "Load saved JSON preset?" question.
   - Equipment Manager: a text input, a key bind, Reset to default, and a colour, on all 13 of its pages.
+- **On a stripped-down profile** (the owner, 2026-10-04: test the off switch on "a much more stripped down profile").
+  The profile had SkyUI and MCM Helper, BTPS and Floating Subtitles (MCM Helper menus), and Hot Key Skill (a script
+  menu). SkyUI's list was read from its own array every time:
+  1. The hide switch took all 4 menus out of SkyUI's list.
+  2. A save and reload kept them out.
+  3. Switching both loaders off returned all 4, and AMF's own entries went with it.
+  4. Hiding them again, saving, quitting, and turning both loaders off in the INI also worked: loading that save
+     returned all 4 within seconds.
+- **Controller:** the D-pad moved into a script menu's page, and A flipped a toggle through the mod's own script.
 
 ### Limits
 - Key binds take keyboard and mouse only; there is no controller button yet. A mod's own "this key is already used"
