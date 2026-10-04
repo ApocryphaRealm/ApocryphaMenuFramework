@@ -21,7 +21,7 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
-## Unreleased - MCM menus as AMF pages
+## 2.0.7 - 2026-10-04 - working - MCM menus as AMF pages
 
 The owner, 2026-10-04, asked for a tool like Dynamic Interface Patcher that turns MCM menus into AMF menus. He set it
 experimental at first, then released it the same day once its tests had passed. Every mod with an MCM menu now also
