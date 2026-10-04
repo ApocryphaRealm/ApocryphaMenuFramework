@@ -32,6 +32,8 @@ namespace mcmloader
 	// menus back). SetHideInSkyUI: takes the fully drawable mods out of SkyUI's MCM list, or puts them back.
 	void SetEnabled(bool a_on);
 	void SetHideInSkyUI(bool a_on);
+	// Phase 3's switch (script-only SkyUI menus, McmScripts.h); SkyUI's list follows it.
+	void SetScriptsEnabled(bool a_on);
 	// How many mods are hidden from SkyUI's list right now, and how many could be (for the settings page).
 	int HiddenInSkyUI();
 	int HideableInSkyUI();

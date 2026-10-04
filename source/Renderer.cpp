@@ -891,7 +891,17 @@ namespace renderer
 			}
 			ImGui::TextWrapped("%s", TR("AMF_McmLoadHelp", "On: every mod that uses MCM Helper also gets its menu here, read from "
 							   "the mod's own files. A change goes through MCM Helper exactly as it does in SkyUI's menu."));
-			if (!values.loadMcmHelperConfigs) { ImGui::BeginDisabled(); }
+			// phase 3: SkyUI menus written only in Papyrus (the owner, 2026-10-04: "do phase 3 for the SkyUI script menus")
+			if (widgets::Toggle(TR("AMF_McmScripts", "SkyUI script menus here (experimental)"), &values.loadSkyUIScriptMenus))
+			{
+				logger::info("settings page: SkyUI script menus -> {}", values.loadSkyUIScriptMenus);
+				settings::Save();
+				mcmloader::SetScriptsEnabled(values.loadSkyUIScriptMenus);
+			}
+			ImGui::TextWrapped("%s", TR("AMF_McmScriptsHelp", "On: a mod whose SkyUI menu is written only in its own script also gets "
+							   "its menu here. This menu makes the same calls on that script as SkyUI's menu does."));
+			const bool anyMcm = values.loadMcmHelperConfigs || values.loadSkyUIScriptMenus;
+			if (!anyMcm) { ImGui::BeginDisabled(); }
 			if (widgets::Toggle(TR("AMF_McmHideSkyUI", "Take those mods out of SkyUI's MCM list"), &values.hideMcmInSkyUI))
 			{
 				logger::info("settings page: hide MCM mods in SkyUI -> {}", values.hideMcmInSkyUI);
@@ -902,7 +912,7 @@ namespace renderer
 							   "here. A mod with anything this menu cannot draw stays in SkyUI's list. Off puts them all back."));
 			ImGui::TextDisabled(TR("AMF_McmHideSkyUICount", "%d of %d hidden from SkyUI's list now"),
 				mcmloader::HiddenInSkyUI(), mcmloader::HideableInSkyUI());
-			if (!values.loadMcmHelperConfigs) { ImGui::EndDisabled(); }
+			if (!anyMcm) { ImGui::EndDisabled(); }
 			ImGui::Spacing();
 
 			// THE ON-SCREEN KEYBOARD (1.8.9, the owner, 2026-09-18): a framework feature, so every mod's

@@ -80,6 +80,8 @@ namespace settings
 		bool systemMenuRow = true;
 		// EXPERIMENTAL (exp/mcm-loader): [MCM] bLoadMcmHelperConfigs - draw MCM Helper mods' menus as AMF pages.
 		bool loadMcmHelperConfigs = true;
+		// EXPERIMENTAL, phase 3: [MCM] bLoadSkyUIScriptMenus - draw SkyUI menus written only in Papyrus as AMF pages.
+		bool loadSkyUIScriptMenus = true;
 		// EXPERIMENTAL: [MCM] bHideInSkyUI - take the mods AMF draws completely out of SkyUI's own MCM list.
 		bool hideMcmInSkyUI = false;
 		bool watchdogEnabled = true;

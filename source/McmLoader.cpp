@@ -2,6 +2,8 @@
 
 #include "Keyboard.h"
 #include "Input.h"
+#include "McmScripts.h"
+#include "McmShared.h"
 #include "PreciseSlider.h"
 #include "Registry.h"
 #include "Settings.h"
@@ -708,17 +710,8 @@ namespace mcmloader
 			return true;
 		}
 
-		// An action's argument list (MCM Helper's Function::FunctionArguments::Make).
-		class VarArgs : public RE::BSScript::IFunctionArguments
-		{
-		public:
-			RE::BSScrapArray<RE::BSScript::Variable> args;
-			bool operator()(RE::BSScrapArray<RE::BSScript::Variable>& a_dst) const override
-			{
-				a_dst = args;
-				return true;
-			}
-		};
+		// An action's argument list (MCM Helper's Function::FunctionArguments::Make) - shared with phase 3.
+		using detail::VarArgs;
 
 		void RunAction(std::size_t a_mod, const Control& a_c, const std::string& a_value)
 		{
@@ -969,10 +962,14 @@ namespace mcmloader
 			}).detach();
 		}
 
-		// a_hide: UnregisterMod every hideable mod; otherwise RegisterMod every mod this session hid (or, after a load,
-		// every hideable one - the save may hold them hidden from an earlier session).
+		// a_hide: UnregisterMod every hideable mod of a loader that is switched on; otherwise (and for a loader switched off)
+		// RegisterMod every one - the save may hold them hidden from an earlier session. MCM Helper mods (phases 1-2) and
+		// script-only menus (phase 3) each follow their own switch.
 		void SyncSkyUI(bool a_hide)
 		{
+			const bool hideHelper = a_hide && settings::Get().loadMcmHelperConfigs;
+			const bool hideScripts = a_hide && settings::Get().loadSkyUIScriptMenus;
+			scripts::Discover();  // main thread; idempotent - a config registered since the last pass is found
 			const auto vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
 			auto manager = FindSkyUIManager();
 			if (!vm || !manager)
@@ -998,7 +995,7 @@ namespace mcmloader
 				if (!config) { continue; }
 				VarArgs args;
 				const std::string modName = g_mods[m]->modName;
-				RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> then{ new ResultThen([m, a_hide, modName](std::int32_t a_result) {
+				RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> then{ new ResultThen([m, hideHelper, modName](std::int32_t a_result) {
 					if (a_result == -2)
 					{
 						g_skyuiBusy.store(true);  // the Journal is open: nothing happened; RetryWhileBusy tries again
@@ -1007,12 +1004,12 @@ namespace mcmloader
 					{
 						std::scoped_lock lock(g_mutex);
 						// hide: a slot (>= 0) came out, or -1 - it was not in the list; either way it is out now
-						if (m < g_mods.size()) { g_mods[m]->hiddenInSkyUI = a_hide; }
+						if (m < g_mods.size()) { g_mods[m]->hiddenInSkyUI = hideHelper; }
 					}
-					logger::debug("MCM loader: SkyUI {} {} -> {}", a_hide ? "UnregisterMod" : "RegisterMod", modName, a_result);
+					logger::debug("MCM loader: SkyUI {} {} -> {}", hideHelper ? "UnregisterMod" : "RegisterMod", modName, a_result);
 					RecountHidden();
 				}) };
-				if (a_hide)
+				if (hideHelper)
 				{
 					args.args.resize(1);
 					args.args[0].SetObject(config, baseType);
@@ -1027,7 +1024,28 @@ namespace mcmloader
 					if (vm->DispatchMethodCall(manager, "RegisterMod", &args, then)) { ++sent; }
 				}
 			}
-			logger::info("MCM loader: SkyUI's MCM list - {} {} mod(s) sent; results counted as they come back", a_hide ? "UnregisterMod" : "RegisterMod", sent);
+			int sentScripts = 0;
+			for (const auto& target : scripts::HideTargets())
+			{
+				VarArgs args;
+				const std::size_t index = target.index;
+				const std::string modName = target.modName;
+				RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> then{ new ResultThen([index, hideScripts, modName](std::int32_t a_result) {
+					if (a_result == -2)
+					{
+						g_skyuiBusy.store(true);
+						return;
+					}
+					scripts::SetHidden(index, hideScripts);
+					logger::debug("MCM loader: SkyUI {} {} (script menu) -> {}", hideScripts ? "UnregisterMod" : "RegisterMod", modName, a_result);
+				}) };
+				args.args.resize(hideScripts ? 1 : 2);
+				args.args[0].SetObject(target.config, baseType);
+				if (!hideScripts) { args.args[1].SetString(target.modName); }
+				if (vm->DispatchMethodCall(manager, hideScripts ? "UnregisterMod" : "RegisterMod", &args, then)) { ++sentScripts; }
+			}
+			logger::info("MCM loader: SkyUI's MCM list - {} MCM Helper mod(s) {}, {} script menu(s) {}; results counted as they come back",
+				sent, hideHelper ? "UnregisterMod" : "RegisterMod", sentScripts, hideScripts ? "UnregisterMod" : "RegisterMod");
 			RetryWhileBusy(a_hide);
 		}
 
@@ -1045,7 +1063,8 @@ namespace mcmloader
 				for (const int gap : { 3, 5, 7, 20, 35 })  // passes at 3, 8, 15, 35 and 70 s after the load
 				{
 					std::this_thread::sleep_for(std::chrono::seconds(gap));
-					if (g_hideGeneration.load() != generation || !settings::Get().hideMcmInSkyUI || !settings::Get().loadMcmHelperConfigs) { return; }
+					if (g_hideGeneration.load() != generation || !settings::Get().hideMcmInSkyUI ||
+						(!settings::Get().loadMcmHelperConfigs && !settings::Get().loadSkyUIScriptMenus)) { return; }
 					QueueSyncSkyUI(true);
 				}
 			}).detach();
@@ -1501,6 +1520,7 @@ namespace mcmloader
 
 	void Frame()
 	{
+		scripts::Frame();
 		const int open = g_openMod.load();
 		if (open >= 0 && g_lastDrawFrame < ImGui::GetFrameCount() - 1)
 		{
@@ -1511,6 +1531,7 @@ namespace mcmloader
 
 	void OnGameLoaded()
 	{
+		scripts::OnGameLoaded();
 		{
 			std::scoped_lock lock(g_mutex);
 			for (auto& mod : g_mods)
@@ -1522,7 +1543,7 @@ namespace mcmloader
 			}
 		}
 		g_hiddenCount.store(0);
-		if (!settings::Get().loadMcmHelperConfigs || g_mods.empty()) { return; }
+		if (!settings::Get().loadMcmHelperConfigs && !settings::Get().loadSkyUIScriptMenus) { return; }
 		if (settings::Get().hideMcmInSkyUI)
 		{
 			ScheduleHideAfterLoad();
@@ -1550,23 +1571,32 @@ namespace mcmloader
 			for (const auto& page : mod->pageNames) { registry::SetPageVisible(mod->entryName.c_str(), page.c_str(), a_on); }
 		}
 		logger::info("MCM loader: switched {} on the settings page ({} entries {})", a_on ? "on" : "off", g_mods.size(), a_on ? "shown" : "hidden");
-		if (settings::Get().hideMcmInSkyUI) { QueueSyncSkyUI(a_on); }  // off: SkyUI gets its menus back
+		if (settings::Get().hideMcmInSkyUI) { QueueSyncSkyUI(true); }  // each loader's mods follow its own switch: off gives them back
 	}
 
 	void SetHideInSkyUI(bool a_on)
 	{
 		++g_hideGeneration;  // cancel any pending after-load passes
-		if (!settings::Get().loadMcmHelperConfigs && a_on) { return; }  // nothing is managed here while the loader is off
+		if (!settings::Get().loadMcmHelperConfigs && !settings::Get().loadSkyUIScriptMenus && a_on) { return; }  // nothing is managed here
 		QueueSyncSkyUI(a_on);
 	}
 
-	int HiddenInSkyUI() { return g_hiddenCount.load(); }
+	int HiddenInSkyUI() { return g_hiddenCount.load() + scripts::Hidden(); }
 
 	int HideableInSkyUI()
 	{
 		int n = 0;
-		for (const auto& mod : g_mods) { n += mod->hideable ? 1 : 0; }
-		return n;
+		if (settings::Get().loadMcmHelperConfigs)
+		{
+			for (const auto& mod : g_mods) { n += mod->hideable ? 1 : 0; }
+		}
+		return n + scripts::Count();  // every script menu is drawn in full
+	}
+
+	void SetScriptsEnabled(bool a_on)
+	{
+		scripts::SetEnabled(a_on);
+		QueueSyncSkyUI(settings::Get().hideMcmInSkyUI);  // their place in SkyUI's list follows the switch
 	}
 
 	std::string ToolJson(const std::string& a_argsJson)
@@ -1587,16 +1617,23 @@ namespace mcmloader
 		};
 
 		json out;
+		if (op == "skyui") { return scripts::ToolJson(a_argsJson); }  // phase 3: script-only SkyUI menus
 		if (op == "switch")
 		{
-			// the settings page's two toggles, the same calls and the same save: name load | hideskyui, on true/false
+			// the settings page's three toggles, the same calls and the same save: name load | scripts | hideskyui, on true/false
 			const std::string name = JsonStr(args, "name");
 			const auto on = args.find("on");
-			if (on == args.end() || !on->is_boolean() || (name != "load" && name != "hideskyui"))
+			if (on == args.end() || !on->is_boolean() || (name != "load" && name != "scripts" && name != "hideskyui"))
 			{
-				return R"J({"ok":false,"error":"switch needs name (load | hideskyui) and on (true/false)"})J";
+				return R"J({"ok":false,"error":"switch needs name (load | scripts | hideskyui) and on (true/false)"})J";
 			}
-			if (name == "load")
+			if (name == "scripts")
+			{
+				settings::Get().loadSkyUIScriptMenus = on->get<bool>();
+				settings::Save();
+				SetScriptsEnabled(on->get<bool>());
+			}
+			else if (name == "load")
 			{
 				settings::Get().loadMcmHelperConfigs = on->get<bool>();
 				settings::Save();
@@ -1617,6 +1654,8 @@ namespace mcmloader
 			out["enabled"] = settings::Get().loadMcmHelperConfigs;
 			out["hideInSkyUI"] = settings::Get().hideMcmInSkyUI;
 			out["hiddenInSkyUI"] = g_hiddenCount.load();
+			out["skyuiScriptMenus"] = scripts::Count();
+			out["skyuiScriptMenusHidden"] = scripts::Hidden();
 			for (const auto& mod : g_mods)
 			{
 				json m{ { "mod", mod->modName }, { "entry", mod->entryName }, { "pages", mod->pages.size() },
@@ -1711,4 +1750,16 @@ namespace mcmloader
 		}
 		return json{ { "ok", false }, { "error", "unknown op '" + op + "' (list, get, set, press, refresh, script)" } }.dump();
 	}
+}
+
+// Phase 3 (McmScripts.cpp) uses these through McmShared.h.
+namespace mcmloader::detail
+{
+	std::string Lower(std::string a_s) { return ::mcmloader::Lower(std::move(a_s)); }
+	std::string Trim(const std::string& a_s) { return ::mcmloader::Trim(a_s); }
+	std::string Narrow(std::wstring_view a_w) { return ::mcmloader::Narrow(a_w); }
+	std::string StripTags(const std::string& a_s) { return ::mcmloader::StripTags(a_s); }
+	std::string KeyName(std::int32_t a_code) { return ::mcmloader::KeyName(a_code); }
+	Table LoadTranslations(const std::string& a_plugin) { return ::mcmloader::LoadTranslations(a_plugin); }
+	RE::BSTSmartPointer<RE::BSScript::Object> FindSkyUIManager() { return ::mcmloader::FindSkyUIManager(); }
 }

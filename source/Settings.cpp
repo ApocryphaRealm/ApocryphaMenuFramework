@@ -196,7 +196,11 @@ namespace settings
 				"; page here as well, read from that mod's own files. Changes go through MCM Helper, exactly\n"
 				"; as its own menu makes them. 0 = leave MCM Helper menus to SkyUI only.\n"
 				"bLoadMcmHelperConfigs=" << (a_v.loadMcmHelperConfigs ? 1 : 0) << "\n"
-				"; 1 = take the MCM Helper mods this menu draws in full out of SkyUI's own MCM list, so each one is\n"
+				"; EXPERIMENTAL. 1 = also show every SkyUI menu written only in its mod's own script (no MCM\n"
+				"; Helper files) as a page here. This menu makes the same calls on that script as SkyUI's\n"
+				"; menu does. 0 = leave those menus to SkyUI only.\n"
+				"bLoadSkyUIScriptMenus=" << (a_v.loadSkyUIScriptMenus ? 1 : 0) << "\n"
+				"; 1 = take the mods this menu draws in full out of SkyUI's own MCM list, so each one is\n"
 				"; set in one place. A mod with anything this menu cannot draw stays in SkyUI's list. 0 = leave\n"
 				"; SkyUI's list as it is. The list is kept in your save: to get every menu back in SkyUI without\n"
 				"; this mod, type  setstage SKI_ConfigManagerInstance 1  in the console.\n"
@@ -545,6 +549,7 @@ namespace settings
 			ReadBool(entries, "Menu.bPauseGame", g_values.pauseGameWhileOpen);
 			ReadBool(entries, "Menus.bSystemMenuRow", g_values.systemMenuRow);
 			ReadBool(entries, "MCM.bLoadMcmHelperConfigs", g_values.loadMcmHelperConfigs);
+			ReadBool(entries, "MCM.bLoadSkyUIScriptMenus", g_values.loadSkyUIScriptMenus);
 			ReadBool(entries, "MCM.bHideInSkyUI", g_values.hideMcmInSkyUI);
 
 			// Window profiles. Each field defaults to -1, which the renderer reads as "this profile
