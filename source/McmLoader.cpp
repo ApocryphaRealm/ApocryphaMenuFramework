@@ -144,10 +144,15 @@ namespace mcmloader
 			return out;
 		}
 
+		// Any non-zero number is on: a hiddenToggle can drive its group from an INT setting (TrueHUD's
+		// uInfoBarDisplayDamageCounter: 0 off, 1 and 2 two ways of on), so "1 only" would grey out live rows.
 		bool ParseBool(const std::string& a_v)
 		{
 			const std::string v = Lower(Trim(a_v));
-			return v == "1" || v == "true";
+			if (v == "true") { return true; }
+			if (v.empty() || v == "false") { return false; }
+			try { return std::stod(v) != 0.0; }
+			catch (...) { return false; }
 		}
 
 		long long ParseInt(const std::string& a_v)
