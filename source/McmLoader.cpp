@@ -23,6 +23,7 @@
 #include <optional>
 #include <set>
 #include <sstream>
+#include <thread>
 #include <unordered_map>
 
 // See McmLoader.h for what this is and the plan it follows. Everything here is EXPERIMENTAL.
@@ -110,6 +111,9 @@ namespace mcmloader
 			RE::BSTSmartPointer<RE::BSScript::Object> script;
 			bool scriptTried = false;
 			RE::FormID questId = 0;  // the quest the config script is on (a PropertyValue/action scriptName with no form)
+			std::vector<std::string> pageNames;  // as registered, for hiding the entry
+			bool hideable = false;   // everything on it is drawable here, so SkyUI's copy may be hidden
+			bool hiddenInSkyUI = false;
 			std::string scriptState = "not looked up yet";
 		};
 
@@ -557,7 +561,10 @@ namespace mcmloader
 
 		// Main thread: one SkyUI/MCM Helper event on the mod's config script. OnConfigOpen / OnConfigClose carry no
 		// argument; OnSettingChange carries the setting id.
-		bool DispatchEvent(std::size_t a_mod, const char* a_event, const std::string* a_arg)
+		// a_then (optional): run once the event has FINISHED in Papyrus - or at once when it could not be sent. The
+		// DevBench path waits on OnConfigOpen this way: SkyUI's OnConfigOpen reloads properties (UnequipArmor =
+		// GetGroupFlag(...)), and run after a write it put the old value back (2026-10-04).
+		bool DispatchEvent(std::size_t a_mod, const char* a_event, const std::string* a_arg, std::function<void()> a_then = {})
 		{
 			const auto vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
 			auto script = EnsureScript(a_mod);
@@ -566,11 +573,14 @@ namespace mcmloader
 			{
 				logger::info("MCM loader: {} {} not sent - no config script yet (the mod reads its settings when it next loads them)",
 					modName, a_event);
+				if (a_then) { a_then(); }
 				return false;
 			}
 			RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> none;
+			if (a_then) { none.reset(new Then(a_then)); }
 			std::unique_ptr<RE::BSScript::IFunctionArguments> args{ a_arg ? RE::MakeFunctionArguments(std::string(*a_arg)) : RE::MakeFunctionArguments() };
 			const bool sent = vm->DispatchMethodCall(script, a_event, args.get(), none);
+			if (!sent && a_then) { a_then(); }
 			logger::info("MCM loader: {} {}{}{} {}", modName, a_event, a_arg ? " " : "", a_arg ? *a_arg : "", sent ? "sent" : "NOT sent (dispatch failed)");
 			return sent;
 		}
@@ -868,6 +878,99 @@ namespace mcmloader
 					}
 				}
 			});
+		}
+
+		// -------------------------------------------------- SkyUI's own MCM list: hide the mods managed here (main thread)
+		//
+		// SkyUI's config manager (SKI_ConfigManager) re-announces itself every 5 s for half a minute after a load and every
+		// 30 s after that, and a config script registers on every announcement UNLESS it already holds that manager
+		// (SKI_ConfigBase.OnConfigManagerReady: "if (_configManager == newManager) return"). UnregisterMod(config) takes the
+		// mod out of the list without clearing that, so one call after the mod has registered keeps it out - no
+		// re-registration, and no "MCM: Registered N new menu(s)" notification. RegisterMod(config, ModName) puts it back.
+		// Both are SkyUI's own @interface functions. The list lives in the save; `setstage SKI_ConfigManagerInstance 1`
+		// (SkyUI's documented reset) brings every menu back without this mod.
+
+		RE::BSTSmartPointer<RE::BSScript::Object> FindSkyUIManager()
+		{
+			RE::BSTSmartPointer<RE::BSScript::Object> found;
+			const auto vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
+			const auto dataHandler = RE::TESDataHandler::GetSingleton();
+			const auto policy = vm ? vm->GetObjectHandlePolicy() : nullptr;
+			if (!vm || !dataHandler || !policy) { return found; }
+			for (const auto quest : dataHandler->GetFormArray<RE::TESQuest>())
+			{
+				const auto file = quest ? quest->GetFile(0) : nullptr;
+				if (!file || Lower(std::string(file->GetFilename())) != "skyui_se.esp") { continue; }
+				const auto handle = policy->GetHandleForObject(RE::TESQuest::FORMTYPE, quest);
+				RE::BSTSmartPointer<RE::BSScript::Object> object;
+				if (handle && vm->FindBoundObject(handle, "SKI_ConfigManager", object) && object) { return object; }
+			}
+			return found;
+		}
+
+		std::atomic<int> g_hiddenCount{ 0 };
+		std::atomic<unsigned> g_hideGeneration{ 0 };
+
+		// a_hide: UnregisterMod every hideable mod; otherwise RegisterMod every mod this session hid (or, after a load,
+		// every hideable one - the save may hold them hidden from an earlier session).
+		void SyncSkyUI(bool a_hide)
+		{
+			const auto vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
+			auto manager = FindSkyUIManager();
+			if (!vm || !manager)
+			{
+				logger::info("MCM loader: SkyUI's config manager is not running yet - SkyUI's list left as it is for now");
+				return;
+			}
+			int changed = 0;
+			for (std::size_t m = 0; m < g_mods.size(); ++m)
+			{
+				if (!g_mods[m]->hideable) { continue; }
+				auto config = EnsureScript(m);
+				if (!config) { continue; }
+				VarArgs args;
+				RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> none;
+				if (a_hide)
+				{
+					args.args.resize(1);
+					args.args[0].SetObject(config);
+					if (vm->DispatchMethodCall(manager, "UnregisterMod", &args, none)) { ++changed; }
+					g_mods[m]->hiddenInSkyUI = true;
+				}
+				else
+				{
+					const auto name = config->GetProperty("ModName");
+					args.args.resize(2);
+					args.args[0].SetObject(config);
+					args.args[1].SetString(name && name->IsString() ? name->GetString() : std::string_view(g_mods[m]->modName));
+					if (vm->DispatchMethodCall(manager, "RegisterMod", &args, none)) { ++changed; }
+					g_mods[m]->hiddenInSkyUI = false;
+				}
+			}
+			int hidden = 0;
+			for (const auto& mod : g_mods) { hidden += mod->hiddenInSkyUI ? 1 : 0; }
+			g_hiddenCount.store(hidden);
+			logger::info("MCM loader: SkyUI's MCM list - {} {} mod(s) ({} hidden now)", a_hide ? "took out" : "put back", changed, hidden);
+		}
+
+		void QueueSyncSkyUI(bool a_hide)
+		{
+			if (const auto tasks = SKSE::GetTaskInterface()) { tasks->AddTask([a_hide]() { SyncSkyUI(a_hide); }); }
+		}
+
+		// After a load the mods register over the first seconds (SkyUI's announcements at 0, 5, 10 ... 30 s): take them out
+		// a few times over the first minute and a half so a late registration is caught too. Each pass is idempotent.
+		void ScheduleHideAfterLoad()
+		{
+			const unsigned generation = ++g_hideGeneration;
+			std::thread([generation]() {
+				for (const int gap : { 3, 5, 7, 20, 35 })  // passes at 3, 8, 15, 35 and 70 s after the load
+				{
+					std::this_thread::sleep_for(std::chrono::seconds(gap));
+					if (g_hideGeneration.load() != generation || !settings::Get().hideMcmInSkyUI || !settings::Get().loadMcmHelperConfigs) { return; }
+					QueueSyncSkyUI(true);
+				}
+			}).detach();
 		}
 
 		// ---------------------------------------------------------------------------------------------- drawing
@@ -1241,6 +1344,8 @@ namespace mcmloader
 				Skip(modName, "config.json has no pages");
 				return;
 			}
+			mod->hideable = mod->phase2Count == 0 &&
+				std::none_of(mod->pages.begin(), mod->pages.end(), [](const Page& p) { return p.customContent; });
 
 			mod->translations = LoadTranslations(modName);
 			mod->defaults = ReadIni(a_folder / "settings.ini");
@@ -1275,7 +1380,11 @@ namespace mcmloader
 					if (name.empty()) { name = "Settings"; }
 					for (int n = 2; used.contains(name); ++n) { name = name + " (" + std::to_string(n) + ")"; }
 					used.insert(name);
-					if (registry::RegisterFn(mod.entryName.c_str(), name.c_str(), [m, p]() { DrawPage(m, p); })) { ++pageCount; }
+					if (registry::RegisterFn(mod.entryName.c_str(), name.c_str(), [m, p]() { DrawPage(m, p); }))
+					{
+						++pageCount;
+						mod.pageNames.push_back(name);
+					}
 				}
 			}
 			logger::info("MCM loader: {} MCM Helper mod(s) registered as AMF entries ({} page(s)); {} skipped",
@@ -1285,12 +1394,12 @@ namespace mcmloader
 
 	void Load()
 	{
-		if (g_loaded.exchange(true)) { return; }
 		if (!settings::Get().loadMcmHelperConfigs)
 		{
-			logger::info("MCM loader: off ([MCM] bLoadMcmHelperConfigs=0)");
+			logger::info("MCM loader: off ([MCM] bLoadMcmHelperConfigs=0) - switching it on in the settings page loads the configs then");
 			return;
 		}
+		if (g_loaded.exchange(true)) { return; }
 
 		const fs::path root("Data/MCM/Config");
 		std::error_code ec;
@@ -1324,13 +1433,62 @@ namespace mcmloader
 
 	void OnGameLoaded()
 	{
-		std::scoped_lock lock(g_mutex);
-		for (auto& mod : g_mods)
 		{
-			mod->script.reset();
-			mod->scriptTried = false;
-			mod->scriptState = "not looked up yet (a game was loaded)";
+			std::scoped_lock lock(g_mutex);
+			for (auto& mod : g_mods)
+			{
+				mod->script.reset();
+				mod->scriptTried = false;
+				mod->scriptState = "not looked up yet (a game was loaded)";
+				mod->hiddenInSkyUI = false;  // what the save holds is re-established below
+			}
 		}
+		g_hiddenCount.store(0);
+		if (!settings::Get().loadMcmHelperConfigs || g_mods.empty()) { return; }
+		if (settings::Get().hideMcmInSkyUI)
+		{
+			ScheduleHideAfterLoad();
+		}
+		else
+		{
+			// a save made while they were hidden keeps them hidden: give SkyUI its menus back once they have registered
+			// (RegisterMod returns at once for one already in the list, so this costs nothing when nothing was hidden)
+			const unsigned generation = ++g_hideGeneration;
+			std::thread([generation]() {
+				std::this_thread::sleep_for(std::chrono::seconds(10));
+				if (g_hideGeneration.load() == generation && !settings::Get().hideMcmInSkyUI) { QueueSyncSkyUI(false); }
+			}).detach();
+		}
+	}
+
+	void SetEnabled(bool a_on)
+	{
+		if (a_on && !g_loaded.load())
+		{
+			Load();  // first switched on in this session: read the configs now (the data is long loaded)
+		}
+		for (const auto& mod : g_mods)
+		{
+			for (const auto& page : mod->pageNames) { registry::SetPageVisible(mod->entryName.c_str(), page.c_str(), a_on); }
+		}
+		logger::info("MCM loader: switched {} on the settings page ({} entries {})", a_on ? "on" : "off", g_mods.size(), a_on ? "shown" : "hidden");
+		if (settings::Get().hideMcmInSkyUI) { QueueSyncSkyUI(a_on); }  // off: SkyUI gets its menus back
+	}
+
+	void SetHideInSkyUI(bool a_on)
+	{
+		++g_hideGeneration;  // cancel any pending after-load passes
+		if (!settings::Get().loadMcmHelperConfigs && a_on) { return; }  // nothing is managed here while the loader is off
+		QueueSyncSkyUI(a_on);
+	}
+
+	int HiddenInSkyUI() { return g_hiddenCount.load(); }
+
+	int HideableInSkyUI()
+	{
+		int n = 0;
+		for (const auto& mod : g_mods) { n += mod->hideable ? 1 : 0; }
+		return n;
 	}
 
 	std::string ToolJson(const std::string& a_argsJson)
@@ -1351,15 +1509,40 @@ namespace mcmloader
 		};
 
 		json out;
+		if (op == "switch")
+		{
+			// the settings page's two toggles, the same calls and the same save: name load | hideskyui, on true/false
+			const std::string name = JsonStr(args, "name");
+			const auto on = args.find("on");
+			if (on == args.end() || !on->is_boolean() || (name != "load" && name != "hideskyui"))
+			{
+				return R"J({"ok":false,"error":"switch needs name (load | hideskyui) and on (true/false)"})J";
+			}
+			if (name == "load")
+			{
+				settings::Get().loadMcmHelperConfigs = on->get<bool>();
+				settings::Save();
+				SetEnabled(on->get<bool>());
+			}
+			else
+			{
+				settings::Get().hideMcmInSkyUI = on->get<bool>();
+				settings::Save();
+				SetHideInSkyUI(on->get<bool>());
+			}
+			return json{ { "ok", true }, { "switch", name }, { "on", on->get<bool>() } }.dump();
+		}
 		if (op.empty() || op == "list")
 		{
 			std::scoped_lock lock(g_mutex);
 			out["ok"] = true;
 			out["enabled"] = settings::Get().loadMcmHelperConfigs;
+			out["hideInSkyUI"] = settings::Get().hideMcmInSkyUI;
+			out["hiddenInSkyUI"] = g_hiddenCount.load();
 			for (const auto& mod : g_mods)
 			{
 				json m{ { "mod", mod->modName }, { "entry", mod->entryName }, { "pages", mod->pages.size() },
-					{ "controls", mod->controlCount }, { "phase2", mod->phase2Count }, { "script", mod->scriptState } };
+					{ "controls", mod->controlCount }, { "phase2", mod->phase2Count }, { "script", mod->scriptState }, { "hideable", mod->hideable }, { "hiddenInSkyUI", mod->hiddenInSkyUI } };
 				out["mods"].push_back(m);
 			}
 			for (const auto& [mod, reason] : g_skipped) { out["skipped"].push_back({ { "mod", mod }, { "reason", reason } }); }
@@ -1436,8 +1619,16 @@ namespace mcmloader
 			}
 			// With the mod's page not open, the tool plays a whole SkyUI visit: open, change, close.
 			const bool pageOpen = g_openMod.load() == static_cast<int>(*index);
-			if (!pageOpen) { QueueEvent(*index, "OnConfigOpen"); }
-			Apply(*index, *control, text, !pageOpen);
+			if (pageOpen) { Apply(*index, *control, text); }
+			else if (const auto tasks = SKSE::GetTaskInterface())
+			{
+				// the write waits for OnConfigOpen to FINISH - a mod's OnConfigOpen reloads its properties, and run after
+				// the write it put the old value back (SkyUI's UnequipArmor, 2026-10-04)
+				const std::size_t mod = *index;
+				tasks->AddTask([mod, control, text]() {
+					DispatchEvent(mod, "OnConfigOpen", nullptr, [mod, control, text]() { Apply(mod, *control, text, true); });
+				});
+			}
 			return json{ { "ok", true }, { "id", id }, { "queued", text }, { "configCloseAfter", !pageOpen } }.dump();
 		}
 		return json{ { "ok", false }, { "error", "unknown op '" + op + "' (list, get, set, press, refresh, script)" } }.dump();

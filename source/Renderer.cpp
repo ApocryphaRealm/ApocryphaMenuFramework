@@ -882,6 +882,29 @@ namespace renderer
 			ImGui::TextDisabled("%s", TR("AMF_TakesEffectJournal", "Takes effect the next time the journal is opened."));
 			ImGui::Spacing();
 
+			// EXPERIMENTAL (exp/mcm-loader): the MCM Helper loader's two switches (the owner, 2026-10-04).
+			if (widgets::Toggle(TR("AMF_McmLoad", "MCM Helper menus here (experimental)"), &values.loadMcmHelperConfigs))
+			{
+				logger::info("settings page: MCM Helper menus -> {}", values.loadMcmHelperConfigs);
+				settings::Save();
+				mcmloader::SetEnabled(values.loadMcmHelperConfigs);
+			}
+			ImGui::TextWrapped("%s", TR("AMF_McmLoadHelp", "On: every mod that uses MCM Helper also gets its menu here, read from "
+							   "the mod's own files. A change goes through MCM Helper exactly as it does in SkyUI's menu."));
+			if (!values.loadMcmHelperConfigs) { ImGui::BeginDisabled(); }
+			if (widgets::Toggle(TR("AMF_McmHideSkyUI", "Take those mods out of SkyUI's MCM list"), &values.hideMcmInSkyUI))
+			{
+				logger::info("settings page: hide MCM mods in SkyUI -> {}", values.hideMcmInSkyUI);
+				settings::Save();
+				mcmloader::SetHideInSkyUI(values.hideMcmInSkyUI);
+			}
+			ImGui::TextWrapped("%s", TR("AMF_McmHideSkyUIHelp", "On: a mod whose whole menu is drawn here is set in one place - "
+							   "here. A mod with anything this menu cannot draw stays in SkyUI's list. Off puts them all back."));
+			ImGui::TextDisabled(TR("AMF_McmHideSkyUICount", "%d of %d hidden from SkyUI's list now"),
+				mcmloader::HiddenInSkyUI(), mcmloader::HideableInSkyUI());
+			if (!values.loadMcmHelperConfigs) { ImGui::EndDisabled(); }
+			ImGui::Spacing();
+
 			// THE ON-SCREEN KEYBOARD (1.8.9, the owner, 2026-09-18): a framework feature, so every mod's
 			// search box gets it; a toggle here, drawn at the bottom of the screen, never over the page.
 			if (widgets::Toggle(TR("AMF_OnScreenKeyboard", "On-screen keyboard for controllers"), &values.onScreenKeyboard))

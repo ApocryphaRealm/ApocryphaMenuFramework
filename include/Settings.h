@@ -80,6 +80,8 @@ namespace settings
 		bool systemMenuRow = true;
 		// EXPERIMENTAL (exp/mcm-loader): [MCM] bLoadMcmHelperConfigs - draw MCM Helper mods' menus as AMF pages.
 		bool loadMcmHelperConfigs = true;
+		// EXPERIMENTAL: [MCM] bHideInSkyUI - take the mods AMF draws completely out of SkyUI's own MCM list.
+		bool hideMcmInSkyUI = false;
 		bool watchdogEnabled = true;
 		// Fast exit (the author, 2026-09-05: "a way to deal with this on exit no kill function issue"):
 		// when the game asks Windows to exit, end the process at once instead of running every

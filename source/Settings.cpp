@@ -196,6 +196,11 @@ namespace settings
 				"; page here as well, read from that mod's own files. Changes go through MCM Helper, exactly\n"
 				"; as its own menu makes them. 0 = leave MCM Helper menus to SkyUI only.\n"
 				"bLoadMcmHelperConfigs=" << (a_v.loadMcmHelperConfigs ? 1 : 0) << "\n"
+				"; 1 = take the MCM Helper mods this menu draws in full out of SkyUI's own MCM list, so each one is\n"
+				"; set in one place. A mod with anything this menu cannot draw stays in SkyUI's list. 0 = leave\n"
+				"; SkyUI's list as it is. The list is kept in your save: to get every menu back in SkyUI without\n"
+				"; this mod, type  setstage SKI_ConfigManagerInstance 1  in the console.\n"
+				"bHideInSkyUI=" << (a_v.hideMcmInSkyUI ? 1 : 0) << "\n"
 				"\n"
 				"[Input]\n"
 				"; DirectInput scan code that toggles the framework menu, decimal or hex: 59 (0x3B) = F1.\n"
@@ -540,6 +545,7 @@ namespace settings
 			ReadBool(entries, "Menu.bPauseGame", g_values.pauseGameWhileOpen);
 			ReadBool(entries, "Menus.bSystemMenuRow", g_values.systemMenuRow);
 			ReadBool(entries, "MCM.bLoadMcmHelperConfigs", g_values.loadMcmHelperConfigs);
+			ReadBool(entries, "MCM.bHideInSkyUI", g_values.hideMcmInSkyUI);
 
 			// Window profiles. Each field defaults to -1, which the renderer reads as "this profile
 			// has never been moved, so use its default geometry"; a missing key therefore behaves

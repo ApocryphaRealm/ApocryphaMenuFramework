@@ -26,6 +26,16 @@ namespace mcmloader
 	// Does nothing when [MCM] bLoadMcmHelperConfigs=0.
 	void Load();
 
+	// The settings page's two switches (the owner, 2026-10-04: "a toggle in the settings page" and "an additional
+	// toggle to turn off the menus in Sky UI for the mods that we're managing in AMF"). The caller saves the INI.
+	// SetEnabled: loads the configs the first time it is switched on; off hides every MCM entry (and gives SkyUI its
+	// menus back). SetHideInSkyUI: takes the fully drawable mods out of SkyUI's MCM list, or puts them back.
+	void SetEnabled(bool a_on);
+	void SetHideInSkyUI(bool a_on);
+	// How many mods are hidden from SkyUI's list right now, and how many could be (for the settings page).
+	int HiddenInSkyUI();
+	int HideableInSkyUI();
+
 	// Every frame, right after ImGui::NewFrame: sends OnConfigClose to the mod whose entry stopped being drawn
 	// (SkyUI's lifecycle - TrueHUD, True Directional Movement and Precision apply their settings in OnConfigClose).
 	void Frame();
