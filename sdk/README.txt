@@ -1,6 +1,6 @@
 Apocrypha Menu Framework (Skyrim) - SDK
 =======================================
-Version 2.0.4 (matches the framework release it ships beside)
+Version 2.0.5 (matches the framework release it ships beside)
 
 For mod authors who want a settings page in the Apocrypha Menu Framework. MIT licensed, so vendor it freely.
 
