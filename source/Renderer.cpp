@@ -2707,6 +2707,34 @@ namespace renderer
 				ImGui_ImplDX11_NewFrame();
 				ImGui_ImplWin32_NewFrame();
 
+				// THE IMAGE, NOT THE WINDOW (2.0.8 - Soulsthat, 2026-10-04, 2560x1440: the menu and its tooltips clipped at the
+				// right and bottom, the right side before the left). The Win32 backend sizes the display from the game WINDOW's
+				// client rect, but everything ImGui draws lands 1:1 on the swap chain's back buffer. When the game renders a
+				// smaller image than its window (a lower render resolution scaled up in a borderless window), the window's
+				// centre sat right of and below the image's, the size cap let the menu run off the image, and tooltips clamped
+				// to an edge past it. AMF's cursor is its own (mouse deltas clamped to DisplaySize), so nothing maps window
+				// coordinates; the back buffer's size is the whole truth.
+				if (g_swapChain)
+				{
+					DXGI_SWAP_CHAIN_DESC sd{};
+					if (SUCCEEDED(g_swapChain->GetDesc(&sd)) && sd.BufferDesc.Width > 0 && sd.BufferDesc.Height > 0)
+					{
+						ImGuiIO& io = ImGui::GetIO();
+						const ImVec2 image(static_cast<float>(sd.BufferDesc.Width), static_cast<float>(sd.BufferDesc.Height));
+						if (io.DisplaySize.x != image.x || io.DisplaySize.y != image.y)
+						{
+							static ImVec2 s_logged{ -1.0f, -1.0f };   // render thread only; log each new pair once
+							if (s_logged.x != io.DisplaySize.x || s_logged.y != io.DisplaySize.y)
+							{
+								s_logged = io.DisplaySize;
+								logger::info("display: the game window is {}x{} but draws a {}x{} image - the menu uses the image's size",
+											 io.DisplaySize.x, io.DisplaySize.y, image.x, image.y);
+							}
+							io.DisplaySize = image;
+						}
+					}
+				}
+
 				// Give an external launcher its say before this frame's visibility is read, so a
 				// menu it just asked for opens on the same frame rather than the next one.
 				compat::PumpExternalWindow();

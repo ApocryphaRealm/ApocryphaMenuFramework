@@ -21,6 +21,20 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## Unreleased - the menu fits the image the game draws
+
+### Fixed
+- The menu and its tooltips ran off the right and bottom of the screen when the game draws a smaller image than its
+  window - a borderless window with a lower render resolution scaled up (SSE Display Tweaks' upscaling, Auto
+  Resolution's ratio, an upscaler). Soulsthat's report, 2560x1440: the menu clipped at the bottom and the right, the
+  right side before the left, it slid while being resized, and a tooltip near the edge was cut off. The screen size
+  came from the game window (ImGui's Win32 backend) while everything is drawn on the swap chain's image; it is now the
+  image's size, and the log says once when the two differ.
+
+### Tested (2026-10-04, SE 1.5.97, Njordlinger Test, Auto Resolution fRatio 0.5 -> 1600x900 drawn in a 3200x1800 window)
+- Before (2.0.7): the menu's left edge sat near the screen's left and its right and bottom ran off the image.
+- After: centred and whole, and the log read "the game window is 3200x1800 but draws a 1600x900 image".
+
 ## 2.0.7 - 2026-10-04 - working - MCM menus as AMF pages
 
 The owner, 2026-10-04, asked for a tool like Dynamic Interface Patcher that turns MCM menus into AMF menus. He set it
