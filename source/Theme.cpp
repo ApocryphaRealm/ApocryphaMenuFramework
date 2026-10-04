@@ -295,6 +295,11 @@ namespace theme
 		return value;
 	}
 
+	float BaseWindowPadding()
+	{
+		return static_cast<float>(knotwork::kCorner) + 8.0f;   // the kFramePadding Apply() sets
+	}
+
 	void Apply()
 	{
 		if (g_themes.empty())

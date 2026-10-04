@@ -150,20 +150,23 @@ def main() -> int:
     # rewritten to note the item's id after the call (see Keyboard.h). Nothing else changes.
     TEXT_FIELDS = {"igInputText", "igInputTextMultiline", "igInputTextWithHint", "igInputTextEx"}
     noted = 0
+    # 2.0.6 (C0kAdam, the dMenu NG author): every collapsing-header and tree-node export. A FRAMED
+    # header widens its frame to the left by IM_TRUNC(window->WindowPadding.x * 0.5f - 1) (TreeNodeBehavior,
+    # imgui_widgets.cpp 1.90.8), and AMF's windows carry a 34 px padding where stock ImGui has 8, so the
+    # frame's left edge - GetItemRectMin().x - moved 13 px further from the arrow than it does under SKSE
+    # Menu Framework, and dMenu's icon, placed from that edge, landed on the arrow. The body is wrapped in
+    # amf_BeginConsumerHeader()/amf_EndConsumerHeader() (ConsumerSurface.cpp), which give the call the
+    # stock padding and put AMF's back. TreeNodeBehavior reads WindowPadding for nothing else.
+    HEADER_PREFIXES = ("igCollapsingHeader_", "igTreeNode_", "igTreeNodeV_", "igTreeNodeEx_", "igTreeNodeExV_")
+    HEADER_NAMES = {"igTreeNodeBehavior"}
+    wrapped = []
     for m in fn.finditer(src):
         ret, name, args = m.group(2).strip(), m.group(3), m.group(4).strip()
         lines = guards_for(ret, args)
         out.append(src[pos:m.end()])
         pos = m.end()
-        if name in TEXT_FIELDS:
-            body_end = src.index("\n}", pos)
-            body = src[pos:body_end]
-            assert body.strip().startswith("return ImGui::"), name
-            call = body.strip()[len("return "):].rstrip(";")
-            out.append("\n    const bool amf_r = " + call + ";   // AMF keyboard: note the text field\n"
-                       "    amf_NoteTextField(ImGui::GetItemID());\n    return amf_r;")
-            pos = body_end
-            noted += 1
+        # The guards come FIRST. Until 2.0.6 they were appended after a rewritten body below, which put
+        # the text fields' label guard after their `return` - unreachable, so a null label still crashed.
         if lines:
             touched += 1
             for L in lines:
@@ -175,6 +178,38 @@ def main() -> int:
             # this script changed - nothing has to be inferred from a line's position
             marker = "   // AMF null guard"
             out.append("".join("\n    " + L + marker for L in lines))
+        if name in TEXT_FIELDS:
+            body_end = src.index("\n}", pos)
+            body = src[pos:body_end]
+            assert body.strip().startswith("return ImGui::"), name
+            call = body.strip()[len("return "):].rstrip(";")
+            out.append("\n    const bool amf_r = " + call + ";   // AMF keyboard: note the text field\n"
+                       "    amf_NoteTextField(ImGui::GetItemID());\n    return amf_r;")
+            pos = body_end
+            noted += 1
+        elif name.startswith(HEADER_PREFIXES) or name in HEADER_NAMES:
+            body_end = src.index("\n}", pos)
+            body = src[pos:body_end]
+            stripped = body.strip()
+            if stripped.startswith("return ImGui::"):
+                # bool igTreeNode_Str(label) { return ImGui::TreeNode(label); }
+                call = stripped[len("return "):].rstrip(";")
+                out.append("\n    amf_BeginConsumerHeader();   // AMF: stock header widening (2.0.6)\n"
+                           "    const bool amf_r = " + call + ";\n"
+                           "    amf_EndConsumerHeader();\n    return amf_r;")
+            else:
+                # the variadic shape: va_start; bool ret = ImGui::...V(...); va_end; return ret;
+                call_line = re.search(r"^(\s*)bool ret = ImGui::[^\n]*;$", body, re.M)
+                assert call_line, name
+                indent = call_line.group(1)
+                body = (body[:call_line.start()] +
+                        indent + "amf_BeginConsumerHeader();   // AMF: stock header widening (2.0.6)\n" +
+                        call_line.group(0) + "\n" +
+                        indent + "amf_EndConsumerHeader();" +
+                        body[call_line.end():])
+                out.append(body)
+            pos = body_end
+            wrapped.append(name)
     out.append(src[pos:])
 
     banner = (
@@ -182,9 +217,12 @@ def main() -> int:
         "// GENERATED - do not edit. Produced by tools/harden-cimgui.py from\n"
         "// extern/cimgui-1.90.8dock/cimgui.cpp (upstream, unmodified).\n"
         "//\n"
-        "// The only difference from upstream is a null guard at the top of functions that would\n"
-        "// otherwise dereference a pointer a consumer passed as null. Consumers reach these through\n"
-        "// raw function pointers they resolved by name, so nothing else validates what they pass.\n"
+        "// The differences from upstream: a null guard at the top of functions that would otherwise\n"
+        "// dereference a pointer a consumer passed as null (consumers reach these through raw function\n"
+        "// pointers they resolved by name, so nothing else validates what they pass); the four text-field\n"
+        "// exports note their item for the on-screen keyboard; and the collapsing-header / tree-node\n"
+        "// exports run with ImGui's stock window padding so a framed header's edge sits where it does\n"
+        "// under SKSE Menu Framework (2.0.6).\n"
         "// The generator's docstring explains exactly what is guarded and what is deliberately not -\n"
         "// in particular that ImGui's optional p_* pointers are left alone, because guarding p_open\n"
         "// would stop every window without a close button from drawing.\n"
@@ -192,7 +230,10 @@ def main() -> int:
     )
     # 1.8.9: the text-field hook the four rewritten exports call (defined in Keyboard.cpp).
     assert noted == 4, noted
-    text = banner + "void amf_NoteTextField(unsigned int a_itemId);\n" + "".join(out)
+    # 2.0.6: the header-widening pair the wrapped tree-node exports call (defined in ConsumerSurface.cpp).
+    assert len(wrapped) == 13, wrapped
+    text = (banner + "void amf_NoteTextField(unsigned int a_itemId);\n"
+            "void amf_BeginConsumerHeader();\nvoid amf_EndConsumerHeader();\n" + "".join(out))
     os.makedirs(os.path.dirname(TARGET), exist_ok=True)
     io.open(TARGET, "w", encoding="utf-8", newline="\n").write(text)
 
@@ -203,6 +244,8 @@ def main() -> int:
     print(f"     pOut out-struct   {counted['pOut']}")
     print(f"     label/str_id/fmt  {counted['string']}  (substituted with \"\", not returned)")
     print(f"     value out-params  {counted['outparam']}  (p_* optional pointers excluded)")
+    print(f"  {noted} text-field exports note their item; {len(wrapped)} header exports get the stock widening:")
+    print("     " + ", ".join(wrapped))
     return 0
 
 

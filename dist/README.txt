@@ -1,6 +1,6 @@
 ﻿ApocryphaRealm Menu Framework
 =============================
-Version 2.0.5
+Version 2.0.6
 
 An original, GPL-3.0-or-later in-game menu framework (embedding Dear ImGui) - a one-for-one
 replacement for SKSE Menu Framework's consumer surface, plus user-friendly features that do
@@ -46,6 +46,9 @@ reading.
 
 WHAT CHANGED
 ------------
+
+Version 2.0.6
+Collapsing headers in other mods' pages line up as they do under SKSE Menu Framework: dMenu NG's section icons no longer sit on top of the header's arrow. Thanks to C0kAdam for the report.
 
 Version 2.0.5
 The menu key works again after an update, and editing it in the INI takes effect. Your User.ini now holds only what you changed in the menu; everything else comes from the shipped ApocryphaMenuFramework.ini, so the two files no longer fight each other. A User.ini from 2.0.3 or 2.0.4 that copied every setting is cleaned up the next time a setting is saved, without losing anything you changed.

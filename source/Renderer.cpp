@@ -2987,6 +2987,11 @@ namespace renderer
 		return g_wantTextInput.load(std::memory_order_acquire);
 	}
 
+	float UiScale()
+	{
+		return g_uiScale;
+	}
+
 	bool IsMainWindowVisible()
 	{
 		return g_windowVisible.load(std::memory_order_relaxed);

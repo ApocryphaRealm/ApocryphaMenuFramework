@@ -91,4 +91,8 @@ namespace theme
 
 	// Applies the active theme's palette + border rules to the live ImGui style.
 	void Apply();
+
+	// The window padding Apply() sets, before any resolution scaling (knotwork corner + 8 = 34). ImGui's own
+	// default is 8. The consumer header wrappers (2.0.6) recognise AMF's padding by this value.
+	float BaseWindowPadding();
 }

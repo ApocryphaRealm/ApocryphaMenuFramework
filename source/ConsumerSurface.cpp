@@ -1,6 +1,10 @@
 #include "ConsumerSurface.h"
 
+#include "Renderer.h"
+#include "Theme.h"
 #include "utils/Logger.h"
+
+#include <cmath>
 
 #include <imgui.h>
 #include <imgui_internal.h>   // GImGui->Windows: which windows each consumer submitted (2.0.4 input gate)
@@ -479,5 +483,55 @@ namespace consumer
 	{
 		std::scoped_lock lock(g_lock);
 		return g_textures.size();
+	}
+}
+
+// ---- consumer collapsing headers and tree nodes (2.0.6) ------------------------------------------------------------
+// C0kAdam (dMenu NG's author), 2026-10-03: under AMF the Font Awesome icon dMenu draws on each collapsing header sat on
+// top of the header's arrow; under SKSE Menu Framework it does not. dMenu places the icon at GetItemRectMin().x plus
+// 0.94 of a frame height. A FRAMED header in ImGui 1.90.8 widens its frame to the left of the cursor by
+// IM_TRUNC(window->WindowPadding.x * 0.5f - 1) (TreeNodeBehavior) while the arrow stays at cursor + FramePadding.x, and
+// AMF's windows carry a 34 px padding (the knotwork corner + 8, Theme.cpp) where stock ImGui has 8 - so the frame's
+// edge moved 16 px left instead of 3, 13 px further from the arrow, and the icon measured from that edge landed on it.
+// Font Awesome itself was not the cause: the glyph is drawn exactly where dMenu asks.
+//
+// So every collapsing-header and tree-node EXPORT (tools/harden-cimgui.py wraps them; AMF's own pages call ImGui
+// directly and are untouched) runs with the padding stock ImGui would have: 8, scaled the way AMF scaled its own 34.
+// Only AMF's padding is replaced - a window whose padding the consumer chose itself (PushStyleVar before its Begin, or
+// a borderless child, which ImGui gives 0) keeps it, so its headers widen exactly as they would under SKSE Menu
+// Framework. TreeNodeBehavior reads WindowPadding for that widening and nothing else, and the value is put back
+// before the export returns. Render thread only, never nested (the wrapped call does not call another export).
+namespace
+{
+	ImGuiWindow* g_headerWindow = nullptr;
+	float g_headerSavedPadX = 0.0f;
+}
+
+void amf_BeginConsumerHeader()
+{
+	g_headerWindow = nullptr;
+	ImGuiContext* const g = GImGui;
+	if (!g || !g->CurrentWindow) { return; }
+	ImGuiWindow* const window = g->CurrentWindow;
+	const float base = theme::BaseWindowPadding();          // 34, as Theme::Apply sets it
+	const float scale = renderer::UiScale();                 // what ScaleAllSizes multiplied it by at start-up
+	const float pad = window->WindowPadding.x;
+	float stock = -1.0f;
+	// ScaleAllSizes truncates (ImTrunc), so AMF's scaled padding is floor(34 x scale) - 56 at 1800p, not 56.7 - and
+	// stock ImGui scaled the same way would have floor(8 x scale): 13 at 1800p, 10 at 1440p, 8 at 1080p.
+	if (std::abs(pad - std::floor(base * scale)) < 0.5f) { stock = std::floor(8.0f * scale); }   // the start-up style
+	else if (std::abs(pad - base) < 0.5f)                { stock = 8.0f; }                       // after a theme switch: 34 unscaled
+	if (stock < 0.0f) { return; }                                          // the consumer's own padding: leave it
+	g_headerWindow = window;
+	g_headerSavedPadX = pad;
+	window->WindowPadding.x = stock;
+}
+
+void amf_EndConsumerHeader()
+{
+	if (g_headerWindow)
+	{
+		g_headerWindow->WindowPadding.x = g_headerSavedPadX;
+		g_headerWindow = nullptr;
 	}
 }

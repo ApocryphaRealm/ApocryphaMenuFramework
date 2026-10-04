@@ -21,6 +21,26 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## 2.0.6 - 2026-10-03 - untested
+
+C0kAdam, author of dMenu NG (Nexus 166751), 2026-10-03: under AMF the Font Awesome icon dMenu draws on each collapsing
+header sat on top of the header's arrow, while under SKSE Menu Framework it did not. His guess - that AMF's separately
+built icon faces were the cause - was not it: the icon glyph is drawn exactly where dMenu asks. What moved was the
+header's own edge.
+
+### Fixed
+- A mod's collapsing headers and tree nodes now measure like they do under SKSE Menu Framework. A framed header in Dear
+  ImGui 1.90.8 widens its frame to the left by half the window's padding, and AMF's windows carry a 34 px padding (room
+  for the knotwork frame) where ImGui's default is 8 - so the frame's left edge, which a mod reads with
+  GetItemRectMin(), sat 16 px left of the text instead of 3, 13 px further from the arrow. dMenu NG places its section
+  icon a fixed distance from that edge, so the icon landed on the arrow. Every collapsing-header and tree-node function a
+  mod calls now runs with ImGui's default padding (scaled the way AMF scales its own at high resolutions), and AMF's is
+  put back straight after; a window whose padding the mod chose itself is left as it is. AMF's own pages, which do not
+  go through those exports, look exactly as before. Measured offline at 1080p: edge 3 px left of the cursor, the arrow
+  clear of the icon by 2 px (closed) and 0.9 px (open) - the same as stock ImGui.
+- A mod passing a null label to InputText / InputTextMultiline / InputTextWithHint / InputTextEx is guarded again: the
+  generator placed those four functions' null guard after their return, where it never ran.
+
 ## 2.0.5 - 2026-10-03 - working
 
 HadToRegister, Nexus, 2026-10-03: *"Updated to 2.04: it refuses to open with F1. It's set in the INI file as F1 ... The

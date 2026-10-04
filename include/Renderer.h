@@ -37,6 +37,10 @@ namespace renderer
 	void ToggleMainWindow();
 	bool IsMainWindowVisible();
 
+	// The resolution scale (display height / 1080, never below 1) the style was scaled by at start-up
+	// (ImGuiStyle::ScaleAllSizes). Render thread.
+	float UiScale();
+
 	// TRUE while a mod's own window (AddWindow / AddWindowWithView) is open AND blocking the player's
 	// input, as sampled by the render thread at the top of its last frame (2.0.4). The input hook gives
 	// ImGui the input and holds the game's while it is true, exactly as for our own menu, but nothing
