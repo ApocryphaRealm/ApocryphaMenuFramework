@@ -21,7 +21,7 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
-## Unreleased - the menu fits the image the game draws
+## 2.0.8 - 2026-10-04 - working - the menu fits the image the game draws
 
 ### Fixed
 - The menu and its tooltips ran off the right and bottom of the screen when the game draws a smaller image than its

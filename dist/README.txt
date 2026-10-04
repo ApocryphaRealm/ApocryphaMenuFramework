@@ -1,6 +1,6 @@
 ﻿ApocryphaRealm Menu Framework
 =============================
-Version 2.0.7
+Version 2.0.8
 
 An original, GPL-3.0-or-later in-game menu framework (embedding Dear ImGui) - a one-for-one
 replacement for SKSE Menu Framework's consumer surface, plus user-friendly features that do
@@ -46,6 +46,9 @@ reading.
 
 WHAT CHANGED
 ------------
+
+Version 2.0.8
+The menu and its tooltips fit the screen when the game draws a smaller image than its window (a lower render resolution scaled up): they no longer run off the right and bottom. The log says when the window and the image differ. Thanks to Soulsthat for the report.
 
 Version 2.0.7
 Your MCM menus inside AMF. Every mod with a SkyUI MCM menu now also gets its settings as a page here - MCM Helper menus (from the mod's config.json) and menus written only in Papyrus - read from the mod itself while the game runs, with changes applied live as in SkyUI's menu. Three switches on Framework Settings (the [MCM] section): MCM Helper menus, SkyUI script menus, and taking those menus out of SkyUI's own list. Turning the feature off gives every menu back to SkyUI; setstage SKI_ConfigManagerInstance 1 restores SkyUI's whole list in any case. Not yet: binding a controller button, a mod's own key-conflict warning, MCM pages that are a custom picture.
