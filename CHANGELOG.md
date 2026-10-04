@@ -79,6 +79,8 @@ edited or shipped.
   4. Hiding them again, saving, quitting, and turning both loaders off in the INI also worked: loading that save
      returned all 4 within seconds.
 - **Controller:** the D-pad moved into a script menu's page, and A flipped a toggle through the mod's own script.
+  The owner then nudged sliders with a real controller (BTPS): each press moved one shown digit (0.4 -> 0.5 -> 0.4
+  -> 0.3), and MCM Helper saved each change.
 
 ### Limits
 - Key binds take keyboard and mouse only; there is no controller button yet. A mod's own "this key is already used"
