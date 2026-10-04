@@ -21,7 +21,7 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
-## 2.0.6 - 2026-10-03 - untested
+## 2.0.6 - 2026-10-03 - working
 
 C0kAdam, author of dMenu NG (Nexus 166751), 2026-10-03: under AMF the Font Awesome icon dMenu draws on each collapsing
 header sat on top of the header's arrow, while under SKSE Menu Framework it did not. His guess - that AMF's separately
@@ -40,6 +40,12 @@ header's own edge.
   clear of the icon by 2 px (closed) and 0.9 px (open) - the same as stock ImGui.
 - A mod passing a null label to InputText / InputTextMultiline / InputTextWithHint / InputTextEx is guarded again: the
   generator placed those four functions' null guard after their return, where it never ran.
+
+### Tested (2026-10-03, SE 1.5.97, Njordlinger Test, dMenu NG 1.4 with WHEELER - Refined's dMenu settings)
+- Under 2.0.5 the reporter's overlap reproduced; under 2.0.6 every section header on the WHEELER - dMenu page (Ammo Wheel:
+  GENERAL, KEYBINDS, VISUAL PRESETS, LAYOUT, BEHAVIOR, TIME SLOW, SLOT CONTENT AND TEXT, CENTER PANEL, POPUP, PRIMITIVE
+  SKIN, ...; Action Hotkeys Bridge Layout: SLOTS 1-20) shows its arrow clear of the icon, as under SKSE Menu Framework
+  (the owner's screenshot, 3200x1800).
 
 ## 2.0.5 - 2026-10-03 - working
 
