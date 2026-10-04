@@ -26,6 +26,10 @@ namespace mcmloader
 	// Does nothing when [MCM] bLoadMcmHelperConfigs=0.
 	void Load();
 
+	// Every frame, right after ImGui::NewFrame: sends OnConfigClose to the mod whose entry stopped being drawn
+	// (SkyUI's lifecycle - TrueHUD, True Directional Movement and Precision apply their settings in OnConfigClose).
+	void Frame();
+
 	// kPostLoadGame / kNewGame: script objects belong to the loaded game; drop the cached ones so
 	// the next change resolves the config script afresh.
 	void OnGameLoaded();

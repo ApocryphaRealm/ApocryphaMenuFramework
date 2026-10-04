@@ -1,5 +1,6 @@
 #include "Renderer.h"
 #include "Keyboard.h"
+#include "McmLoader.h"
 
 #include "ConsumerSurface.h"
 
@@ -2831,6 +2832,7 @@ namespace renderer
 
 				watchdog::Tick();  // liveness signal for the hang watchdog
 				ImGui::NewFrame();
+				mcmloader::Frame();  // EXPERIMENTAL (exp/mcm-loader): OnConfigClose when an MCM entry stops being drawn
 
 				// The game's own HUD opacity, re-read every frame so the options slider is
 				// followed live (theme spec point 3), applied as the ONE global multiplier.

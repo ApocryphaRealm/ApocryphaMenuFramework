@@ -5,6 +5,7 @@
 #include "PreciseSlider.h"
 #include "Registry.h"
 #include "Settings.h"
+#include "Strings.h"
 #include "utils/Logger.h"
 #include "utils/ToggleSwitch.h"
 
@@ -82,6 +83,7 @@ namespace mcmloader
 			std::vector<Page> pages;
 			std::map<std::string, std::string> defaults;   // id -> value (settings.ini)
 			std::map<std::string, std::string> values;     // id -> value (defaults with the user INI over them)
+			std::unordered_map<std::string, std::string> translations;  // $KEY -> text, from the mod's own file
 			int controlCount = 0;
 			int phase2Count = 0;
 			// Main-thread only (SKSE tasks): the config script, resolved lazily after a game is loaded.
@@ -205,49 +207,64 @@ namespace mcmloader
 			return out;
 		}
 
-		// The game's own translation table - every Interface\Translations\*_<LANGUAGE>.txt it loaded, BSA-packed ones
-		// included - so a $key reads exactly as SkyUI would show it. Rule 66: another author's text stays theirs.
-		std::unordered_map<std::string, std::string> g_translated;  // render thread only
+		// $keys come from the mod's own translation file, Interface\Translations\<plugin>_<language>.txt - the file the
+		// game itself loads for that plugin (UTF-16LE, "$KEY<TAB>text" lines) - read through the game's resource
+		// streams so a BSA-packed file is found too, once per mod at load (main thread), English as the fallback.
+		// Rule 66: another author's text stays in that author's languages.
+		//
+		// NOT the game's in-memory table (BSScaleformTranslator::translator.translationMap): on 1.5.97 a find() with a
+		// BSFixedStringW missed every key, and iterating the map read 0xFFFFFFFFFFFFFFFF and crashed the game
+		// (2026-10-04, crash-2026-10-04-08-59-07.log, McmLoader.cpp:241) - CommonLib's layout of that map does not
+		// match this runtime. Files are the stable contract; the game's struct is not.
+		using Table = std::unordered_map<std::string, std::string>;
+		const Table* g_table = nullptr;  // render thread: the table of the mod being drawn
+
+		std::wstring ReadUtf16Resource(const std::string& a_path)
+		{
+			std::wstring out;
+			RE::BSResourceNiBinaryStream stream(a_path);
+			if (!stream.good()) { return out; }
+			wchar_t ch = 0;
+			while (out.size() < (1u << 22) && stream.read(&ch, 1)) { out.push_back(ch); }  // 4M chars: far past any real file
+			if (!out.empty() && out.front() == 0xFEFF) { out.erase(0, 1); }
+			return out;
+		}
+
+		Table LoadTranslations(const std::string& a_modName)
+		{
+			Table table;
+			std::string language = Lower(strings::GameLanguageSetting());
+			if (language.empty()) { language = "english"; }
+			for (const std::string& lang : { language, std::string("english") })
+			{
+				const std::string path = "Interface\\Translations\\" + a_modName + "_" + lang + ".txt";
+				const std::wstring text = ReadUtf16Resource(path);
+				if (text.empty()) { continue; }
+				std::size_t start = 0;
+				while (start < text.size())
+				{
+					std::size_t end = text.find(L'\n', start);
+					if (end == std::wstring::npos) { end = text.size(); }
+					std::wstring line = text.substr(start, end - start);
+					start = end + 1;
+					if (!line.empty() && line.back() == L'\r') { line.pop_back(); }
+					const auto tab = line.find(L'\t');
+					if (line.empty() || line[0] != L'$' || tab == std::wstring::npos) { continue; }
+					table.emplace(Trim(Narrow(line.substr(0, tab))), Narrow(line.substr(tab + 1)));  // first file wins
+				}
+				logger::debug("MCM loader: {} - {} translation(s) from {}", a_modName, table.size(), path);
+			}
+			return table;
+		}
 
 		std::string Translate(const std::string& a_raw)
 		{
 			if (a_raw.empty() || a_raw[0] != '$') { return StripTags(a_raw); }
-			if (const auto it = g_translated.find(a_raw); it != g_translated.end()) { return it->second; }
-
-			const auto manager = RE::BSScaleformManager::GetSingleton();
-			const auto loader = manager ? manager->loader : nullptr;
-			const auto translator = loader ? loader->GetState<RE::BSScaleformTranslator>(RE::GFxState::StateType::kTranslator) : nullptr;
-			if (!translator)
+			if (g_table)
 			{
-				static bool warned = false;  // rule 17: not ready yet is not permanent - try again next frame, log once
-				if (!warned)
-				{
-					warned = true;
-					logger::debug("MCM loader: the game's translator is not available yet; $keys draw raw until it is");
-				}
-				return a_raw.substr(1);
+				if (const auto it = g_table->find(a_raw); it != g_table->end()) { return StripTags(it->second); }
 			}
-
-			std::string out;
-			const auto& map = translator->translator.translationMap;
-			for (const std::string& key : { a_raw, a_raw.substr(1) })
-			{
-				const RE::BSFixedStringW wkey(Widen(key).c_str());
-				if (const auto it = map.find(wkey); it != map.end())
-				{
-					const wchar_t* w = it->second.c_str();
-					out = Narrow(w ? std::wstring_view(w) : std::wstring_view{});
-					break;
-				}
-			}
-			if (out.empty())
-			{
-				logger::debug("MCM loader: no translation for {} - drawn without the $", a_raw);
-				out = a_raw.substr(1);
-			}
-			out = StripTags(out);
-			g_translated.emplace(a_raw, out);
-			return out;
+			return a_raw.substr(1);
 		}
 
 		// MCM's formatString uses "{N}" for the value with N decimals ("{0}", "{1}%", "{2} sec"); printf wants "%.Nf".
@@ -455,8 +472,60 @@ namespace mcmloader
 			return found;
 		}
 
+		// Main thread: the mod's config script, cached until the next game load.
+		RE::BSTSmartPointer<RE::BSScript::Object> EnsureScript(std::size_t a_mod)
+		{
+			RE::BSTSmartPointer<RE::BSScript::Object> script;
+			std::string modName;
+			{
+				std::scoped_lock lock(g_mutex);
+				if (a_mod >= g_mods.size()) { return script; }
+				script = g_mods[a_mod]->script;
+				modName = g_mods[a_mod]->modName;
+			}
+			if (script) { return script; }
+			script = FindConfigScript(modName);
+			std::scoped_lock lock(g_mutex);
+			g_mods[a_mod]->script = script;
+			g_mods[a_mod]->scriptTried = true;
+			g_mods[a_mod]->scriptState = script ? "resolved" : "not found (no game loaded yet, or the mod's quest has not started)";
+			return script;
+		}
+
+		// Main thread: one SkyUI/MCM Helper event on the mod's config script. OnConfigOpen / OnConfigClose carry no
+		// argument; OnSettingChange carries the setting id.
+		bool DispatchEvent(std::size_t a_mod, const char* a_event, const std::string* a_arg)
+		{
+			const auto vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
+			auto script = EnsureScript(a_mod);
+			const std::string modName = a_mod < g_mods.size() ? g_mods[a_mod]->modName : std::string("?");
+			if (!vm || !script)
+			{
+				logger::info("MCM loader: {} {} not sent - no config script yet (the mod reads its settings when it next loads them)",
+					modName, a_event);
+				return false;
+			}
+			RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> none;
+			std::unique_ptr<RE::BSScript::IFunctionArguments> args{ a_arg ? RE::MakeFunctionArguments(std::string(*a_arg)) : RE::MakeFunctionArguments() };
+			const bool sent = vm->DispatchMethodCall(script, a_event, args.get(), none);
+			logger::info("MCM loader: {} {}{}{} {}", modName, a_event, a_arg ? " " : "", a_arg ? *a_arg : "", sent ? "sent" : "NOT sent (dispatch failed)");
+			return sent;
+		}
+
+		// Any thread: queue one event to the main thread.
+		void QueueEvent(std::size_t a_mod, const char* a_event)
+		{
+			if (const auto tasks = SKSE::GetTaskInterface())
+			{
+				tasks->AddTask([a_mod, a_event]() { DispatchEvent(a_mod, a_event, nullptr); });
+			}
+		}
+
 		// Any thread: record the new value now (the page shows it at once), then hand the write to the main thread.
-		void Apply(std::size_t a_mod, const Control& a_control, const std::string& a_value)
+		// a_closeAfter: also send OnConfigClose once the value is stored - for a change made with no page open (the
+		// DevBench tool), so a mod that applies its settings only when its menu closes (TrueHUD, True Directional
+		// Movement, Precision: "Event OnConfigClose() native") sees it, as it would after SkyUI's menu.
+		void Apply(std::size_t a_mod, const Control& a_control, const std::string& a_value, bool a_closeAfter = false)
 		{
 			std::string modName;
 			{
@@ -475,42 +544,19 @@ namespace mcmloader
 			const std::string id = a_control.id;
 			logger::debug("MCM loader: {} {} -> {} (queued)", modName, id, a_value);
 
-			tasks->AddTask([a_mod, modName, id, source, a_value]() {
+			tasks->AddTask([a_mod, modName, id, source, a_value, a_closeAfter]() {
 				const auto vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
 				if (!vm)
 				{
 					logger::warn("MCM loader: no Papyrus VM - {} {} not written", modName, id);
 					return;
 				}
-				// 2. tell the mod, the way MCM Helper's menu does, once the store holds the value
-				auto notify = [a_mod, modName, id]() {
-					const auto vm2 = RE::BSScript::Internal::VirtualMachine::GetSingleton();
-					RE::BSTSmartPointer<RE::BSScript::Object> script;
-					{
-						std::scoped_lock lock(g_mutex);
-						if (a_mod < g_mods.size()) { script = g_mods[a_mod]->script; }
-					}
-					if (!script)
-					{
-						script = FindConfigScript(modName);
-						std::scoped_lock lock(g_mutex);
-						if (a_mod < g_mods.size())
-						{
-							g_mods[a_mod]->script = script;
-							g_mods[a_mod]->scriptTried = true;
-							g_mods[a_mod]->scriptState = script ? "resolved" : "not found (no game loaded yet, or the mod's quest has not started)";
-						}
-					}
-					if (!script || !vm2)
-					{
-						logger::info("MCM loader: {} {} saved; no config script to notify yet - the mod reads it when it next loads its settings",
-									 modName, id);
-						return;
-					}
-					RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> none;
-					std::unique_ptr<RE::BSScript::IFunctionArguments> args{ RE::MakeFunctionArguments(std::string(id)) };
-					const bool sent = vm2->DispatchMethodCall(script, "OnSettingChange"sv, args.get(), none);
-					logger::info("MCM loader: {} {} saved; OnSettingChange {}", modName, id, sent ? "sent" : "NOT sent (dispatch failed)");
+				// 2. once MCM Helper's store holds the value: OnSettingChange, as MCM Helper's menu sends it; then, for a
+				//    change made with no page open, OnConfigClose, which is where several mods apply their settings
+				auto notify = [a_mod, modName, id, a_closeAfter]() {
+					logger::info("MCM loader: {} {} saved by MCM Helper", modName, id);
+					DispatchEvent(a_mod, "OnSettingChange", &id);
+					if (a_closeAfter) { DispatchEvent(a_mod, "OnConfigClose", nullptr); }
 				};
 
 				// 1. MCM Helper's own store and user INI (MCM.SetModSetting*)
@@ -715,8 +761,26 @@ namespace mcmloader
 			}
 		}
 
+		// SkyUI's lifecycle, mirrored: OnConfigOpen when a mod's entry starts being drawn, OnConfigClose when it stops
+		// (another entry chosen, or the menu closed). Render thread; the open mod is also read by the DevBench tool.
+		std::atomic<int> g_openMod{ -1 };
+		int g_lastDrawFrame = -10;
+
+		void NoteDrawn(std::size_t a_mod)
+		{
+			const int open = g_openMod.load();
+			if (open != static_cast<int>(a_mod))
+			{
+				if (open >= 0) { QueueEvent(static_cast<std::size_t>(open), "OnConfigClose"); }
+				QueueEvent(a_mod, "OnConfigOpen");
+				g_openMod.store(static_cast<int>(a_mod));
+			}
+			g_lastDrawFrame = ImGui::GetFrameCount();
+		}
+
 		void DrawPage(std::size_t a_mod, std::size_t a_page)
 		{
+			NoteDrawn(a_mod);
 			const Mod* mod = nullptr;
 			std::map<std::string, std::string> values;
 			{
@@ -726,6 +790,7 @@ namespace mcmloader
 				values = mod->values;  // a copy: the page draws from a stable view while a set lands from another thread
 			}
 			const Page& page = mod->pages[a_page];
+			g_table = &mod->translations;
 
 			ImGui::TextDisabled("Read from %s's MCM Helper files (experimental). Changes go through MCM Helper, as in its own menu.",
 				mod->modName.c_str());
@@ -860,6 +925,7 @@ namespace mcmloader
 				return;
 			}
 
+			mod->translations = LoadTranslations(modName);
 			mod->defaults = ReadIni(a_folder / "settings.ini");
 			mod->values = mod->defaults;
 			const fs::path userIni = fs::path("Data/MCM/Settings") / (modName + ".ini");
@@ -881,14 +947,15 @@ namespace mcmloader
 				Mod& mod = *g_mods[m];
 				// " (MCM)" keeps it apart from a mod's own AMF page of the same name - the registry merges equal names
 				// into one entry's tabs, which would mix our pages into theirs.
-				mod.entryName = mod.displayName[0] == '$' ? mod.modName : mod.displayName;
+				g_table = &mod.translations;  // entry and tab names are fixed at registration, so translate them now
+				mod.entryName = Translate(mod.displayName);
+				if (mod.entryName.empty()) { mod.entryName = mod.modName; }
 				mod.entryName += " (MCM)";
 				std::set<std::string> used;
 				for (std::size_t p = 0; p < mod.pages.size(); ++p)
 				{
-					std::string name = mod.pages[p].name.empty() ? std::string("Settings") : mod.pages[p].name;
-					if (!name.empty() && name[0] == '$') { name = name.substr(1); }  // the registry wants a stable name; the tab text is it
-					name = StripTags(name);
+					std::string name = mod.pages[p].name.empty() ? std::string("Settings") : Translate(mod.pages[p].name);
+					if (name.empty()) { name = "Settings"; }
 					for (int n = 2; used.contains(name); ++n) { name = name + " (" + std::to_string(n) + ")"; }
 					used.insert(name);
 					if (registry::RegisterFn(mod.entryName.c_str(), name.c_str(), [m, p]() { DrawPage(m, p); })) { ++pageCount; }
@@ -925,6 +992,17 @@ namespace mcmloader
 			catch (const std::exception& e) { Skip(entry.path().filename().string(), std::string("unexpected error: ") + e.what()); }
 		}
 		RegisterPages();
+		g_table = nullptr;  // each page sets its own mod's table when it draws
+	}
+
+	void Frame()
+	{
+		const int open = g_openMod.load();
+		if (open >= 0 && g_lastDrawFrame < ImGui::GetFrameCount() - 1)
+		{
+			QueueEvent(static_cast<std::size_t>(open), "OnConfigClose");
+			g_openMod.store(-1);
+		}
 	}
 
 	void OnGameLoaded()
@@ -1007,8 +1085,11 @@ namespace mcmloader
 			const auto value = args.find("value");
 			if (value == args.end()) { return R"({"ok":false,"error":"set needs a value"})"; }
 			const std::string text = value->is_string() ? value->get<std::string>() : value->is_boolean() ? (value->get<bool>() ? "1" : "0") : value->dump();
-			Apply(*index, *control, text);
-			return json{ { "ok", true }, { "id", id }, { "queued", text } }.dump();
+			// With the mod's page not open, the tool plays a whole SkyUI visit: open, change, close.
+			const bool pageOpen = g_openMod.load() == static_cast<int>(*index);
+			if (!pageOpen) { QueueEvent(*index, "OnConfigOpen"); }
+			Apply(*index, *control, text, !pageOpen);
+			return json{ { "ok", true }, { "id", id }, { "queued", text }, { "configCloseAfter", !pageOpen } }.dump();
 		}
 		return json{ { "ok", false }, { "error", "unknown op '" + op + "' (list, get, set, script)" } }.dump();
 	}
