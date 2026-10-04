@@ -35,7 +35,22 @@ namespace mcmloader
 		namespace fs = std::filesystem;
 
 		enum class Kind { kEmpty, kHeader, kText, kToggle, kHiddenToggle, kSlider, kStepper, kMenu, kEnum, kColor, kKeymap, kInput, kUnknown };
-		enum class Source { kNone, kBool, kInt, kFloat, kString, kPhase2 };
+		// kBool..kString: MCM Helper ModSetting*. kGlobal: a TESGlobal (sourceForm). kProp*: a property on a script -
+		// the mod's own config script unless sourceForm/scriptName name another (MCM Helper's ValueOptionsHandler
+		// defaults). kPhase2 now means only what is still not drawable: an unknown sourceType.
+		enum class Source { kNone, kBool, kInt, kFloat, kString, kGlobal, kPropBool, kPropInt, kPropFloat, kPropString, kPhase2 };
+
+		// A control's action (MCM Helper Config/Action.cpp): CallFunction on a script (the config script by default)
+		// or CallGlobalFunction, with params "{value}" (the control's new value), "{i}5", "{f}1.5", "{b}1", "{s}text",
+		// or a bare string. Run after the value is set and OnSettingChange is sent, as MCM Helper's menu runs it.
+		struct Action
+		{
+			bool global = false;          // CallGlobalFunction
+			std::string form;             // "Plugin.esp|800" - CallFunction on another form's script
+			std::string scriptName;       // that script (CallFunction) / the script holding the global (CallGlobalFunction)
+			std::string function;
+			std::vector<std::string> params;
+		};
 		enum class Behavior { kDisable, kHide, kSkip };
 
 		// MCM Helper's groupCondition: a number (that group), an array (any of them), or one of OR / AND / ONLY / NOT
@@ -66,6 +81,11 @@ namespace mcmloader
 			std::optional<Cond> cond;
 			Behavior behavior = Behavior::kDisable;
 			bool hasAction = false;
+			std::optional<Action> action;  // empty when the action type is one we do not run
+			std::string key;               // the values-map key: id when there is one, else "#<page>.<index>"
+			std::string sourceForm;        // GlobalValue / PropertyValue*
+			std::string scriptName;
+			std::string propertyName;
 		};
 
 		struct Page
@@ -89,6 +109,7 @@ namespace mcmloader
 			// Main-thread only (SKSE tasks): the config script, resolved lazily after a game is loaded.
 			RE::BSTSmartPointer<RE::BSScript::Object> script;
 			bool scriptTried = false;
+			RE::FormID questId = 0;  // the quest the config script is on (a PropertyValue/action scriptName with no form)
 			std::string scriptState = "not looked up yet";
 		};
 
@@ -317,7 +338,12 @@ namespace mcmloader
 			if (a_sourceType == "ModSettingInt") { return Source::kInt; }
 			if (a_sourceType == "ModSettingFloat") { return Source::kFloat; }
 			if (a_sourceType == "ModSettingString") { return Source::kString; }
-			return Source::kPhase2;  // GlobalValue, PropertyValue* - need the Papyrus/form layer (phase 2)
+			if (a_sourceType == "GlobalValue") { return Source::kGlobal; }
+			if (a_sourceType == "PropertyValueBool") { return Source::kPropBool; }
+			if (a_sourceType == "PropertyValueInt") { return Source::kPropInt; }
+			if (a_sourceType == "PropertyValueFloat") { return Source::kPropFloat; }
+			if (a_sourceType == "PropertyValueString") { return Source::kPropString; }
+			return Source::kPhase2;
 		}
 
 		std::optional<Cond> ParseCond(const json& a_j)
@@ -400,14 +426,48 @@ namespace mcmloader
 			const std::string behavior = JsonStr(a_c, "groupBehavior");
 			c.behavior = behavior == "hide" ? Behavior::kHide : behavior == "skip" ? Behavior::kSkip : Behavior::kDisable;
 			c.hasAction = a_c.contains("action");
+			if (const auto a = a_c.find("action"); a != a_c.end() && a->is_object())
+			{
+				const std::string type = JsonStr(*a, "type");
+				if (type == "CallFunction" || type == "CallGlobalFunction")
+				{
+					Action action;
+					action.global = type == "CallGlobalFunction";
+					action.form = JsonStr(*a, "form");
+					action.scriptName = action.global ? JsonStr(*a, "script") : JsonStr(*a, "scriptName");
+					action.function = JsonStr(*a, "function");
+					if (const auto p = a->find("params"); p != a->end() && p->is_array())
+					{
+						for (const auto& v : *p)
+						{
+							// MCM Helper keeps every param as text and types it by its prefix; a JSON number or bool
+							// becomes the matching prefixed text so it is typed the same way.
+							if (v.is_string()) { action.params.push_back(v.get<std::string>()); }
+							else if (v.is_boolean()) { action.params.push_back(std::string("{b}") + (v.get<bool>() ? "1" : "0")); }
+							else if (v.is_number_integer()) { action.params.push_back("{i}" + std::to_string(v.get<long long>())); }
+							else if (v.is_number()) { action.params.push_back("{f}" + FormatFloat(v.get<float>())); }
+						}
+					}
+					if (!action.function.empty()) { c.action = std::move(action); }
+				}
+			}
 
 			if (const auto vo = a_c.find("valueOptions"); vo != a_c.end() && vo->is_object())
 			{
 				c.sourceTypeName = JsonStr(*vo, "sourceType");
 				c.source = SourceOf(c.sourceTypeName);
-				if (vo->contains("sourceForm") && c.source != Source::kPhase2 && c.source != Source::kNone)
+				c.sourceForm = JsonStr(*vo, "sourceForm");
+				c.scriptName = JsonStr(*vo, "scriptName");
+				c.propertyName = JsonStr(*vo, "propertyName");
+				if (!c.sourceForm.empty() && (c.source == Source::kBool || c.source == Source::kInt || c.source == Source::kFloat || c.source == Source::kString))
 				{
 					c.source = Source::kPhase2;  // a ModSetting tied to a form is not a thing MCM Helper documents; stay safe
+				}
+				if (c.source == Source::kGlobal && c.sourceForm.empty()) { c.source = Source::kPhase2; }   // MCM Helper needs the form too
+				if ((c.source == Source::kPropBool || c.source == Source::kPropInt || c.source == Source::kPropFloat || c.source == Source::kPropString) &&
+					c.propertyName.empty())
+				{
+					c.source = Source::kPhase2;
 				}
 				c.min = vo->value("min", 0.0f);
 				c.max = vo->value("max", 1.0f);
@@ -443,7 +503,7 @@ namespace mcmloader
 
 		// Main thread. The quest from the mod's own plugin whose script derives from MCM_ConfigBase - MCM Helper's own
 		// match (FindBoundObject on the base name finds derived scripts; ScriptObject::FromForm does the same).
-		RE::BSTSmartPointer<RE::BSScript::Object> FindConfigScript(const std::string& a_modName)
+		RE::BSTSmartPointer<RE::BSScript::Object> FindConfigScript(const std::string& a_modName, RE::FormID& a_questId)
 		{
 			RE::BSTSmartPointer<RE::BSScript::Object> found;
 			const auto vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
@@ -466,6 +526,7 @@ namespace mcmloader
 				{
 					logger::debug("MCM loader: {}'s config script is on quest {:08X} ({})", a_modName, quest->GetFormID(),
 								  quest->GetFormEditorID() ? quest->GetFormEditorID() : "");
+					a_questId = quest->GetFormID();
 					return object;
 				}
 			}
@@ -484,9 +545,11 @@ namespace mcmloader
 				modName = g_mods[a_mod]->modName;
 			}
 			if (script) { return script; }
-			script = FindConfigScript(modName);
+			RE::FormID questId = 0;
+			script = FindConfigScript(modName, questId);
 			std::scoped_lock lock(g_mutex);
 			g_mods[a_mod]->script = script;
+			g_mods[a_mod]->questId = questId;
 			g_mods[a_mod]->scriptTried = true;
 			g_mods[a_mod]->scriptState = script ? "resolved" : "not found (no game loaded yet, or the mod's quest has not started)";
 			return script;
@@ -521,49 +584,273 @@ namespace mcmloader
 			}
 		}
 
+		// ------------------------------------------------------- phase 2: forms, scripts, live values, actions (main thread)
+
+		// "Plugin.esp|800" (MCM Helper's FormUtil::GetFormFromIdentifier: the id is hex, relative to the plugin).
+		RE::TESForm* FormFromIdentifier(const std::string& a_identifier)
+		{
+			const auto bar = a_identifier.find('|');
+			if (bar == std::string::npos) { return nullptr; }
+			const std::string plugin = Trim(a_identifier.substr(0, bar));
+			std::string hex = Trim(a_identifier.substr(bar + 1));
+			if (hex.size() > 2 && hex[0] == '0' && (hex[1] == 'x' || hex[1] == 'X')) { hex = hex.substr(2); }
+			RE::FormID id = 0;
+			try { id = static_cast<RE::FormID>(std::stoul(hex, nullptr, 16)); }
+			catch (...) { return nullptr; }
+			const auto dataHandler = RE::TESDataHandler::GetSingleton();
+			return dataHandler ? dataHandler->LookupForm(id, plugin) : nullptr;
+		}
+
+		// The script a control's property or action lives on. No form named: the mod's own config script - or, when a
+		// scriptName is given, that script on the config quest. A form named: its script called scriptName.
+		RE::BSTSmartPointer<RE::BSScript::Object> ScriptFor(std::size_t a_mod, const std::string& a_form, const std::string& a_scriptName)
+		{
+			RE::BSTSmartPointer<RE::BSScript::Object> object;
+			const auto vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
+			const auto policy = vm ? vm->GetObjectHandlePolicy() : nullptr;
+			if (!vm || !policy) { return object; }
+
+			RE::TESForm* form = nullptr;
+			if (a_form.empty())
+			{
+				auto config = EnsureScript(a_mod);
+				if (a_scriptName.empty() || !config) { return config; }
+				std::scoped_lock lock(g_mutex);
+				form = RE::TESForm::LookupByID(g_mods[a_mod]->questId);
+			}
+			else
+			{
+				form = FormFromIdentifier(a_form);
+			}
+			if (!form)
+			{
+				logger::warn("MCM loader: form \"{}\" not found", a_form);
+				return object;
+			}
+			if (a_scriptName.empty())
+			{
+				// MCM Helper reads the VM's attached-script table here; no real config uses this case (census
+				// 2026-10-04), so it is refused rather than read through a struct that may not match this runtime.
+				logger::warn("MCM loader: form \"{}\" has no scriptName - not supported", a_form);
+				return object;
+			}
+			const auto handle = policy->GetHandleForObject(form->GetFormType(), form);
+			if (handle) { vm->FindBoundObject(handle, a_scriptName.c_str(), object); }
+			if (!object) { logger::warn("MCM loader: script {} is not attached to {:08X}", a_scriptName, form->GetFormID()); }
+			return object;
+		}
+
+		bool IsLive(Source a_source)
+		{
+			return a_source == Source::kGlobal || a_source == Source::kPropBool || a_source == Source::kPropInt ||
+			       a_source == Source::kPropFloat || a_source == Source::kPropString;
+		}
+
+		// Reads a GlobalValue / PropertyValue* control as text ("1"/"0", an integer, a float, a string). nullopt: not readable now.
+		std::optional<std::string> ReadLive(std::size_t a_mod, const Control& a_c)
+		{
+			if (a_c.source == Source::kGlobal)
+			{
+				const auto form = FormFromIdentifier(a_c.sourceForm);
+				const auto global = form ? form->As<RE::TESGlobal>() : nullptr;
+				if (!global) { return std::nullopt; }
+				return a_c.kind == Kind::kToggle || a_c.kind == Kind::kHiddenToggle ? std::string(global->value != 0.0f ? "1" : "0") :
+				       a_c.kind == Kind::kSlider ? FormatFloat(global->value) : std::to_string(std::lround(global->value));
+			}
+			const auto script = ScriptFor(a_mod, a_c.sourceForm, a_c.scriptName);
+			const auto variable = script ? script->GetProperty(a_c.propertyName) : nullptr;
+			if (!variable) { return std::nullopt; }
+			if (variable->IsBool()) { return std::string(variable->GetBool() ? "1" : "0"); }
+			if (variable->IsInt()) { return std::to_string(variable->GetSInt()); }
+			if (variable->IsFloat()) { return FormatFloat(variable->GetFloat()); }
+			if (variable->IsString()) { return std::string(variable->GetString()); }
+			return std::nullopt;
+		}
+
+		bool WriteLive(std::size_t a_mod, const Control& a_c, const std::string& a_value)
+		{
+			if (a_c.source == Source::kGlobal)
+			{
+				const auto form = FormFromIdentifier(a_c.sourceForm);
+				const auto global = form ? form->As<RE::TESGlobal>() : nullptr;
+				if (!global)
+				{
+					logger::warn("MCM loader: global {} not found - {} not written", a_c.sourceForm, a_c.key);
+					return false;
+				}
+				global->value = ParseFloat(a_value);
+				return true;
+			}
+			const auto script = ScriptFor(a_mod, a_c.sourceForm, a_c.scriptName);
+			const auto variable = script ? script->GetProperty(a_c.propertyName) : nullptr;
+			if (!variable)
+			{
+				logger::warn("MCM loader: property {} not found - {} not written", a_c.propertyName, a_c.key);
+				return false;
+			}
+			switch (a_c.source)
+			{
+			case Source::kPropBool: variable->SetBool(ParseBool(a_value)); break;
+			case Source::kPropInt: variable->SetSInt(static_cast<std::int32_t>(ParseInt(a_value))); break;
+			case Source::kPropFloat: variable->SetFloat(ParseFloat(a_value)); break;
+			default: variable->SetString(a_value); break;
+			}
+			return true;
+		}
+
+		// An action's argument list (MCM Helper's Function::FunctionArguments::Make).
+		class VarArgs : public RE::BSScript::IFunctionArguments
+		{
+		public:
+			RE::BSScrapArray<RE::BSScript::Variable> args;
+			bool operator()(RE::BSScrapArray<RE::BSScript::Variable>& a_dst) const override
+			{
+				a_dst = args;
+				return true;
+			}
+		};
+
+		void RunAction(std::size_t a_mod, const Control& a_c, const std::string& a_value)
+		{
+			if (!a_c.action) { return; }
+			const Action& action = *a_c.action;
+			const auto vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
+			if (!vm) { return; }
+
+			VarArgs args;
+			args.args.resize(static_cast<std::uint32_t>(action.params.size()));
+			for (std::uint32_t i = 0; i < action.params.size(); ++i)
+			{
+				auto& var = args.args[i];
+				const std::string& p = action.params[i];
+				if (p == "{value}")
+				{
+					// typed as MCM Helper's control GetValue() is: toggle bool, slider float, menu/input/text string, others int
+					switch (a_c.kind)
+					{
+					case Kind::kToggle:
+					case Kind::kHiddenToggle: var.SetBool(ParseBool(a_value)); break;
+					case Kind::kSlider: var.SetFloat(ParseFloat(a_value)); break;
+					case Kind::kMenu:
+					case Kind::kInput:
+					case Kind::kText: var.SetString(a_value); break;
+					default: var.SetSInt(static_cast<std::int32_t>(ParseInt(a_value))); break;
+					}
+				}
+				else if (p.rfind("{i}", 0) == 0) { var.SetSInt(static_cast<std::int32_t>(ParseInt(p.substr(3)))); }
+				else if (p.rfind("{u}", 0) == 0) { var.SetUInt(static_cast<std::uint32_t>(ParseInt(p.substr(3)))); }
+				else if (p.rfind("{b}", 0) == 0) { var.SetBool(ParseBool(p.substr(3))); }
+				else if (p.rfind("{f}", 0) == 0) { var.SetFloat(ParseFloat(p.substr(3))); }
+				else if (p.rfind("{s}", 0) == 0) { var.SetString(p.substr(3)); }
+				else { var.SetString(p); }
+			}
+
+			RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> none;
+			bool sent = false;
+			if (action.global)
+			{
+				std::string script = action.scriptName;
+				if (script.empty())
+				{
+					if (const auto config = EnsureScript(a_mod); config && config->GetTypeInfo()) { script = config->GetTypeInfo()->GetName(); }
+				}
+				if (!script.empty()) { sent = vm->DispatchStaticCall(script, action.function, &args, none); }
+				logger::info("MCM loader: action {}.{}({} param(s)) {}", script, action.function, action.params.size(), sent ? "called" : "NOT called");
+			}
+			else
+			{
+				auto object = ScriptFor(a_mod, action.form, action.scriptName);
+				if (object) { sent = vm->DispatchMethodCall(object, action.function, &args, none); }
+				logger::info("MCM loader: action {}({} param(s)) on {} {}", action.function, action.params.size(),
+					action.form.empty() ? std::string("the config script") : action.form, sent ? "called" : "NOT called (no script)");
+			}
+		}
+
+		// Main thread: re-read every GlobalValue / PropertyValue* control of a mod, so the page shows what the mod's own
+		// scripts set (several set properties in OnConfigOpen / OnSettingChange that drive hiddenToggle groups).
+		void RefreshLive(std::size_t a_mod)
+		{
+			if (a_mod >= g_mods.size()) { return; }
+			std::vector<std::pair<std::string, std::string>> read;
+			for (const Page& page : g_mods[a_mod]->pages)
+			{
+				for (const Control& c : page.controls)
+				{
+					if (!IsLive(c.source)) { continue; }
+					if (auto v = ReadLive(a_mod, c)) { read.emplace_back(c.key, std::move(*v)); }
+				}
+			}
+			std::scoped_lock lock(g_mutex);
+			for (auto& [k, v] : read) { g_mods[a_mod]->values[k] = std::move(v); }
+		}
+
+		void QueueRefresh(std::size_t a_mod)
+		{
+			if (const auto tasks = SKSE::GetTaskInterface()) { tasks->AddTask([a_mod]() { RefreshLive(a_mod); }); }
+		}
+
 		// Any thread: record the new value now (the page shows it at once), then hand the write to the main thread.
-		// a_closeAfter: also send OnConfigClose once the value is stored - for a change made with no page open (the
-		// DevBench tool), so a mod that applies its settings only when its menu closes (TrueHUD, True Directional
-		// Movement, Precision: "Event OnConfigClose() native") sees it, as it would after SkyUI's menu.
+		// The order is MCM Helper's (MCM_ConfigBase.cpp, OnOptionSliderAccept and friends): set the value, send
+		// OnSettingChange(id) when the control has an id, run its action with the new value.
+		// a_closeAfter: also send OnConfigClose at the end - for a change made with no page open (the DevBench tool), so
+		// a mod that applies its settings only when its menu closes (TrueHUD, True Directional Movement, Precision:
+		// "Event OnConfigClose() native") sees it, as it would after SkyUI's menu.
 		void Apply(std::size_t a_mod, const Control& a_control, const std::string& a_value, bool a_closeAfter = false)
 		{
 			std::string modName;
 			{
 				std::scoped_lock lock(g_mutex);
 				if (a_mod >= g_mods.size()) { return; }
-				g_mods[a_mod]->values[a_control.id] = a_value;
+				if (a_control.source != Source::kNone) { g_mods[a_mod]->values[a_control.key] = a_value; }
 				modName = g_mods[a_mod]->modName;
 			}
 			const auto tasks = SKSE::GetTaskInterface();
 			if (!tasks)
 			{
-				logger::error("MCM loader: no SKSE task interface - {}:{} = {} kept in the menu only", modName, a_control.id, a_value);
+				logger::error("MCM loader: no SKSE task interface - {}:{} = {} kept in the menu only", modName, a_control.key, a_value);
 				return;
 			}
-			const Source source = a_control.source;
-			const std::string id = a_control.id;
-			logger::debug("MCM loader: {} {} -> {} (queued)", modName, id, a_value);
+			const Control* control = &a_control;  // pages never change after Load, so the pointer outlives the task
+			logger::debug("MCM loader: {} {} -> {} (queued)", modName, a_control.key, a_value);
 
-			tasks->AddTask([a_mod, modName, id, source, a_value, a_closeAfter]() {
+			tasks->AddTask([a_mod, modName, control, a_value, a_closeAfter]() {
 				const auto vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
 				if (!vm)
 				{
-					logger::warn("MCM loader: no Papyrus VM - {} {} not written", modName, id);
+					logger::warn("MCM loader: no Papyrus VM - {} {} not written", modName, control->key);
 					return;
 				}
-				// 2. once MCM Helper's store holds the value: OnSettingChange, as MCM Helper's menu sends it; then, for a
-				//    change made with no page open, OnConfigClose, which is where several mods apply their settings
-				auto notify = [a_mod, modName, id, a_closeAfter]() {
-					logger::info("MCM loader: {} {} saved by MCM Helper", modName, id);
-					DispatchEvent(a_mod, "OnSettingChange", &id);
+				// 2. after the value is stored: OnSettingChange, the action, and (no page open) OnConfigClose
+				auto after = [a_mod, control, a_value, a_closeAfter]() {
+					if (!control->id.empty()) { DispatchEvent(a_mod, "OnSettingChange", &control->id); }
+					RunAction(a_mod, *control, a_value);
 					if (a_closeAfter) { DispatchEvent(a_mod, "OnConfigClose", nullptr); }
+					QueueRefresh(a_mod);
 				};
 
+				const Source source = control->source;
+				if (source == Source::kNone)  // a button (text control with an action): nothing to store
+				{
+					after();
+					return;
+				}
+				if (IsLive(source))  // 1. a global or a script property, set where MCM Helper sets it
+				{
+					if (WriteLive(a_mod, *control, a_value)) { logger::info("MCM loader: {} {} = {} ({})", modName, control->key, a_value, control->sourceTypeName); }
+					after();
+					return;
+				}
+
 				// 1. MCM Helper's own store and user INI (MCM.SetModSetting*)
+				auto notify = [modName, control, after]() {
+					logger::info("MCM loader: {} {} saved by MCM Helper", modName, control->id);
+					after();
+				};
 				const char* fn = source == Source::kBool ? "SetModSettingBool" : source == Source::kInt ? "SetModSettingInt" :
 				                 source == Source::kFloat ? "SetModSettingFloat" : "SetModSettingString";
 				RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> then{ new Then(std::move(notify)) };
 				std::unique_ptr<RE::BSScript::IFunctionArguments> args;
+				const std::string id = control->id;
 				switch (source)
 				{
 				case Source::kBool: args.reset(RE::MakeFunctionArguments(std::string(modName), std::string(id), ParseBool(a_value))); break;
@@ -614,14 +901,29 @@ namespace mcmloader
 			const bool holdsValue = a_c.kind == Kind::kToggle || a_c.kind == Kind::kSlider || a_c.kind == Kind::kStepper ||
 			                        a_c.kind == Kind::kMenu || a_c.kind == Kind::kEnum || a_c.kind == Kind::kColor ||
 			                        a_c.kind == Kind::kKeymap || a_c.kind == Kind::kInput;
-			if (a_c.source == Source::kPhase2 || a_c.hasAction || (holdsValue && a_c.source == Source::kNone))
+			if (a_c.source == Source::kPhase2 || (a_c.hasAction && !a_c.action) || (holdsValue && a_c.source == Source::kNone))
 			{
 				ImGui::BeginDisabled();
 				ImGui::TextUnformatted(label.c_str());
 				ImGui::SameLine();
-				ImGui::TextDisabled("(%s - set it in SkyUI's MCM for now; AMF phase 2)",
-					a_c.hasAction ? "a script action" : a_c.sourceTypeName.empty() ? "no value source" : a_c.sourceTypeName.c_str());
+				ImGui::TextDisabled("(%s - set it in SkyUI's MCM)",
+					(a_c.hasAction && !a_c.action) ? "an action type AMF does not run" :
+					a_c.sourceTypeName.empty() ? "no value source" : a_c.sourceTypeName.c_str());
 				ImGui::EndDisabled();
+				return;
+			}
+			// A text control with an action is a button in SkyUI's menu (Load, Default, LoadPreset...).
+			if (a_c.kind == Kind::kText && a_c.action)
+			{
+				const std::string value = a_c.source == Source::kString || a_c.source == Source::kPropString ? a_value : Translate(a_c.staticValue);
+				const std::string button = (label.empty() ? a_c.action->function : label) + "##btn" + a_c.key;
+				if (ImGui::Button(button.c_str())) { Apply(a_mod, a_c, value); }
+				if (!value.empty())
+				{
+					ImGui::SameLine();
+					ImGui::TextDisabled("%s", value.c_str());
+				}
+				Tooltip(a_c, value);
 				return;
 			}
 
@@ -636,7 +938,7 @@ namespace mcmloader
 				break;
 			case Kind::kText:
 				ImGui::TextUnformatted(label.c_str());
-				if (const std::string shown = a_c.source == Source::kString ? a_value : Translate(a_c.staticValue); !shown.empty())
+				if (const std::string shown = a_c.source == Source::kString || a_c.source == Source::kPropString ? a_value : Translate(a_c.staticValue); !shown.empty())
 				{
 					ImGui::SameLine();
 					ImGui::TextDisabled("%s", shown.c_str());
@@ -651,7 +953,8 @@ namespace mcmloader
 			}
 			case Kind::kSlider:
 			{
-				float v = a_c.source == Source::kInt ? static_cast<float>(ParseInt(a_value)) : ParseFloat(a_value);
+				const bool whole = a_c.source == Source::kInt || a_c.source == Source::kPropInt;
+				float v = whole ? static_cast<float>(ParseInt(a_value)) : ParseFloat(a_value);
 				const float before = v;
 				if (precise::SliderFloat(imguiId.c_str(), &v, a_c.min, a_c.max, a_c.format.c_str()))
 				{
@@ -662,7 +965,7 @@ namespace mcmloader
 					v = std::clamp(v, a_c.min, a_c.max);
 					if (v != before)
 					{
-						Apply(a_mod, a_c, a_c.source == Source::kInt ? std::to_string(static_cast<long long>(std::lround(v))) : FormatFloat(v));
+						Apply(a_mod, a_c, whole ? std::to_string(static_cast<long long>(std::lround(v))) : FormatFloat(v));
 					}
 				}
 				Tooltip(a_c, a_value);
@@ -769,11 +1072,22 @@ namespace mcmloader
 		void NoteDrawn(std::size_t a_mod)
 		{
 			const int open = g_openMod.load();
+			static double lastRefresh = -1.0;
+			const double now = ImGui::GetTime();
 			if (open != static_cast<int>(a_mod))
 			{
 				if (open >= 0) { QueueEvent(static_cast<std::size_t>(open), "OnConfigClose"); }
 				QueueEvent(a_mod, "OnConfigOpen");
+				QueueRefresh(a_mod);
+				lastRefresh = now;
 				g_openMod.store(static_cast<int>(a_mod));
+			}
+			else if (now - lastRefresh > 0.5)
+			{
+				// Globals and script properties are the mod's own state: re-read them twice a second while the page is
+				// open (the mod's scripts change them in OnConfigOpen / OnSettingChange), never every frame.
+				QueueRefresh(a_mod);
+				lastRefresh = now;
 			}
 			g_lastDrawFrame = ImGui::GetFrameCount();
 		}
@@ -806,7 +1120,7 @@ namespace mcmloader
 			{
 				if (c.groupControl > 0)
 				{
-					const auto it = values.find(c.id);
+					const auto it = values.find(c.key);
 					groups[c.groupControl] = it != values.end() && ParseBool(it->second);
 				}
 			}
@@ -815,7 +1129,7 @@ namespace mcmloader
 			{
 				const bool active = !c.cond || Eval(*c.cond, groups);
 				if (!active && c.behavior != Behavior::kDisable) { continue; }
-				const auto it = values.find(c.id);
+				const auto it = values.find(c.key);
 				const std::string value = it != values.end() ? it->second : std::string{};
 				if (!active) { ImGui::BeginDisabled(); }
 				ImGui::PushID(&c);
@@ -900,8 +1214,11 @@ namespace mcmloader
 					{
 						if (!c.is_object()) { continue; }
 						Control control = ParseControl(c);
+						// A property- or global-backed control usually has no id; it still needs its own slot in values.
+						control.key = !control.id.empty() ? control.id :
+							"#" + std::to_string(mod->pages.size()) + "." + std::to_string(page.controls.size());
 						++mod->controlCount;
-						if (control.source == Source::kPhase2 || control.hasAction) { ++mod->phase2Count; }
+						if (control.source == Source::kPhase2 || (control.hasAction && !control.action)) { ++mod->phase2Count; }
 						page.controls.push_back(std::move(control));
 					}
 				}
@@ -1052,6 +1369,29 @@ namespace mcmloader
 		const auto index = findMod();
 		if (!index) { return json{ { "ok", false }, { "error", "no MCM mod '" + modArg + "'" } }.dump(); }
 
+		if (op == "controls")
+		{
+			// every control's key (its id, or "#<page>.<index>" when it has none), so a driving script can address it
+			json list = json::array();
+			std::scoped_lock lock(g_mutex);
+			for (const Page& page : g_mods[*index]->pages)
+			{
+				for (const Control& c : page.controls)
+				{
+					if (c.kind == Kind::kHeader || c.kind == Kind::kEmpty) { continue; }
+					const auto it = g_mods[*index]->values.find(c.key);
+					list.push_back({ { "key", c.key }, { "type", c.typeName }, { "source", c.sourceTypeName }, { "form", c.sourceForm },
+						{ "property", c.propertyName }, { "action", c.action ? c.action->function : "" },
+						{ "value", it != g_mods[*index]->values.end() ? it->second : "" } });
+				}
+			}
+			return json{ { "ok", true }, { "controls", list } }.dump();
+		}
+		if (op == "refresh")
+		{
+			QueueRefresh(*index);  // re-read the mod's globals and script properties on the main thread
+			return json{ { "ok", true }, { "queued", "refresh" } }.dump();
+		}
 		if (op == "script")
 		{
 			std::scoped_lock lock(g_mutex);
@@ -1063,7 +1403,7 @@ namespace mcmloader
 		{
 			for (const Control& c : page.controls)
 			{
-				if (c.id == id && !id.empty()) { control = &c; }
+				if (!id.empty() && (c.id == id || c.key == id)) { control = &c; }
 			}
 		}
 		if (!control) { return json{ { "ok", false }, { "error", "no control with id '" + id + "'" } }.dump(); }
@@ -1072,25 +1412,34 @@ namespace mcmloader
 		{
 			std::scoped_lock lock(g_mutex);
 			const auto& values = g_mods[*index]->values;
-			const auto it = values.find(id);
+			const auto it = values.find(control->key);
 			return json{ { "ok", true }, { "id", id }, { "type", control->typeName }, { "source", control->sourceTypeName },
 				{ "value", it != values.end() ? it->second : "" } }.dump();
 		}
-		if (op == "set")
+		if (op == "set" || op == "press")
 		{
-			if (control->source == Source::kPhase2 || control->source == Source::kNone || control->hasAction)
+			if (control->source == Source::kPhase2 || (control->hasAction && !control->action))
 			{
-				return json{ { "ok", false }, { "error", "phase 1 sets ModSetting values only; this is " + control->sourceTypeName } }.dump();
+				return json{ { "ok", false }, { "error", "not drawable: " + (control->sourceTypeName.empty() ? std::string("an action type AMF does not run") : control->sourceTypeName) } }.dump();
 			}
+			if (op == "press" && !control->action) { return R"({"ok":false,"error":"press needs a control with an action"})"; }
+			if (op == "set" && control->source == Source::kNone) { return R"({"ok":false,"error":"this control holds no value - use press"})"; }
 			const auto value = args.find("value");
-			if (value == args.end()) { return R"({"ok":false,"error":"set needs a value"})"; }
-			const std::string text = value->is_string() ? value->get<std::string>() : value->is_boolean() ? (value->get<bool>() ? "1" : "0") : value->dump();
+			if (op == "set" && value == args.end()) { return R"({"ok":false,"error":"set needs a value"})"; }
+			std::string text;
+			if (value != args.end()) { text = value->is_string() ? value->get<std::string>() : value->is_boolean() ? (value->get<bool>() ? "1" : "0") : value->dump(); }
+			else
+			{
+				std::scoped_lock lock(g_mutex);
+				const auto it = g_mods[*index]->values.find(control->key);
+				text = it != g_mods[*index]->values.end() ? it->second : control->staticValue;
+			}
 			// With the mod's page not open, the tool plays a whole SkyUI visit: open, change, close.
 			const bool pageOpen = g_openMod.load() == static_cast<int>(*index);
 			if (!pageOpen) { QueueEvent(*index, "OnConfigOpen"); }
 			Apply(*index, *control, text, !pageOpen);
 			return json{ { "ok", true }, { "id", id }, { "queued", text }, { "configCloseAfter", !pageOpen } }.dump();
 		}
-		return json{ { "ok", false }, { "error", "unknown op '" + op + "' (list, get, set, script)" } }.dump();
+		return json{ { "ok", false }, { "error", "unknown op '" + op + "' (list, get, set, press, refresh, script)" } }.dump();
 	}
 }
