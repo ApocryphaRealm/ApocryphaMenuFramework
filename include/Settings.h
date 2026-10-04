@@ -78,6 +78,8 @@ namespace settings
 		// Injected into the live menu at runtime, so it works over whatever menu artwork is
 		// installed and collides with none of it.
 		bool systemMenuRow = true;
+		// EXPERIMENTAL (exp/mcm-loader): [MCM] bLoadMcmHelperConfigs - draw MCM Helper mods' menus as AMF pages.
+		bool loadMcmHelperConfigs = true;
 		bool watchdogEnabled = true;
 		// Fast exit (the author, 2026-09-05: "a way to deal with this on exit no kill function issue"):
 		// when the game asks Windows to exit, end the process at once instead of running every

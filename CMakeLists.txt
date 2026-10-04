@@ -62,6 +62,9 @@ find_package(directxtk CONFIG REQUIRED)
 # verbatim with the package at release time.
 find_package(imgui CONFIG REQUIRED)
 
+# EXPERIMENTAL (exp/mcm-loader): MCM Helper's config.json is read with JSON for Modern C++ (MIT, header-only).
+find_package(nlohmann_json CONFIG REQUIRED)
+
 add_commonlibsse_plugin(${PROJECT_NAME} SOURCES ${headers} ${sources})
 add_library("${PROJECT_NAME}::${PROJECT_NAME}" ALIAS "${PROJECT_NAME}")
 
@@ -114,6 +117,7 @@ target_link_libraries(
 		CommonLibSSE::CommonLibSSE
 		spdlog::spdlog_header_only
 		imgui::imgui
+		nlohmann_json::nlohmann_json
 		Shell32.lib   # SHGetKnownFolderPath (Persistence.cpp)
 		Ole32.lib     # CoTaskMemFree (Persistence.cpp)
 		Psapi.lib     # EnumProcessModules (SmfAlias.cpp)

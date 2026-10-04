@@ -6,6 +6,7 @@
 #include "Persistence.h"
 #include "Registry.h"
 #include "Keyboard.h"
+#include "McmLoader.h"
 #include "Renderer.h"
 #include "Settings.h"
 #include "Strings.h"
@@ -102,6 +103,10 @@ namespace
 			// string_view over it (that dereferenced (void*)0x1 and crashed, 1.3.3). The name was
 			// captured at kPreLoadGame; restore it only if the load actually succeeded.
 			persistence::OnPostLoadGame(a_msg->data != nullptr);
+			mcmloader::OnGameLoaded();  // EXPERIMENTAL: config scripts belong to the game just loaded
+			break;
+		case SKSE::MessagingInterface::kNewGame:
+			mcmloader::OnGameLoaded();
 			break;
 		case SKSE::MessagingInterface::kPostLoad:
 			// Re-run the SMF module-name alias. It was installed during our own load, but every
@@ -121,6 +126,9 @@ namespace
 			// readable by now, and the atlas is rebuilt for the language's glyphs before the next frame.
 			strings::Load();
 			renderer::RequestFontRebuild();
+			// EXPERIMENTAL (exp/mcm-loader): MCM Helper mods' menus as AMF entries. kDataLoaded is the first point
+			// at which every plugin's load state can be asked (a config whose plugin is not loaded is skipped).
+			mcmloader::Load();
 			if (g_staleOldCopy.load(std::memory_order_acquire)) {
 				constexpr auto kStale = "Apocrypha Menu Framework: delete the old ApocryphaMenuFramework.dll from SKSE/Plugins (this version is !ApocryphaMenuFramework.dll).";
 #if AMF_RUNTIME_LINE == 17

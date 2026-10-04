@@ -191,6 +191,12 @@ namespace settings
 				"; 0 leaves the game's menu completely untouched.\n"
 				"bSystemMenuRow=" << (a_v.systemMenuRow ? 1 : 0) << "\n"
 				"\n"
+				"[MCM]\n"
+				"; EXPERIMENTAL. 1 = show every MCM Helper mod's menu (Data/MCM/Config/<mod>/config.json) as a\n"
+				"; page here as well, read from that mod's own files. Changes go through MCM Helper, exactly\n"
+				"; as its own menu makes them. 0 = leave MCM Helper menus to SkyUI only.\n"
+				"bLoadMcmHelperConfigs=" << (a_v.loadMcmHelperConfigs ? 1 : 0) << "\n"
+				"\n"
 				"[Input]\n"
 				"; DirectInput scan code that toggles the framework menu, decimal or hex: 59 (0x3B) = F1.\n"
 				"; 0 = no key at all, which is the way to leave F1 entirely to the game. The same key as\n"
@@ -533,6 +539,7 @@ namespace settings
 			ReadBool(entries, "Input.bOnScreenKeyboard", g_values.onScreenKeyboard);
 			ReadBool(entries, "Menu.bPauseGame", g_values.pauseGameWhileOpen);
 			ReadBool(entries, "Menus.bSystemMenuRow", g_values.systemMenuRow);
+			ReadBool(entries, "MCM.bLoadMcmHelperConfigs", g_values.loadMcmHelperConfigs);
 
 			// Window profiles. Each field defaults to -1, which the renderer reads as "this profile
 			// has never been moved, so use its default geometry"; a missing key therefore behaves

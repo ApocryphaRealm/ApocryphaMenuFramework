@@ -14,11 +14,21 @@ namespace registry
 
 	bool Register(const char* a_modName, const char* a_pageName, AMF_RenderCallback a_render)
 	{
+		if (!a_render)
+		{
+			logger::warn("AMF_RegisterPage refused: mod=\"{}\", page=\"{}\" - the render callback is null",
+						 a_modName ? a_modName : "<null>", a_pageName ? a_pageName : "<null>");
+			return false;
+		}
+		return RegisterFn(a_modName, a_pageName, std::function<void()>(a_render));
+	}
+
+	bool RegisterFn(const char* a_modName, const char* a_pageName, std::function<void()> a_render)
+	{
 		if (!a_modName || !*a_modName || !a_pageName || !*a_pageName || !a_render)
 		{
-			logger::warn("AMF_RegisterPage refused: mod=\"{}\", page=\"{}\", render={} - every argument must be non-null/non-empty",
-						 a_modName ? a_modName : "<null>", a_pageName ? a_pageName : "<null>",
-						 static_cast<const void*>(reinterpret_cast<void*>(a_render)));
+			logger::warn("AMF_RegisterPage refused: mod=\"{}\", page=\"{}\", render set={} - every argument must be non-null/non-empty",
+						 a_modName ? a_modName : "<null>", a_pageName ? a_pageName : "<null>", static_cast<bool>(a_render));
 			return false;
 		}
 
@@ -38,14 +48,14 @@ namespace registry
 					}
 				}
 
-				entry.pages.push_back({ a_pageName, a_render });
+				entry.pages.push_back({ a_pageName, std::move(a_render) });
 				logger::info("page registered: \"{}\" -> \"{}\" (mod now has {} page(s), rendered as tabs - one menu per mod)",
 							 a_modName, a_pageName, entry.pages.size());
 				return true;
 			}
 		}
 
-		g_entries.push_back({ a_modName, { { a_pageName, a_render } } });
+		g_entries.push_back({ a_modName, { { a_pageName, std::move(a_render) } } });
 		logger::info("first page registered for \"{}\": \"{}\" ({} mod(s) in the registry)",
 					 a_modName, a_pageName, g_entries.size());
 		return true;

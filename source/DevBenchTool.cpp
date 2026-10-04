@@ -4,6 +4,7 @@
 #include "DevBench/DevBenchAPI.h"
 #include "Input.h"
 #include "MainMenuDriver.h"
+#include "McmLoader.h"
 #include "Renderer.h"
 #include <imgui.h>
 #include "Theme.h"
@@ -468,6 +469,14 @@ namespace devbenchtool
 		// captured, with a name, the device, and whether the framework reserves that key;
 		// rebind -> arms the REAL menu toggle-key rebind (the consuming settings-page path);
 		// cancel -> disarms both.
+		// EXPERIMENTAL (exp/mcm-loader). Listener thread; mcmloader::ToolJson is thread-safe and a set is queued to the
+		// main thread through SKSE's task interface.
+		void McmTool(void*, const char* a_argsJson, void* a_sink, DevBenchAPI::WriteFn a_write)
+		{
+			const std::string result = mcmloader::ToolJson(a_argsJson ? a_argsJson : "{}");
+			a_write(a_sink, result.c_str());
+		}
+
 		void KeybindTool(void*, const char* a_argsJson, void* a_sink, DevBenchAPI::WriteFn a_write)
 		{
 			const std::string args = a_argsJson ? a_argsJson : "{}";
@@ -605,6 +614,21 @@ namespace devbenchtool
 		if (dev->RegisterTool("amf.keybind", keybindDescriptor, &KeybindTool, nullptr))
 		{
 			logger::info("Registered \"amf.keybind\" (capture widget) with DevBench");
+		}
+
+		// EXPERIMENTAL (exp/mcm-loader): read and drive the MCM Helper pages AMF builds from config.json.
+		constexpr const char* mcmDescriptor =
+			"{"
+			"\"description\":\"EXPERIMENTAL MCM Helper loader. op: list (mods drawn, pages, controls, phase-2 rows, "
+			"config-script state, and skipped mods with reasons) | get {mod,id} | set {mod,id,value} (written through "
+			"MCM.SetModSetting* then OnSettingChange, the same path as the page) | script {mod}.\","
+			"\"inputSchema\":{\"type\":\"object\",\"properties\":{\"op\":{\"type\":\"string\"},\"mod\":{\"type\":\"string\"},"
+			"\"id\":{\"type\":\"string\"},\"value\":{}}},"
+			"\"readOnly\":false"
+			"}";
+		if (dev->RegisterTool("amf.mcm", mcmDescriptor, &McmTool, nullptr))
+		{
+			logger::info("Registered \"amf.mcm\" (experimental MCM Helper loader) with DevBench");
 		}
 
 		// Rule 64's start-menu extension: the vanilla Main Menu driver (amf.mainmenu).
