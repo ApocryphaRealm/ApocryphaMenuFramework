@@ -132,8 +132,17 @@ namespace mcmloader::scripts
 			const auto brace = a_raw.find('{');
 			if (brace != std::string::npos)
 			{
-				const std::string key = a_raw.substr(0, brace);
-				if (const auto* text = Find(a_table, key))
+				// The translation files key a nested string with its braces empty ("$PEM_MCM_LimitContainers{}\tTotal
+				// available {}, ..."), so "$KEY{}{}" is tried first, then the bare "$KEY".
+				std::string key = a_raw.substr(0, brace);
+				std::string emptied = key;
+				for (std::size_t i = brace; i < a_raw.size(); ++i)
+				{
+					if (a_raw[i] == '{') { emptied += "{}"; }
+				}
+				const std::string* text = Find(a_table, emptied);
+				if (!text) { text = Find(a_table, key); }
+				if (text)
 				{
 					std::string out = *text;
 					std::size_t pos = brace;
