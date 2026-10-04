@@ -2188,6 +2188,15 @@ namespace renderer
 					// a folded separator hides its mods (MO2's collapse - the owner, 2026-10-02)
 					if (needle.empty() && row.hidden) { continue; }
 
+					// EXPERIMENTAL (exp/mcm-loader): an entry whose every page is hidden has nothing to show, so it has no
+					// row - the MCM loader's off switch hides all of its entries' pages. (Before this an all-hidden entry
+					// kept an empty row; worth confirming with the main AMF line before this merges.)
+					if (!row.separator && row.registryIndex >= 0 && row.registryIndex < static_cast<int>(entries.size()))
+					{
+						const auto& pages = entries[row.registryIndex].pages;
+						if (!pages.empty() && std::all_of(pages.begin(), pages.end(), [](const registry::Page& p) { return p.hidden; })) { continue; }
+					}
+
 					if (row.separator)
 					{
 						DrawSeparatorRow(entries, row, rowContextMenu, rowFavourite);

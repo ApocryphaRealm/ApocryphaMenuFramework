@@ -910,6 +910,64 @@ namespace mcmloader
 
 		std::atomic<int> g_hiddenCount{ 0 };
 		std::atomic<unsigned> g_hideGeneration{ 0 };
+		std::atomic<bool> g_skyuiBusy{ false };   // a call came back -2: SkyUI's manager was BUSY (its Journal is open)
+
+		// SKI_ConfigManager's RegisterMod / UnregisterMod return the slot (>= 0), -1 (not in the list) - or -2 in its
+		// BUSY state, which lasts while the Journal is open (OnMenuOpen..OnMenuClose) and does NOTHING (2026-10-04: a hide
+		// with the Journal open left all 83 entries in place). So the result is read, not assumed.
+		class ResultThen : public RE::BSScript::IStackCallbackFunctor
+		{
+		public:
+			explicit ResultThen(std::function<void(std::int32_t)> a_fn) : _fn(std::move(a_fn)) {}
+			void operator()(RE::BSScript::Variable a_result) override
+			{
+				if (!a_result.IsInt())
+				{
+					static int logged = 0;  // a handful, not one per mod
+					if (logged++ < 3)
+					{
+						logger::warn("MCM loader: SkyUI call returned no int (raw type {}, none={})",
+							static_cast<std::uint64_t>(a_result.GetType().GetRawType()), a_result.IsNoneObject());
+					}
+				}
+				if (_fn) { _fn(a_result.IsInt() ? a_result.GetSInt() : -3); }
+			}
+			bool CanSave() const override { return false; }
+			void SetObject(const RE::BSTSmartPointer<RE::BSScript::Object>&) override {}
+
+		private:
+			std::function<void(std::int32_t)> _fn;
+		};
+
+		void RecountHidden()
+		{
+			std::scoped_lock lock(g_mutex);
+			int hidden = 0;
+			for (const auto& mod : g_mods) { hidden += mod->hiddenInSkyUI ? 1 : 0; }
+			g_hiddenCount.store(hidden);
+		}
+
+		void QueueSyncSkyUI(bool a_hide);
+
+		// While SkyUI answers BUSY, try again every 3 s (for up to 10 minutes, and only while the switch still says so).
+		std::atomic<unsigned> g_retryFor{ ~0u };  // the switch generation a retry thread is already watching
+
+		void RetryWhileBusy(bool a_hide)
+		{
+			const unsigned generation = g_hideGeneration.load();
+			if (g_retryFor.exchange(generation) == generation) { return; }  // one watcher per flip of the switch
+			std::thread([a_hide, generation]() {
+				for (int i = 0; i < 200; ++i)
+				{
+					std::this_thread::sleep_for(std::chrono::seconds(3));
+					if (g_hideGeneration.load() != generation || settings::Get().hideMcmInSkyUI != a_hide) { break; }
+					if (!g_skyuiBusy.exchange(false)) { break; }  // the last pass went through
+					QueueSyncSkyUI(a_hide);
+				}
+				unsigned expected = generation;
+				g_retryFor.compare_exchange_strong(expected, ~0u);
+			}).detach();
+		}
 
 		// a_hide: UnregisterMod every hideable mod; otherwise RegisterMod every mod this session hid (or, after a load,
 		// every hideable one - the save may hold them hidden from an earlier session).
@@ -922,35 +980,55 @@ namespace mcmloader
 				logger::info("MCM loader: SkyUI's config manager is not running yet - SkyUI's list left as it is for now");
 				return;
 			}
-			int changed = 0;
+			// The parameter is SKI_ConfigBase, and a call dispatched from here is NOT upcast: the mod's own script type was
+			// refused (Papyrus.0.log, 2026-10-04: "RegisterMod(SKI_ConfigBase a_menu,string a_modName) received incompatible
+			// arguments! Received types (TrueHUD_MCM,string)"), as were a bare object and the quest form. Typed as the base it passes.
+			RE::BSTSmartPointer<RE::BSScript::ObjectTypeInfo> baseInfo;
+			if (!vm->GetScriptObjectType("SKI_ConfigBase", baseInfo) || !baseInfo)
+			{
+				logger::warn("MCM loader: SKI_ConfigBase is not a loaded script type - SkyUI's list left as it is");
+				return;
+			}
+			const auto baseType = baseInfo->GetRawType();
+			int sent = 0;
 			for (std::size_t m = 0; m < g_mods.size(); ++m)
 			{
 				if (!g_mods[m]->hideable) { continue; }
 				auto config = EnsureScript(m);
 				if (!config) { continue; }
 				VarArgs args;
-				RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> none;
+				const std::string modName = g_mods[m]->modName;
+				RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> then{ new ResultThen([m, a_hide, modName](std::int32_t a_result) {
+					if (a_result == -2)
+					{
+						g_skyuiBusy.store(true);  // the Journal is open: nothing happened; RetryWhileBusy tries again
+						return;
+					}
+					{
+						std::scoped_lock lock(g_mutex);
+						// hide: a slot (>= 0) came out, or -1 - it was not in the list; either way it is out now
+						if (m < g_mods.size()) { g_mods[m]->hiddenInSkyUI = a_hide; }
+					}
+					logger::debug("MCM loader: SkyUI {} {} -> {}", a_hide ? "UnregisterMod" : "RegisterMod", modName, a_result);
+					RecountHidden();
+				}) };
 				if (a_hide)
 				{
 					args.args.resize(1);
-					args.args[0].SetObject(config);
-					if (vm->DispatchMethodCall(manager, "UnregisterMod", &args, none)) { ++changed; }
-					g_mods[m]->hiddenInSkyUI = true;
+					args.args[0].SetObject(config, baseType);
+					if (vm->DispatchMethodCall(manager, "UnregisterMod", &args, then)) { ++sent; }
 				}
 				else
 				{
 					const auto name = config->GetProperty("ModName");
 					args.args.resize(2);
-					args.args[0].SetObject(config);
+					args.args[0].SetObject(config, baseType);
 					args.args[1].SetString(name && name->IsString() ? name->GetString() : std::string_view(g_mods[m]->modName));
-					if (vm->DispatchMethodCall(manager, "RegisterMod", &args, none)) { ++changed; }
-					g_mods[m]->hiddenInSkyUI = false;
+					if (vm->DispatchMethodCall(manager, "RegisterMod", &args, then)) { ++sent; }
 				}
 			}
-			int hidden = 0;
-			for (const auto& mod : g_mods) { hidden += mod->hiddenInSkyUI ? 1 : 0; }
-			g_hiddenCount.store(hidden);
-			logger::info("MCM loader: SkyUI's MCM list - {} {} mod(s) ({} hidden now)", a_hide ? "took out" : "put back", changed, hidden);
+			logger::info("MCM loader: SkyUI's MCM list - {} {} mod(s) sent; results counted as they come back", a_hide ? "UnregisterMod" : "RegisterMod", sent);
+			RetryWhileBusy(a_hide);
 		}
 
 		void QueueSyncSkyUI(bool a_hide)
