@@ -71,6 +71,13 @@ namespace personalization
 	using SeparatorNameFilter = std::string (*)(const std::string& a_storedName);
 	void SetSeparatorNameFilter(SeparatorNameFilter a_filter);
 
+	// What a mod entry's own name shows as when the player has not renamed it (2.1.2): the MCM loaders register one so
+	// a converted menu's " (MCM)" ending is shown in the language picked. On screen only - the stored name is unchanged.
+	using EntryNameFilter = std::string (*)(const std::string& a_entryName);
+	void SetEntryNameFilter(EntryNameFilter a_filter);
+	// The filter alone, for lists that show entry names outside the side list (the MCM import list).
+	std::string ShownEntryName(const std::string& a_entryName);
+
 	// The list the menu draws, in display order, one row per registered mod.
 	std::vector<DisplayEntry> Order(const std::vector<registry::Entry>& a_entries);
 

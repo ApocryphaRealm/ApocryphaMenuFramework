@@ -21,6 +21,21 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## 2.1.2 - 2026-10-05 - untested - the menu's words in every language
+
+The owner, after 2.1.1: "Go ahead and make the changes, but don't post anything."
+
+### Changed
+- **A converted menu's "(MCM)" ending shows in the language picked** - "Photo Mode (Mod-Konfig.)", "Photo Mode （模组配置）" -
+  on screen only, in the side list, the MCM menus list and Bring in from SkyUI. The stored entry name keeps " (MCM)": it is
+  what the player's order, renames and learned placements are keyed on (`personalization::SetEntryNameFilter`, registered
+  by McmSort like the separator filter). A name the player gave an entry shows as typed. One string, eleven languages.
+- **"MCM" written out in the body text of every language** - 13 strings in each of Czech, French, German, Italian,
+  Japanese, Korean, Polish, Russian and Spanish (Chinese had it in 2.1.1): the language's own words for "mod configuration
+  menu". MCM Helper, a product name, stays. French help names its categories as 2.1.1 renamed them (Affichage, Combats).
+- No duplicate "Utilities and Fixes" to merge: the owner's saved layout has one utility separator ("Utility"); the second
+  existed only during 2.1.1's test sorts, and since 2.1.1 a sort reuses "Utility" for that category.
+
 ## 2.1.1 - 2026-10-05 - working - one menu key, text that fits, separators in your language, a see-through window
 
 Found in the 2026-10-05 Nexus banner reshoot (every page shot in game, Norden - Black, from the journal's SKSE MENUS row)

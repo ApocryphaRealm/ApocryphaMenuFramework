@@ -1,6 +1,6 @@
 ﻿ApocryphaRealm Menu Framework
 =============================
-Version 2.1.1
+Version 2.1.2
 
 An original, GPL-3.0-or-later in-game menu framework (embedding Dear ImGui) - a one-for-one
 replacement for SKSE Menu Framework's consumer surface, plus user-friendly features that do
@@ -46,6 +46,9 @@ reading.
 
 WHAT CHANGED
 ------------
+
+Version 2.1.2
+The menu's own words in every language: a converted menu's "(MCM)" ending and every mention of MCM are written in the language you pick. Your menu names, order and renames are unchanged.
 
 Version 2.1.1
 The window, on Appearance - three switches, all on by default: Move the window (drag its top row; it reopens where you left it), Resize the window (any edge or corner, height and width alike; off fixes the size), and See-through window with a Window opacity slider down to 5% - the black background fades most, text least. Thanks to Barzing for the suggestions. The Mods row has a tick box for alphabetical order, one A-Z / Z-A switch, and a Sort button that files the MCM menus into categories. Separators and tabs read in every language, and the Controls page fits any window size. One place to set the menu key: Controls > Open and close the menu (the duplicate under Settings is gone). Controls no longer cuts its keys and descriptions off in the window the journal's SKSE MENUS row opens. The category separators the sort makes, and converted MCM pages whose mod ships a translation, follow the language you pick. Help is up to date in all eleven languages. Dropdowns open without an empty band at the top and bottom, and the rename boxes lost their empty title strip. The sort follows a few more placements, and a developer test box is gone from the General tab.

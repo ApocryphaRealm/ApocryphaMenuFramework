@@ -1257,7 +1257,7 @@ namespace renderer
 							{
 								if (r.imported) { continue; }
 								ImGui::PushID(r.key.c_str());
-								if (ImGui::Selectable(r.entry.c_str()))
+								if (ImGui::Selectable(personalization::ShownEntryName(r.entry).c_str()))
 								{
 									logger::info("settings page: '{}' brought in from SkyUI", r.entry);
 									mcmloader::SetMenuImported(r.key, true);
@@ -1306,7 +1306,7 @@ namespace renderer
 							if (!needle.empty() && name.find(needle) == std::string::npos) { continue; }
 							ImGui::PushID(r.key.c_str());
 							bool on = r.imported;
-							if (widgets::Toggle(r.entry.c_str(), &on)) { mcmloader::SetMenuImported(r.key, on); }
+							if (widgets::Toggle(personalization::ShownEntryName(r.entry).c_str(), &on)) { mcmloader::SetMenuImported(r.key, on); }
 							ImGui::SameLine();
 							ImGui::TextDisabled("%s", r.script ? TR("AMF_McmKindScript", "(script menu)") : TR("AMF_McmKindHelper", "(MCM Helper)"));
 							ImGui::PopID();

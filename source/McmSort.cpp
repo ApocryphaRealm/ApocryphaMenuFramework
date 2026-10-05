@@ -285,6 +285,15 @@ namespace mcmloader
 		}
 		const bool g_separatorFilterRegistered = (personalization::SetSeparatorNameFilter(&ShownSeparatorName), true);
 
+		// A converted menu's " (MCM)" ending in the language picked (2.1.2) - the entry keeps its stored name.
+		std::string ShownMcmEntryName(const std::string& a_entry)
+		{
+			constexpr std::string_view kSuffix = " (MCM)";
+			if (a_entry.size() <= kSuffix.size() || a_entry.compare(a_entry.size() - kSuffix.size(), kSuffix.size(), kSuffix) != 0) { return a_entry; }
+			return a_entry.substr(0, a_entry.size() - kSuffix.size()) + " " + TR("AMF_McmSuffix", "(MCM)");
+		}
+		const bool g_entryFilterRegistered = (personalization::SetEntryNameFilter(&ShownMcmEntryName), true);
+
 		void LearnFromLayout()
 		{
 			std::unordered_map<std::string, std::string> keyOf;   // entry -> import key, menus that come in only
