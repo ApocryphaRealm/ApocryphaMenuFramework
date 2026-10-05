@@ -21,6 +21,20 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## Unreleased
+
+### Fixed
+- **"Take those mods out of SkyUI's list" under MCM Unlocked** (Nexus 180186) or another 128-limit lift. AMF checked
+  SkyUI's list in stock SkyUI's `_modConfigs` array, and those mods keep the list elsewhere. MCM Unlocked keeps it in
+  its DLL; the "Barzing" layout uses `_MainMenu` plus `_modConfigsP1`, `P2` and so on. In a list with MCM Unlocked
+  (Njordlinger runs it), the switch therefore took nothing out, and turning it back off retried in the background for
+  ten minutes.
+  - AMF now reads the list from whichever of the three keeps it. Under MCM Unlocked that is `MCMUnlocked.GetConfigBase`
+    with the menu's name.
+  - A list kept any other way is left alone, and the settings page says that the switch takes nothing out there.
+  - A menu SkyUI never registered is not AMF's to take out or give back.
+  - DevBench `amf.mcm op=skyuilist` reads the same three, and reports which one is in use (`layout`).
+
 ## 2.0.8 - 2026-10-04 - working - the menu fits the image the game draws
 
 ### Fixed

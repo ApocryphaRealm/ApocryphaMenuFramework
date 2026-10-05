@@ -913,6 +913,11 @@ namespace renderer
 							   "here. A mod with anything this menu cannot draw stays in SkyUI's list. Off puts them all back."));
 			ImGui::TextDisabled(TR("AMF_McmHideSkyUICount", "%d of %d hidden from SkyUI's list now"),
 				mcmloader::HiddenInSkyUI(), mcmloader::HideableInSkyUI());
+			if (mcmloader::SkyUIListUnreadable())
+			{
+				ImGui::TextWrapped("%s", TR("AMF_McmHideUnreadable", "SkyUI's MCM list is run by another mod in a way this menu cannot read, "
+								   "so this switch takes nothing out of it here."));
+			}
 			if (!anyMcm) { ImGui::EndDisabled(); }
 			ImGui::Spacing();
 

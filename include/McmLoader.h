@@ -37,6 +37,9 @@ namespace mcmloader
 	// How many mods are hidden from SkyUI's list right now, and how many could be (for the settings page).
 	int HiddenInSkyUI();
 	int HideableInSkyUI();
+	// True once AMF has seen SkyUI's config manager keep its list in no form AMF can read (not stock SkyUI, Barzing or
+	// MCM Unlocked): the hide switch then takes nothing out, and the settings page says so.
+	bool SkyUIListUnreadable();
 
 	// Every frame, right after ImGui::NewFrame: sends OnConfigClose to the mod whose entry stopped being drawn
 	// (SkyUI's lifecycle - TrueHUD, True Directional Movement and Precision apply their settings in OnConfigClose).

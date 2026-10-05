@@ -1014,12 +1014,44 @@ namespace mcmloader
 			}).detach();
 		}
 
-		// Is this config in SkyUI's list right now? Read from the manager's own _modConfigs array (VM thread or main thread)
-		// - the truth, where a RegisterMod / UnregisterMod result can come back None (Njordlinger, 2026-10-04: every result
-		// of an 84-call pass was None, so a result-driven ledger recorded nothing and switching off gave nothing back).
-		bool InSkyUIList(const RE::BSTSmartPointer<RE::BSScript::Object>& a_manager, const RE::BSTSmartPointer<RE::BSScript::Object>& a_config)
+		// SkyUI's MCM list is kept three ways in the wild, and membership is read from whichever one runs:
+		//  - stock SkyUI: SKI_ConfigManager._modConfigs (128 slots);
+		//  - "Barzing" (a 128-limit lift MCM Helper also reads): _MainMenu, then _modConfigsP1, P2 ... (128 each);
+		//  - MCM Unlocked (Nexus 180186): no arrays at all - its DLL keeps the list, behind the global natives
+		//    MCMUnlocked.GetConfigCount() / GetModIDFromConfigID(int) -> string / GetConfigBase(string modID), where the
+		//    mod ID is the name the config registered with (its ModName); RegisterMod returns 1 / -1, UnregisterMod 1.
+		// Read 2026-10-04 from MCM Unlocked 2.0.1's SKI_ConfigManager.pex: Njordlinger runs it, and reading _modConfigs there
+		// found nothing - the hide switch took nothing out and its give-back retried for ten minutes.
+		enum class ListLayout : int { kStock = 0, kBarzing = 1, kUnlocked = 2, kUnknown = 3 };
+		std::atomic<int> g_listLayout{ -1 };  // -1: not read yet
+
+		ListLayout DetectLayout(const RE::BSTSmartPointer<RE::BSScript::Object>& a_manager)
 		{
-			const auto var = detail::ScriptVar(a_manager, "_modConfigs");
+			const auto isArray = [&](const char* a_name) {
+				const auto v = detail::ScriptVar(a_manager, a_name);
+				return v && v->IsArray();
+			};
+			ListLayout layout = ListLayout::kUnknown;
+			if (isArray("_modConfigs")) { layout = ListLayout::kStock; }
+			else if (isArray("_MainMenu")) { layout = ListLayout::kBarzing; }
+			else
+			{
+				const auto vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
+				RE::BSTSmartPointer<RE::BSScript::ObjectTypeInfo> info;
+				if (vm && vm->GetScriptObjectType("MCMUnlocked", info) && info) { layout = ListLayout::kUnlocked; }
+			}
+			if (g_listLayout.exchange(static_cast<int>(layout)) != static_cast<int>(layout))
+			{
+				static const char* names[] = { "stock SkyUI (_modConfigs)", "Barzing (_MainMenu + _modConfigsP<n>)", "MCM Unlocked (its natives)",
+					"UNKNOWN - membership cannot be read, so the hide switch takes nothing out" };
+				logger::info("MCM loader: SkyUI's MCM list is kept by {}", names[static_cast<int>(layout)]);
+			}
+			return layout;
+		}
+
+		bool InArray(const RE::BSTSmartPointer<RE::BSScript::Object>& a_manager, const std::string& a_name, const RE::BSTSmartPointer<RE::BSScript::Object>& a_config)
+		{
+			const auto var = detail::ScriptVar(a_manager, a_name);
 			const auto array = var && var->IsArray() ? var->GetArray() : nullptr;
 			if (!array || !a_config) { return false; }
 			for (std::uint32_t i = 0; i < array->size(); ++i)
@@ -1030,14 +1062,56 @@ namespace mcmloader
 			return false;
 		}
 
+		// Is this config in SkyUI's list right now? a_then gets true / false, or nullopt when the list cannot be read. Runs
+		// a_then at once for the array layouts; under MCM Unlocked, from the VM thread when its native answers.
+		void CheckInSkyUIList(ListLayout a_layout, const RE::BSTSmartPointer<RE::BSScript::Object>& a_manager,
+			const RE::BSTSmartPointer<RE::BSScript::Object>& a_config, const std::string& a_regName, std::function<void(std::optional<bool>)> a_then)
+		{
+			switch (a_layout)
+			{
+			case ListLayout::kStock:
+				a_then(InArray(a_manager, "_modConfigs", a_config));
+				return;
+			case ListLayout::kBarzing:
+			{
+				bool in = InArray(a_manager, "_MainMenu", a_config);
+				for (int page = 1; !in && page < 32; ++page)
+				{
+					const std::string name = "_modConfigsP" + std::to_string(page);
+					if (!detail::ScriptVar(a_manager, name)) { break; }
+					in = InArray(a_manager, name, a_config);
+				}
+				a_then(in);
+				return;
+			}
+			case ListLayout::kUnlocked:
+			{
+				const auto vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
+				VarArgs args;
+				args.args.resize(1);
+				args.args[0].SetString(a_regName);
+				RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> then{ new detail::ResultFn(
+					[config = a_config, a_then](const RE::BSScript::Variable& a_result) {
+						a_then(a_result.IsObject() && a_result.GetObject() && a_result.GetObject().get() == config.get());
+					}) };
+				if (!vm || !vm->DispatchStaticCall("MCMUnlocked", "GetConfigBase", &args, then)) { a_then(std::nullopt); }
+				return;
+			}
+			default:
+				a_then(std::nullopt);
+				return;
+			}
+		}
+
 		// a_hide: UnregisterMod every hideable mod of a loader that is switched on; otherwise (and for a loader switched off)
 		// RegisterMod the ones the ledger says AMF hid - the save may hold them hidden from an earlier session. MCM Helper mods
 		// (phases 1-2) and script-only menus (phase 3) each follow their own switch.
 		//
 		// The ledger records the INTENT before the call (a menu AMF is about to take out is AMF's to give back, whatever the
-		// call returns), and an entry leaves it only when SkyUI's own _modConfigs shows the menu back. Each call's outcome is
-		// judged from _modConfigs, never from its return value; a call that changed nothing (SkyUI busy while its Journal is
-		// open) leaves the retry running.
+		// call returns), and an entry leaves it only when SkyUI's list shows the menu back. Each outcome is judged from the
+		// list itself (CheckInSkyUIList, whichever manager keeps it), never from the call's return value; a call that changed
+		// nothing (SkyUI busy while its Journal is open) leaves the retry running. A config SkyUI never registered (discovery
+		// also finds those - late, past 128, or under MCM Unlocked) is "already out" and not AMF's: nothing is sent for it.
 		void SyncSkyUI(bool a_hide)
 		{
 			const bool hideHelper = a_hide && settings::Get().loadMcmHelperConfigs;
@@ -1060,6 +1134,7 @@ namespace mcmloader
 				return;
 			}
 			const auto baseType = baseInfo->GetRawType();
+			const ListLayout layout = DetectLayout(manager);
 
 			struct Target
 			{
@@ -1107,47 +1182,72 @@ namespace mcmloader
 				targets.push_back({ t.config, t.modName, t.key, hideScripts, [index](bool a_hidden) { scripts::SetHidden(index, a_hidden); } });
 			}
 
-			int hides = 0;
-			int givebacks = 0;
-			for (auto& t : targets)
-			{
-				const bool inList = InSkyUIList(manager, t.config);
-				if (t.hide && !inList)
-				{
-					t.setHidden(true);  // already out: nothing to send (and nothing new for the ledger unless AMF took it out)
-					continue;
-				}
-				if (!t.hide && inList)
-				{
-					SetInLedger(t.key, false);  // already back
-					t.setHidden(false);
-					continue;
-				}
-				if (t.hide) { SetInLedger(t.key, true); }  // the intent, before the call
+			// The call for one target, its outcome judged from the list afterwards (VM thread when the call returns).
+			auto send = [vm, manager, baseType, layout](const Target& a_t) {
 				VarArgs args;
-				args.args.resize(t.hide ? 1 : 2);
-				args.args[0].SetObject(t.config, baseType);
-				if (!t.hide) { args.args[1].SetString(t.regName); }
-				RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> then{ new ResultThen(
-					[manager, config = t.config, hide = t.hide, key = t.key, name = t.regName, setHidden = t.setHidden](std::int32_t a_result) {
-						const bool inNow = InSkyUIList(manager, config);
-						const bool done = hide ? !inNow : inNow;
+				args.args.resize(a_t.hide ? 1 : 2);
+				args.args[0].SetObject(a_t.config, baseType);
+				if (!a_t.hide) { args.args[1].SetString(a_t.regName); }
+				RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> then{ new ResultThen([manager, layout, t = a_t](std::int32_t a_result) {
+					CheckInSkyUIList(layout, manager, t.config, t.regName, [t, a_result](std::optional<bool> a_in) {
+						if (!a_in)
+						{
+							// the list cannot be read (only a give-back gets here): the result is the only evidence
+							if (!t.hide && a_result >= 0)
+							{
+								SetInLedger(t.key, false);
+								t.setHidden(false);
+							}
+							logger::info("MCM loader: SkyUI RegisterMod {} -> {} (SkyUI's list not readable here)", t.regName, a_result);
+							return;
+						}
+						const bool done = t.hide ? !*a_in : *a_in;
 						if (!done)
 						{
 							// SkyUI busy (-2, its Journal open), a full list on give-back, or a call that never ran: retried
 							g_skyuiBusy.store(true);
-							logger::info("MCM loader: SkyUI {} {} did not take (result {}) - tried again", hide ? "UnregisterMod" : "RegisterMod", name, a_result);
+							logger::info("MCM loader: SkyUI {} {} did not take (result {}) - tried again", t.hide ? "UnregisterMod" : "RegisterMod", t.regName, a_result);
 							return;
 						}
-						if (!hide) { SetInLedger(key, false); }
-						setHidden(hide);
-						logger::debug("MCM loader: SkyUI {} {} - {} SkyUI's list (result {})", hide ? "UnregisterMod" : "RegisterMod", name,
-							hide ? "out of" : "back in", a_result);
-					}) };
-				if (vm->DispatchMethodCall(manager, t.hide ? "UnregisterMod" : "RegisterMod", &args, then)) { ++(t.hide ? hides : givebacks); }
+						if (!t.hide) { SetInLedger(t.key, false); }
+						t.setHidden(t.hide);
+						logger::debug("MCM loader: SkyUI {} {} - {} SkyUI's list (result {})", t.hide ? "UnregisterMod" : "RegisterMod", t.regName,
+							t.hide ? "out of" : "back in", a_result);
+					});
+				}) };
+				auto target = manager;
+				if (!vm->DispatchMethodCall(target, a_t.hide ? "UnregisterMod" : "RegisterMod", &args, then))
+				{
+					logger::warn("MCM loader: SkyUI {} {} could not be sent", a_t.hide ? "UnregisterMod" : "RegisterMod", a_t.regName);
+				}
+			};
+
+			for (const auto& t : targets)
+			{
+				CheckInSkyUIList(layout, manager, t.config, t.regName, [t, send](std::optional<bool> a_in) {
+					if (!a_in)
+					{
+						// unreadable list: nothing is taken out (it could never be proven back); a give-back is still sent
+						if (!t.hide) { send(t); }
+						return;
+					}
+					if (t.hide && !*a_in)
+					{
+						t.setHidden(InLedger(t.key));  // already out - AMF's only if the ledger says AMF took it out
+						return;
+					}
+					if (!t.hide && *a_in)
+					{
+						SetInLedger(t.key, false);  // already back
+						t.setHidden(false);
+						return;
+					}
+					if (t.hide) { SetInLedger(t.key, true); }  // the intent, before the call
+					send(t);
+				});
 			}
-			logger::info("MCM loader: SkyUI's MCM list - {} menu(s) being taken out, {} being given back ({} considered)",
-				hides, givebacks, targets.size());
+			logger::info("MCM loader: SkyUI's MCM list - {} menu(s) considered ({}), each judged from the list itself",
+				targets.size(), a_hide ? "take out" : "give back");
 			RetryWhileBusy(a_hide);
 		}
 
@@ -1689,6 +1789,8 @@ namespace mcmloader
 
 	int HiddenInSkyUI() { return g_hiddenCount.load() + scripts::Hidden(); }
 
+	bool SkyUIListUnreadable() { return g_listLayout.load() == static_cast<int>(ListLayout::kUnknown); }
+
 	int HideableInSkyUI()
 	{
 		int n = 0;
@@ -1726,37 +1828,116 @@ namespace mcmloader
 		if (op == "skyui") { return scripts::ToolJson(a_argsJson); }  // phase 3: script-only SkyUI menus
 		if (op == "skyuilist")
 		{
-			// SkyUI's own list (the manager's _modNames / _modConfigs), read on the main thread - the proof that a menu is in
-			// or out of SkyUI, independent of SkyUI's Journal (which stalls Papyrus in some lists) and of AMF's own counters.
+			// SkyUI's own list, read on the main thread from whichever manager keeps it (stock _modConfigs/_modNames, Barzing's
+			// _MainMenu + _modConfigsP<n>, MCM Unlocked's natives) - the proof that a menu is in or out of SkyUI, independent
+			// of SkyUI's Journal (which stalls Papyrus in some lists) and of AMF's own counters.
 			auto promise = std::make_shared<std::promise<std::string>>();
 			auto future = promise->get_future();
 			const auto tasks = SKSE::GetTaskInterface();
 			if (!tasks) { return R"({"ok":false,"error":"no SKSE task interface"})"; }
 			tasks->AddTask([promise]() {
-				json r{ { "ok", true } };
 				auto manager = FindSkyUIManager();
-				const auto names = manager ? detail::ScriptVar(manager, "_modNames") : nullptr;
-				const auto configs = manager ? detail::ScriptVar(manager, "_modConfigs") : nullptr;
-				const auto namesArr = names && names->IsArray() ? names->GetArray() : nullptr;
-				const auto configsArr = configs && configs->IsArray() ? configs->GetArray() : nullptr;
-				if (!manager || !namesArr || !configsArr)
+				if (!manager)
 				{
-					promise->set_value(R"({"ok":false,"error":"SkyUI's config manager or its arrays are not readable yet"})");
+					promise->set_value(R"({"ok":false,"error":"SkyUI's config manager is not running yet"})");
 					return;
 				}
+				static const char* layoutNames[] = { "stock", "barzing", "mcm-unlocked", "unknown" };
+				const ListLayout layout = DetectLayout(manager);
+				json r{ { "ok", true }, { "layout", layoutNames[static_cast<int>(layout)] } };
+				const auto configName = [](const RE::BSScript::Variable& a_v) {
+					const auto obj = a_v.IsObject() ? a_v.GetObject() : nullptr;
+					const auto name = obj ? obj->GetProperty("ModName") : nullptr;
+					return name && name->IsString() ? std::string(name->GetString()) : std::string();
+				};
 				json list = json::array();
-				for (std::uint32_t i = 0; i < configsArr->size(); ++i)
+				if (layout == ListLayout::kStock || layout == ListLayout::kBarzing)
 				{
-					const auto& c = (*configsArr)[i];
-					if (!c.IsObject() || !c.GetObject()) { continue; }  // an empty slot is an object-typed None that IsNoneObject does not report
-					const std::string name = i < namesArr->size() && (*namesArr)[i].IsString() ? std::string((*namesArr)[i].GetString()) : std::string();
-					list.push_back(name);
+					std::vector<std::string> arrays;
+					if (layout == ListLayout::kStock) { arrays.push_back("_modConfigs"); }
+					else
+					{
+						arrays.push_back("_MainMenu");
+						for (int page = 1; page < 32 && detail::ScriptVar(manager, "_modConfigsP" + std::to_string(page)); ++page)
+						{
+							arrays.push_back("_modConfigsP" + std::to_string(page));
+						}
+					}
+					for (const auto& a : arrays)
+					{
+						const auto var = detail::ScriptVar(manager, a);
+						const auto arr = var && var->IsArray() ? var->GetArray() : nullptr;
+						for (std::uint32_t i = 0; arr && i < arr->size(); ++i)
+						{
+							const auto& c = (*arr)[i];
+							if (!c.IsObject() || !c.GetObject()) { continue; }  // an empty slot is an object-typed None that IsNoneObject does not report
+							list.push_back(configName(c));
+						}
+					}
+					r["count"] = list.size();
+					r["names"] = list;
+					promise->set_value(r.dump());
+					return;
 				}
-				r["count"] = list.size();
-				r["names"] = list;
-				promise->set_value(r.dump());
+				if (layout == ListLayout::kUnlocked)
+				{
+					// GetConfigCount, then every GetModIDFromConfigID(i) at once; answered when the last one returns
+					const auto vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
+					VarArgs none;
+					RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> onCount{ new detail::ResultFn([promise, r, vm](const RE::BSScript::Variable& a_count) mutable {
+						const int count = a_count.IsInt() ? a_count.GetSInt() : 0;
+						if (count <= 0)
+						{
+							r["count"] = 0;
+							r["names"] = json::array();
+							promise->set_value(r.dump());
+							return;
+						}
+						struct Gather
+						{
+							std::mutex lock;
+							std::vector<std::string> names;
+							int left;
+						};
+						auto gather = std::make_shared<Gather>();
+						gather->names.resize(static_cast<std::size_t>(count));
+						gather->left = count;
+						for (int i = 0; i < count; ++i)
+						{
+							VarArgs args;
+							args.args.resize(1);
+							args.args[0].SetSInt(i);
+							RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> onId{ new detail::ResultFn([promise, r, gather, i](const RE::BSScript::Variable& a_id) mutable {
+								std::scoped_lock l(gather->lock);
+								gather->names[static_cast<std::size_t>(i)] = a_id.IsString() ? std::string(a_id.GetString()) : std::string();
+								if (--gather->left == 0)
+								{
+									r["count"] = gather->names.size();
+									r["names"] = gather->names;
+									promise->set_value(r.dump());
+								}
+							}) };
+							if (!vm->DispatchStaticCall("MCMUnlocked", "GetModIDFromConfigID", &args, onId))
+							{
+								std::scoped_lock l(gather->lock);
+								if (--gather->left == 0)
+								{
+									r["count"] = gather->names.size();
+									r["names"] = gather->names;
+									promise->set_value(r.dump());
+								}
+							}
+						}
+					}) };
+					if (!vm || !vm->DispatchStaticCall("MCMUnlocked", "GetConfigCount", &none, onCount))
+					{
+						promise->set_value(R"({"ok":false,"error":"MCMUnlocked.GetConfigCount could not be called"})");
+					}
+					return;
+				}
+				promise->set_value(R"({"ok":false,"layout":"unknown","error":"SkyUI's config manager keeps its list in no form AMF can read"})");
 			});
-			if (future.wait_for(std::chrono::seconds(3)) != std::future_status::ready) { return R"({"ok":false,"error":"no game frame within 3 s"})"; }
+			if (future.wait_for(std::chrono::seconds(8)) != std::future_status::ready) { return R"({"ok":false,"error":"no answer within 8 s"})"; }
 			return future.get();
 		}
 		if (op == "switch")
