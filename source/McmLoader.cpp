@@ -296,12 +296,14 @@ namespace mcmloader
 		}
 
 		// The language AMF shows first (2.1.1 - it used to read only the game's), then the game's, then English: a mod
-		// that ships no file for the picked language keeps the text it had.
-		Table LoadTranslations(const std::string& a_modName)
+		// that ships no file for the picked language keeps the text it had. a_namesOnly: the game's, then English - for the
+		// names a menu registers under, which must stay the same whatever language AMF shows.
+		Table LoadTranslations(const std::string& a_modName, bool a_namesOnly = false)
 		{
 			Table table;
-			std::vector<std::string> order{ TextLanguage() };
-			if (std::string game = Lower(strings::GameLanguageSetting()); !game.empty() && game != order.front()) { order.push_back(game); }
+			const std::string game = Lower(strings::GameLanguageSetting());
+			std::vector<std::string> order{ a_namesOnly ? (game.empty() ? std::string("english") : game) : TextLanguage() };
+			if (!game.empty() && game != order.front()) { order.push_back(game); }
 			if (order.back() != "english" && order.front() != "english") { order.push_back("english"); }
 			for (const std::string& lang : order)
 			{
@@ -1889,7 +1891,10 @@ namespace mcmloader
 				Mod& mod = *a_mods[m];
 				// " (MCM)" keeps it apart from a mod's own AMF page of the same name - the registry merges equal names
 				// into one entry's tabs, which would mix our pages into theirs.
-				g_table = &mod.translations;  // entry and tab names are fixed at registration, so translate them now
+				// Entry and tab names are fixed at registration, so translate them now - in the GAME's language, not the one
+				// AMF shows (2.1.1): the entry name keys the player's order, renames and learned placements.
+				const Table nameTable = LoadTranslations(mod.modName, true);
+				g_table = &nameTable;
 				mod.entryName = Translate(mod.displayName);
 				if (mod.entryName.empty()) { mod.entryName = mod.modName; }
 				mod.entryName += " (MCM)";
@@ -2385,6 +2390,7 @@ namespace mcmloader::detail
 	std::string KeyName(std::int32_t a_code) { return ::mcmloader::KeyName(a_code); }
 	Table LoadTranslations(const std::string& a_plugin) { return ::mcmloader::LoadTranslations(a_plugin); }
 	std::string TextLanguage() { return ::mcmloader::TextLanguage(); }
+	Table LoadNameTranslations(const std::string& a_plugin) { return ::mcmloader::LoadTranslations(a_plugin, true); }
 	bool IsImported(const std::string& a_key)
 	{
 		std::scoped_lock lock(::mcmloader::g_importLock);

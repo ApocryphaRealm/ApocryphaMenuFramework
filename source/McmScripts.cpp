@@ -96,6 +96,7 @@ namespace mcmloader::scripts
 			std::string entryName;    // the AMF entry
 			Table translations;
 			std::string translationsLanguage;  // the TextLanguage() they were read in
+			Table nameTranslations;            // the game's language: for the entry and tab names it registers (2.1.1)
 			std::vector<std::string> pages;                  // Pages, raw, as last read
 			std::map<std::string, std::string> tabs;         // raw page -> registered tab name
 			ObjectPtr script;          // this game's config object (main thread writes; read under g_mutex)
@@ -1215,7 +1216,7 @@ namespace mcmloader::scripts
 			for (const auto& raw : wanted)
 			{
 				if (mod.tabs.contains(raw)) { continue; }
-				std::string name = raw.empty() ? std::string(TR("AMF_McmSettingsTab", "Settings")) : Tr(&mod.translations, raw);
+				std::string name = raw.empty() ? std::string(TR("AMF_McmSettingsTab", "Settings")) : Tr(&mod.nameTranslations, raw);
 				if (name.empty()) { name = TR("AMF_McmSettingsTab", "Settings"); }
 				const std::string base = name;
 				for (int n = 2; used.contains(name); ++n) { name = base + " (" + std::to_string(n) + ")"; }
@@ -1294,7 +1295,8 @@ namespace mcmloader::scripts
 					mod->modName = modName;
 					mod->translations = LoadTranslations(mod->plugin);
 					mod->translationsLanguage = TextLanguage();
-					mod->entryName = Tr(&mod->translations, modName);
+					mod->nameTranslations = LoadNameTranslations(mod->plugin);
+					mod->entryName = Tr(&mod->nameTranslations, modName);
 					if (mod->entryName.empty()) { mod->entryName = mod->plugin; }
 					mod->entryName += " (MCM)";
 					g_mods.push_back(std::move(mod));
