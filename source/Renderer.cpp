@@ -1748,7 +1748,12 @@ namespace renderer
 				ImGui::TableSetupColumn(TR("AMF_ColFunction", "Function"));
 				ImGui::TableSetupColumn(TR("AMF_ColBoundTo", "Bound to"), ImGuiTableColumnFlags_WidthFixed,
 										boundWidth + ImGui::GetStyle().CellPadding.x * 2.0f);
-				ImGui::TableSetupColumn("##rebind", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFontSize() * 13.0f);
+				// As wide as Rebind and Unbind side by side (2.1.1), not a flat 13 em: at the default window size the flat width
+				// left a gap after the buttons while the Function column clipped "Open and close the menu".
+				const ImGuiStyle& cs = ImGui::GetStyle();
+				const float buttonsWidth = ImGui::CalcTextSize(TR("AMF_BindRebind", "Rebind")).x + ImGui::CalcTextSize(TR("AMF_BindUnbindBtn", "Unbind")).x +
+										   cs.FramePadding.x * 4.0f + cs.ItemSpacing.x + cs.CellPadding.x * 2.0f;
+				ImGui::TableSetupColumn("##rebind", ImGuiTableColumnFlags_WidthFixed, buttonsWidth);
 				ImGui::TableHeadersRow();
 
 				for (int i = 0; i < static_cast<int>(bindings::Action::kCount); ++i)
@@ -1758,7 +1763,7 @@ namespace renderer
 					ImGui::PushID(i + (a_gamepadSide ? 1000 : 0));
 
 					ImGui::TableSetColumnIndex(0);
-					ImGui::TextUnformatted(bindings::Label(action));
+					ImGui::TextWrapped("%s", bindings::Label(action));   // wraps rather than clipping in a narrow window (2.1.1)
 					if (const char* help = bindings::Description(action); help && help[0])
 					{
 						// Wrapped inside the column (2.1.1) - TextDisabled ran on past the cell and was cut mid-sentence.

@@ -21,7 +21,7 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
-## 2.1.1 - 2026-10-05 - untested - one menu key, text that fits, separators in your language
+## 2.1.1 - 2026-10-05 - working - one menu key, text that fits, separators in your language, a see-through window
 
 Found in the 2026-10-05 Nexus banner reshoot (every page shot in game, Norden - Black, from the journal's SKSE MENUS row)
 and from the owner's notes on it. The owner: "go ahead and start fixing AMF".
@@ -46,6 +46,20 @@ and from the owner's notes on it. The owner: "go ahead and start fixing AMF".
   Controls; the bumpers and Page Up / Page Down walking the tabs; Theme and Font under Settings > Appearance; settings
   kept in User.ini (the download never contains it), not the shipped INI; and the log level as `[Log] uLogLevel` in the
   INI - there was never a Log level setting on the page.
+- **Controls fits any window size** (found again at the default size in the banner reshoot): the button column is as wide
+  as Rebind and Unbind side by side instead of a flat 13 em, and function names wrap instead of clipping ("Open and
+  close th").
+- **MCM entry and tab names stay in the game's language.** The language change above had them follow AMF's picked
+  language when a menu registered; an entry's name keys the player's order, renames and learned placements, so a
+  session in another language turned "Accuracy - Localized Damage (MCM)" into a German name, loose at the top of the
+  list. Page text still follows AMF's language.
+- **Separators and tabs read in every language** (the owner: "utility separator, NPC separator, mcm tab are not in
+  chinese" ... "persist in every translation" ... "German was missing the German word for audio separator. But you
+  should probably double check all the separators for all the languages"): a separator named by a category's key
+  ("Utility") is that category; the NPC category and the MCM menus tab are written out in full in every language
+  (Nichtspielerfiguren, Mod-Konfigurationsmenüs ...); category names that were the English word now use the
+  language's own (Ton, Son, Suono, Sonido, Spielmechanik, Jouabilité, Animationen, Combats, Affichage); Chinese uses
+  模组配置菜单 throughout. Every category checked in all eleven files: none missing, none left as the English word.
 - **Dropdowns open without an empty band** above and below the list (Theme, Font, Language, Bring in from SkyUI, and
   every dropdown on a converted MCM page). ImGui's list takes its padding from the window's, which the theme sizes for
   the knotwork frame; dropdowns now open with the right-click menus' padding (`theme::BeginComboTight` / `ComboTight`).
