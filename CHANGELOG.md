@@ -57,7 +57,8 @@ sort of like our mod manager plugin but built into AMF. And it can just sort by 
   - A separator with that name already in the list (the shown name or the English one, any letter case) is reused, so a
     second run makes none.
   - A menu already under any separator stays where it is, whether the player put it there or an earlier sort did, so
-    running it again changes nothing. **Re-sort all** sorts those too.
+    running it again changes nothing. The page has this one button (the owner, 2026-10-05: "I just want it to add a
+    button that does it"); sorting those too ("re-sort all") is a DevBench op only.
   - **Undo the sort.** The order from before a sort that changed anything is saved as the layout preset "Before MCM
     sort". The button loads it, then deletes it. It is also listed with the other layout presets.
 - DevBench `amf.mcm op=sort`:

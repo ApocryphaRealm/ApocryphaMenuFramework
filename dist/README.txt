@@ -1,6 +1,6 @@
 ﻿ApocryphaRealm Menu Framework
 =============================
-Version 2.0.9
+Version 2.1.0
 
 An original, GPL-3.0-or-later in-game menu framework (embedding Dear ImGui) - a one-for-one
 replacement for SKSE Menu Framework's consumer surface, plus user-friendly features that do
@@ -46,6 +46,9 @@ reading.
 
 WHAT CHANGED
 ------------
+
+Version 2.1.0
+Choose which MCM menus come into AMF: Framework Settings lists every MCM menu found, with a switch for each, a filter, and All on / All off. A menu switched off stays in SkyUI's own menu only. "Bring in new MCM menus" decides menus you haven't chosen, so a long list can start from none and switch on just the few you use. Choices are kept in McmImport.txt, so updates never reset them. One button sorts the MCM menus in AMF into categories by name (Interface, Combat, Gameplay, World and Visuals and so on, with Other for the rest), and Undo puts the list back. MCM menus that are switched off no longer clutter the Menu list on the settings page. Thanks to xLenax for the suggestions.
 
 Version 2.0.9
 Your MCM menus show in AMF even when SkyUI has not taken them into its own list - past SkyUI's 128-menu limit, registered late, or under a mod that replaces SkyUI's MCM manager (MCM Unlocked and similar). AMF also looks again for new menus for up to 8 minutes after a load, and each time you open the menu. "Take those mods out of SkyUI's list" now works with MCM Unlocked and the larger-list layouts too. Thanks to Soulsthat for the report.

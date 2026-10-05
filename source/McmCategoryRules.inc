@@ -130,3 +130,35 @@
 { R"(\b(guilds?|factions?|vigilants?( of stendarr)?|hall of the vigilant|thieves guild|dark brotherhood|college of winterhold|bards? college|dawnguard|stormcloaks?|imperial legion|civil war|companions guild)\b)", "QuestsPlaces", 1.0f },  // Guilds/Factions
 { R"(\b(cheats?|god ?(mode|items?)|infinite|unlimited|op)\b)", "Gameplay", 1.0f },  // Cheats and God items
 { R"(\b(patch(es|ed)?|compatibility|synergy|consistency)\b)", "Utility", 1.0f },  // Patches
+// AMF's own rules, taught from menus the sort put under Other (tools/gen_mcm_categories.py AMF_RULES).
+{ R"(\bC[\s.]?O[\s.]?I[\s.]?N\b|Coins of Interesting Nature)", "Gameplay", 8.0f },  // AMF: C.O.I.N. - coin economy
+{ R"(Tag\s*(&|and)\s*Track)", "Interface", 8.0f },  // AMF: CS' Tag & Track - item tagging and tracking
+{ R"(\bClamber\b)", "Animation", 8.0f },  // AMF: EVG Clamber - climbing
+{ R"(Equipment\s*Manager)", "Controls", 8.0f },  // AMF: Outfit Wheeler - Dynamic Equipment Manager
+{ R"(\bFEC\b|Frozen\s*Electrocuted\s*Combustion)", "WorldVisuals", 8.0f },  // AMF: FEC - death effects
+{ R"(Favou?r\s*Jobs)", "QuestsPlaces", 8.0f },  // AMF: Favor Jobs Overhaul
+{ R"(Honed\s*Metal)", "Gameplay", 8.0f },  // AMF: Honed Metal - smithing services
+{ R"(\bIni\s*Editor\b)", "Utility", 8.0f },  // AMF: Custom INI Editor
+{ R"(Renamer)", "Utility", 8.0f },  // AMF: Jaxonz Renamer
+{ R"(Jewel+e?ry\s*Limiter)", "Gameplay", 8.0f },  // AMF: Jewelry Limiter
+{ R"(Knock\s*back)", "Combat", 8.0f },  // AMF: Knockback
+{ R"(\bRecorder\b)", "Utility", 8.0f },  // AMF: MCM Recorder
+{ R"(\bSWL\b|Wearable\s*Lanterns)", "Gameplay", 8.0f },  // AMF: New SWL Toggle - Simple Wearable Lanterns key
+{ R"(No\s*Fast\s*Travel)", "Gameplay", 8.0f },  // AMF: No Fast Travel
+{ R"(Photo\s*Mode)", "Camera", 8.0f },  // AMF: Photo Mode
+{ R"(Poisoner)", "Gameplay", 8.0f },  // AMF: Poisoner's Aid
+{ R"(\bPrecision\b)", "Combat", 8.0f },  // AMF: Precision - melee hit collision
+{ R"(Pumping\s*Iron)", "Characters", 8.0f },  // AMF: Pumping Iron - muscle growth
+{ R"(Sanguine\s*Symphony|Blood\s*pool)", "WorldVisuals", 8.0f },  // AMF: Sanguine Symphony - blood pools
+{ R"(Offen[cs]e\s*Suppression|Friendly\s*Fire)", "Combat", 8.0f },  // AMF: Simple Offence Suppression - friendly fire
+{ R"(Strange\s*Runes)", "MagicSkills", 8.0f },  // AMF: Strange Runes - spell runes
+{ R"(\bT[\s.]?N[\s.]?G\b|New\s*Gentleman)", "Characters", 8.0f },  // AMF: T.N.G. - The New Gentleman
+{ R"(Timing\s*is\s*Everything)", "QuestsPlaces", 8.0f },  // AMF: Timing is Everything - quest start levels
+{ R"(Wet\s*(and|&)\s*Cold)", "WorldVisuals", 8.0f },  // AMF: Wet and Cold - weather effects
+{ R"(Wet\s*Function)", "WorldVisuals", 8.0f },  // AMF: WetFunction Redux - wet skin
+{ R"(\bASG\b|Grass)", "WorldVisuals", 8.0f },  // AMF: ASG Multithreaded - grass
+{ R"(Dynamic\s*Looting)", "Animation", 8.0f },  // AMF: Dynamic Looting - loot animations
+{ R"(\bI[\s.]?C[\s.]?O[\s.]?W\b)", "Gameplay", 8.0f },  // AMF: I.C.O.W.
+{ R"(\bP[\s.]?W[\s.]?E[\s.]?R\b)", "Gameplay", 8.0f },  // AMF: P.W.E.R
+{ R"(Order\s*Squad)", "NpcsCreatures", 8.0f },  // AMF: Swiftly Order Squad - followers
+{ R"(\bUBG\b)", "WorldVisuals", 8.0f },  // AMF: UBG Redone

@@ -850,6 +850,35 @@ namespace renderer
 			ImGui::Separator();
 			ImGui::Spacing();
 
+			// The sort sits at the top of the page (the owner, 2026-10-05: "I think this sort button should be at the top").
+			if (values.loadMcmHelperConfigs || values.loadSkyUIScriptMenus)
+			{
+				// Sort them into categories (the owner, 2026-10-05: "an auto sort function which sorted the imported menus
+				// into categories, sort of like our mod manager plugin but built into AMF"). Only rearranges; undoable.
+				// One button only ("I just want it to add a button that does it"): "re-sort all" stays a DevBench op.
+				if (ImGui::Button(TR("AMF_McmSort", "Sort MCM menus into categories")))
+				{
+					const auto r = mcmloader::SortIntoCategories(false);
+					g_mcmSortStatus = FormatSortStatus(r);
+				}
+				if (mcmloader::CanRestoreBeforeSort())
+				{
+					ImGui::SameLine();
+					if (ImGui::Button(TR("AMF_McmSortUndo", "Undo the sort")))
+					{
+						g_mcmSortStatus = mcmloader::RestoreBeforeSort() ? TR("AMF_McmSortUndone", "The menu list is back to its order from before the sort.")
+																		 : TR("AMF_McmSortUndoFailed", "The order from before the sort could not be read.");
+					}
+				}
+				ImGui::TextWrapped("%s", TR("AMF_McmSortHelp", "Puts each MCM menu in this menu under a separator for its kind - Interface, "
+								   "Combat, Camera and so on - judged by its name; a menu with no match goes under Other. Nothing is hidden "
+								   "or removed. A menu you already put under a separator stays there. Undo puts "
+								   "the list back as it was before the last sort."));
+				if (!g_mcmSortStatus.empty()) { ImGui::TextDisabled("%s", g_mcmSortStatus.c_str()); }
+				ImGui::Separator();
+				ImGui::Spacing();
+			}
+
 			// THE SYSTEM ROW IS A SETTING, NOT AN INSTALL-TIME CHOICE (author, 2026-09-04: "we can
 			// just have one version and not a fomod"). It shipped briefly as a FOMOD fork, which
 			// made a reversible preference into something you had to reinstall to change - and
@@ -945,6 +974,31 @@ namespace renderer
 				const int imported = static_cast<int>(std::count_if(rows.begin(), rows.end(), [](const mcmloader::ImportRow& r) { return r.imported; }));
 				char header[192];
 				snprintf(header, sizeof(header), TR("AMF_McmImportHeader", "Choose which MCM menus appear here (%d of %d)"), imported, static_cast<int>(rows.size()));
+				// One menu at a time from SkyUI (the owner, 2026-10-05: "a drop down box next to import from Sky UI that shows any
+				// currently Sky UI owned menus that AMF doesn't already own"): the menus left to SkyUI only; picking one brings it
+				// in, the same as switching it on in the list below.
+				{
+					const bool anyLeft = imported < static_cast<int>(rows.size());
+					ImGui::SetNextItemWidth(ImGui::GetFontSize() * 18.0f);
+					if (!anyLeft) { ImGui::BeginDisabled(); }
+					if (ImGui::BeginCombo(TR("AMF_McmBringIn", "Bring in from SkyUI"),
+							anyLeft ? TR("AMF_McmBringInPick", "Pick a menu...") : TR("AMF_McmBringInNone", "Every MCM menu is already here")))
+					{
+						for (const auto& r : rows)
+						{
+							if (r.imported) { continue; }
+							ImGui::PushID(r.key.c_str());
+							if (ImGui::Selectable(r.entry.c_str()))
+							{
+								logger::info("settings page: '{}' brought in from SkyUI", r.entry);
+								mcmloader::SetMenuImported(r.key, true);
+							}
+							ImGui::PopID();
+						}
+						ImGui::EndCombo();
+					}
+					if (!anyLeft) { ImGui::EndDisabled(); }
+				}
 				if (ImGui::TreeNode("##mcmimport", "%s", header))
 				{
 					ImGui::TextWrapped("%s", TR("AMF_McmImportHelp", "Switch off a menu to keep it in SkyUI's menu only: it leaves this menu, "
@@ -991,28 +1045,6 @@ namespace renderer
 					ImGui::TreePop();
 				}
 
-				// Sort them into categories (the owner, 2026-10-05: "an auto sort function which sorted the imported menus
-				// into categories, sort of like our mod manager plugin but built into AMF"). Only rearranges; undoable.
-				// One button only ("I just want it to add a button that does it"): "re-sort all" stays a DevBench op.
-				if (ImGui::Button(TR("AMF_McmSort", "Sort MCM menus into categories")))
-				{
-					const auto r = mcmloader::SortIntoCategories(false);
-					g_mcmSortStatus = FormatSortStatus(r);
-				}
-				if (mcmloader::CanRestoreBeforeSort())
-				{
-					ImGui::SameLine();
-					if (ImGui::Button(TR("AMF_McmSortUndo", "Undo the sort")))
-					{
-						g_mcmSortStatus = mcmloader::RestoreBeforeSort() ? TR("AMF_McmSortUndone", "The menu list is back to its order from before the sort.")
-																		 : TR("AMF_McmSortUndoFailed", "The order from before the sort could not be read.");
-					}
-				}
-				ImGui::TextWrapped("%s", TR("AMF_McmSortHelp", "Puts each MCM menu in this menu under a separator for its kind - Interface, "
-								   "Combat, Camera and so on - judged by its name; a menu with no match goes under Other. Nothing is hidden "
-								   "or removed. A menu you already put under a separator stays there. Undo puts "
-								   "the list back as it was before the last sort."));
-				if (!g_mcmSortStatus.empty()) { ImGui::TextDisabled("%s", g_mcmSortStatus.c_str()); }
 			}
 			ImGui::Spacing();
 
@@ -2450,6 +2482,22 @@ namespace renderer
 							const std::string alias = personalization::GetAlias(row.modName);
 							std::snprintf(g_renameBuffer, sizeof(g_renameBuffer), "%s", alias.c_str());
 							g_renameOpenPending = true;
+						}
+						// MCM menus (the owner, 2026-10-05: "they can just be hidden in AMF through the context menu"): leave this
+						// one to SkyUI's own MCM only - the same as its switch under Framework Settings' "Choose which MCM menus
+						// appear here", which brings it back. Its import key is found by its entry name (the import list's entries
+						// are the Menu-list names, all 83 checked in Njordlinger Test).
+						{
+							std::string mcmKey;
+							for (const auto& r : mcmloader::ImportList())
+							{
+								if (r.imported && r.entry == row.modName) { mcmKey = r.key; break; }
+							}
+							if (!mcmKey.empty() && ImGui::MenuItem(TR("AMF_KeepInSkyUIOnly", "Keep in SkyUI only")))
+							{
+								logger::info("context menu: '{}' kept in SkyUI only (left out of this menu)", row.modName);
+								mcmloader::SetMenuImported(mcmKey, false);
+							}
 						}
 						ImGui::Separator();
 						// the top of ITS OWN group, not of the list - pinning is what puts a mod at the very top (the owner,

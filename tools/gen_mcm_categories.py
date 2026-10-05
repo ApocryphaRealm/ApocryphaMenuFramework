@@ -55,6 +55,48 @@ LEAF_TO_GROUP = [
 ]
 
 
+# AMF's OWN rules, after Modlist Manager's (the owner, 2026-10-05: "any mods that land in the other category should be
+# categorized by you and teach the categorizer where it's supposed to go based on its name"). Each was a menu the sort
+# put under Other in Njordlinger (82 MCM menus, 25 under Other), placed by hand by what the mod is - its install name,
+# files and MCM config - and taught here by its name. Weight 8.0, above a Modlist Manager named row (6.0), so a taught
+# name wins. Names are matched as the sort prepares them: "(MCM)" and the word MCM dropped, dots, dashes and
+# underscores turned into spaces ("C.O.I.N." is read as "C O I N"). Add a row whenever a menu lands under Other.
+AMF_RULES = [
+    (r"\bC[\s.]?O[\s.]?I[\s.]?N\b|Coins of Interesting Nature", "Gameplay", "C.O.I.N. - coin economy"),
+    (r"Tag\s*(&|and)\s*Track", "Interface", "CS' Tag & Track - item tagging and tracking"),
+    (r"\bClamber\b", "Animation", "EVG Clamber - climbing"),
+    (r"Equipment\s*Manager", "Controls", "Outfit Wheeler - Dynamic Equipment Manager"),
+    (r"\bFEC\b|Frozen\s*Electrocuted\s*Combustion", "WorldVisuals", "FEC - death effects"),
+    (r"Favou?r\s*Jobs", "QuestsPlaces", "Favor Jobs Overhaul"),
+    (r"Honed\s*Metal", "Gameplay", "Honed Metal - smithing services"),
+    (r"\bIni\s*Editor\b", "Utility", "Custom INI Editor"),
+    (r"Renamer", "Utility", "Jaxonz Renamer"),
+    (r"Jewel+e?ry\s*Limiter", "Gameplay", "Jewelry Limiter"),
+    (r"Knock\s*back", "Combat", "Knockback"),
+    (r"\bRecorder\b", "Utility", "MCM Recorder"),
+    (r"\bSWL\b|Wearable\s*Lanterns", "Gameplay", "New SWL Toggle - Simple Wearable Lanterns key"),
+    (r"No\s*Fast\s*Travel", "Gameplay", "No Fast Travel"),
+    (r"Photo\s*Mode", "Camera", "Photo Mode"),
+    (r"Poisoner", "Gameplay", "Poisoner's Aid"),
+    (r"\bPrecision\b", "Combat", "Precision - melee hit collision"),
+    (r"Pumping\s*Iron", "Characters", "Pumping Iron - muscle growth"),
+    (r"Sanguine\s*Symphony|Blood\s*pool", "WorldVisuals", "Sanguine Symphony - blood pools"),
+    (r"Offen[cs]e\s*Suppression|Friendly\s*Fire", "Combat", "Simple Offence Suppression - friendly fire"),
+    (r"Strange\s*Runes", "MagicSkills", "Strange Runes - spell runes"),
+    (r"\bT[\s.]?N[\s.]?G\b|New\s*Gentleman", "Characters", "T.N.G. - The New Gentleman"),
+    (r"Timing\s*is\s*Everything", "QuestsPlaces", "Timing is Everything - quest start levels"),
+    (r"Wet\s*(and|&)\s*Cold", "WorldVisuals", "Wet and Cold - weather effects"),
+    (r"Wet\s*Function", "WorldVisuals", "WetFunction Redux - wet skin"),
+    (r"\bASG\b|Grass", "WorldVisuals", "ASG Multithreaded - grass"),
+    (r"Dynamic\s*Looting", "Animation", "Dynamic Looting - loot animations"),
+    (r"\bI[\s.]?C[\s.]?O[\s.]?W\b", "Gameplay", "I.C.O.W."),
+    (r"\bP[\s.]?W[\s.]?E[\s.]?R\b", "Gameplay", "P.W.E.R"),
+    (r"Order\s*Squad", "NpcsCreatures", "Swiftly Order Squad - followers"),
+    (r"\bUBG\b", "WorldVisuals", "UBG Redone"),
+]
+AMF_WEIGHT = 8.0
+
+
 def group_of(leaf):
     for prefix, group in LEAF_TO_GROUP:
         if leaf.startswith(prefix):
@@ -101,5 +143,8 @@ lines = [
 for pattern, leaf, weight in rows:
     p = strip_lookbehind(pattern)
     lines.append(f'{{ {cpp_raw(p)}, "{group_of(leaf)}", {float(weight)}f }},  // {leaf}')
+lines.append("// AMF's own rules, taught from menus the sort put under Other (tools/gen_mcm_categories.py AMF_RULES).")
+for pattern, group, note in AMF_RULES:
+    lines.append(f'{{ {cpp_raw(pattern)}, "{group}", {AMF_WEIGHT}f }},  // AMF: {note}')
 open(OUT, "w", encoding="utf-8", newline="\n").write("\n".join(lines) + "\n")
-print(f"{len(rows)} rules written to {OUT}")
+print(f"{len(rows)} Modlist Manager rules + {len(AMF_RULES)} AMF rules written to {OUT}")
