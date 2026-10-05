@@ -1220,7 +1220,8 @@ namespace mcmloader::scripts
 			}
 			for (const auto& [raw, tab] : mod.tabs)
 			{
-				const bool show = settings::Get().loadSkyUIScriptMenus && std::find(wanted.begin(), wanted.end(), raw) != wanted.end();
+				const bool show = settings::Get().loadSkyUIScriptMenus && detail::IsImported("script|" + mod.plugin + "|" + mod.modName) &&
+				                  std::find(wanted.begin(), wanted.end(), raw) != wanted.end();
 				registry::SetPageVisible(mod.entryName.c_str(), tab.c_str(), show);
 			}
 		}
@@ -1421,6 +1422,24 @@ namespace mcmloader::scripts
 				std::scoped_lock lock(g_mutex);
 				for (auto& mod : g_mods) { SetTabsVisible(*mod, false); }
 			});
+		}
+	}
+
+	std::vector<MenuInfo> Menus()
+	{
+		std::vector<MenuInfo> out;
+		std::scoped_lock lock(g_mutex);
+		for (const auto& m : g_mods) { out.push_back({ "script|" + m->plugin + "|" + m->modName, m->entryName, m->present }); }
+		return out;
+	}
+
+	void RefreshVisibility()
+	{
+		std::scoped_lock lock(g_mutex);
+		for (std::size_t i = 0; i < g_mods.size(); ++i)
+		{
+			if (g_mods[i]->present) { SyncTabs(i); }
+			else { SetTabsVisible(*g_mods[i], false); }
 		}
 	}
 

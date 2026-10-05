@@ -82,6 +82,9 @@ namespace settings
 		bool loadMcmHelperConfigs = true;
 		// MCM loader, phase 3: [MCM] bLoadSkyUIScriptMenus - draw SkyUI menus written only in Papyrus as AMF pages.
 		bool loadSkyUIScriptMenus = true;
+		// MCM loader: [MCM] bImportNewMenus - a menu the player never switched on or off comes into AMF (1) or stays in SkyUI
+		// only (0). Long lists start from none with 0 and switch on the few they use (xLenax, 2026-10-04).
+		bool importNewMcmMenus = true;
 		// MCM loader: [MCM] bHideInSkyUI - take the mods AMF draws completely out of SkyUI's own MCM list.
 		bool hideMcmInSkyUI = false;
 		bool watchdogEnabled = true;

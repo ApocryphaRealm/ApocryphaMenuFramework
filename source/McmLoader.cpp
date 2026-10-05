@@ -929,6 +929,48 @@ namespace mcmloader
 			logger::debug("MCM loader: {} menu(s) in the hidden-by-AMF ledger", g_ledger.size());
 		}
 
+		// Which menus come into AMF (xLenax, 2026-10-04: "an option to choose which MCMs I'd like to import instead of importing
+		// all of them or None"). One line per menu the player switched: "<ledger key>=1|0"; a menu not listed follows
+		// [MCM] bImportNewMenus. Kept beside the ledger, outside the download, so an update never resets it.
+		constexpr const char* kImportPath = "Data/SKSE/Plugins/ApocryphaMenuFramework/McmImport.txt";
+		std::mutex g_importLock;
+		std::map<std::string, bool> g_import;
+		bool g_importLoaded = false;
+
+		void LoadImportLocked()
+		{
+			if (g_importLoaded) { return; }
+			g_importLoaded = true;
+			std::ifstream in(kImportPath, std::ios::binary);
+			std::string line;
+			while (std::getline(in, line))
+			{
+				line = Trim(line);
+				const auto eq = line.rfind('=');
+				if (line.empty() || line[0] == ';' || eq == std::string::npos) { continue; }
+				g_import[Trim(line.substr(0, eq))] = Trim(line.substr(eq + 1)) == "1";
+			}
+			logger::debug("MCM loader: {} menu choice(s) read from {}", g_import.size(), kImportPath);
+		}
+
+		void SaveImportLocked()
+		{
+			std::error_code ec;
+			fs::create_directories(fs::path(kImportPath).parent_path(), ec);
+			std::ofstream out(kImportPath, std::ios::binary | std::ios::trunc);
+			out << "; Which MCM menus Apocrypha Menu Framework shows: 1 = shown here, 0 = left to SkyUI only.\n";
+			out << "; A menu not listed follows [MCM] bImportNewMenus. Set from the Framework Settings page.\n";
+			for (const auto& [key, on] : g_import) { out << key << "=" << (on ? 1 : 0) << "\n"; }
+		}
+
+		void SetImported(const std::string& a_key, bool a_on)
+		{
+			std::scoped_lock lock(g_importLock);
+			LoadImportLocked();
+			g_import[a_key] = a_on;
+			SaveImportLocked();
+		}
+
 		std::vector<std::string> LedgerKeys()
 		{
 			std::scoped_lock lock(g_ledgerMutex);
@@ -1214,11 +1256,12 @@ namespace mcmloader
 			{
 				if (!g_mods[m]->hideable) { continue; }
 				const std::string key = "mcmhelper|" + g_mods[m]->modName;
-				if (!hideHelper && !InLedger(key)) { continue; }  // not hidden by AMF: SkyUI's list is not ours to change
+				const bool hideThis = hideHelper && detail::IsImported(key);  // a menu not imported here is SkyUI's
+				if (!hideThis && !InLedger(key)) { continue; }  // not hidden by AMF: SkyUI's list is not ours to change
 				auto config = EnsureScript(m);
 				if (!config) { continue; }
 				const auto name = config->GetProperty("ModName");
-				targets.push_back({ config, name && name->IsString() ? std::string(name->GetString()) : g_mods[m]->modName, key, hideHelper,
+				targets.push_back({ config, name && name->IsString() ? std::string(name->GetString()) : g_mods[m]->modName, key, hideThis,
 					[m](bool a_hidden) {
 						{
 							std::scoped_lock lock(g_mutex);
@@ -1242,9 +1285,10 @@ namespace mcmloader
 			}
 			for (const auto& t : scripts::HideTargets())
 			{
-				if (!hideScripts && !InLedger(t.key)) { continue; }  // not hidden by AMF: left exactly as SkyUI (or MenuMaid2) has it
+				const bool hideThis = hideScripts && detail::IsImported(t.key);  // a menu not imported here is SkyUI's
+				if (!hideThis && !InLedger(t.key)) { continue; }  // not hidden by AMF: left exactly as SkyUI (or MenuMaid2) has it
 				const std::size_t index = t.index;
-				targets.push_back({ t.config, t.modName, t.key, hideScripts, [index](bool a_hidden) { scripts::SetHidden(index, a_hidden); } });
+				targets.push_back({ t.config, t.modName, t.key, hideThis, [index](bool a_hidden) { scripts::SetHidden(index, a_hidden); } });
 			}
 
 			// The pass ends when every target has finished (+1 holds it open until all are started).
@@ -1746,6 +1790,17 @@ namespace mcmloader
 			g_mods.push_back(std::move(mod));
 		}
 
+		// Every MCM Helper entry's pages shown exactly when its loader is on and the menu is imported.
+		void ApplyHelperVisibility()
+		{
+			const bool on = settings::Get().loadMcmHelperConfigs;
+			for (const auto& mod : g_mods)
+			{
+				const bool show = on && detail::IsImported("mcmhelper|" + mod->modName);
+				for (const auto& page : mod->pageNames) { registry::SetPageVisible(mod->entryName.c_str(), page.c_str(), show); }
+			}
+		}
+
 		void RegisterPages()
 		{
 			std::size_t pageCount = 0;
@@ -1803,6 +1858,7 @@ namespace mcmloader
 			catch (const std::exception& e) { Skip(entry.path().filename().string(), std::string("unexpected error: ") + e.what()); }
 		}
 		RegisterPages();
+		ApplyHelperVisibility();  // menus the player left out of AMF stay out
 		g_table = nullptr;  // each page sets its own mod's table when it draws
 	}
 
@@ -1858,10 +1914,7 @@ namespace mcmloader
 		{
 			Load();  // first switched on in this session: read the configs now (the data is long loaded)
 		}
-		for (const auto& mod : g_mods)
-		{
-			for (const auto& page : mod->pageNames) { registry::SetPageVisible(mod->entryName.c_str(), page.c_str(), a_on); }
-		}
+		ApplyHelperVisibility();  // the caller has already set the switch; a menu left out of AMF stays out
 		logger::info("MCM loader: switched {} on the settings page ({} entries {})", a_on ? "on" : "off", g_mods.size(), a_on ? "shown" : "hidden");
 		QueueSyncSkyUI(settings::Get().hideMcmInSkyUI);  // each loader's mods follow its own switch: off gives them back
 	}
@@ -1875,6 +1928,46 @@ namespace mcmloader
 
 	int HiddenInSkyUI() { return g_hiddenCount.load() + scripts::Hidden(); }
 
+	void SetImportNew(bool a_on)
+	{
+		// the caller has set and saved the switch: every menu not chosen by hand follows it
+		ApplyHelperVisibility();
+		scripts::RefreshVisibility();
+		QueueSyncSkyUI(settings::Get().hideMcmInSkyUI);
+		logger::info("MCM loader: menus not chosen by hand now {} AMF", a_on ? "come into" : "stay out of");
+	}
+
+	void SetMenuImported(const std::string& a_key, bool a_on)
+	{
+		SetImported(a_key, a_on);
+		ApplyHelperVisibility();
+		scripts::RefreshVisibility();
+		QueueSyncSkyUI(settings::Get().hideMcmInSkyUI);  // a menu taken out of AMF goes back to SkyUI if AMF had hidden it
+		logger::info("MCM loader: {} {} AMF", a_key, a_on ? "brought into" : "left out of");
+	}
+
+	std::vector<ImportRow> ImportList()
+	{
+		std::vector<ImportRow> rows;
+		if (settings::Get().loadMcmHelperConfigs)
+		{
+			for (const auto& mod : g_mods)
+			{
+				const std::string key = "mcmhelper|" + mod->modName;
+				rows.push_back({ key, mod->entryName, false, detail::IsImported(key) });
+			}
+		}
+		if (settings::Get().loadSkyUIScriptMenus)
+		{
+			for (const auto& m : scripts::Menus())
+			{
+				if (m.present) { rows.push_back({ m.key, m.entry, true, detail::IsImported(m.key) }); }
+			}
+		}
+		std::sort(rows.begin(), rows.end(), [](const ImportRow& a, const ImportRow& b) { return Lower(a.entry) < Lower(b.entry); });
+		return rows;
+	}
+
 	bool SkyUIListUnreadable() { return g_listLayout.load() == static_cast<int>(ListLayout::kUnknown); }
 
 	int HideableInSkyUI()
@@ -1882,9 +1975,13 @@ namespace mcmloader
 		int n = 0;
 		if (settings::Get().loadMcmHelperConfigs)
 		{
-			for (const auto& mod : g_mods) { n += mod->hideable ? 1 : 0; }
+			for (const auto& mod : g_mods) { n += mod->hideable && detail::IsImported("mcmhelper|" + mod->modName) ? 1 : 0; }
 		}
-		return n + scripts::Count();  // every script menu is drawn in full
+		if (settings::Get().loadSkyUIScriptMenus)
+		{
+			for (const auto& m : scripts::Menus()) { n += m.present && detail::IsImported(m.key) ? 1 : 0; }  // drawn in full
+		}
+		return n;
 	}
 
 	void SetScriptsEnabled(bool a_on)
@@ -1912,6 +2009,37 @@ namespace mcmloader
 
 		json out;
 		if (op == "skyui") { return scripts::ToolJson(a_argsJson); }  // phase 3: script-only SkyUI menus
+		if (op == "import")
+		{
+			// the settings page's import list, the same calls: action list | set {key,on} | all {on} | new {on}
+			const std::string action = JsonStr(args, "action").empty() ? std::string("list") : JsonStr(args, "action");
+			const auto on = args.find("on");
+			const bool hasOn = on != args.end() && on->is_boolean();
+			if (action == "set" && hasOn && !JsonStr(args, "key").empty()) { SetMenuImported(JsonStr(args, "key"), on->get<bool>()); }
+			else if (action == "all" && hasOn)
+			{
+				for (const auto& row : ImportList()) { SetImported(row.key, on->get<bool>()); }
+				SetImportNew(settings::Get().importNewMcmMenus);  // re-applies visibility and the SkyUI list
+			}
+			else if (action == "new" && hasOn)
+			{
+				settings::Get().importNewMcmMenus = on->get<bool>();
+				settings::Save();
+				SetImportNew(on->get<bool>());
+			}
+			else if (action != "list")
+			{
+				return R"J({"ok":false,"error":"import needs action list | set (key, on) | all (on) | new (on)"})J";
+			}
+			json rows = json::array();
+			int imported = 0;
+			for (const auto& row : ImportList())
+			{
+				imported += row.imported ? 1 : 0;
+				rows.push_back({ { "key", row.key }, { "entry", row.entry }, { "kind", row.script ? "script" : "mcmhelper" }, { "imported", row.imported } });
+			}
+			return json{ { "ok", true }, { "importNew", settings::Get().importNewMcmMenus }, { "imported", imported }, { "menus", rows } }.dump();
+		}
 		if (op == "skyuilist")
 		{
 			// SkyUI's own list, read on the main thread from whichever manager keeps it (stock _modConfigs/_modNames, Barzing's
@@ -2169,5 +2297,12 @@ namespace mcmloader::detail
 	std::string StripTags(const std::string& a_s) { return ::mcmloader::StripTags(a_s); }
 	std::string KeyName(std::int32_t a_code) { return ::mcmloader::KeyName(a_code); }
 	Table LoadTranslations(const std::string& a_plugin) { return ::mcmloader::LoadTranslations(a_plugin); }
+	bool IsImported(const std::string& a_key)
+	{
+		std::scoped_lock lock(::mcmloader::g_importLock);
+		::mcmloader::LoadImportLocked();
+		const auto it = ::mcmloader::g_import.find(a_key);
+		return it != ::mcmloader::g_import.end() ? it->second : settings::Get().importNewMcmMenus;
+	}
 	RE::BSTSmartPointer<RE::BSScript::Object> FindSkyUIManager() { return ::mcmloader::FindSkyUIManager(); }
 }

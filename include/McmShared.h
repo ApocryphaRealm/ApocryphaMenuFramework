@@ -26,6 +26,10 @@ namespace mcmloader::detail
 	// A script variable by name through the type chain (MCM Helper's ScriptObject::GetVariable). Null when absent.
 	RE::BSScript::Variable* ScriptVar(const RE::BSTSmartPointer<RE::BSScript::Object>& a_object, std::string_view a_name);
 
+	// Whether a menu comes into AMF (the player's choice per menu; menus never set follow [MCM] bImportNewMenus). Keys
+	// are the ledger's: "mcmhelper|<mod>" and "script|<plugin>|<ModName>". Any thread.
+	bool IsImported(const std::string& a_key);
+
 	// SkyUI's config manager script object (SkyUI_SE.esp), or empty. Main thread.
 	RE::BSTSmartPointer<RE::BSScript::Object> FindSkyUIManager();
 

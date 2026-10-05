@@ -21,6 +21,37 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## Unreleased - choose which MCM menus come in
+
+xLenax on the AMF page, 2026-10-04: with the MCM options off, the menus "still appear in the settings page, just not in
+the actual Menu", and "I'd like to have an option to choose which MCMs I'd like to import instead of importing all of
+them or None" - with about 200 MCMs, wanting only the few in regular use.
+
+### Added
+- **Choose which MCM menus appear here.** A folded section under the MCM switches on the settings page lists every menu
+  found, MCM Helper and script ones alike. It shows how many are in, and has a filter by name, All on / All off, and a
+  switch per menu.
+  - A menu switched off leaves this menu and stays in SkyUI's own menu. The "take out of SkyUI's list" switch then
+    leaves it alone, and gives it back if AMF had taken it out.
+  - Choices are kept per menu in `SKSE\Plugins\ApocryphaMenuFramework\McmImport.txt`, outside the download, so an
+    update never resets them.
+- **Bring in MCM menus not switched below** (`[MCM] bImportNewMenus`, default on, which is how 2.0.9 behaves). Off: only
+  the menus switched on in the list come in, so a 200-menu list can start from none and pick the few in use.
+- DevBench `amf.mcm op=import`:
+  - action list: every menu with its key, entry, kind and whether it is in;
+  - set {key, on}: one menu;
+  - all {on}: every menu;
+  - new {on}: the default for menus not chosen by hand.
+- 10 new strings, in all eleven languages.
+
+### Fixed
+- **The Menu list on the settings page no longer shows entries that have nothing to show.** That covers an MCM loader
+  switched off, or a menu left out with the choice above. Before, those entries stayed in the rename/reorder table
+  while the menu itself had no row for them.
+  - Each entry keeps its place in the saved order.
+  - The number in the position box is its place among the rows shown, and a number typed there moves it to that row's
+    place.
+
 ## 2.0.9 - 2026-10-04 - working - every MCM menu, whatever SkyUI's list does
 
 ### Known

@@ -19,6 +19,7 @@
 // ============================================================================================
 
 #include <string>
+#include <vector>
 
 namespace mcmloader
 {
@@ -40,6 +41,20 @@ namespace mcmloader
 	// True once AMF has seen SkyUI's config manager keep its list in no form AMF can read (not stock SkyUI, Barzing or
 	// MCM Unlocked): the hide switch then takes nothing out, and the settings page says so.
 	bool SkyUIListUnreadable();
+
+	// The import choice (xLenax, 2026-10-04): which MCM menus come into AMF. ImportList is every menu found by a loader
+	// that is on, sorted by name. SetMenuImported writes McmImport.txt, shows or hides the menu's pages and lets the
+	// SkyUI-list pass give a left-out menu back. SetImportNew re-applies after [MCM] bImportNewMenus was changed and saved.
+	struct ImportRow
+	{
+		std::string key;
+		std::string entry;
+		bool script;
+		bool imported;
+	};
+	std::vector<ImportRow> ImportList();
+	void SetMenuImported(const std::string& a_key, bool a_on);
+	void SetImportNew(bool a_on);
 
 	// Every frame, right after ImGui::NewFrame: sends OnConfigClose to the mod whose entry stopped being drawn
 	// (SkyUI's lifecycle - TrueHUD, True Directional Movement and Precision apply their settings in OnConfigClose).

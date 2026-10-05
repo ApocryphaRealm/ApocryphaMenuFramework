@@ -300,6 +300,7 @@ namespace renderer
 		double g_menuListSavedAt = 0.0;
 		// Layout presets (2.0.3): the name being typed, and the last action's result for a few seconds.
 		char g_presetName[64] = {};
+		char g_mcmImportFilter[64] = {};  // the settings page's filter over the MCM import list
 		std::string g_presetStatus;
 		double g_presetStatusAt = 0.0;
 
@@ -919,6 +920,61 @@ namespace renderer
 								   "so this switch takes nothing out of it here."));
 			}
 			if (!anyMcm) { ImGui::EndDisabled(); }
+
+			// Which MCM menus come into this menu (xLenax, 2026-10-04: "an option to choose which MCMs I'd like to import
+			// instead of importing all of them or None" - with about 200 of them). Folded by default; a filter for long lists.
+			if (anyMcm)
+			{
+				const std::vector<mcmloader::ImportRow> rows = mcmloader::ImportList();
+				const int imported = static_cast<int>(std::count_if(rows.begin(), rows.end(), [](const mcmloader::ImportRow& r) { return r.imported; }));
+				char header[192];
+				snprintf(header, sizeof(header), TR("AMF_McmImportHeader", "Choose which MCM menus appear here (%d of %d)"), imported, static_cast<int>(rows.size()));
+				if (ImGui::TreeNode("##mcmimport", "%s", header))
+				{
+					ImGui::TextWrapped("%s", TR("AMF_McmImportHelp", "Switch off a menu to keep it in SkyUI's menu only: it leaves this menu, "
+									   "and taking menus out of SkyUI's list leaves it alone."));
+					if (widgets::Toggle(TR("AMF_McmImportNew", "Bring in MCM menus not switched below"), &values.importNewMcmMenus))
+					{
+						logger::info("settings page: bring in MCM menus not chosen by hand -> {}", values.importNewMcmMenus);
+						settings::Save();
+						mcmloader::SetImportNew(values.importNewMcmMenus);
+					}
+					ImGui::TextWrapped("%s", TR("AMF_McmImportNewHelp", "Off: only the menus switched on below come in - with a long list, "
+									   "start from none and pick the few you use."));
+					if (ImGui::Button(TR("AMF_McmImportAllOn", "All on")))
+					{
+						for (const auto& r : rows) { if (!r.imported) { mcmloader::SetMenuImported(r.key, true); } }
+					}
+					ImGui::SameLine();
+					if (ImGui::Button(TR("AMF_McmImportAllOff", "All off")))
+					{
+						for (const auto& r : rows) { if (r.imported) { mcmloader::SetMenuImported(r.key, false); } }
+					}
+					ImGui::SameLine();
+					ImGui::SetNextItemWidth(ImGui::GetFontSize() * 14.0f);
+					ImGui::InputTextWithHint("##mcmimportfilter", TR("AMF_McmImportFilter", "Filter by name"), g_mcmImportFilter, sizeof(g_mcmImportFilter));
+					keyboard::NoteTextField(ImGui::GetItemID());
+					if (rows.empty())
+					{
+						ImGui::TextDisabled("%s", TR("AMF_McmImportNone", "No MCM menus found yet - menus written only in a script appear once a game is loaded."));
+					}
+					std::string needle = g_mcmImportFilter;
+					std::transform(needle.begin(), needle.end(), needle.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+					for (const auto& r : rows)
+					{
+						std::string name = r.entry;
+						std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+						if (!needle.empty() && name.find(needle) == std::string::npos) { continue; }
+						ImGui::PushID(r.key.c_str());
+						bool on = r.imported;
+						if (widgets::Toggle(r.entry.c_str(), &on)) { mcmloader::SetMenuImported(r.key, on); }
+						ImGui::SameLine();
+						ImGui::TextDisabled("%s", r.script ? TR("AMF_McmKindScript", "(script menu)") : TR("AMF_McmKindHelper", "(MCM Helper)"));
+						ImGui::PopID();
+					}
+					ImGui::TreePop();
+				}
+			}
 			ImGui::Spacing();
 
 			// THE ON-SCREEN KEYBOARD (1.8.9, the owner, 2026-09-18): a framework feature, so every mod's
@@ -1396,6 +1452,21 @@ namespace renderer
 			const std::vector<personalization::DisplayEntry> rows = personalization::Order(entries);
 			static std::unordered_map<std::string, std::array<char, 64>> aliasBuffers;
 
+			// Rows with something to show: an entry whose every page is hidden (an MCM loader switched off, or a menu left out
+			// of AMF) has no row here either (xLenax, 2026-10-04: they "still appear in the settings page, just not in the
+			// actual Menu"). It keeps its place in the saved order; the number shown is its place among the rows shown, and a
+			// number typed is mapped back to the whole order before the move.
+			auto allPagesHidden = [&](const personalization::DisplayEntry& r) {
+				if (r.separator || r.registryIndex < 0 || r.registryIndex >= static_cast<int>(entries.size())) { return false; }
+				const auto& pages = entries[r.registryIndex].pages;
+				return !pages.empty() && std::all_of(pages.begin(), pages.end(), [](const registry::Page& p) { return p.hidden; });
+			};
+			std::vector<int> shownRows;  // indices into rows
+			for (int i = 0; i < static_cast<int>(rows.size()); ++i)
+			{
+				if (!allPagesHidden(rows[i])) { shownRows.push_back(i); }
+			}
+
 			// A reorder requested this frame, applied AFTER the table closes.
 			//
 			// It used to call personalization::MoveTo() inline, in the middle of the loop that is
@@ -1416,14 +1487,15 @@ namespace renderer
 				ImGui::TableSetupColumn(TR("AMF_ColShowsAs", "Shows as"));
 				ImGui::TableHeadersRow();
 
-				for (int i = 0; i < static_cast<int>(rows.size()); ++i)
+				for (int shownIndex = 0; shownIndex < static_cast<int>(shownRows.size()); ++shownIndex)
 				{
+					const int i = shownRows[shownIndex];
 					const personalization::DisplayEntry& row = rows[i];
 					ImGui::TableNextRow();
 					ImGui::PushID(row.modName.c_str());
 
 					ImGui::TableSetColumnIndex(0);
-					int position = i + 1;
+					int position = shownIndex + 1;
 					ImGui::SetNextItemWidth(-FLT_MIN);
 					// Commit on Enter OR on losing focus. EnterReturnsTrue alone meant that typing a
 					// position and then clicking away threw the number away without a word, which
@@ -1432,12 +1504,14 @@ namespace renderer
 					const bool posEntered = ImGui::InputInt("##pos", &position, 0, 0,
 															ImGuiInputTextFlags_EnterReturnsTrue);
 					keyboard::NoteTextField(ImGui::GetItemID());
-					if ((posEntered || ImGui::IsItemDeactivatedAfterEdit()) && position != i + 1)
+					if ((posEntered || ImGui::IsItemDeactivatedAfterEdit()) && position != shownIndex + 1)
 					{
 						// RECORDED, not applied - see the note above the declaration. Applying here
 						// rewrote the order while this same loop was still walking `rows`.
+						// The number typed is a place among the rows shown: the move goes to that row's place in the whole order.
+						const int target = std::clamp(position, 1, static_cast<int>(shownRows.size()));
 						pendingMoveMod = row.modName;
-						pendingMovePosition = position;
+						pendingMovePosition = shownRows[target - 1] + 1;
 					}
 
 					ImGui::TableSetColumnIndex(1);

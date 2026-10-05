@@ -48,6 +48,18 @@ namespace mcmloader::scripts
 		std::string key;      // "script|<plugin>|<ModName>" - its line in the hidden-by-AMF ledger
 	};
 	std::vector<HideTarget> HideTargets();
+
+	// Every script menu found in this game, for the settings page's import list. Thread-safe.
+	struct MenuInfo
+	{
+		std::string key;    // "script|<plugin>|<ModName>"
+		std::string entry;  // its AMF entry name
+		bool present;       // found in the game loaded now
+	};
+	std::vector<MenuInfo> Menus();
+
+	// Shows exactly the tabs of the menus that are found, imported and switched on (after an import choice changes).
+	void RefreshVisibility();
 	void SetHidden(std::size_t a_index, bool a_hidden);
 	int Hidden();
 	int Count();
