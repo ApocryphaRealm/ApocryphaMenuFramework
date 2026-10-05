@@ -24,6 +24,18 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 ## Unreleased
 
 ### Fixed
+- **Script MCM menus missing from AMF in a large list** (Soulsthat, Nexus, 2026-10-04). In his list these menus never
+  appeared: CBBE 3BA, Custom Skills Menu, Dialogue Timescale, DVA, Fort Takeovers, Helios, HMA Expanded, LOD Reload
+  Bug Fix, LOTD, Missives, moreHUD, OBody NG, QuickLoot IE, Seasonal Weathers, T.N.G. and the Wyrmstooth MCM.
+  - **Cause.** AMF only took a SkyUI config script once SkyUI's manager had registered it (`_configManager` set). A
+    config can set itself up and never be registered: it registers minutes after a new game, it falls past SkyUI's
+    128-menu limit (RegisterMod returns -1), or another mod has replaced the manager.
+  - **Fix.** A config whose own script has run its set-up (`_initialized`, so its name and pages are filled) is now
+    taken too. SkyUI 5.2 uses `_configManager` only to remember that a config registered, so AMF drives an
+    unregistered one the same way. The log notes "not registered with SkyUI's manager; AMF drives it directly".
+  - Discovery now looks again at 1, 2, 4 and 8 minutes after a load (it used to stop at 40 s). It also looks once
+    each time the AMF menu opens, at most once every 2 s, so a menu that set itself up late is listed when the
+    player looks.
 - **"Take those mods out of SkyUI's list" under MCM Unlocked** (Nexus 180186) or another 128-limit lift. AMF checked
   SkyUI's list in stock SkyUI's `_modConfigs` array, and those mods keep the list elsewhere. MCM Unlocked keeps it in
   its DLL; the "Barzing" layout uses `_MainMenu` plus `_modConfigsP1`, `P2` and so on. In a list with MCM Unlocked
