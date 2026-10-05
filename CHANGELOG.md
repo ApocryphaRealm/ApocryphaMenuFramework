@@ -21,7 +21,13 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
-## Unreleased
+## 2.0.9 - 2026-10-04 - working - every MCM menu, whatever SkyUI's list does
+
+### Known
+- Under **Menu Maid 2**, "Take those mods out of SkyUI's list" takes nothing out. Menu Maid keeps its list in its
+  DLL and copies it into SkyUI's `_modConfigs` only when the Journal opens, so AMF reads an empty list there (and the
+  DevBench layout says "stock"). AMF still shows every menu. Found in the 2.0.9 combined run; parked (the owner
+  does not use Menu Maid 2).
 
 ### Fixed
 - **Script MCM menus missing from AMF in a large list** (Soulsthat, Nexus, 2026-10-04). In his list these menus never
