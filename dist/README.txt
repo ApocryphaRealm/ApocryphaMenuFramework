@@ -1,6 +1,6 @@
 ﻿ApocryphaRealm Menu Framework
 =============================
-Version 2.0.8
+Version 2.0.9
 
 An original, GPL-3.0-or-later in-game menu framework (embedding Dear ImGui) - a one-for-one
 replacement for SKSE Menu Framework's consumer surface, plus user-friendly features that do
@@ -46,6 +46,9 @@ reading.
 
 WHAT CHANGED
 ------------
+
+Version 2.0.9
+Your MCM menus show in AMF even when SkyUI has not taken them into its own list - past SkyUI's 128-menu limit, registered late, or under a mod that replaces SkyUI's MCM manager (MCM Unlocked and similar). AMF also looks again for new menus for up to 8 minutes after a load, and each time you open the menu. "Take those mods out of SkyUI's list" now works with MCM Unlocked and the larger-list layouts too. Thanks to Soulsthat for the report.
 
 Version 2.0.8
 The menu and its tooltips fit the screen when the game draws a smaller image than its window (a lower render resolution scaled up): they no longer run off the right and bottom. The log says when the window and the image differ. Thanks to Soulsthat for the report.

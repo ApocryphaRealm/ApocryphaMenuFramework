@@ -46,7 +46,9 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
     - AMF opened the unregistered, None-typed moreHUD menu and read its General page (15 options).
   - Discovery now looks again at 1, 2, 4 and 8 minutes after a load (it used to stop at 40 s). It also looks once
     each time the AMF menu opens, at most once every 2 s, so a menu that set itself up late is listed when the
-    player looks.
+    player looks. The request sits on AMF's own open, so it runs over a mod's window that already has the input
+    too (RaceMenu Atelier in character creation). Tested: "the menu opened - one more discovery pass queued", and
+    the pass ran 8 ms later.
 - **"Take those mods out of SkyUI's list" under MCM Unlocked** (Nexus 180186) or another 128-limit lift. AMF checked
   SkyUI's list in stock SkyUI's `_modConfigs` array, and those mods keep the list elsewhere. MCM Unlocked keeps it in
   its DLL; the "Barzing" layout uses `_MainMenu` plus `_modConfigsP1`, `P2` and so on. In a list with MCM Unlocked
