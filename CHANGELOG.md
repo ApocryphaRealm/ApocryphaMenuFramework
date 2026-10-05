@@ -27,12 +27,23 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 - **Script MCM menus missing from AMF in a large list** (Soulsthat, Nexus, 2026-10-04). In his list these menus never
   appeared: CBBE 3BA, Custom Skills Menu, Dialogue Timescale, DVA, Fort Takeovers, Helios, HMA Expanded, LOD Reload
   Bug Fix, LOTD, Missives, moreHUD, OBody NG, QuickLoot IE, Seasonal Weathers, T.N.G. and the Wyrmstooth MCM.
-  - **Cause.** AMF only took a SkyUI config script once SkyUI's manager had registered it (`_configManager` set). A
-    config can set itself up and never be registered: it registers minutes after a new game, it falls past SkyUI's
-    128-menu limit (RegisterMod returns -1), or another mod has replaced the manager.
-  - **Fix.** A config whose own script has run its set-up (`_initialized`, so its name and pages are filled) is now
-    taken too. SkyUI 5.2 uses `_configManager` only to remember that a config registered, so AMF drives an
-    unregistered one the same way. The log notes "not registered with SkyUI's manager; AMF drives it directly".
+  - **Cause.** AMF only took a SkyUI config script whose `_configManager` variable passed a "registered" check, and
+    that check tested the variable's stored TYPE (`IsNoneObject`), not its value. A config SkyUI never registered
+    holds None in one of two forms: an object-typed None, which the check let through, or a None-typed value, which
+    it dropped. A config goes unregistered when it falls past SkyUI's 128-menu limit (RegisterMod returns -1),
+    registers late, or another mod has replaced the manager. In Njordlinger (MCM Unlocked), 23 of 48 configs held no
+    manager after a New Game.
+  - **Fix.** A config is taken when it holds a manager (the value, not the type) OR its own script has run its
+    set-up (`_initialized`, so its name and pages are filled), whatever form its None takes. SkyUI 5.2 uses
+    `_configManager` only to remember that a config registered, so AMF drives an unregistered one the same way.
+    The log notes "not registered with SkyUI's manager; AMF drives it directly". Each discovery line counts the
+    unregistered menus, and DevBench `amf.mcm op=skyui action=list` gives each menu's `registered`.
+  - Tested 2026-10-04 (Njordlinger Test, MCM Unlocked, a New Game through Alternate Perspective):
+    - 48 found, 23 unregistered.
+    - After SkyUI's own `SKICP_configManagerReset`: 48 found, 48 unregistered.
+    - moreHUD's `_configManager` made None-typed (TestBench papyrus `var`): still found.
+    - T.N.G. with `_initialized` false: dropped (47), and back when set again.
+    - AMF opened the unregistered, None-typed moreHUD menu and read its General page (15 options).
   - Discovery now looks again at 1, 2, 4 and 8 minutes after a load (it used to stop at 40 s). It also looks once
     each time the AMF menu opens, at most once every 2 s, so a menu that set itself up late is listed when the
     player looks.

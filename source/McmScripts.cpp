@@ -99,6 +99,7 @@ namespace mcmloader::scripts
 			ObjectPtr script;          // this game's config object (main thread writes; read under g_mutex)
 			bool present = false;      // found in this game
 			bool hidden = false;       // out of SkyUI's list (UnregisterMod) this game
+			bool registered = false;   // _configManager set at the last pass (false: AMF drives it without SkyUI's manager)
 		};
 
 		std::mutex g_mutex;
@@ -1239,6 +1240,7 @@ namespace mcmloader::scripts
 
 			int found = 0;
 			int added = 0;
+			int unregistered = 0;
 			for (const auto quest : dataHandler->GetFormArray<RE::TESQuest>())
 			{
 				if (!quest) { continue; }
@@ -1255,7 +1257,9 @@ namespace mcmloader::scripts
 				// SKICP_configManagerReset, never called), so AMF drives such a config the same way (Soulsthat, 2026-10-04: CBBE 3BA,
 				// moreHUD, T.N.G., Wyrmstooth ... missing from AMF in his list).
 				const auto manager = Var(config, "_configManager");
-				const bool registered = manager && manager->IsObject() && !manager->IsNoneObject();
+				// the VALUE, not the type: "_configManager = none" leaves an object-typed None, which IsNoneObject (a None
+				// TYPE) does not report - tested 2026-10-04 with TestBench papyrus var after SkyUI's own reset event
+				const bool registered = manager && manager->IsObject() && manager->GetObject();
 				const auto initVar = Var(config, "_initialized");
 				const bool initialized = initVar && initVar->IsBool() && initVar->GetBool();
 				if (!registered && !initialized) { continue; }  // not set up yet - a later pass looks again
@@ -1264,6 +1268,7 @@ namespace mcmloader::scripts
 				if (modName.empty()) { continue; }
 				const auto pages = ReadStringArray(config->GetProperty("Pages"));
 				++found;
+				if (!registered) { ++unregistered; }
 
 				std::scoped_lock lock(g_mutex);
 				std::size_t index = g_mods.size();
@@ -1291,10 +1296,12 @@ namespace mcmloader::scripts
 				SMod& mod = *g_mods[index];
 				mod.script = config;
 				mod.present = true;
+				mod.registered = registered;
 				mod.pages = pages;
 				SyncTabs(index);
 			}
-			logger::info("MCM scripts: discovery - {} script-only SkyUI menu(s) in this game, {} new", found, added);
+			logger::info("MCM scripts: discovery - {} script-only SkyUI menu(s) in this game, {} new, {} not registered with SkyUI's manager",
+				found, added, unregistered);
 		}
 
 		// After a load the configs register with SkyUI over the first half-minute: look a few times.
@@ -1476,7 +1483,7 @@ namespace mcmloader::scripts
 			{
 				const SMod& m = *g_mods[i];
 				out["mods"].push_back({ { "index", i }, { "entry", m.entryName }, { "plugin", m.plugin }, { "modName", m.modName },
-					{ "quest", std::format("{:08X}", m.questId) }, { "pages", m.pages }, { "present", m.present }, { "hiddenInSkyUI", m.hidden },
+					{ "quest", std::format("{:08X}", m.questId) }, { "pages", m.pages }, { "present", m.present }, { "registered", m.registered }, { "hiddenInSkyUI", m.hidden },
 					{ "script", m.script && m.script->GetTypeInfo() ? m.script->GetTypeInfo()->GetName() : "" } });
 			}
 			return out.dump();
