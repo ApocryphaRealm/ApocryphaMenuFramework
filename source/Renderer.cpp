@@ -1,6 +1,7 @@
 #include "Renderer.h"
 #include "Keyboard.h"
 #include "McmLoader.h"
+#include "McmScripts.h"
 
 #include "ConsumerSurface.h"
 
@@ -2779,6 +2780,7 @@ namespace renderer
 					if (interactive && (!s_wasInteractive || (justOpened && !consumerOwnsInput)))
 					{
 						input::OnMenuOpened();
+						mcmloader::scripts::RequestDiscovery();   // an MCM menu set up since the last pass shows as the menu opens
 					}
 					s_wasInteractive = interactive;
 				}

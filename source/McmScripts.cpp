@@ -1247,8 +1247,18 @@ namespace mcmloader::scripts
 				ObjectPtr config;
 				if (!vm->FindBoundObject(handle, "SKI_ConfigBase", config) || !config) { continue; }
 				if (IsType(config, "MCM_ConfigBase")) { continue; }  // MCM Helper's - phases 1-2 draw those from config.json
+				// SkyUI registered it (_configManager set) - OR its script has run its own set-up (_initialized: OnGameReload ran
+				// OnConfigInit, so ModName and Pages are filled) and SkyUI simply has not, or will not, take it in: a big list
+				// whose configs register minutes after a new game, past SkyUI's 128 limit (RegisterMod returns -1 and leaves
+				// _configManager None), or a manager replaced by MCM Unlocked / a Barzing layout. SKI_ConfigBase uses
+				// _configManager only to remember that it registered (SkyUI 5.2's source: set in OnConfigManagerReady, cleared by
+				// SKICP_configManagerReset, never called), so AMF drives such a config the same way (Soulsthat, 2026-10-04: CBBE 3BA,
+				// moreHUD, T.N.G., Wyrmstooth ... missing from AMF in his list).
 				const auto manager = Var(config, "_configManager");
-				if (!manager || !manager->IsObject() || manager->IsNoneObject()) { continue; }  // SkyUI never took it in
+				const bool registered = manager && manager->IsObject() && !manager->IsNoneObject();
+				const auto initVar = Var(config, "_initialized");
+				const bool initialized = initVar && initVar->IsBool() && initVar->GetBool();
+				if (!registered && !initialized) { continue; }  // not set up yet - a later pass looks again
 				const auto nameVar = config->GetProperty("ModName");
 				const std::string modName = nameVar && nameVar->IsString() ? std::string(nameVar->GetString()) : std::string();
 				if (modName.empty()) { continue; }
@@ -1274,8 +1284,9 @@ namespace mcmloader::scripts
 					mod->entryName += " (MCM)";
 					g_mods.push_back(std::move(mod));
 					++added;
-					logger::info("MCM scripts: {} - quest {:08X} ({}), script {}, {} page(s)", g_mods.back()->entryName, quest->GetFormID(),
-						g_mods.back()->plugin, config->GetTypeInfo() ? config->GetTypeInfo()->GetName() : "?", pages.size());
+					logger::info("MCM scripts: {} - quest {:08X} ({}), script {}, {} page(s){}", g_mods.back()->entryName, quest->GetFormID(),
+						g_mods.back()->plugin, config->GetTypeInfo() ? config->GetTypeInfo()->GetName() : "?", pages.size(),
+						registered ? "" : " - not registered with SkyUI's manager; AMF drives it directly");
 				}
 				SMod& mod = *g_mods[index];
 				mod.script = config;
@@ -1291,7 +1302,9 @@ namespace mcmloader::scripts
 		{
 			const unsigned generation = ++g_loadGeneration;
 			std::thread([generation]() {
-				for (const int gap : { 2, 3, 5, 10, 20 })  // passes at 2, 5, 10, 20 and 40 s
+				// passes at 2, 5, 10, 20 and 40 s, then 1, 2, 4 and 8 minutes: on a big list a new game's configs set themselves up
+				// for minutes (Soulsthat's, 2026-10-04); the AMF menu opening looks again too (RequestDiscovery)
+				for (const int gap : { 2, 3, 5, 10, 20, 20, 60, 120, 240 })
 				{
 					std::this_thread::sleep_for(std::chrono::seconds(gap));
 					if (g_loadGeneration.load() != generation || !settings::Get().loadSkyUIScriptMenus) { return; }
@@ -1351,6 +1364,16 @@ namespace mcmloader::scripts
 			StartWatchdog();
 			ScheduleDiscovery();
 		}
+	}
+
+	void RequestDiscovery()
+	{
+		// any thread (the renderer, as the menu opens): at most one queued pass every 2 s
+		static std::atomic<long long> last{ 0 };
+		const long long now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+		if (now - last.load() < 2000 || !settings::Get().loadSkyUIScriptMenus) { return; }
+		last = now;
+		if (const auto tasks = SKSE::GetTaskInterface()) { tasks->AddTask([]() { Discover(); }); }
 	}
 
 	void Discover()

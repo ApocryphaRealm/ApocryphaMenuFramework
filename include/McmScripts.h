@@ -28,6 +28,10 @@ namespace mcmloader::scripts
 	// Does nothing while [MCM] bLoadSkyUIScriptMenus=0.
 	void Discover();
 
+	// Any thread: queue one Discover on the main thread (at most every 2 s) - the AMF menu opening calls it, so a config
+	// that set itself up after the last timed pass is in the list the moment the player looks.
+	void RequestDiscovery();
+
 	// Every frame, right after ImGui::NewFrame: CloseConfig for the config whose entry stopped being drawn.
 	void Frame();
 
