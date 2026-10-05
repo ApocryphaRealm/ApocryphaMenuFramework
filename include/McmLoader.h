@@ -74,6 +74,10 @@ namespace mcmloader
 		std::vector<std::pair<std::string, std::string>> placed;   // (entry, separator name) for each menu sorted
 	};
 	SortResult SortIntoCategories(bool a_all);
+	// The sort learns from the player (the owner, 2026-10-05): an MCM menu moved by hand under a category's separator
+	// is remembered there (McmSortLearned.txt) and the sort follows that before its name rules. Render thread, every
+	// frame the menu is open; it only does work when the list has changed.
+	void LearnFromLayoutIfChanged();
 	// The category one entry would go to: its separator's shown name (translated). a_key is the import key.
 	std::string CategoryFor(const std::string& a_key, const std::string& a_entry);
 	bool CanRestoreBeforeSort();

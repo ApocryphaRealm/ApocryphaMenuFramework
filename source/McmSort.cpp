@@ -10,6 +10,8 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <filesystem>
+#include <fstream>
 #include <atomic>
 #include <mutex>
 #include <regex>
@@ -151,7 +153,7 @@ namespace mcmloader
 			return text;
 		}
 
-		std::size_t GroupOf(const std::string& a_key, const std::string& a_entry)
+		std::size_t GroupOfRulesUncached(const std::string& a_key, const std::string& a_entry)
 		{
 			const std::string text = JudgedText(a_key, a_entry);
 			std::vector<float> score(std::size(kGroups), 0.0f);
@@ -174,6 +176,79 @@ namespace mcmloader
 
 		std::string GroupName(std::size_t a_group) { return TR(kGroups[a_group].trKey, kGroups[a_group].english); }
 
+		// What the name rules say, cached per menu (a menu's names do not change in a session; 159 regex searches each).
+		std::mutex g_ruleCacheLock;
+		std::unordered_map<std::string, std::size_t> g_ruleCache;
+		std::size_t GroupOfRules(const std::string& a_key, const std::string& a_entry)
+		{
+			{
+				std::scoped_lock l(g_ruleCacheLock);
+				if (const auto it = g_ruleCache.find(a_key); it != g_ruleCache.end()) { return it->second; }
+			}
+			const std::size_t g = GroupOfRulesUncached(a_key, a_entry);
+			std::scoped_lock l(g_ruleCacheLock);
+			g_ruleCache[a_key] = g;
+			return g;
+		}
+
+		// LEARNED PLACEMENTS (the owner, 2026-10-05: "if they add a new mod menu and sort it and it's not in the right
+		// location then they can sort it into the right one and the sorter will acknowledge that as a new rule
+		// automatically"). import key -> group key, kept outside the download like McmImport.txt.
+		constexpr const char* kLearnedPath = "Data/SKSE/Plugins/ApocryphaMenuFramework/McmSortLearned.txt";
+		std::mutex g_learnLock;
+		std::unordered_map<std::string, std::string> g_learned;
+		bool g_learnedLoaded = false;
+
+		std::size_t GroupIndex(const std::string& a_key)
+		{
+			for (std::size_t i = 0; i < std::size(kGroups); ++i) { if (a_key == kGroups[i].key) { return i; } }
+			return std::size(kGroups);
+		}
+
+		void LoadLearnedLocked()
+		{
+			if (g_learnedLoaded) { return; }
+			g_learnedLoaded = true;
+			std::ifstream in(kLearnedPath);
+			for (std::string line; std::getline(in, line);)
+			{
+				line = detail::Trim(line);
+				if (line.empty() || line[0] == ';') { continue; }
+				const auto eq = line.rfind('=');
+				if (eq == std::string::npos) { continue; }
+				const std::string key = detail::Trim(line.substr(0, eq));
+				const std::string group = detail::Trim(line.substr(eq + 1));
+				if (!key.empty() && GroupIndex(group) < std::size(kGroups)) { g_learned[key] = group; }
+			}
+			if (!g_learned.empty()) { logger::info("MCM sort: {} placement(s) learned from the player", g_learned.size()); }
+		}
+
+		void SaveLearnedLocked()
+		{
+			std::error_code ec;
+			std::filesystem::create_directories(std::filesystem::path(kLearnedPath).parent_path(), ec);
+			std::ofstream out(kLearnedPath, std::ios::trunc);
+			out << "; MCM menus the player moved by hand under a category's separator - the sort follows these before its name\n"
+				   "; rules. menu key = category. Delete a line (or the file) to let the name rules decide again.\n";
+			std::vector<std::pair<std::string, std::string>> rows(g_learned.begin(), g_learned.end());
+			std::sort(rows.begin(), rows.end());
+			for (const auto& [key, group] : rows) { out << key << '=' << group << '\n'; }
+		}
+
+		std::size_t GroupOf(const std::string& a_key, const std::string& a_entry)
+		{
+			{
+				std::scoped_lock l(g_learnLock);
+				LoadLearnedLocked();
+				if (const auto it = g_learned.find(a_key); it != g_learned.end())
+				{
+					const std::size_t g = GroupIndex(it->second);
+					if (g < std::size(kGroups)) { return g; }
+				}
+			}
+			return GroupOfRules(a_key, a_entry);
+		}
+
 		// An existing separator for a group: one the player or an earlier sort named the group's shown name or its English
 		// name, letter case aside.
 		std::string FindSeparator(std::size_t a_group)
@@ -188,6 +263,50 @@ namespace mcmloader
 			return {};
 		}
 
+		// The category a separator stands for: its name is a group's shown name or English name, letter case aside.
+		std::size_t GroupOfSeparator(const std::string& a_name)
+		{
+			const std::string name = Lower(detail::Trim(a_name));
+			for (std::size_t i = 0; i < std::size(kGroups); ++i)
+			{
+				if (name == Lower(GroupName(i)) || name == Lower(kGroups[i].english)) { return i; }
+			}
+			return std::size(kGroups);
+		}
+
+		void LearnFromLayout()
+		{
+			std::unordered_map<std::string, std::string> keyOf;   // entry -> import key, menus that come in only
+			for (const auto& r : ImportList()) { if (r.imported) { keyOf[r.entry] = r.key; } }
+			if (keyOf.empty()) { return; }
+			int learned = 0;
+			int forgot = 0;
+			std::string currentSep;
+			std::scoped_lock l(g_learnLock);
+			LoadLearnedLocked();
+			for (const auto& row : personalization::Order(registry::Snapshot()))
+			{
+				if (row.separator) { currentSep = row.displayName; continue; }
+				const auto k = keyOf.find(row.modName);
+				if (k == keyOf.end() || row.depth == 0) { continue; }
+				const std::size_t g = GroupOfSeparator(currentSep);
+				if (g >= std::size(kGroups)) { continue; }   // a separator of the player's own naming: not a category
+				const std::size_t byRules = GroupOfRules(k->second, row.modName);
+				const auto it = g_learned.find(k->second);
+				if (g == byRules)
+				{
+					if (it != g_learned.end()) { g_learned.erase(it); ++forgot; }   // back where the rules put it
+					continue;
+				}
+				if (it != g_learned.end() && it->second == kGroups[g].key) { continue; }
+				g_learned[k->second] = kGroups[g].key;
+				++learned;
+				logger::info("MCM sort: learned '{}' -> {} (moved there by hand; the rules said {})", row.modName, kGroups[g].english,
+					kGroups[byRules].english);
+			}
+			if (learned > 0 || forgot > 0) { SaveLearnedLocked(); }
+		}
+
 		std::mutex g_sortLock;   // one sort or restore at a time (the settings page and DevBench may both ask)
 
 		// whether the undo preset exists: asked every frame the settings page is open, so read from disk once, then kept up
@@ -197,8 +316,16 @@ namespace mcmloader
 
 	std::string CategoryFor(const std::string& a_key, const std::string& a_entry) { return GroupName(GroupOf(a_key, a_entry)); }
 
+	void LearnFromLayoutIfChanged()
+	{
+		static std::atomic<unsigned> seen{ ~0u };
+		const unsigned rev = personalization::LayoutRevision();
+		if (seen.exchange(rev) != rev) { LearnFromLayout(); }
+	}
+
 	SortResult SortIntoCategories(bool a_all)
 	{
+		LearnFromLayout();   // a menu moved by hand since the last look is remembered before this sort places it
 		std::scoped_lock sortLock(g_sortLock);
 		SortResult result;
 		const std::string before = personalization::IniBlock();
@@ -310,9 +437,16 @@ namespace mcmloader
 			out["changed"] = r.changed;
 		}
 		else if (action == "undo") { out["restored"] = RestoreBeforeSort(); }
+		else if (action == "learned")
+		{
+			LearnFromLayout();
+			std::scoped_lock l(g_learnLock);
+			LoadLearnedLocked();
+			out["learned"] = g_learned;
+		}
 		else if (action != "preview")
 		{
-			return R"({"ok":false,"error":"sort needs action preview | run | all | undo"})";
+			return R"({"ok":false,"error":"sort needs action preview | run | all | undo | learned"})";
 		}
 
 		json preview = json::object();   // every imported menu -> the separator a sort would give it

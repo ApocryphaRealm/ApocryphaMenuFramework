@@ -21,7 +21,7 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
-## Unreleased - choose which MCM menus come in, and sort them into categories
+## 2.1.0 - 2026-10-05 - working - choose which MCM menus come in, and sort them into categories
 
 xLenax on the AMF page, 2026-10-04: with the MCM options off, the menus "still appear in the settings page, just not in
 the actual Menu", and "I'd like to have an option to choose which MCMs I'd like to import instead of importing all of
@@ -61,12 +61,34 @@ sort of like our mod manager plugin but built into AMF. And it can just sort by 
     button that does it"); sorting those too ("re-sort all") is a DevBench op only.
   - **Undo the sort.** The order from before a sort that changed anything is saved as the layout preset "Before MCM
     sort". The button loads it, then deletes it. It is also listed with the other layout presets.
+- **The sort learns from your own moves** (the owner, 2026-10-05: "if they add a new mod menu and sort it and it's not in
+  the right location then they can sort it into the right one and the sorter will acknowledge that as a new rule
+  automatically").
+  - Move an MCM menu under another category's separator and AMF remembers that category for it.
+  - The next sort puts it there, even after Undo or a fresh list.
+  - Moving it back under the category the name rules give forgets it again.
+  - Kept per menu in `SKSE\Plugins\ApocryphaMenuFramework\McmSortLearned.txt`, outside the download, so an update keeps
+    it (the owner: "so that they keep it when they update"). The new gate rule `no-player-data-files-in-packages` refuses
+    any package carrying it, `McmImport.txt`, `McmHiddenInSkyUI.txt` or `User.ini`.
+  - Learning runs only when the Menu list's layout changes (`personalization::LayoutRevision()`), not every frame.
+- **31 more name rules** taught by hand from the names that landed in Other on the owner's list (C.O.I.N., TNG,
+  ASG, Recorder, Order Squad and so on), weighted above the generated ones. Other is empty on that list now.
+- **Framework Settings is split into tabs by area** (the owner, 2026-10-05: "divide the AMF settings page into several
+  tabs that are divided by their area that they affect"): General, Appearance, MCM menus and Menu list. The bumpers and
+  Page Up / Page Down walk them, as on Controls and Help. The sort button and its Undo sit at the top of Menu list.
+- **Keep in SkyUI only** in a Menu-list entry's right-click menu: takes that MCM menu out of AMF and leaves it in
+  SkyUI's menu, the same as switching it off in the MCM menus tab.
+- **Bring in from SkyUI**: a dropdown in the MCM menus tab listing only the MCM menus left to SkyUI; picking one brings
+  it in.
+- **Defaults keep SkyUI's menu whole**: every menu comes in and "Take those mods out of SkyUI's list" stays off, so a menu
+  can still be changed in SkyUI too.
 - DevBench `amf.mcm op=sort`:
   - action preview: the category each menu would get;
   - run / all: sort (all = Re-sort all);
   - undo: restore.
+  - learned: the placements learned from your moves.
   - Every action also returns the Menu list's separators with their menus.
-- 32 new strings, in all eleven languages.
+- 40 new strings, in all eleven languages.
 
 ### Fixed
 - **The Menu list on the settings page no longer shows entries that have nothing to show.** That covers an MCM loader

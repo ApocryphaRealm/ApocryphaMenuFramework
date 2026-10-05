@@ -131,4 +131,7 @@ namespace personalization
 	// INI plumbing, called by settings::Load/Save so all of AMF's state lives in one file.
 	void LoadFrom(const std::unordered_map<std::string, std::string>& a_iniEntries);
 	std::string IniBlock();
+	// Bumped by every change to the order, the separators or a load of a layout: a cheap "did the list change" check
+	// (the MCM sort's learning looks once a frame).
+	unsigned LayoutRevision();
 }

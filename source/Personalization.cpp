@@ -3,6 +3,7 @@
 #include "utils/Logger.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <cstdlib>
 #include <mutex>
@@ -13,6 +14,9 @@
 
 namespace personalization
 {
+	std::atomic<unsigned> g_layoutRevision{ 0 };
+	unsigned LayoutRevision() { return g_layoutRevision.load(); }
+
 	namespace
 	{
 		std::mutex g_lock;
@@ -256,6 +260,7 @@ namespace personalization
 
 	void MoveTo(const std::vector<registry::Entry>& a_entries, const std::string& a_modName, int a_position)
 	{
+		++g_layoutRevision;
 		std::scoped_lock lock(g_lock);
 		// The position is the one the player SEES (the display); the edit is made in the canonical sequence. The entry is
 		// put next to whatever the display shows at that position - above it when moving up, below it when moving down -
@@ -306,6 +311,7 @@ namespace personalization
 
 	std::string AddSeparator(const std::vector<registry::Entry>& a_entries, const std::string& a_beforeName, const std::string& a_name)
 	{
+		++g_layoutRevision;
 		std::scoped_lock lock(g_lock);
 		std::vector<std::string> canonical = CanonicalLocked(a_entries);
 		const std::string id = std::string(kSeparatorPrefix) + std::to_string(NextSeparatorNumberLocked());
@@ -320,6 +326,7 @@ namespace personalization
 
 	bool RemoveSeparator(const std::string& a_separator)
 	{
+		++g_layoutRevision;
 		std::scoped_lock lock(g_lock);
 		if (!IsSeparator(a_separator)) { return false; }
 		const auto at = std::find(g_order.begin(), g_order.end(), a_separator);
@@ -334,6 +341,7 @@ namespace personalization
 
 	bool SendTo(const std::vector<registry::Entry>& a_entries, const std::string& a_modName, const std::string& a_separator)
 	{
+		++g_layoutRevision;
 		std::scoped_lock lock(g_lock);
 		if (IsSeparator(a_modName)) { return false; }
 		std::vector<std::string> canonical = CanonicalLocked(a_entries);
@@ -362,6 +370,7 @@ namespace personalization
 
 	bool MoveToGroupTop(const std::vector<registry::Entry>& a_entries, const std::string& a_modName)
 	{
+		++g_layoutRevision;
 		std::scoped_lock lock(g_lock);
 		if (IsSeparator(a_modName)) { return false; }
 		std::vector<std::string> canonical = CanonicalLocked(a_entries);
@@ -386,6 +395,7 @@ namespace personalization
 
 	bool Nudge(const std::vector<registry::Entry>& a_entries, const std::string& a_modName, int a_direction)
 	{
+		++g_layoutRevision;
 		int target = 0;
 		{
 			std::scoped_lock lock(g_lock);
@@ -506,6 +516,7 @@ namespace personalization
 
 	void ResetToAlphabetical()
 	{
+		++g_layoutRevision;
 		std::scoped_lock lock(g_lock);
 		// The mods go back to alphabetical and out of every group; the separators the player made are kept (empty, at the
 		// end, in their order) rather than deleted by a sort reset - removing one is its own action.
@@ -521,6 +532,7 @@ namespace personalization
 
 	void LoadFrom(const std::unordered_map<std::string, std::string>& a_iniEntries)
 	{
+		++g_layoutRevision;
 		std::scoped_lock lock(g_lock);
 		g_alias.clear();
 		g_order.clear();
