@@ -993,15 +993,10 @@ namespace renderer
 
 				// Sort them into categories (the owner, 2026-10-05: "an auto sort function which sorted the imported menus
 				// into categories, sort of like our mod manager plugin but built into AMF"). Only rearranges; undoable.
+				// One button only ("I just want it to add a button that does it"): "re-sort all" stays a DevBench op.
 				if (ImGui::Button(TR("AMF_McmSort", "Sort MCM menus into categories")))
 				{
 					const auto r = mcmloader::SortIntoCategories(false);
-					g_mcmSortStatus = FormatSortStatus(r);
-				}
-				ImGui::SameLine();
-				if (ImGui::Button(TR("AMF_McmSortAll", "Re-sort all")))
-				{
-					const auto r = mcmloader::SortIntoCategories(true);
 					g_mcmSortStatus = FormatSortStatus(r);
 				}
 				if (mcmloader::CanRestoreBeforeSort())
@@ -1015,7 +1010,7 @@ namespace renderer
 				}
 				ImGui::TextWrapped("%s", TR("AMF_McmSortHelp", "Puts each MCM menu in this menu under a separator for its kind - Interface, "
 								   "Combat, Camera and so on - judged by its name; a menu with no match goes under Other. Nothing is hidden "
-								   "or removed. A menu you already put under a separator stays there; Re-sort all sorts those too. Undo puts "
+								   "or removed. A menu you already put under a separator stays there. Undo puts "
 								   "the list back as it was before the last sort."));
 				if (!g_mcmSortStatus.empty()) { ImGui::TextDisabled("%s", g_mcmSortStatus.c_str()); }
 			}
