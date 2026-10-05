@@ -2785,7 +2785,6 @@ namespace renderer
 					if (interactive && (!s_wasInteractive || (justOpened && !consumerOwnsInput)))
 					{
 						input::OnMenuOpened();
-						mcmloader::scripts::RequestDiscovery();   // an MCM menu set up since the last pass shows as the menu opens
 					}
 					s_wasInteractive = interactive;
 				}
@@ -3116,6 +3115,10 @@ namespace renderer
 		{
 			g_justOpened.store(true, std::memory_order_release);
 			g_applyGeometry.store(true, std::memory_order_release);
+			// an MCM menu set up since the last pass shows as the menu opens. Here, on OUR open, not on the render
+			// thread's input edge: over a mod's window that already owns the input (RaceMenu Atelier in character
+			// creation) the menu opening is no input edge, and the pass never ran (tested 2026-10-04)
+			mcmloader::scripts::RequestDiscovery();
 		}
 		logger::info("Framework window {} ({})", a_visible ? "shown" : "hidden",
 			a_nested ? "nested in the game's System menu" : "external/DevBench");

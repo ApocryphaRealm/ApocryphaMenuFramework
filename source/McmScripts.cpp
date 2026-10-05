@@ -1380,6 +1380,7 @@ namespace mcmloader::scripts
 		const long long now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
 		if (now - last.load() < 2000 || !settings::Get().loadSkyUIScriptMenus) { return; }
 		last = now;
+		logger::info("MCM scripts: the menu opened - one more discovery pass queued");
 		if (const auto tasks = SKSE::GetTaskInterface()) { tasks->AddTask([]() { Discover(); }); }
 	}
 
