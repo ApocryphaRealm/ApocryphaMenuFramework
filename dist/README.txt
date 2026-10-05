@@ -1,6 +1,6 @@
 ﻿ApocryphaRealm Menu Framework
 =============================
-Version 2.1.0
+Version 2.1.1
 
 An original, GPL-3.0-or-later in-game menu framework (embedding Dear ImGui) - a one-for-one
 replacement for SKSE Menu Framework's consumer surface, plus user-friendly features that do
@@ -46,6 +46,9 @@ reading.
 
 WHAT CHANGED
 ------------
+
+Version 2.1.1
+One place to set the menu key: Controls > Open and close the menu (the duplicate under Settings is gone). Controls no longer cuts its keys and descriptions off in the window the journal's SKSE MENUS row opens. The category separators the sort makes, and converted MCM pages whose mod ships a translation, follow the language you pick. Help is up to date in all eleven languages. Dropdowns open without an empty band at the top and bottom, and the rename boxes lost their empty title strip. The sort follows a few more placements, and a developer test box is gone from the General tab.
 
 Version 2.1.0
 Framework Settings is split into tabs: General, Appearance, MCM menus and Menu list. Choose which MCM menus come into AMF: the MCM menus tab lists every MCM menu found, with a switch for each, a filter, and All on / All off, and "Bring in from SkyUI" picks one menu from those left to SkyUI. A menu switched off stays in SkyUI's own menu only; right-click an entry in the Menu list and choose "Keep in SkyUI only" to do the same from there. By default every menu comes in and SkyUI keeps its whole menu too. "Bring in MCM menus not switched below" decides menus you haven't chosen, so a long list can start from none and switch on just the few you use. One button at the top of the Menu list tab sorts the MCM menus in AMF into categories by name (Interface, Combat, Gameplay, World and Visuals and so on, with Other for the rest), and Undo puts the list back. Move a menu under another category's separator yourself and the sort remembers it: the next sort puts it there too. Your choices are kept in McmImport.txt and McmSortLearned.txt, which the download never contains, so updates never reset them. MCM menus that are switched off no longer clutter the Menu list on the settings page. Thanks to xLenax for the suggestions.

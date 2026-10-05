@@ -10,6 +10,7 @@
 #include "Registry.h"
 #include "Settings.h"
 #include "Strings.h"
+#include "Theme.h"
 #include "utils/Logger.h"
 #include "utils/ToggleSwitch.h"
 
@@ -110,6 +111,7 @@ namespace mcmloader
 			std::map<std::string, std::string> defaults;   // id -> value (settings.ini)
 			std::map<std::string, std::string> values;     // id -> value (defaults with the user INI over them)
 			std::unordered_map<std::string, std::string> translations;  // $KEY -> text, from the mod's own file
+			std::string translationsLanguage;  // the TextLanguage() they were read in; another means read them again
 			int controlCount = 0;
 			int phase2Count = 0;
 			// Main-thread only (SKSE tasks): the config script, resolved lazily after a game is loaded.
@@ -286,12 +288,22 @@ namespace mcmloader
 			return out;
 		}
 
+		std::string TextLanguage()
+		{
+			std::string language = Lower(strings::Language());
+			if (language.empty()) { language = Lower(strings::GameLanguageSetting()); }
+			return language.empty() ? std::string("english") : language;
+		}
+
+		// The language AMF shows first (2.1.1 - it used to read only the game's), then the game's, then English: a mod
+		// that ships no file for the picked language keeps the text it had.
 		Table LoadTranslations(const std::string& a_modName)
 		{
 			Table table;
-			std::string language = Lower(strings::GameLanguageSetting());
-			if (language.empty()) { language = "english"; }
-			for (const std::string& lang : { language, std::string("english") })
+			std::vector<std::string> order{ TextLanguage() };
+			if (std::string game = Lower(strings::GameLanguageSetting()); !game.empty() && game != order.front()) { order.push_back(game); }
+			if (order.back() != "english" && order.front() != "english") { order.push_back("english"); }
+			for (const std::string& lang : order)
 			{
 				const std::string path = "Interface\\Translations\\" + a_modName + "_" + lang + ".txt";
 				const std::wstring text = ReadUtf16Resource(path);
@@ -1567,7 +1579,7 @@ namespace mcmloader
 			{
 				int index = static_cast<int>(ParseInt(a_value));
 				const std::string current = (index >= 0 && index < static_cast<int>(a_c.options.size())) ? Translate(a_c.options[index]) : std::to_string(index);
-				if (ImGui::BeginCombo(imguiId.c_str(), current.c_str()))
+				if (theme::BeginComboTight(imguiId.c_str(), current.c_str()))
 				{
 					for (int i = 0; i < static_cast<int>(a_c.options.size()); ++i)
 					{
@@ -1582,7 +1594,7 @@ namespace mcmloader
 			case Kind::kMenu:
 			{
 				const std::string current = Translate(a_value);
-				if (ImGui::BeginCombo(imguiId.c_str(), current.c_str()))
+				if (theme::BeginComboTight(imguiId.c_str(), current.c_str()))
 				{
 					for (std::size_t i = 0; i < a_c.options.size(); ++i)
 					{
@@ -1692,6 +1704,14 @@ namespace mcmloader
 				std::scoped_lock lock(g_mutex);
 				if (a_mod >= g_mods.size() || a_page >= g_mods[a_mod]->pages.size()) { return; }
 				mod = g_mods[a_mod].get();
+				// The page's text follows a language change (2.1.1), read again here on the drawing thread under the lock
+				// every other reader takes. Entry and tab names keep the language they registered in: a menu's entry name
+				// is what the player's order and renames are keyed on.
+				if (Mod& owned = *g_mods[a_mod]; owned.translationsLanguage != TextLanguage())
+				{
+					owned.translations = LoadTranslations(owned.modName);
+					owned.translationsLanguage = TextLanguage();
+				}
 				values = mod->values;  // a copy: the page draws from a stable view while a set lands from another thread
 			}
 			const Page& page = mod->pages[a_page];
@@ -1836,6 +1856,7 @@ namespace mcmloader
 				std::none_of(mod->pages.begin(), mod->pages.end(), [](const Page& p) { return p.customContent; });
 
 			mod->translations = LoadTranslations(modName);
+			mod->translationsLanguage = TextLanguage();
 			mod->defaults = ReadIni(a_folder / "settings.ini");
 			mod->values = mod->defaults;
 			const fs::path userIni = fs::path("Data/MCM/Settings") / (modName + ".ini");
@@ -2363,6 +2384,7 @@ namespace mcmloader::detail
 	std::string StripTags(const std::string& a_s) { return ::mcmloader::StripTags(a_s); }
 	std::string KeyName(std::int32_t a_code) { return ::mcmloader::KeyName(a_code); }
 	Table LoadTranslations(const std::string& a_plugin) { return ::mcmloader::LoadTranslations(a_plugin); }
+	std::string TextLanguage() { return ::mcmloader::TextLanguage(); }
 	bool IsImported(const std::string& a_key)
 	{
 		std::scoped_lock lock(::mcmloader::g_importLock);

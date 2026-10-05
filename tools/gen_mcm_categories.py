@@ -87,7 +87,13 @@ AMF_RULES = [
     (r"Timing\s*is\s*Everything", "QuestsPlaces", "Timing is Everything - quest start levels"),
     (r"Wet\s*(and|&)\s*Cold", "WorldVisuals", "Wet and Cold - weather effects"),
     (r"Wet\s*Function", "WorldVisuals", "WetFunction Redux - wet skin"),
-    (r"\bASG\b|Grass", "WorldVisuals", "ASG Multithreaded - grass"),
+    # The owner's own placements, 2026-10-05 (McmSortLearned.txt; rule 67: a ruling is scoring material). ASG is
+    # Acquisitive Soul Gem Multithreaded - the earlier "grass" reading of it was a guess and was wrong.
+    (r"Acquisitive\s*Soul\s*Gem|\bASG\b", "MagicSkills", "ASG Multithreaded - soul gems (owner, 2026-10-05)"),
+    (r"\bGrass\b", "WorldVisuals", "grass mods"),
+    (r"\bOCPA\b|One\s*Click\s*Power\s*Attack", "Gameplay", "OCPA (owner, 2026-10-05)"),
+    (r"Read\s*the\s*Room", "Animation", "Read the Room (owner, 2026-10-05)"),
+    (r"Stendarr\s*Rising|Hall\s*of\s*the\s*Vigilant", "QuestsPlaces", "Stendarr Rising - Hall of the Vigilant (owner, 2026-10-05)"),
     (r"Dynamic\s*Looting", "Animation", "Dynamic Looting - loot animations"),
     (r"\bI[\s.]?C[\s.]?O[\s.]?W\b", "Gameplay", "I.C.O.W."),
     (r"\bP[\s.]?W[\s.]?E[\s.]?R\b", "Gameplay", "P.W.E.R"),

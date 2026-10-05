@@ -46,10 +46,17 @@ namespace personalization
 			return a_text;
 		}
 
+		// Constant-initialised, so the sort's registration at DLL load can never run before it exists.
+		SeparatorNameFilter g_separatorNameFilter = nullptr;
+
 		std::string DisplayNameLocked(const std::string& a_modName)
 		{
 			const auto it = g_alias.find(a_modName);
-			if (it != g_alias.end() && !it->second.empty()) { return it->second; }
+			if (it != g_alias.end() && !it->second.empty())
+			{
+				if (g_separatorNameFilter && IsSeparator(a_modName)) { return g_separatorNameFilter(it->second); }
+				return it->second;
+			}
 			// a separator always carries a name (the page names it on creation); this is only the fallback for a hand-edited INI
 			return IsSeparator(a_modName) ? std::string("Separator") : a_modName;
 		}
@@ -231,6 +238,12 @@ namespace personalization
 	bool IsSeparator(const std::string& a_name)
 	{
 		return a_name.rfind(kSeparatorPrefix, 0) == 0;
+	}
+
+	void SetSeparatorNameFilter(SeparatorNameFilter a_filter)
+	{
+		std::scoped_lock lock(g_lock);
+		g_separatorNameFilter = a_filter;
 	}
 
 	std::vector<DisplayEntry> Order(const std::vector<registry::Entry>& a_entries)

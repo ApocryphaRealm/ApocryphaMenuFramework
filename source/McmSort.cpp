@@ -274,6 +274,15 @@ namespace mcmloader
 			return std::size(kGroups);
 		}
 
+		// A category separator shows in the language picked (2.1.1): its stored name - English, or any name a sort made
+		// in the language of the day - is shown as the group's current name; a name the player typed is left alone.
+		std::string ShownSeparatorName(const std::string& a_stored)
+		{
+			const std::size_t g = GroupOfSeparator(a_stored);
+			return g < std::size(kGroups) ? GroupName(g) : a_stored;
+		}
+		const bool g_separatorFilterRegistered = (personalization::SetSeparatorNameFilter(&ShownSeparatorName), true);
+
 		void LearnFromLayout()
 		{
 			std::unordered_map<std::string, std::string> keyOf;   // entry -> import key, menus that come in only
@@ -376,7 +385,8 @@ namespace mcmloader
 				std::string id = FindSeparator(m.group);
 				if (id.empty())
 				{
-					id = personalization::AddSeparator(entries, "", GroupName(m.group));
+					// Stored by its English name (2.1.1) and shown in the language picked, through the filter below.
+					id = personalization::AddSeparator(entries, "", kGroups[m.group].english);
 					++result.separatorsMade;
 				}
 				sep = separatorOf.emplace(m.group, id).first;

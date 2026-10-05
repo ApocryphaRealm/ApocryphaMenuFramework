@@ -7,6 +7,7 @@
 #include "Registry.h"
 #include "Settings.h"
 #include "Strings.h"
+#include "Theme.h"
 #include "utils/Logger.h"
 #include "utils/ToggleSwitch.h"
 
@@ -94,6 +95,7 @@ namespace mcmloader::scripts
 			std::string modName;      // the ModName property, raw (may be a $key)
 			std::string entryName;    // the AMF entry
 			Table translations;
+			std::string translationsLanguage;  // the TextLanguage() they were read in
 			std::vector<std::string> pages;                  // Pages, raw, as last read
 			std::map<std::string, std::string> tabs;         // raw page -> registered tab name
 			ObjectPtr script;          // this game's config object (main thread writes; read under g_mutex)
@@ -967,7 +969,7 @@ namespace mcmloader::scripts
 			{
 				const std::string current = Tr(o.str);
 				ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.5f);
-				const bool open = ImGui::BeginCombo("##menu", current.c_str());
+				const bool open = theme::BeginComboTight("##menu", current.c_str());
 				HelpTooltip(a_mod, a_s, a_slot);
 				if (open)
 				{
@@ -1118,7 +1120,13 @@ namespace mcmloader::scripts
 			std::string plugin;
 			{
 				std::scoped_lock lock(g_mutex);
-				const SMod& mod = *g_mods[a_mod];
+				SMod& mod = *g_mods[a_mod];
+				// Follows a language change (2.1.1), read again on the drawing thread under the lock; see McmLoader.
+				if (const std::string lang = TextLanguage(); !mod.plugin.empty() && mod.translationsLanguage != lang)
+				{
+					mod.translations = LoadTranslations(mod.plugin);
+					mod.translationsLanguage = lang;
+				}
 				g_drawTable = &mod.translations;
 				plugin = mod.plugin;
 				if (mod.pages.empty() && a_rawPage.empty()) { page = -1; }
@@ -1285,6 +1293,7 @@ namespace mcmloader::scripts
 					mod->plugin = file ? std::filesystem::path(std::string(file->GetFilename())).stem().string() : std::string();
 					mod->modName = modName;
 					mod->translations = LoadTranslations(mod->plugin);
+					mod->translationsLanguage = TextLanguage();
 					mod->entryName = Tr(&mod->translations, modName);
 					if (mod->entryName.empty()) { mod->entryName = mod->plugin; }
 					mod->entryName += " (MCM)";

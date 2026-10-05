@@ -22,6 +22,9 @@ namespace mcmloader::detail
 	// Interface\Translations\<plugin>_<language>.txt (game language first, English as the fallback), read through the
 	// game's resource streams. Main thread, once per mod.
 	Table LoadTranslations(const std::string& a_plugin);
+	// The language a mod's own translation file is read in (2.1.1): the one AMF shows - picked on Appearance, or
+	// the game's - so a converted MCM page follows the framework's language when the mod ships that file.
+	std::string TextLanguage();
 
 	// A script variable by name through the type chain (MCM Helper's ScriptObject::GetVariable). Null when absent.
 	RE::BSScript::Variable* ScriptVar(const RE::BSTSmartPointer<RE::BSScript::Object>& a_object, std::string_view a_name);

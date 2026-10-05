@@ -21,6 +21,45 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## 2.1.1 - 2026-10-05 - untested - one menu key, text that fits, separators in your language
+
+Found in the 2026-10-05 Nexus banner reshoot (every page shot in game, Norden - Black, from the journal's SKSE MENUS row)
+and from the owner's notes on it. The owner: "go ahead and start fixing AMF".
+
+### Fixed
+- **Controls no longer cuts its text off** in the narrower window the SKSE MENUS row opens. The key column is as wide as
+  its widest key ("unbound", "Backspace", "Left stick left" were clipped to "unbour", "Backsp", "Left stick lef"), each
+  function's description wraps inside its column instead of running past it, and the note about reserved keys has a
+  line of its own instead of running off the pane beside the buttons.
+- **One place to set the menu key** (the owner: "there's duplicate entries for the menus toggle key ... There should
+  just be one"). Settings > General no longer has its own Menu toggle key / Rebind; Controls > Open and close the menu is
+  the one place. The "Window position: Centre" line beside it, which offered nothing to set, went with it.
+- **Category separators follow the language you pick** (the owner: "when you change the language, the separators did
+  not change their language"). The sort now stores a category separator by its English name and shows it in the
+  language AMF is showing, in the list, its folded count, Send to and the Menu list table. A separator you named
+  yourself shows exactly what you typed. Separators an earlier sort made in English follow the language too.
+- **Converted MCM pages follow the language you pick** when the mod ships a translation for it. A mod's own text was
+  read only in Skyrim's game language; it is now read in the language AMF shows, then the game's, then English, and
+  read again when you change the language. A menu's entry and tab names keep the language they registered in - the
+  entry name is what your order and renames are keyed on.
+- **Help is up to date** in all eleven languages: the SKSE MENUS row instead of "System -> Mod menus"; the menu key under
+  Controls; the bumpers and Page Up / Page Down walking the tabs; Theme and Font under Settings > Appearance; settings
+  kept in User.ini (the download never contains it), not the shipped INI; and the log level as `[Log] uLogLevel` in the
+  INI - there was never a Log level setting on the page.
+- **Dropdowns open without an empty band** above and below the list (Theme, Font, Language, Bring in from SkyUI, and
+  every dropdown on a converted MCM page). ImGui's list takes its padding from the window's, which the theme sizes for
+  the knotwork frame; dropdowns now open with the right-click menus' padding (`theme::BeginComboTight` / `ComboTight`).
+- **The rename and "Name this separator" boxes** lost the empty title strip across their top.
+
+### Changed
+- **The persistence test is hidden** (the owner: "we can hide the persistence test"). The developer's "Persistence test
+  (S10)" box at the bottom of Settings > General shows only at `[Log] uLogLevel=0`.
+- **The sort follows the owner's own placements** (rule 67, from his McmSortLearned.txt): ASG Multithreaded -> Magic and
+  Skills (it is Acquisitive Soul Gem Multithreaded - the earlier taught rule had read "ASG" as a grass mod), OCPA ->
+  Gameplay, Read the Room -> Animation, Stendarr Rising / Hall of the Vigilant -> Quests and Places. 35 taught rules,
+  163 in all (`tools/mcm_sort_check.bat`: rules ok 163 of 163).
+- Seven strings retired with the Settings menu key (eleven languages).
+
 ## 2.1.0 - 2026-10-05 - working - choose which MCM menus come in, and sort them into categories
 
 xLenax on the AMF page, 2026-10-04: with the MCM options off, the menus "still appear in the settings page, just not in

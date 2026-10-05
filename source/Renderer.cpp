@@ -952,36 +952,9 @@ namespace renderer
 				ImGui::Spacing();
 				ImGui::Spacing();
 
-				// Menu toggle-key rebinding, live (design decision, 2026-08-28: "a key binding function ...
-				// to change the key that opens and closes the menu"). Click Rebind, then the next
-				// key pressed becomes the toggle key (Escape cancels); capture runs in the input
-				// hook, so it works whether the menu is driven by keyboard or controller.
-				if (input::IsAwaitingRebind())
-				{
-					ImGui::TextUnformatted(TR("AMF_ToggleKeyPress", "Menu toggle key: press any key...  (Escape cancels)"));
-				}
-				else
-				{
-					if (values.toggleKey == 0x3B)
-					{
-						ImGui::TextUnformatted(TR("AMF_ToggleKeyF1", "Menu toggle key: F1"));
-					}
-					else
-					{
-						ImGui::Text(TR("AMF_ToggleKeyCode", "Menu toggle key: scan code %d"), values.toggleKey);
-					}
-					ImGui::SameLine();
-					if (ImGui::Button(TR("AMF_Rebind", "Rebind")))
-					{
-						input::BeginRebindToggleKey();
-					}
-				}
-				ImGui::TextWrapped("%s", TR("AMF_RebindHelp", "Click Rebind, then press the key you want to open and close the "
-								   "menu. In controller mode, the Start button also closes the menu."));
-				ImGui::Spacing();
-				ImGui::TextUnformatted(TR("AMF_WindowPosCentre", "Window position: Centre"));
-				ImGui::TextWrapped("%s", TR("AMF_PresetHelp", "Preset positions rather than free placement; more presets arrive "
-								   "in a later milestone."));
+				// The menu key is set in ONE place, Controls > Open and close the menu (the owner, 2026-10-05: "there's duplicate
+				// entries for the menus toggle key ... There should just be one"). The Rebind that sat here went in 2.1.1, with
+				// the "Window position: Centre" line beside it, a stub that offered nothing to set.
 
 				// WINDOW SIZE (2026-10-02: one centred window for both ways of opening - see the window code). The size is all
 				// that is remembered now; this is the way back to the default.
@@ -1013,22 +986,25 @@ namespace renderer
 
 				// Persistence-channel test harness (decisions doc S10) - lets the per-save round
 				// trip be exercised end to end (write, save, quit, reload, confirm) with no Papyrus
-				// compiler involved. Debug-only surface; not a real setting.
-
-				ImGui::TextUnformatted("Persistence test (S10)");
-				static char testBuffer[128] = "";
-				ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.7f);
-				ImGui::InputText("##persistValue", testBuffer, sizeof(testBuffer));
-				keyboard::NoteTextField(ImGui::GetItemID());
-				ImGui::SameLine();
-				if (ImGui::Button("Set"))
+				// compiler involved. Debug-only surface; not a real setting - so players never see it (the owner,
+				// 2026-10-05: "we can hide the persistence test"). It shows only at [Log] uLogLevel=0 (trace).
+				if (values.logLevel == 0)
 				{
-					persistence::SetValue("test-value", testBuffer);
+					ImGui::TextUnformatted("Persistence test (S10)");
+					static char testBuffer[128] = "";
+					ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.7f);
+					ImGui::InputText("##persistValue", testBuffer, sizeof(testBuffer));
+					keyboard::NoteTextField(ImGui::GetItemID());
+					ImGui::SameLine();
+					if (ImGui::Button("Set"))
+					{
+						persistence::SetValue("test-value", testBuffer);
+					}
+					ImGui::Text("Currently stored: \"%s\"", persistence::GetValue("test-value", "<unset>").c_str());
+					ImGui::TextWrapped("Set a value, save the game, quit, reload the same save - the "
+									   "value should still be here. A DIFFERENT save should show <unset>.");
 				}
-				ImGui::Text("Currently stored: \"%s\"", persistence::GetValue("test-value", "<unset>").c_str());
-				ImGui::TextWrapped("Set a value, save the game, quit, reload the same save - the "
-								   "value should still be here. A DIFFERENT save should show <unset>.");
-		
+
 				ImGui::EndTabItem();
 			}
 
@@ -1061,7 +1037,7 @@ namespace renderer
 				}
 
 				ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
-				if (ImGui::Combo(TR("AMF_Theme", "Theme"), &currentIndex, names.data(), static_cast<int>(names.size())))
+				if (theme::ComboTight(TR("AMF_Theme", "Theme"), &currentIndex, names.data(), static_cast<int>(names.size())))
 				{
 					theme::SetActiveTheme(themes[currentIndex].id);
 					theme::Apply();
@@ -1087,7 +1063,7 @@ namespace renderer
 						if (g_fontChoices[i].path == values.fontPath) { current = static_cast<int>(i); }
 					}
 					ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
-					if (!labels.empty() && ImGui::Combo(TR("AMF_Font", "Font"), &current, labels.data(), static_cast<int>(labels.size())))
+					if (!labels.empty() && theme::ComboTight(TR("AMF_Font", "Font"), &current, labels.data(), static_cast<int>(labels.size())))
 					{
 						values.fontPath = g_fontChoices[current].path;
 						settings::Save();
@@ -1119,7 +1095,7 @@ namespace renderer
 					const std::string& forced = settings::Get().language;
 					for (std::size_t i = 0; i < s_langs.size(); ++i) { if (!forced.empty() && s_langs[i] == forced) { current = static_cast<int>(i) + 1; } }
 					ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
-					if (ImGui::Combo(TR("AMF_Language", "Language"), &current, cLabels.data(), static_cast<int>(cLabels.size())))
+					if (theme::ComboTight(TR("AMF_Language", "Language"), &current, cLabels.data(), static_cast<int>(cLabels.size())))
 					{
 						strings::SetLanguage(current == 0 ? "" : s_langs[static_cast<std::size_t>(current - 1)]);
 					}
@@ -1218,7 +1194,7 @@ namespace renderer
 						const bool anyLeft = imported < static_cast<int>(rows.size());
 						ImGui::SetNextItemWidth(ImGui::GetFontSize() * 18.0f);
 						if (!anyLeft) { ImGui::BeginDisabled(); }
-						if (ImGui::BeginCombo(TR("AMF_McmBringIn", "Bring in from SkyUI"),
+						if (theme::BeginComboTight(TR("AMF_McmBringIn", "Bring in from SkyUI"),
 								anyLeft ? TR("AMF_McmBringInPick", "Pick a menu...") : TR("AMF_McmBringInNone", "Every MCM menu is already here")))
 						{
 							for (const auto& r : rows)
@@ -1635,7 +1611,8 @@ namespace renderer
 					if (buffer == aliasBuffers.end())
 					{
 						std::array<char, 64> fresh{};
-						const std::string alias = personalization::GetAlias(row.modName);
+						// A separator starts from the name it shows (2.1.1: a category's name in the language picked).
+						const std::string alias = row.separator ? row.displayName : personalization::GetAlias(row.modName);
 						std::snprintf(fresh.data(), fresh.size(), "%s", alias.c_str());
 						buffer = aliasBuffers.emplace(row.modName, fresh).first;
 					}
@@ -1703,8 +1680,18 @@ namespace renderer
 				{
 					return;
 				}
+				// The key column is as wide as its widest entry (2.1.1): stretched by proportion, it clipped to "unbour",
+				// "Backsp" and "Left stick lef" in the narrower window the journal's SKSE MENUS row opens.
+				float boundWidth = ImGui::CalcTextSize(TR("AMF_ColBoundTo", "Bound to")).x;
+				for (int i = 0; i < static_cast<int>(bindings::Action::kCount); ++i)
+				{
+					const auto action = static_cast<bindings::Action>(i);
+					const std::string bound = a_gamepadSide ? bindings::PadText(action) : bindings::KeyText(action);
+					boundWidth = (std::max)(boundWidth, ImGui::CalcTextSize(bound.c_str()).x);
+				}
 				ImGui::TableSetupColumn(TR("AMF_ColFunction", "Function"));
-				ImGui::TableSetupColumn(TR("AMF_ColBoundTo", "Bound to"));
+				ImGui::TableSetupColumn(TR("AMF_ColBoundTo", "Bound to"), ImGuiTableColumnFlags_WidthFixed,
+										boundWidth + ImGui::GetStyle().CellPadding.x * 2.0f);
 				ImGui::TableSetupColumn("##rebind", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFontSize() * 13.0f);
 				ImGui::TableHeadersRow();
 
@@ -1718,7 +1705,10 @@ namespace renderer
 					ImGui::TextUnformatted(bindings::Label(action));
 					if (const char* help = bindings::Description(action); help && help[0])
 					{
-						ImGui::TextDisabled("%s", help);
+						// Wrapped inside the column (2.1.1) - TextDisabled ran on past the cell and was cut mid-sentence.
+						ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+						ImGui::TextWrapped("%s", help);
+						ImGui::PopStyleColor();
 					}
 
 					ImGui::TableSetColumnIndex(1);
@@ -1808,8 +1798,10 @@ namespace renderer
 				bindings::ResetToDefaults();
 				settings::Save();
 			}
-			ImGui::SameLine();
-			ImGui::TextDisabled("%s", TR("AMF_BindNote", "Reserved keys are refused, and two functions that can be used at the same time cannot share a control."));
+			// Its own wrapped line (2.1.1): beside the buttons it ran off the pane's edge.
+			ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+			ImGui::TextWrapped("%s", TR("AMF_BindNote", "Reserved keys are refused, and two functions that can be used at the same time cannot share a control."));
+			ImGui::PopStyleColor();
 			(void)values;
 		}
 
@@ -1844,8 +1836,7 @@ namespace renderer
 			{
 				ImGui::Spacing();
 				ImGui::SeparatorText(TR("AMF_ManOpening", "Opening and closing the menu"));
-				para(TR("AMF_ManOpening1", "Press F1 to open the menu and F1 again to close it. Escape closes it too. The key "
-						"is yours to change: Settings -> Menu toggle key -> Rebind, then press the key you want."));
+				para(TR("AMF_ManOpening1", "Press F1 to open the menu and F1 again to close it. Escape closes it too. The key is yours to change: Controls -> Open and close the menu -> Rebind, then press the key you want."));
 				para(TR("AMF_ManOpening2", "On a controller, Start closes the menu. There is no controller button that opens it - "
 						"open it from the journal instead: press Start, go to the System tab, and choose the "
 						"SKSE MENUS row. That row can be turned off under Settings if you would rather not have it."));
@@ -1859,9 +1850,7 @@ namespace renderer
 				bullet(TR("AMF_ManMoving3", "Controller: the D-pad and the left stick move the highlight, A activates, B goes back. "
 						  "Take hold of a slider with A and the RIGHT stick moves it, so adjusting a value never "
 						  "also moves the highlight."));
-				bullet(TR("AMF_ManMoving4", "Left and right cross between the list and the page beside it. Tabs at the top of a page "
-						  "are reached by moving the highlight onto the tab itself - moving sideways never changes "
-						  "the tab under you."));
+				bullet(TR("AMF_ManMoving4", "Left and right cross between the list and the page beside it. The bumpers - Page Up and Page Down on a keyboard - step through the tabs at the top of a page; moving sideways never changes the tab under you."));
 				bullet(TR("AMF_ManMoving6", "Right-click a mod in the list, or press Y on a controller, for its options."));
 				ImGui::Spacing();
 				para(TR("AMF_ManMoving5", "The menu follows whatever you last used: touch the pad and it switches to controller "
@@ -1897,9 +1886,8 @@ namespace renderer
 						"type into: put 3 in a row's number and it moves there, and everything else re-flows around it."));
 
 				ImGui::SeparatorText(TR("AMF_ManLook", "How it looks"));
-				bullet(TR("AMF_ManLook1", "Theme: Skyrim is the Nordic knotwork frame; the others are plainer. Settings -> Theme."));
-				bullet(TR("AMF_ManLook2", "Font: drop a .ttf into Data/SKSE/Plugins/ApocryphaMenuFramework/fonts and pick it under "
-						  "Settings -> Font."));
+				bullet(TR("AMF_ManLook1", "Theme: Skyrim is the Nordic knotwork frame; the others are plainer. Settings -> Appearance -> Theme."));
+				bullet(TR("AMF_ManLook2", "Font: drop a .ttf into Data/SKSE/Plugins/ApocryphaMenuFramework/fonts and pick it under Settings -> Appearance -> Font."));
 				bullet(TR("AMF_ManLook3", "Text size scales on top of the automatic resolution scale, so the menu reads the same on "
 						  "a 1080p screen and a 4K one."));
 				bullet(TR("AMF_ManLook4", "Language: the framework's own text follows the game's language unless you force one."));
@@ -1915,9 +1903,7 @@ namespace renderer
 								   "the game's own: tabs across the top, a list down the side, and the "
 								   "selected entry's options here."));
 				ImGui::Spacing();
-				ImGui::TextWrapped("%s", TR("AMF_Help2", "Mod settings live under System -> Mod menus, the same place SkyUI puts Mod "
-								   "Configuration. Framework options are under System -> Settings, and key "
-								   "bindings under System -> Controls."));
+				ImGui::TextWrapped("%s", TR("AMF_Help2", "Open this menu from the SKSE MENUS row in the journal's System tab, or with its key. The framework's own options are under Settings, and the keys that drive it under Controls."));
 				ImGui::Spacing();
 				para(TR("AMF_ReadmeWhat", "It is one menu for every mod that asks for one. A mod does not have to know anything "
 						"about this framework's look, its themes or its controller support - it hands over its "
@@ -1927,9 +1913,7 @@ namespace renderer
 				para(TR("AMF_ReadmeAuthors", "For mod authors: the framework exports a C API and a single header. Register a section, "
 						"add pages to it, draw them with the ImGui calls the header wraps, and the menu does the "
 						"rest - layout, theme, font, translation, keyboard, controller and the on-screen keyboard."));
-				para(TR("AMF_ReadmeFiles", "Settings are kept in Data/SKSE/Plugins/ApocryphaMenuFramework.ini, beside the plugin, and "
-						"everything on the Settings page writes to it. The log is in "
-						"Documents/My Games/Skyrim Special Edition/SKSE/."));
+				para(TR("AMF_ReadmeFiles", "Your settings are kept in Data/SKSE/Plugins/ApocryphaMenuFramework/User.ini, a file the download never contains, so an update keeps them; ApocryphaMenuFramework.ini beside the plugin holds the defaults. The log is in Documents/My Games/Skyrim Special Edition/SKSE/."));
 				ImGui::EndTabItem();
 			}
 
@@ -1938,15 +1922,13 @@ namespace renderer
 				ImGui::Spacing();
 				bullet(TR("AMF_ManTrouble1", "A mod's page is missing: the mod has not registered one, or it needs a newer framework "
 						  "than the one installed. Its own log will say."));
-				bullet(TR("AMF_ManTrouble2", "The menu will not open: something else may have taken F1. Rebind it under Settings, or "
-						  "open the menu from the journal's System tab instead."));
+				bullet(TR("AMF_ManTrouble2", "The menu will not open: something else may have taken F1. Rebind it under Controls, or open the menu from the journal's System tab instead."));
 				bullet(TR("AMF_ManTrouble3", "A key does nothing inside the menu: another mod may be claiming it. The framework's log "
 						  "names the device and key whenever that happens."));
 				bullet(TR("AMF_ManTrouble5", "Text boxes take no typing: update the framework. Before 1.9.5 the engine was never asked "
 						  "to turn key presses into characters while the menu was up."));
 				ImGui::Spacing();
-				para(TR("AMF_ManTrouble4", "The log is at Documents/My Games/Skyrim Special Edition/SKSE/ApocryphaMenuFramework.log. "
-						"Settings -> Log level decides how much it writes."));
+				para(TR("AMF_ManTrouble4", "The log is at Documents/My Games/Skyrim Special Edition/SKSE/ApocryphaMenuFramework.log. uLogLevel under [Log] in the INI decides how much it writes: 0 writes the most."));
 				ImGui::EndTabItem();
 			}
 
@@ -2638,7 +2620,8 @@ namespace renderer
 					ImGui::OpenPopup("##amf_rename");
 					g_renameOpenPending = false;
 				}
-				if (ImGui::BeginPopupModal("##amf_rename", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+				// No title bar (2.1.1): the id has no visible title, so the bar was an empty strip above the box.
+				if (ImGui::BeginPopupModal("##amf_rename", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar))
 				{
 					const bool renamingSeparator = personalization::IsSeparator(g_renameTarget);
 					ImGui::TextUnformatted(renamingSeparator ? TR("AMF_SeparatorNameTitle", "Name this separator")

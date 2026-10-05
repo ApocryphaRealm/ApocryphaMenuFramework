@@ -64,6 +64,13 @@ namespace personalization
 	inline constexpr const char* kSeparatorPrefix = "::sep:";
 	bool IsSeparator(const std::string& a_name);
 
+	// What a separator's stored name shows as (2.1.1). The MCM sort registers one so its category separators follow
+	// the language picked (the owner, 2026-10-05: "when you change the language, the separators did not change their
+	// language"); a name the player typed comes back unchanged. Called with the list's lock held - it must not call
+	// back into this module.
+	using SeparatorNameFilter = std::string (*)(const std::string& a_storedName);
+	void SetSeparatorNameFilter(SeparatorNameFilter a_filter);
+
 	// The list the menu draws, in display order, one row per registered mod.
 	std::vector<DisplayEntry> Order(const std::vector<registry::Entry>& a_entries);
 
