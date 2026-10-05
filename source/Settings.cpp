@@ -720,7 +720,9 @@ namespace settings
 		return names;
 	}
 
-	bool SaveLayoutPreset(const std::string& a_name)
+	bool SaveLayoutPreset(const std::string& a_name) { return SaveLayoutPresetFrom(a_name, personalization::IniBlock()); }
+
+	bool SaveLayoutPresetFrom(const std::string& a_name, const std::string& a_iniBlock)
 	{
 		const std::string name = PresetFileName(a_name);
 		if (name.empty()) { return false; }
@@ -735,7 +737,7 @@ namespace settings
 		}
 		file << "; ApocryphaRealm Menu Framework - a saved menu-list layout (order, separators, favourites, renames).\n"
 				"; Load it from Framework Settings > Menu list > Layout presets.\n";
-		file << personalization::IniBlock();
+		file << a_iniBlock;
 		logger::info("presets: the menu list was saved as \"{}\" ({})", name, path);
 		return true;
 	}

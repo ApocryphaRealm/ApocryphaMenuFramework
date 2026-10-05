@@ -21,11 +21,14 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
-## Unreleased - choose which MCM menus come in
+## Unreleased - choose which MCM menus come in, and sort them into categories
 
 xLenax on the AMF page, 2026-10-04: with the MCM options off, the menus "still appear in the settings page, just not in
 the actual Menu", and "I'd like to have an option to choose which MCMs I'd like to import instead of importing all of
 them or None" - with about 200 MCMs, wanting only the few in regular use.
+
+The owner, 2026-10-05, for the same release: "an auto sort function which sorted the imported menus into categories,
+sort of like our mod manager plugin but built into AMF. And it can just sort by name, it doesn't have to be perfect."
 
 ### Added
 - **Choose which MCM menus appear here.** A folded section under the MCM switches on the settings page lists every menu
@@ -42,7 +45,27 @@ them or None" - with about 200 MCMs, wanting only the few in regular use.
   - set {key, on}: one menu;
   - all {on}: every menu;
   - new {on}: the default for menus not chosen by hand.
-- 10 new strings, in all eleven languages.
+- **Sort MCM menus into categories** (settings page, under the MCM menu choice). Each MCM menu that comes in goes under a
+  Menu-list separator for its kind: Interface, Controls, Camera, Combat, Animation, Magic and Skills, Characters and
+  Bodies, NPCs Followers and Creatures, Audio, Quests and Places, World and Visuals, Gameplay, Utilities and Fixes, or
+  Other when nothing matches.
+  - A menu is judged by its name only: its entry name plus its mod or plugin name, each whole and with joined words
+    split ("TrueHUD" is also read as "True HUD"). The name rules are MO2 Modlist Manager's, generated into
+    `source/McmCategoryRules.inc` by `tools/gen_mcm_categories.py` (128 rules). `tools/try_mcm_categories.py` and
+    `tools/mcm_sort_check.bat` run the same steps on a list of names, in Python and under MSVC's regex.
+  - It only rearranges. No menu is hidden or removed, and only menus that come in are moved.
+  - A separator with that name already in the list (the shown name or the English one, any letter case) is reused, so a
+    second run makes none.
+  - A menu already under any separator stays where it is, whether the player put it there or an earlier sort did, so
+    running it again changes nothing. **Re-sort all** sorts those too.
+  - **Undo the sort.** The order from before a sort that changed anything is saved as the layout preset "Before MCM
+    sort". The button loads it, then deletes it. It is also listed with the other layout presets.
+- DevBench `amf.mcm op=sort`:
+  - action preview: the category each menu would get;
+  - run / all: sort (all = Re-sort all);
+  - undo: restore.
+  - Every action also returns the Menu list's separators with their menus.
+- 32 new strings, in all eleven languages.
 
 ### Fixed
 - **The Menu list on the settings page no longer shows entries that have nothing to show.** That covers an MCM loader

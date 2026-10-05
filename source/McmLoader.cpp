@@ -2009,6 +2009,7 @@ namespace mcmloader
 
 		json out;
 		if (op == "skyui") { return scripts::ToolJson(a_argsJson); }  // phase 3: script-only SkyUI menus
+		if (op == "sort") { return SortToolJson(a_argsJson); }      // the auto-sort into separators (McmSort.cpp)
 		if (op == "import")
 		{
 			// the settings page's import list, the same calls: action list | set {key,on} | all {on} | new {on}

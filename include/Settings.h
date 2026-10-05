@@ -174,6 +174,8 @@ namespace settings
 	// and - _ ' ( ); loading one replaces the current layout and saves it as the player's.
 	std::vector<std::string> ListLayoutPresets();
 	bool SaveLayoutPreset(const std::string& a_name);
+	// The same file from a layout taken earlier (personalization::IniBlock()): the MCM sort keeps the order from before it.
+	bool SaveLayoutPresetFrom(const std::string& a_name, const std::string& a_iniBlock);
 	bool LoadLayoutPreset(const std::string& a_name);
 	bool DeleteLayoutPreset(const std::string& a_name);
 }

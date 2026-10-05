@@ -301,6 +301,22 @@ namespace renderer
 		// Layout presets (2.0.3): the name being typed, and the last action's result for a few seconds.
 		char g_presetName[64] = {};
 		char g_mcmImportFilter[64] = {};  // the settings page's filter over the MCM import list
+		std::string g_mcmSortStatus;      // the last MCM sort's one-line result under its buttons
+
+		std::string FormatSortStatus(const mcmloader::SortResult& a_r)
+		{
+			char line[256];
+			if (!a_r.changed)
+			{
+				snprintf(line, sizeof(line), "%s", TR("AMF_McmSortNothing", "Nothing changed - the MCM menus are already sorted."));
+			}
+			else
+			{
+				snprintf(line, sizeof(line), TR("AMF_McmSortDone", "Sorted: %d menus moved, %d separators made, %d left where you put them."),
+					a_r.moved, a_r.separatorsMade, a_r.kept);
+			}
+			return line;
+		}
 		std::string g_presetStatus;
 		double g_presetStatusAt = 0.0;
 
@@ -974,6 +990,34 @@ namespace renderer
 					}
 					ImGui::TreePop();
 				}
+
+				// Sort them into categories (the owner, 2026-10-05: "an auto sort function which sorted the imported menus
+				// into categories, sort of like our mod manager plugin but built into AMF"). Only rearranges; undoable.
+				if (ImGui::Button(TR("AMF_McmSort", "Sort MCM menus into categories")))
+				{
+					const auto r = mcmloader::SortIntoCategories(false);
+					g_mcmSortStatus = FormatSortStatus(r);
+				}
+				ImGui::SameLine();
+				if (ImGui::Button(TR("AMF_McmSortAll", "Re-sort all")))
+				{
+					const auto r = mcmloader::SortIntoCategories(true);
+					g_mcmSortStatus = FormatSortStatus(r);
+				}
+				if (mcmloader::CanRestoreBeforeSort())
+				{
+					ImGui::SameLine();
+					if (ImGui::Button(TR("AMF_McmSortUndo", "Undo the sort")))
+					{
+						g_mcmSortStatus = mcmloader::RestoreBeforeSort() ? TR("AMF_McmSortUndone", "The menu list is back to its order from before the sort.")
+																		 : TR("AMF_McmSortUndoFailed", "The order from before the sort could not be read.");
+					}
+				}
+				ImGui::TextWrapped("%s", TR("AMF_McmSortHelp", "Puts each MCM menu in this menu under a separator for its kind - Interface, "
+								   "Combat, Camera and so on - judged by its name; a menu with no match goes under Other. Nothing is hidden "
+								   "or removed. A menu you already put under a separator stays there; Re-sort all sorts those too. Undo puts "
+								   "the list back as it was before the last sort."));
+				if (!g_mcmSortStatus.empty()) { ImGui::TextDisabled("%s", g_mcmSortStatus.c_str()); }
 			}
 			ImGui::Spacing();
 

@@ -56,6 +56,31 @@ namespace mcmloader
 	void SetMenuImported(const std::string& a_key, bool a_on);
 	void SetImportNew(bool a_on);
 
+	// The MCM auto-sort (the owner, 2026-10-05: "an auto sort function which sorted the imported menus into categories,
+	// sort of like our mod manager plugin but built into AMF. And it can just sort by name, it doesn't have to be
+	// perfect"). McmSort.cpp. Every imported MCM menu goes under a menu-list separator named for its kind, judged by its
+	// name with MO2 Modlist Manager's name rules (McmCategoryRules.inc); no vote is "Other". It only rearranges: no menu
+	// is hidden or removed. A separator of that name is reused, so a second run makes none. a_all false leaves a menu
+	// already under ANY separator where it is (the player put it there, or an earlier sort did - so a re-run is a no-op);
+	// true sorts those too. The order from before a sort that changed anything is kept as the layout preset
+	// kMcmSortUndoPreset, which RestoreBeforeSort loads (and then deletes).
+	inline constexpr const char* kMcmSortUndoPreset = "Before MCM sort";
+	struct SortResult
+	{
+		int moved = 0;              // menus that changed place
+		int kept = 0;               // menus left where they were (already under a separator, a_all false)
+		int separatorsMade = 0;
+		bool changed = false;       // the list differs from before (the undo preset was written)
+		std::vector<std::pair<std::string, std::string>> placed;   // (entry, separator name) for each menu sorted
+	};
+	SortResult SortIntoCategories(bool a_all);
+	// The category one entry would go to: its separator's shown name (translated). a_key is the import key.
+	std::string CategoryFor(const std::string& a_key, const std::string& a_entry);
+	bool CanRestoreBeforeSort();
+	bool RestoreBeforeSort();
+	// DevBench amf.mcm op=sort: action preview | run | all | undo, and the menu list's separators with their menus.
+	std::string SortToolJson(const std::string& a_argsJson);
+
 	// Every frame, right after ImGui::NewFrame: sends OnConfigClose to the mod whose entry stopped being drawn
 	// (SkyUI's lifecycle - TrueHUD, True Directional Movement and Precision apply their settings in OnConfigClose).
 	void Frame();
