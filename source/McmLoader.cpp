@@ -123,7 +123,33 @@ namespace mcmloader
 		};
 
 		std::mutex g_mutex;                      // guards every Mod's values/script fields read off the main thread
-		std::vector<std::unique_ptr<Mod>> g_mods; // never shrinks after Load, so indices captured by pages stay valid
+		// Filled ONCE: Load() reads and registers into its own list and publishes it here under g_mutex in one move, so the
+		// vector never grows while another thread walks it (Main Agent's review, 2026-10-05: Load() from the settings page
+		// used to push_back here while a SkyUI-list pass walked it on the main thread). Never shrinks, so indices captured
+		// by pages stay valid. Code that walks it off the loading thread takes ModsView().
+		std::vector<std::unique_ptr<Mod>> g_mods;
+
+		// What the walkers need of each MCM Helper mod, copied under g_mutex.
+		struct ModView
+		{
+			std::size_t index;
+			std::string modName;
+			std::string entryName;
+			std::vector<std::string> pageNames;
+			bool hideable;
+		};
+		std::vector<ModView> ModsView()
+		{
+			std::scoped_lock lock(g_mutex);
+			std::vector<ModView> view;
+			view.reserve(g_mods.size());
+			for (std::size_t m = 0; m < g_mods.size(); ++m)
+			{
+				const Mod& mod = *g_mods[m];
+				view.push_back({ m, mod.modName, mod.entryName, mod.pageNames, mod.hideable });
+			}
+			return view;
+		}
 		std::vector<std::pair<std::string, std::string>> g_skipped;  // mod, reason
 		std::atomic<bool> g_loaded{ false };
 
@@ -1049,22 +1075,39 @@ namespace mcmloader
 		bool g_passAgain = false;
 		std::chrono::steady_clock::time_point g_passStarted{};
 		int g_busyPasses = 0;  // consecutive passes that ended with something SkyUI did not take
+		// A load starts a new generation (Main Agent's review, 2026-10-05). A load drops Papyrus calls in flight, so a pass
+		// started just before one never finished: g_passRunning stayed true, the give-back passes after the load only set
+		// "again", and nothing asked again after the 60 s override - "hide off, then load at once" left AMF-hidden menus out
+		// of SkyUI until the next switch change. Now OnGameLoaded clears the state and bumps this; a pass task queued before
+		// the load does not run, and a late finish from the old pass is ignored.
+		unsigned g_passGeneration = 0;
 
-		void RunPass();
+		void RunPass(unsigned a_generation);
 
-		void StartPassTask()
+		void StartPassTask(unsigned a_generation)
 		{
 			if (const auto tasks = SKSE::GetTaskInterface())
 			{
-				tasks->AddTask([]() { RunPass(); });
+				tasks->AddTask([a_generation]() { RunPass(a_generation); });
 				return;
 			}
 			std::scoped_lock l(g_passLock);
+			if (a_generation == g_passGeneration) { g_passRunning = false; }
+		}
+
+		void ResetPassForLoad()
+		{
+			std::scoped_lock l(g_passLock);
+			if (g_passRunning) { logger::info("MCM loader: a SkyUI-list pass was running when a game was loaded - it is dropped"); }
+			++g_passGeneration;
 			g_passRunning = false;
+			g_passAgain = false;
+			g_busyPasses = 0;
 		}
 
 		void RequestPass()
 		{
+			unsigned generation = 0;
 			{
 				std::scoped_lock l(g_passLock);
 				if (g_passRunning && std::chrono::steady_clock::now() - g_passStarted < std::chrono::seconds(60))
@@ -1075,19 +1118,25 @@ namespace mcmloader
 				if (g_passRunning) { logger::warn("MCM loader: a SkyUI-list pass has not finished after 60 s - starting a new one"); }
 				g_passRunning = true;
 				g_passStarted = std::chrono::steady_clock::now();
+				generation = g_passGeneration;
 			}
-			StartPassTask();
+			StartPassTask(generation);
 		}
 
 		// Any thread, exactly once per pass. The next pass when one was asked for meanwhile; otherwise, when SkyUI did not take
 		// something (busy while its Journal is open, a list that is full, a call that never ran), another pass in 3 s - for up
 		// to 200 such passes in a row (10 minutes).
-		void FinishPass(bool a_busy)
+		void FinishPass(bool a_busy, unsigned a_generation)
 		{
 			bool again = false;
 			int busyPasses = 0;
 			{
 				std::scoped_lock l(g_passLock);
+				if (a_generation != g_passGeneration)
+				{
+					logger::info("MCM loader: a SkyUI-list pass from before the last load finished late - ignored");
+					return;
+				}
 				g_busyPasses = a_busy ? g_busyPasses + 1 : 0;
 				busyPasses = g_busyPasses;
 				again = g_passAgain;
@@ -1100,7 +1149,7 @@ namespace mcmloader
 					std::scoped_lock l(g_passLock);
 					g_passStarted = std::chrono::steady_clock::now();
 				}
-				StartPassTask();
+				StartPassTask(a_generation);
 				return;
 			}
 			if (!a_busy) { return; }
@@ -1216,8 +1265,16 @@ namespace mcmloader
 		// list itself (CheckInSkyUIList, whichever manager keeps it), never from the call's return value. A config SkyUI
 		// never registered (discovery also finds those - late, past 128, or under MCM Unlocked) is "already out" and not
 		// AMF's: nothing is sent for it.
-		void RunPass()
+		void RunPass(unsigned a_generation)
 		{
+			{
+				std::scoped_lock l(g_passLock);
+				if (a_generation != g_passGeneration)
+				{
+					logger::info("MCM loader: a SkyUI-list pass queued before the last load was dropped");
+					return;
+				}
+			}
 			const bool hide = settings::Get().hideMcmInSkyUI;
 			const bool hideHelper = hide && settings::Get().loadMcmHelperConfigs;
 			const bool hideScripts = hide && settings::Get().loadSkyUIScriptMenus;
@@ -1227,7 +1284,7 @@ namespace mcmloader
 			if (!vm || !manager)
 			{
 				logger::info("MCM loader: SkyUI's config manager is not running yet - SkyUI's list left as it is for now");
-				FinishPass(false);
+				FinishPass(false, a_generation);
 				return;
 			}
 			// The parameter is SKI_ConfigBase, and a call dispatched from here is NOT upcast: the mod's own script type was
@@ -1237,7 +1294,7 @@ namespace mcmloader
 			if (!vm->GetScriptObjectType("SKI_ConfigBase", baseInfo) || !baseInfo)
 			{
 				logger::warn("MCM loader: SKI_ConfigBase is not a loaded script type - SkyUI's list left as it is");
-				FinishPass(false);
+				FinishPass(false, a_generation);
 				return;
 			}
 			const auto baseType = baseInfo->GetRawType();
@@ -1252,16 +1309,18 @@ namespace mcmloader
 				std::function<void(bool)> setHidden;
 			};
 			std::vector<Target> targets;
-			for (std::size_t m = 0; m < g_mods.size(); ++m)
+			const std::vector<ModView> mods = ModsView();
+			for (const ModView& mod : mods)
 			{
-				if (!g_mods[m]->hideable) { continue; }
-				const std::string key = "mcmhelper|" + g_mods[m]->modName;
+				if (!mod.hideable) { continue; }
+				const std::size_t m = mod.index;
+				const std::string key = "mcmhelper|" + mod.modName;
 				const bool hideThis = hideHelper && detail::IsImported(key);  // a menu not imported here is SkyUI's
 				if (!hideThis && !InLedger(key)) { continue; }  // not hidden by AMF: SkyUI's list is not ours to change
 				auto config = EnsureScript(m);
 				if (!config) { continue; }
 				const auto name = config->GetProperty("ModName");
-				targets.push_back({ config, name && name->IsString() ? std::string(name->GetString()) : g_mods[m]->modName, key, hideThis,
+				targets.push_back({ config, name && name->IsString() ? std::string(name->GetString()) : mod.modName, key, hideThis,
 					[m](bool a_hidden) {
 						{
 							std::scoped_lock lock(g_mutex);
@@ -1276,7 +1335,7 @@ namespace mcmloader
 			{
 				if (key.rfind("mcmhelper|", 0) != 0) { continue; }
 				const std::string modName = key.substr(10);
-				if (std::any_of(g_mods.begin(), g_mods.end(), [&](const auto& m) { return m->modName == modName; })) { continue; }
+				if (std::any_of(mods.begin(), mods.end(), [&](const ModView& m) { return m.modName == modName; })) { continue; }
 				RE::FormID questId = 0;
 				auto config = FindConfigScript(modName, questId);
 				if (!config) { continue; }
@@ -1299,8 +1358,8 @@ namespace mcmloader
 			};
 			auto state = std::make_shared<PassState>();
 			state->left.store(static_cast<int>(targets.size()) + 1);
-			auto done = [state]() {
-				if (state->left.fetch_sub(1) == 1) { FinishPass(state->busy.load()); }
+			auto done = [state, a_generation]() {
+				if (state->left.fetch_sub(1) == 1) { FinishPass(state->busy.load(), a_generation); }
 			};
 
 			// The call for one target, its outcome judged from the list afterwards (VM thread when the call returns).
@@ -1696,7 +1755,7 @@ namespace mcmloader
 			g_skipped.emplace_back(a_mod, a_reason);
 		}
 
-		void LoadOne(const fs::path& a_folder)
+		void LoadOne(const fs::path& a_folder, std::vector<std::unique_ptr<Mod>>& a_into)
 		{
 			const std::string modName = a_folder.filename().string();
 			const fs::path configPath = a_folder / "config.json";
@@ -1786,27 +1845,27 @@ namespace mcmloader
 			logger::debug("MCM loader: {} - {} page(s), {} control(s) ({} phase 2), {} default(s), {} user value(s)",
 				modName, mod->pages.size(), mod->controlCount, mod->phase2Count, mod->defaults.size(), user.size());
 
-			std::scoped_lock lock(g_mutex);
-			g_mods.push_back(std::move(mod));
+			a_into.push_back(std::move(mod));   // Load()'s own list - published to g_mods in one move
 		}
 
 		// Every MCM Helper entry's pages shown exactly when its loader is on and the menu is imported.
 		void ApplyHelperVisibility()
 		{
 			const bool on = settings::Get().loadMcmHelperConfigs;
-			for (const auto& mod : g_mods)
+			for (const auto& mod : ModsView())
 			{
-				const bool show = on && detail::IsImported("mcmhelper|" + mod->modName);
-				for (const auto& page : mod->pageNames) { registry::SetPageVisible(mod->entryName.c_str(), page.c_str(), show); }
+				const bool show = on && detail::IsImported("mcmhelper|" + mod.modName);
+				for (const auto& page : mod.pageNames) { registry::SetPageVisible(mod.entryName.c_str(), page.c_str(), show); }
 			}
 		}
 
-		void RegisterPages()
+		// Before the publish: a page drawn in between finds a_mod past g_mods' end (under g_mutex) and draws nothing.
+		void RegisterPages(std::vector<std::unique_ptr<Mod>>& a_mods)
 		{
 			std::size_t pageCount = 0;
-			for (std::size_t m = 0; m < g_mods.size(); ++m)
+			for (std::size_t m = 0; m < a_mods.size(); ++m)
 			{
-				Mod& mod = *g_mods[m];
+				Mod& mod = *a_mods[m];
 				// " (MCM)" keeps it apart from a mod's own AMF page of the same name - the registry merges equal names
 				// into one entry's tabs, which would mix our pages into theirs.
 				g_table = &mod.translations;  // entry and tab names are fixed at registration, so translate them now
@@ -1828,7 +1887,7 @@ namespace mcmloader
 				}
 			}
 			logger::info("MCM loader: {} MCM Helper mod(s) registered as AMF entries ({} page(s)); {} skipped",
-				g_mods.size(), pageCount, g_skipped.size());
+				a_mods.size(), pageCount, g_skipped.size());
 		}
 	}
 
@@ -1850,14 +1909,19 @@ namespace mcmloader
 		}
 
 		logger::info("MCM loader: reading MCM Helper configs from {}", root.string());
+		std::vector<std::unique_ptr<Mod>> loaded;
 		for (const auto& entry : fs::directory_iterator(root, ec))
 		{
 			if (!entry.is_directory(ec)) { continue; }
 			if (!fs::exists(entry.path() / "config.json", ec)) { continue; }
-			try { LoadOne(entry.path()); }
+			try { LoadOne(entry.path(), loaded); }
 			catch (const std::exception& e) { Skip(entry.path().filename().string(), std::string("unexpected error: ") + e.what()); }
 		}
-		RegisterPages();
+		RegisterPages(loaded);
+		{
+			std::scoped_lock lock(g_mutex);
+			g_mods = std::move(loaded);   // Load runs once (g_loaded), so g_mods was empty: the indices pages captured hold
+		}
 		ApplyHelperVisibility();  // menus the player left out of AMF stay out
 		g_table = nullptr;  // each page sets its own mod's table when it draws
 	}
@@ -1875,6 +1939,7 @@ namespace mcmloader
 
 	void OnGameLoaded()
 	{
+		ResetPassForLoad();   // before the after-load passes below ask for one
 		scripts::OnGameLoaded();
 		{
 			std::scoped_lock lock(g_mutex);
@@ -1915,7 +1980,7 @@ namespace mcmloader
 			Load();  // first switched on in this session: read the configs now (the data is long loaded)
 		}
 		ApplyHelperVisibility();  // the caller has already set the switch; a menu left out of AMF stays out
-		logger::info("MCM loader: switched {} on the settings page ({} entries {})", a_on ? "on" : "off", g_mods.size(), a_on ? "shown" : "hidden");
+		logger::info("MCM loader: switched {} on the settings page ({} entries {})", a_on ? "on" : "off", ModsView().size(), a_on ? "shown" : "hidden");
 		QueueSyncSkyUI(settings::Get().hideMcmInSkyUI);  // each loader's mods follow its own switch: off gives them back
 	}
 
@@ -1951,10 +2016,10 @@ namespace mcmloader
 		std::vector<ImportRow> rows;
 		if (settings::Get().loadMcmHelperConfigs)
 		{
-			for (const auto& mod : g_mods)
+			for (const auto& mod : ModsView())
 			{
-				const std::string key = "mcmhelper|" + mod->modName;
-				rows.push_back({ key, mod->entryName, false, detail::IsImported(key) });
+				const std::string key = "mcmhelper|" + mod.modName;
+				rows.push_back({ key, mod.entryName, false, detail::IsImported(key) });
 			}
 		}
 		if (settings::Get().loadSkyUIScriptMenus)
@@ -1975,7 +2040,7 @@ namespace mcmloader
 		int n = 0;
 		if (settings::Get().loadMcmHelperConfigs)
 		{
-			for (const auto& mod : g_mods) { n += mod->hideable && detail::IsImported("mcmhelper|" + mod->modName) ? 1 : 0; }
+			for (const auto& mod : ModsView()) { n += mod.hideable && detail::IsImported("mcmhelper|" + mod.modName) ? 1 : 0; }
 		}
 		if (settings::Get().loadSkyUIScriptMenus)
 		{
@@ -2000,9 +2065,9 @@ namespace mcmloader
 		const std::string id = JsonStr(args, "id");
 
 		auto findMod = [&]() -> std::optional<std::size_t> {
-			for (std::size_t i = 0; i < g_mods.size(); ++i)
+			for (const auto& mod : ModsView())
 			{
-				if (Lower(g_mods[i]->modName) == Lower(modArg) || g_mods[i]->entryName == modArg) { return i; }
+				if (Lower(mod.modName) == Lower(modArg) || mod.entryName == modArg) { return mod.index; }
 			}
 			return std::nullopt;
 		};

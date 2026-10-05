@@ -74,6 +74,17 @@ sort of like our mod manager plugin but built into AMF. And it can just sort by 
   - Each entry keeps its place in the saved order.
   - The number in the position box is its place among the rows shown, and a number typed there moves it to that row's
     place.
+- **A game loaded while a SkyUI-list pass ran no longer stalls the give-back** (pre-release review, 2026-10-05). A load
+  drops Papyrus calls in flight, so that pass never finished. The passes after the load only marked "again", and nothing
+  asked again after the 60 s override. "Hide off, then load at once" could leave the menus AMF had hidden out of SkyUI
+  until the next switch change.
+  - A load now clears the pass state and starts a new pass generation.
+  - A pass queued before the load does not run, and a late finish from it is ignored.
+- **The MCM Helper list is no longer grown while another thread walks it** (same review, crash-class). Switching the
+  MCM Helper loader on for the first time in a session read the configs into the shared list one by one. Meanwhile a
+  SkyUI-list pass, the import list or DevBench could be walking it on another thread.
+  - The configs are now read and registered into a list of their own, then published in one move under the lock.
+  - Those walkers read a copy taken under the lock.
 
 ## 2.0.9 - 2026-10-04 - working - every MCM menu, whatever SkyUI's list does
 
