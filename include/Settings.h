@@ -46,6 +46,12 @@ namespace settings
 		// [Window] - one profile per way in; see WindowGeometry above.
 		WindowGeometry nestedWindow;   // opened from the row in the game's System menu
 		WindowGeometry hotkeyWindow;   // opened by the hotkey, or by a menu launcher through the API
+		// Barzing's three asks on Nexus, 2026-10-05 (move it, resize it in height, see through it), each its own switch on
+		// the Appearance tab (the owner: "seperate toggles" ... "in apperance teb"). All off by default, matching the
+		// shipped INI (rule 16), so the window stays as it was until the player asks.
+		bool movableWindow = false;   // [Window] bMovable - drag the top row; it reopens where it was left
+		bool freeResize = false;      // [Window] bFreeResize - a corner drag no longer keeps the shape
+		bool seeThrough = false;      // [Display] bSeeThrough - uWindowOpacity applies
 
 		// [Input]
 		std::int32_t toggleKey = 0x3B;   // DirectInput scan code; 0x3B = F1 (framework convention, the author 2026-08-27)
@@ -62,6 +68,10 @@ namespace settings
 
 		// [Display]
 		float textScale = 1.30f;         // extra font multiplier on top of the resolution scale (the author, 1.0.2 feedback round)
+		// [Display] uWindowOpacity (2.1.1, Barzing on Nexus, 2026-10-05: "the semi transparence of the window"; the owner: "ill
+		// add ... opacity settings"): how solid the window's background is, in percent, 30-100. Text, frames and the
+		// right-click menus stay solid. Matches the shipped INI (rule 16).
+		std::int32_t windowOpacity = 100;
 		// Optional path to a .ttf to rasterise the menu text from. Empty = pick a clean system
 		// face automatically. Set it to use any font, e.g. one that matches Skyrim's own lettering.
 		std::string fontPath;

@@ -51,6 +51,21 @@ and from the owner's notes on it. The owner: "go ahead and start fixing AMF".
   the knotwork frame; dropdowns now open with the right-click menus' padding (`theme::BeginComboTight` / `ComboTight`).
 - **The rename and "Name this separator" boxes** lost the empty title strip across their top.
 
+### Added
+- **The window: three switches on Appearance, each off by default** (Barzing on Nexus, 2026-10-05: "the possibility to
+  resize window also in height size", "the possibility to move the window", "the semi transparence of the window"; the
+  owner replied "ill add" them, then: "i want these settings behind a toggle" ... "seperate toggles" ... "in apperance
+  teb"). Off, the window is exactly as before - centred, solid, a corner drag keeping its shape.
+  - **Move the window** (`[Window] bMovable`): drag the top row - the name and version - and the window follows, kept
+    whole on the screen; it reopens where it was left, and Reset to the default size puts it back in the middle. The
+    body never drags it, so a page's sliders and rows keep their clicks (why ImGui's own move stays off).
+  - **Resize freely** (`[Window] bFreeResize`): a corner drag changes width and height each on its own. Edge resizing
+    is switched on explicitly (`ConfigWindowsResizeFromEdges`, with the cursor flag the framework's own cursor needs).
+  - **See-through window** (`[Display] bSeeThrough`) and **Window opacity** (`uWindowOpacity`, 30-100%, a precise slider):
+    the window and pane backgrounds - and a UI author's background picture - fade; text, frames, right-click menus and
+    tooltips stay solid.
+  - 6 + 2 strings, all eleven languages; compiled defaults match the shipped INI (rule 16).
+
 ### Changed
 - **The persistence test is hidden** (the owner: "we can hide the persistence test"). The developer's "Persistence test
   (S10)" box at the bottom of Settings > General shows only at `[Log] uLogLevel=0`.

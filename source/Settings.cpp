@@ -232,6 +232,11 @@ namespace settings
 				"[Display]\n"
 				"; Extra text scale on top of the automatic resolution scaling.\n"
 				"fTextScale=" << a_v.textScale << "\n"
+				"; See-through window (0/1): on, uWindowOpacity below fades the menu's background. Off (the default):\n"
+				"; the background is solid.\n"
+				"bSeeThrough=" << (a_v.seeThrough ? 1 : 0) << "\n"
+				"; How solid the menu's background is, in percent (30-100). Text and frames stay solid.\n"
+				"uWindowOpacity=" << a_v.windowOpacity << "\n"
 				"; Optional .ttf to rasterise the menu text from. Empty = a clean system font.\n"
 				"sFontPath=" << a_v.fontPath << "\n"
 				"; Language of the framework's own text: empty = the game's language; or a translation\n"
@@ -247,6 +252,12 @@ namespace settings
 				"; window, so it takes its default: the journal panel it is hosted in when opened\n"
 				"; from the System row, and the centre of the screen when opened by the key. Move or\n"
 				"; resize either one and it is remembered here; the settings page can reset it.\n"
+				"; Move the window (0/1): on, drag its top row (the name and version) to move it, and it opens where it\n"
+				"; was left. Off (the default): it sits in the middle of the screen.\n"
+				"bMovable=" << (a_v.movableWindow ? 1 : 0) << "\n"
+				"; Resize freely (0/1): on, a corner drag changes width and height each on its own. Off (the default):\n"
+				"; a corner drag keeps the window's shape.\n"
+				"bFreeResize=" << (a_v.freeResize ? 1 : 0) << "\n"
 				"fNestedX=" << a_v.nestedWindow.x << "\n"
 				"fNestedY=" << a_v.nestedWindow.y << "\n"
 				"fNestedW=" << a_v.nestedWindow.w << "\n"
@@ -570,6 +581,10 @@ namespace settings
 			ReadNumber(entries, "Window.fHotkeyW", g_values.hotkeyWindow.w);
 			ReadNumber(entries, "Window.fHotkeyH", g_values.hotkeyWindow.h);
 			ReadNumber(entries, "Display.fTextScale", g_values.textScale);
+			ReadNumber(entries, "Display.uWindowOpacity", g_values.windowOpacity);
+			ReadBool(entries, "Window.bMovable", g_values.movableWindow);
+			ReadBool(entries, "Window.bFreeResize", g_values.freeResize);
+			ReadBool(entries, "Display.bSeeThrough", g_values.seeThrough);
 			{
 				auto it = entries.find("Display.sFontPath");
 				if (it != entries.end()) { g_values.fontPath = it->second; }
@@ -640,6 +655,12 @@ namespace settings
 		{
 			logger::warn("settings: fTextScale {:.2f} outside [1.0, 2.5]; clamped", g_values.textScale);
 			g_values.textScale = g_values.textScale < 1.0f ? 1.0f : 2.5f;
+		}
+
+		if (g_values.windowOpacity < 30 || g_values.windowOpacity > 100)
+		{
+			logger::warn("settings: uWindowOpacity {} outside [30, 100]; clamped", g_values.windowOpacity);
+			g_values.windowOpacity = g_values.windowOpacity < 30 ? 30 : 100;
 		}
 
 		const auto level = static_cast<spdlog::level::level_enum>(

@@ -7,6 +7,7 @@
 
 #include <imgui.h>
 
+#include <algorithm>
 #include <charconv>
 #include <filesystem>
 #include <fstream>
@@ -494,7 +495,16 @@ namespace theme
 		c[ImGuiCol_NavWindowingHighlight] = accent;
 		c[ImGuiCol_NavWindowingDimBg] = ImVec4{ 0, 0, 0, 0.4f };
 
-		logger::info("Theme applied: \"{}\" ({}); knotwork={}; game HUD opacity {:.2f}",
-					 active.name, active.id, active.knotwork, GetGameHUDOpacity());
+		// WINDOW OPACITY (2.1.1 - Barzing on Nexus, 2026-10-05: "the semi transparence of the window"; the owner: "ill add
+		// ... opacity settings"). Applied last, over whatever the theme set: only the window and pane backgrounds fade, so
+		// the text, the frame and the right-click menus and tooltips (PopupBg) stay solid and readable.
+		// Only with See-through window on (the owner: "i want these settings behind a toggle"); off, it is solid.
+		const float opacity = settings::Get().seeThrough
+			? static_cast<float>(std::clamp(settings::Get().windowOpacity, 30, 100)) / 100.0f : 1.0f;
+		c[ImGuiCol_WindowBg].w *= opacity;
+		c[ImGuiCol_ChildBg].w *= opacity;
+
+		logger::info("Theme applied: \"{}\" ({}); knotwork={}; game HUD opacity {:.2f}; window opacity {}%",
+					 active.name, active.id, active.knotwork, GetGameHUDOpacity(), settings::Get().windowOpacity);
 	}
 }
