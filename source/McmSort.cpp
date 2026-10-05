@@ -263,13 +263,15 @@ namespace mcmloader
 			return {};
 		}
 
-		// The category a separator stands for: its name is a group's shown name or English name, letter case aside.
+		// The category a separator stands for: its name is a group's shown name, English name or key, letter case aside.
 		std::size_t GroupOfSeparator(const std::string& a_name)
 		{
 			const std::string name = Lower(detail::Trim(a_name));
 			for (std::size_t i = 0; i < std::size(kGroups); ++i)
 			{
-				if (name == Lower(GroupName(i)) || name == Lower(kGroups[i].english)) { return i; }
+				// Or its key (2.1.1): a separator called "Utility" is the Utility group, and shows in the language picked
+				// (the owner, 2026-10-05, in Chinese: "utility separator ... not in chinese").
+				if (name == Lower(GroupName(i)) || name == Lower(kGroups[i].english) || name == Lower(kGroups[i].key)) { return i; }
 			}
 			return std::size(kGroups);
 		}
