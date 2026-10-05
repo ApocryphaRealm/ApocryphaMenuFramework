@@ -59,6 +59,16 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
   - A list kept any other way is left alone, and the settings page says that the switch takes nothing out there.
   - A menu SkyUI never registered is not AMF's to take out or give back.
   - DevBench `amf.mcm op=skyuilist` reads the same three, and reports which one is in use (`layout`).
+- **Switches changed in quick succession no longer leave menus out of SkyUI's list.** Under MCM Unlocked, AMF's checks
+  of the list wait for the game's scripts to answer, so two passes over the list could overlap. A newer pass then read a
+  menu as still in the list while an older pass was still taking it out, and the menu ended up out with nothing
+  recording it.
+  - Example: a loader switched on and the hide switch off within a second left 1 menu out; a burst of changes left 3.
+  - Now only one pass runs at a time. It finishes only when every call it made has come back and been checked against
+    SkyUI's list. A change made during a pass gets one more pass afterwards.
+  - Tested under MCM Unlocked (Njordlinger Test, 83 menus): hide on, both loaders off, the two quick sequences, and a
+    burst of 8 changes. All 83 menus were where the switches said each time, and the record of hidden menus was empty
+    at the end.
 
 ## 2.0.8 - 2026-10-04 - working - the menu fits the image the game draws
 

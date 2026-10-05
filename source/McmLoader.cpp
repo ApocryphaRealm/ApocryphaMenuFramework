@@ -955,7 +955,6 @@ namespace mcmloader
 			for (const auto& key : g_ledger) { out << key << "\n"; }
 		}
 		std::atomic<unsigned> g_hideGeneration{ 0 };
-		std::atomic<bool> g_skyuiBusy{ false };   // a call came back -2: SkyUI's manager was BUSY (its Journal is open)
 
 		// SKI_ConfigManager's RegisterMod / UnregisterMod return the slot (>= 0), -1 (not in the list) - or -2 in its
 		// BUSY state, which lasts while the Journal is open (OnMenuOpen..OnMenuClose) and does NOTHING (2026-10-04: a hide
@@ -994,23 +993,85 @@ namespace mcmloader
 
 		void QueueSyncSkyUI(bool a_hide);
 
-		// While SkyUI answers BUSY, try again every 3 s (for up to 10 minutes, and only while the switch still says so).
-		std::atomic<unsigned> g_retryFor{ ~0u };  // the switch generation a retry thread is already watching
+		// ONE SkyUI-list pass at a time. A pass reads the switches when it starts, judges every menu from SkyUI's own list
+		// and sends its calls; it ends only when every call it sent has returned and been judged. A request while a pass is
+		// running marks "again", and one more pass follows with the switches as they are then.
+		//
+		// Why: under MCM Unlocked every check is an asynchronous native call, and passes started a second apart used to
+		// interleave - a newer pass read a menu as still in the list while an older pass's UnregisterMod was on its way, crossed
+		// it off the ledger, and the UnregisterMod then took it out for good (Njordlinger Test, 2026-10-04: loaders on then
+		// hide off lost 1 menu, a burst of switch changes lost 3). Three patches each closed one interleaving and opened
+		// another; serializing removes the whole class - no pass judges a menu while another pass's call to it is in flight.
+		std::mutex g_passLock;
+		bool g_passRunning = false;
+		bool g_passAgain = false;
+		std::chrono::steady_clock::time_point g_passStarted{};
+		int g_busyPasses = 0;  // consecutive passes that ended with something SkyUI did not take
 
-		void RetryWhileBusy(bool a_hide)
+		void RunPass();
+
+		void StartPassTask()
 		{
-			const unsigned generation = g_hideGeneration.load();
-			if (g_retryFor.exchange(generation) == generation) { return; }  // one watcher per flip of the switch
-			std::thread([a_hide, generation]() {
-				for (int i = 0; i < 200; ++i)
+			if (const auto tasks = SKSE::GetTaskInterface())
+			{
+				tasks->AddTask([]() { RunPass(); });
+				return;
+			}
+			std::scoped_lock l(g_passLock);
+			g_passRunning = false;
+		}
+
+		void RequestPass()
+		{
+			{
+				std::scoped_lock l(g_passLock);
+				if (g_passRunning && std::chrono::steady_clock::now() - g_passStarted < std::chrono::seconds(60))
 				{
-					std::this_thread::sleep_for(std::chrono::seconds(3));
-					if (g_hideGeneration.load() != generation || settings::Get().hideMcmInSkyUI != a_hide) { break; }
-					if (!g_skyuiBusy.exchange(false)) { break; }  // the last pass went through
-					QueueSyncSkyUI(a_hide);
+					g_passAgain = true;
+					return;
 				}
-				unsigned expected = generation;
-				g_retryFor.compare_exchange_strong(expected, ~0u);
+				if (g_passRunning) { logger::warn("MCM loader: a SkyUI-list pass has not finished after 60 s - starting a new one"); }
+				g_passRunning = true;
+				g_passStarted = std::chrono::steady_clock::now();
+			}
+			StartPassTask();
+		}
+
+		// Any thread, exactly once per pass. The next pass when one was asked for meanwhile; otherwise, when SkyUI did not take
+		// something (busy while its Journal is open, a list that is full, a call that never ran), another pass in 3 s - for up
+		// to 200 such passes in a row (10 minutes).
+		void FinishPass(bool a_busy)
+		{
+			bool again = false;
+			int busyPasses = 0;
+			{
+				std::scoped_lock l(g_passLock);
+				g_busyPasses = a_busy ? g_busyPasses + 1 : 0;
+				busyPasses = g_busyPasses;
+				again = g_passAgain;
+				g_passAgain = false;
+				if (!again) { g_passRunning = false; }
+			}
+			if (again)
+			{
+				{
+					std::scoped_lock l(g_passLock);
+					g_passStarted = std::chrono::steady_clock::now();
+				}
+				StartPassTask();
+				return;
+			}
+			if (!a_busy) { return; }
+			if (busyPasses > 200)
+			{
+				logger::warn("MCM loader: SkyUI has not taken every change after 200 passes - giving up until the next switch change or load");
+				std::scoped_lock l(g_passLock);
+				g_busyPasses = 0;
+				return;
+			}
+			std::thread([]() {
+				std::this_thread::sleep_for(std::chrono::seconds(3));
+				RequestPass();
 			}).detach();
 		}
 
@@ -1103,25 +1164,28 @@ namespace mcmloader
 			}
 		}
 
-		// a_hide: UnregisterMod every hideable mod of a loader that is switched on; otherwise (and for a loader switched off)
+		// One pass (main thread to start; finishes on whichever thread the last answer arrives). With the hide switch on,
+		// UnregisterMod every hideable mod of a loader that is switched on; otherwise (and for a loader switched off)
 		// RegisterMod the ones the ledger says AMF hid - the save may hold them hidden from an earlier session. MCM Helper mods
 		// (phases 1-2) and script-only menus (phase 3) each follow their own switch.
 		//
 		// The ledger records the INTENT before the call (a menu AMF is about to take out is AMF's to give back, whatever the
 		// call returns), and an entry leaves it only when SkyUI's list shows the menu back. Each outcome is judged from the
-		// list itself (CheckInSkyUIList, whichever manager keeps it), never from the call's return value; a call that changed
-		// nothing (SkyUI busy while its Journal is open) leaves the retry running. A config SkyUI never registered (discovery
-		// also finds those - late, past 128, or under MCM Unlocked) is "already out" and not AMF's: nothing is sent for it.
-		void SyncSkyUI(bool a_hide)
+		// list itself (CheckInSkyUIList, whichever manager keeps it), never from the call's return value. A config SkyUI
+		// never registered (discovery also finds those - late, past 128, or under MCM Unlocked) is "already out" and not
+		// AMF's: nothing is sent for it.
+		void RunPass()
 		{
-			const bool hideHelper = a_hide && settings::Get().loadMcmHelperConfigs;
-			const bool hideScripts = a_hide && settings::Get().loadSkyUIScriptMenus;
+			const bool hide = settings::Get().hideMcmInSkyUI;
+			const bool hideHelper = hide && settings::Get().loadMcmHelperConfigs;
+			const bool hideScripts = hide && settings::Get().loadSkyUIScriptMenus;
 			scripts::Discover();  // main thread; idempotent - a config registered since the last pass is found
 			const auto vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
 			auto manager = FindSkyUIManager();
 			if (!vm || !manager)
 			{
 				logger::info("MCM loader: SkyUI's config manager is not running yet - SkyUI's list left as it is for now");
+				FinishPass(false);
 				return;
 			}
 			// The parameter is SKI_ConfigBase, and a call dispatched from here is NOT upcast: the mod's own script type was
@@ -1131,6 +1195,7 @@ namespace mcmloader
 			if (!vm->GetScriptObjectType("SKI_ConfigBase", baseInfo) || !baseInfo)
 			{
 				logger::warn("MCM loader: SKI_ConfigBase is not a loaded script type - SkyUI's list left as it is");
+				FinishPass(false);
 				return;
 			}
 			const auto baseType = baseInfo->GetRawType();
@@ -1182,14 +1247,26 @@ namespace mcmloader
 				targets.push_back({ t.config, t.modName, t.key, hideScripts, [index](bool a_hidden) { scripts::SetHidden(index, a_hidden); } });
 			}
 
+			// The pass ends when every target has finished (+1 holds it open until all are started).
+			struct PassState
+			{
+				std::atomic<int> left{ 0 };
+				std::atomic<bool> busy{ false };
+			};
+			auto state = std::make_shared<PassState>();
+			state->left.store(static_cast<int>(targets.size()) + 1);
+			auto done = [state]() {
+				if (state->left.fetch_sub(1) == 1) { FinishPass(state->busy.load()); }
+			};
+
 			// The call for one target, its outcome judged from the list afterwards (VM thread when the call returns).
-			auto send = [vm, manager, baseType, layout](const Target& a_t) {
+			auto send = [vm, manager, baseType, layout, state, done](const Target& a_t) {
 				VarArgs args;
 				args.args.resize(a_t.hide ? 1 : 2);
 				args.args[0].SetObject(a_t.config, baseType);
 				if (!a_t.hide) { args.args[1].SetString(a_t.regName); }
-				RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> then{ new ResultThen([manager, layout, t = a_t](std::int32_t a_result) {
-					CheckInSkyUIList(layout, manager, t.config, t.regName, [t, a_result](std::optional<bool> a_in) {
+				RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> then{ new ResultThen([manager, layout, state, done, t = a_t](std::int32_t a_result) {
+					CheckInSkyUIList(layout, manager, t.config, t.regName, [state, done, t, a_result](std::optional<bool> a_in) {
 						if (!a_in)
 						{
 							// the list cannot be read (only a give-back gets here): the result is the only evidence
@@ -1199,61 +1276,70 @@ namespace mcmloader
 								t.setHidden(false);
 							}
 							logger::info("MCM loader: SkyUI RegisterMod {} -> {} (SkyUI's list not readable here)", t.regName, a_result);
+							done();
 							return;
 						}
-						const bool done = t.hide ? !*a_in : *a_in;
-						if (!done)
+						const bool took = t.hide ? !*a_in : *a_in;
+						if (!took)
 						{
-							// SkyUI busy (-2, its Journal open), a full list on give-back, or a call that never ran: retried
-							g_skyuiBusy.store(true);
+							// SkyUI busy (-2, its Journal open), a full list on give-back, or a call that never ran: next pass
+							state->busy.store(true);
 							logger::info("MCM loader: SkyUI {} {} did not take (result {}) - tried again", t.hide ? "UnregisterMod" : "RegisterMod", t.regName, a_result);
+							done();
 							return;
 						}
 						if (!t.hide) { SetInLedger(t.key, false); }
 						t.setHidden(t.hide);
 						logger::debug("MCM loader: SkyUI {} {} - {} SkyUI's list (result {})", t.hide ? "UnregisterMod" : "RegisterMod", t.regName,
 							t.hide ? "out of" : "back in", a_result);
+						done();
 					});
 				}) };
 				auto target = manager;
 				if (!vm->DispatchMethodCall(target, a_t.hide ? "UnregisterMod" : "RegisterMod", &args, then))
 				{
 					logger::warn("MCM loader: SkyUI {} {} could not be sent", a_t.hide ? "UnregisterMod" : "RegisterMod", a_t.regName);
+					state->busy.store(true);
+					done();
 				}
 			};
 
+			logger::info("MCM loader: SkyUI's MCM list - pass over {} menu(s) ({}), each judged from the list itself",
+				targets.size(), hide ? "take out" : "give back");
 			for (const auto& t : targets)
 			{
-				CheckInSkyUIList(layout, manager, t.config, t.regName, [t, send](std::optional<bool> a_in) {
+				CheckInSkyUIList(layout, manager, t.config, t.regName, [t, send, done](std::optional<bool> a_in) {
 					if (!a_in)
 					{
 						// unreadable list: nothing is taken out (it could never be proven back); a give-back is still sent
 						if (!t.hide) { send(t); }
+						else { done(); }
 						return;
 					}
 					if (t.hide && !*a_in)
 					{
 						t.setHidden(InLedger(t.key));  // already out - AMF's only if the ledger says AMF took it out
+						done();
 						return;
 					}
 					if (!t.hide && *a_in)
 					{
 						SetInLedger(t.key, false);  // already back
 						t.setHidden(false);
+						done();
 						return;
 					}
 					if (t.hide) { SetInLedger(t.key, true); }  // the intent, before the call
 					send(t);
 				});
 			}
-			logger::info("MCM loader: SkyUI's MCM list - {} menu(s) considered ({}), each judged from the list itself",
-				targets.size(), a_hide ? "take out" : "give back");
-			RetryWhileBusy(a_hide);
+			done();  // all started
 		}
 
-		void QueueSyncSkyUI(bool a_hide)
+		// Any thread. The switches are read when the pass starts, so a_hide only documents the caller's reason.
+		void QueueSyncSkyUI(bool /*a_hide*/)
 		{
-			if (const auto tasks = SKSE::GetTaskInterface()) { tasks->AddTask([a_hide]() { SyncSkyUI(a_hide); }); }
+			RequestPass();
 		}
 
 		// After a load the mods register over the first seconds (SkyUI's announcements at 0, 5, 10 ... 30 s): take them out
