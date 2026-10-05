@@ -232,10 +232,10 @@ namespace settings
 				"[Display]\n"
 				"; Extra text scale on top of the automatic resolution scaling.\n"
 				"fTextScale=" << a_v.textScale << "\n"
-				"; See-through window (0/1): on, uWindowOpacity below fades the menu's background. Off (the default):\n"
-				"; the background is solid.\n"
+				"; See-through window (0/1): on, uWindowOpacity below fades the menu's background. Off:\n"
+				"; the background is solid. On (with uWindowOpacity=100, solid) is the default.\n"
 				"bSeeThrough=" << (a_v.seeThrough ? 1 : 0) << "\n"
-				"; How solid the menu's background is, in percent (30-100). Text and frames stay solid.\n"
+				"; How solid the menu's background is, in percent (5-100). The background fades most, text least.\n"
 				"uWindowOpacity=" << a_v.windowOpacity << "\n"
 				"; Optional .ttf to rasterise the menu text from. Empty = a clean system font.\n"
 				"sFontPath=" << a_v.fontPath << "\n"
@@ -253,10 +253,10 @@ namespace settings
 				"; from the System row, and the centre of the screen when opened by the key. Move or\n"
 				"; resize either one and it is remembered here; the settings page can reset it.\n"
 				"; Move the window (0/1): on, drag its top row (the name and version) to move it, and it opens where it\n"
-				"; was left. Off (the default): it sits in the middle of the screen.\n"
+				"; was left. Off: it sits in the middle of the screen. On is the default.\n"
 				"bMovable=" << (a_v.movableWindow ? 1 : 0) << "\n"
-				"; Resize freely (0/1): on, a corner drag changes width and height each on its own. Off (the default):\n"
-				"; a corner drag keeps the window's shape.\n"
+				"; Resize the window (0/1): on, drag any edge or corner to resize it, freely. Off: its size is fixed.\n"
+				"; On is the default.\n"
 				"bFreeResize=" << (a_v.freeResize ? 1 : 0) << "\n"
 				"fNestedX=" << a_v.nestedWindow.x << "\n"
 				"fNestedY=" << a_v.nestedWindow.y << "\n"
@@ -657,10 +657,10 @@ namespace settings
 			g_values.textScale = g_values.textScale < 1.0f ? 1.0f : 2.5f;
 		}
 
-		if (g_values.windowOpacity < 30 || g_values.windowOpacity > 100)
+		if (g_values.windowOpacity < 5 || g_values.windowOpacity > 100)
 		{
-			logger::warn("settings: uWindowOpacity {} outside [30, 100]; clamped", g_values.windowOpacity);
-			g_values.windowOpacity = g_values.windowOpacity < 30 ? 30 : 100;
+			logger::warn("settings: uWindowOpacity {} outside [5, 100]; clamped", g_values.windowOpacity);
+			g_values.windowOpacity = g_values.windowOpacity < 5 ? 5 : 100;
 		}
 
 		const auto level = static_cast<spdlog::level::level_enum>(

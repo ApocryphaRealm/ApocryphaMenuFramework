@@ -52,19 +52,36 @@ and from the owner's notes on it. The owner: "go ahead and start fixing AMF".
 - **The rename and "Name this separator" boxes** lost the empty title strip across their top.
 
 ### Added
-- **The window: three switches on Appearance, each off by default** (Barzing on Nexus, 2026-10-05: "the possibility to
+- **The window: three switches on Appearance, all on by default** (Barzing on Nexus, 2026-10-05: "the possibility to
   resize window also in height size", "the possibility to move the window", "the semi transparence of the window"; the
-  owner replied "ill add" them, then: "i want these settings behind a toggle" ... "seperate toggles" ... "in apperance
-  teb"). Off, the window is exactly as before - centred, solid, a corner drag keeping its shape.
+  owner replied "ill add" them, then: "seperate toggles" ... "in apperance teb" ... "have it default to on, along with the
+  other settings we just added, like the move the window and see-through window at max opacity").
   - **Move the window** (`[Window] bMovable`): drag the top row - the name and version - and the window follows, kept
     whole on the screen; it reopens where it was left, and Reset to the default size puts it back in the middle. The
-    body never drags it, so a page's sliders and rows keep their clicks (why ImGui's own move stays off).
-  - **Resize freely** (`[Window] bFreeResize`): a corner drag changes width and height each on its own. Edge resizing
-    is switched on explicitly (`ConfigWindowsResizeFromEdges`, with the cursor flag the framework's own cursor needs).
-  - **See-through window** (`[Display] bSeeThrough`) and **Window opacity** (`uWindowOpacity`, 30-100%, a precise slider):
-    the window and pane backgrounds - and a UI author's background picture - fade; text, frames, right-click menus and
-    tooltips stay solid.
-  - 6 + 2 strings, all eleven languages; compiled defaults match the shipped INI (rule 16).
+    body never drags it, so a page's sliders and rows keep their clicks (why ImGui's own move stays off). Off: it sits in
+    the middle of the screen.
+  - **Resize the window** (`[Window] bFreeResize`): on, any edge or corner resizes it - height and width alike, a corner
+    no longer keeping the shape; off, it cannot be resized at all (`ImGuiWindowFlags_NoResize` - the owner: "make sure
+    the toggle actually toggles off the resizing"). Checked in game with `tools/window_watch.py` while the owner dragged:
+    the height had looked fixed only because his saved size was 99% of the screen tall, edges at the screen's edges;
+    at the default size the top edge took it 1124 -> 1795 and back.
+  - **See-through window** (`[Display] bSeeThrough`) and **Window opacity** (`uWindowOpacity`, 5-100%, a precise
+    slider; 100 by default, so it looks solid until lowered). Not one factor for everything (the owner: "affect the
+    black background proportionally more than things like the text or the boxes, because the black background is what
+    is blocking their view"): the window and pane backgrounds - and a UI author's background picture - take the opacity
+    as set; boxes, borders, tabs and scrollbars keep 30% plus 70% of it; text keeps 60% plus 40% of it. Right-click
+    menus and tooltips stay solid.
+- **The Mods row: a tick box, one switch and a Sort button** (the owner: "we only need one toggle because switched off,
+  it would be Z to A, and switch on, it would be A to Z ... a tick box ... Whether they want alphabetical sorting on ...
+  and then a sort button for sorting and adding the separators"). The tick box turns alphabetical order on (off: the
+  order arranged by hand); the switch is A-Z on, Z-A off, greyed while the box is unticked; Sort runs the MCM category
+  sort, separators and all (Undo stays on Settings > Menu list). A tick box against rule 32 because the owner asked for
+  one by name. Replaces 2026-09-19's two switches.
+- DevBench: `op=state` reports the window's real rect (`mainWindow`), and `op=mouse` presses or releases a button, so a
+  drag can be driven and measured (`tools/window_resize_test.py`); `tools/window_watch.py` only reads, for when the
+  owner drives.
+- Strings: the window and Mods-row switches, their help and tips, all eleven languages; compiled defaults match the
+  shipped INI (rule 16).
 
 ### Changed
 - **The persistence test is hidden** (the owner: "we can hide the persistence test"). The developer's "Persistence test

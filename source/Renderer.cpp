@@ -247,7 +247,7 @@ namespace renderer
 			const ImVec2 sz = skin::BackgroundSize();
 			// A UI author's background fades with the window when See-through window is on (2.1.1).
 			const auto& sv = settings::Get();
-			const int fade = sv.seeThrough ? std::clamp(sv.windowOpacity, 30, 100) : 100;
+			const int fade = sv.seeThrough ? std::clamp(sv.windowOpacity, 5, 100) : 100;
 			const ImU32 white = IM_COL32(255, 255, 255, fade * 255 / 100);
 
 			if (!skin::BackgroundTiles())
@@ -1134,7 +1134,9 @@ namespace renderer
 				ImGui::Spacing();
 
 				// THE WINDOW, THREE SWITCHES (2.1.1 - Barzing on Nexus, 2026-10-05: resize "also in height", "move the window",
-				// "the semi transparence of the window"; the owner: "seperate toggles" ... "in apperance teb"). Each off by default.
+				// "the semi transparence of the window"; the owner: "seperate toggles" ... "in apperance teb"). Each ON by default
+				// (the owner: "have it default to on, along with the other settings we just added"); See-through starts at
+				// 100% opacity, so it looks solid until the slider is lowered.
 				if (widgets::Toggle(TR("AMF_MovableWindow", "Move the window"), &values.movableWindow))
 				{
 					logger::info("settings page: move the window -> {}", values.movableWindow);
@@ -1143,13 +1145,13 @@ namespace renderer
 				}
 				ImGui::TextWrapped("%s", TR("AMF_MovableWindowHelp", "On: drag the top row - the name and version - to move the "
 					"menu, and it opens where you left it. Off: it sits in the middle of the screen."));
-				if (widgets::Toggle(TR("AMF_FreeResize", "Resize freely"), &values.freeResize))
+				if (widgets::Toggle(TR("AMF_FreeResize", "Resize the window"), &values.freeResize))
 				{
-					logger::info("settings page: resize freely -> {}", values.freeResize);
+					logger::info("settings page: resize the window -> {}", values.freeResize);
 					settings::Save();
 				}
-				ImGui::TextWrapped("%s", TR("AMF_FreeResizeHelp", "On: dragging a corner changes the width and the height each on "
-					"its own. Off: a corner drag keeps the window's shape. An edge always changes just that side."));
+				ImGui::TextWrapped("%s", TR("AMF_FreeResizeHelp", "On: drag any edge or corner to resize the menu - height "
+					"and width alike - and the size is kept. Off: the size is fixed."));
 				if (widgets::Toggle(TR("AMF_SeeThrough", "See-through window"), &values.seeThrough))
 				{
 					logger::info("settings page: see-through window -> {}", values.seeThrough);
@@ -1160,7 +1162,7 @@ namespace renderer
 					"shows through. Off: the background is solid."));
 				ImGui::BeginDisabled(!values.seeThrough);
 				ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
-				if (precise::SliderInt(TR("AMF_WindowOpacity", "Window opacity"), &values.windowOpacity, 30, 100, "%d%%"))
+				if (precise::SliderInt(TR("AMF_WindowOpacity", "Window opacity"), &values.windowOpacity, 5, 100, "%d%%"))
 				{
 					theme::Apply();   // live while dragging
 				}
@@ -1169,8 +1171,7 @@ namespace renderer
 					logger::info("settings page: window opacity -> {}%", values.windowOpacity);
 					settings::Save();
 				}
-				ImGui::TextWrapped("%s", TR("AMF_WindowOpacityHelp", "How solid the menu's background is: 100% is solid, lower lets "
-					"the game show through. Text, frames and right-click menus stay solid."));
+				ImGui::TextWrapped("%s", TR("AMF_WindowOpacityHelp", "How solid the menu is: 100% is solid, lower lets the game show through. The black background fades the most, boxes and borders less, text least; right-click menus stay solid."));
 				ImGui::EndDisabled();
 				ImGui::Spacing();
 				ImGui::Spacing();
@@ -2088,6 +2089,9 @@ namespace renderer
 			// NoMove stays (2.1.1): ImGui's own move would let the body drag the window. The top row is the handle instead -
 			// see "THE TOP ROW MOVES THE WINDOW" below.
 			ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove;
+			// Resize the window OFF really is off (the owner, 2026-10-05: "make sure the toggle actually toggles off the
+			// resizing"): no edge or corner resizes it. On (the default), every edge and corner does, freely.
+			if (!settings::Get().freeResize) { windowFlags |= ImGuiWindowFlags_NoResize; }
 			// 1.7.7/1.7.8 (the owner, 2026-09-13): the KEY-OPENED window is fixed to the screen centre; an
 			// edge drag grows both sides (the centre never moves); a corner drag keeps the window's SHAPE
 			// and grows it - the text does not scale ("it should just increase the size of the window
@@ -2136,7 +2140,7 @@ namespace renderer
 						auto* c = static_cast<HotkeyConstraint*>(a_data->UserData);
 						const bool wChanged = std::fabs(a_data->DesiredSize.x - a_data->CurrentSize.x) > 0.5f;
 						const bool hChanged = std::fabs(a_data->DesiredSize.y - a_data->CurrentSize.y) > 0.5f;
-						// With Resize freely on (2.1.1) a corner drag is free - width and height each follow the mouse.
+						// With Resize the window on (2.1.1) a corner drag is free - width and height each follow the mouse.
 						const bool corner = wChanged && hChanged && c->aspect > 0.0f && !c->free;
 						if (corner)
 						{
@@ -2372,27 +2376,49 @@ namespace renderer
 				ImGui::Separator();
 				ImGui::TextDisabled("%s", TR("AMF_Mods", "Mods"));
 
-				// Sorting, on the "Mods" row itself (the owner, 2026-09-19, from phbd01's request for
-				// more sorting options): two switches, A-Z and Z-A. They are alternatives, so turning
-				// one on turns the other off, and turning both off gives the list back whatever order
-				// the player arranged by hand. Favourites stay pinned at the top under either.
+				// THE MODS ROW (2.1.1 - the owner, 2026-10-05: "we only need one toggle because switched off, it would be Z to A,
+				// and switch on, it would be A to Z ... just have a tick box next to the sorting toggle. Whether they want
+				// alphabetical sorting on. So a tick box, a toggle for A to Z and Z to A, and then a sort button for sorting and
+				// adding the separators"). It replaces 2026-09-19's two switches (A-Z, Z-A; both off = the list's own order):
+				//   tick box  - alphabetical order on or off (off: the order the player arranged by hand);
+				//   switch    - on A-Z, off Z-A; greyed while the tick box is off, and remembered for the next tick;
+				//   Sort      - the MCM category sort, separators and all, as on Settings > Menu list (where Undo is).
+				// A tick box rather than a switch for the first, against rule 32, because the owner asked for one by name.
+				// Favourites stay pinned at the top under any order.
 				{
 					const auto mode = personalization::GetSortMode();
-					bool asc  = mode == personalization::SortMode::kAlphaAsc;
-					bool desc = mode == personalization::SortMode::kAlphaDesc;
-					ImGui::SameLine();
-					if (widgets::Toggle(TR("AMF_SortAsc", "A-Z"), &asc))
-					{
-						personalization::SetSortMode(asc ? personalization::SortMode::kAlphaAsc
-														 : personalization::SortMode::kListOrder);
+					static bool s_ascending = mode != personalization::SortMode::kAlphaDesc;   // the direction while unticked
+					bool alphabetical = mode != personalization::SortMode::kListOrder;
+					if (mode == personalization::SortMode::kAlphaAsc) { s_ascending = true; }
+					if (mode == personalization::SortMode::kAlphaDesc) { s_ascending = false; }
+					const auto apply = [&]() {
+						personalization::SetSortMode(!alphabetical ? personalization::SortMode::kListOrder
+													 : (s_ascending ? personalization::SortMode::kAlphaAsc : personalization::SortMode::kAlphaDesc));
 						settings::Save();
-					}
+					};
 					ImGui::SameLine();
-					if (widgets::Toggle(TR("AMF_SortDesc", "Z-A"), &desc))
+					if (ImGui::Checkbox("##alphabetical", &alphabetical)) { apply(); }
+					if (ImGui::IsItemHovered()) { ImGui::SetTooltip("%s", TR("AMF_SortAlphaTip", "Sort the list alphabetically. Off: the order you arranged by hand.")); }
+					ImGui::SameLine();
+					ImGui::BeginDisabled(!alphabetical);
+					if (widgets::Toggle(s_ascending ? TR("AMF_SortAsc", "A-Z") : TR("AMF_SortDesc", "Z-A"), &s_ascending)) { apply(); }
+					ImGui::EndDisabled();
+					if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) { ImGui::SetTooltip("%s", TR("AMF_SortDirTip", "On: A to Z. Off: Z to A.")); }
+					const auto& sortValues = settings::Get();
+					if (sortValues.loadMcmHelperConfigs || sortValues.loadSkyUIScriptMenus)
 					{
-						personalization::SetSortMode(desc ? personalization::SortMode::kAlphaDesc
-														  : personalization::SortMode::kListOrder);
-						settings::Save();
+						ImGui::SameLine();
+						if (ImGui::SmallButton(TR("AMF_SortButton", "Sort")))
+						{
+							const auto r = mcmloader::SortIntoCategories(false);
+							g_mcmSortStatus = FormatSortStatus(r);
+							logger::info("side list: Sort pressed - {}", g_mcmSortStatus);
+						}
+						if (ImGui::IsItemHovered())
+						{
+							ImGui::SetTooltip("%s%s%s", TR("AMF_SortButtonTip", "Sort the MCM menus into categories, each under a separator for its kind. Undo is on Settings > Menu list."),
+											  g_mcmSortStatus.empty() ? "" : "\n\n", g_mcmSortStatus.c_str());
+						}
 					}
 				}
 
