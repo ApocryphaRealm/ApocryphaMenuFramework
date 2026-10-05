@@ -154,6 +154,10 @@ namespace renderer
 		// it from the listener thread (see DevBenchTool.cpp). Guarded by g_selLock; the render loop
 		// copies in at frame start and out at frame end.
 		std::mutex g_selLock;
+		// The framework window's rect as last drawn (2.1.1), for the DevBench state: a resize or move test reads the real
+		// size instead of judging a screenshot (the owner, 2026-10-05: "I couldn't resize the vertical length ... you'll
+		// have to check"). Guarded by g_selLock.
+		float g_mainX = 0.0f, g_mainY = 0.0f, g_mainW = 0.0f, g_mainH = 0.0f;
 		std::string g_selTab  = "mods";            // kept for the DevBench state JSON; the SMF shape has one list
 		std::string g_selNode = "settings";        // side-list entry: settings|controls|help|mod
 		int g_selMod = 0;
@@ -2188,6 +2192,12 @@ namespace renderer
 
 			if (ImGui::Begin(windowId, nullptr, windowFlags))
 			{
+				{
+					const ImVec2 rp = ImGui::GetWindowPos();
+					const ImVec2 rs = ImGui::GetWindowSize();
+					std::scoped_lock l(g_selLock);
+					g_mainX = rp.x; g_mainY = rp.y; g_mainW = rs.x; g_mainH = rs.y;
+				}
 				if (kCentred)
 				{
 					// The shape a corner drag keeps is the shape the window had when the drag began:
@@ -3645,8 +3655,14 @@ namespace renderer
 
 		float cursorX = 0.0f, cursorY = 0.0f;
 		input::GetCursor(cursorX, cursorY);
+		std::string mainWindow;
+		{
+			std::scoped_lock l(g_selLock);
+			mainWindow = ",\"mainWindow\":{\"pos\":[" + std::to_string(static_cast<int>(g_mainX)) + "," + std::to_string(static_cast<int>(g_mainY)) +
+				"],\"size\":[" + std::to_string(static_cast<int>(g_mainW)) + "," + std::to_string(static_cast<int>(g_mainH)) + "]}";
+		}
 		return std::string("{" + searchJson + "\"cursor\":{\"x\":") + std::to_string(static_cast<int>(cursorX)) + ",\"y\":" + std::to_string(static_cast<int>(cursorY)) + "}" +
-			   ",\"visible\":" + (visible ? "true" : "false") +
+			   ",\"visible\":" + (visible ? "true" : "false") + mainWindow +
 			   ",\"blockingWindowOpen\":" + ((visible || anyBlocking) ? "true" : "false") +
 			   ",\"consumerWindows\":[" + windows + "]" +
 			   // 2.0.4: what the input hook acts on - a mod's window holds the input (cursor, ImGui,

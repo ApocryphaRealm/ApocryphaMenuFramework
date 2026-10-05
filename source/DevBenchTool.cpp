@@ -288,6 +288,15 @@ namespace devbenchtool
 				input::QueueMouseClick(static_cast<std::uint32_t>(button));
 				result = "{\"ok\":true,\"op\":\"click\",\"button\":" + std::to_string(button) + "}";
 			}
+			else if (op == "mouse")
+			{
+				// 2.1.1: press OR release a mouse button (args button, down true/false), so a test can drag - press on a
+				// window edge, move the cursor with op=cursor, release - and read state's mainWindow size after.
+				const int button = static_cast<int>(JsonNum(args, "button", 0));
+				const bool down = args.find("\"down\":true") != std::string::npos;
+				input::QueueMouseButton(static_cast<std::uint32_t>(button), down);
+				result = std::string("{\"ok\":true,\"op\":\"mouse\",\"button\":") + std::to_string(button) + ",\"down\":" + (down ? "true" : "false") + "}";
+			}
 			else if (op == "bounds")
 			{
 				// 1.8.0: measure any clip of the open journal as screen fractions (args path), so a new
