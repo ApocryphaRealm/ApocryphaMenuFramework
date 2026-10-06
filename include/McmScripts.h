@@ -15,7 +15,9 @@
 // ============================================================================================
 
 #include <cstddef>
+#include <functional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace mcmloader::scripts
@@ -63,6 +65,26 @@ namespace mcmloader::scripts
 	void SetHidden(std::size_t a_index, bool a_hidden);
 	int Hidden();
 	int Count();
+
+	// MCM settings memory (McmMemory.cpp). Both drive the menu through the same one-call-at-a-time queue as the page, and
+	// refuse (false, a_done not called) while a menu is open on AMF's page or another drive runs.
+	//   MemorySnapshot: open the menu, build every page, read every toggle / slider / menu / colour / key / input, close.
+	//   MemoryRestore:  open the menu, then for each record in order build its page, find the option (label + nth) and,
+	//                   when its value differs, make the page's own Request/accept calls; close (OnConfigClose runs).
+	struct MemoryOption
+	{
+		int type = 0;        // McmMemory's Type, as int
+		std::string page;    // raw page name ("" for a menu with no pages)
+		std::string text;    // raw option label
+		int nth = 0;
+		std::string value;
+		int menuIndex = -1;
+	};
+	bool MemorySnapshot(const std::string& a_key, std::function<void(std::vector<MemoryOption>)> a_done);
+	bool MemoryRestore(const std::string& a_key, std::vector<MemoryOption> a_records, std::function<void(int, int)> a_done);
+	bool MemoryIdle();
+	// Every script menu found in this game: (key, entry).
+	std::vector<std::pair<std::string, std::string>> MemoryMenus();
 
 	// DevBench amf.mcm op=skyui (rules 31 and 64): action list | open | page | options | select | slider | menu |
 	// menuoptions | color | key | input | default | info | answer | close. Thread-safe.

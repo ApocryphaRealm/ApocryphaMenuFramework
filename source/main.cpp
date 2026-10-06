@@ -7,6 +7,7 @@
 #include "Registry.h"
 #include "Keyboard.h"
 #include "McmLoader.h"
+#include "McmMemory.h"
 #include "Renderer.h"
 #include "Settings.h"
 #include "Strings.h"
@@ -104,9 +105,11 @@ namespace
 			// captured at kPreLoadGame; restore it only if the load actually succeeded.
 			persistence::OnPostLoadGame(a_msg->data != nullptr);
 			mcmloader::OnGameLoaded();  // MCM loader: config scripts belong to the game just loaded
+			mcmmemory::OnSaveLoaded();  // a loaded save holds its own MCM settings: no automatic restore
 			break;
 		case SKSE::MessagingInterface::kNewGame:
 			mcmloader::OnGameLoaded();
+			mcmmemory::OnNewGame();     // MCM settings memory: apply the profile again once the menus appear
 			break;
 		case SKSE::MessagingInterface::kPostLoad:
 			// Re-run the SMF module-name alias. It was installed during our own load, but every
@@ -129,6 +132,7 @@ namespace
 			// MCM loader: MCM Helper mods' menus as AMF entries. kDataLoaded is the first point
 			// at which every plugin's load state can be asked (a config whose plugin is not loaded is skipped).
 			mcmloader::Load();
+			mcmmemory::Init();  // the MCM settings memory's active profile
 			if (g_staleOldCopy.load(std::memory_order_acquire)) {
 				constexpr auto kStale = "Apocrypha Menu Framework: delete the old ApocryphaMenuFramework.dll from SKSE/Plugins (this version is !ApocryphaMenuFramework.dll).";
 #if AMF_RUNTIME_LINE == 17

@@ -21,9 +21,46 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
-## 2.1.2 - 2026-10-05 - untested - the menu's words in every language
+## 2.1.2 - 2026-10-06 - untested - the menu's words in every language, and an MCM settings memory
 
 The owner, after 2.1.1: "Go ahead and make the changes, but don't post anything."
+
+The owner, 2026-10-06, after comparing MCM Memory (Nexus 189722): "Let's build it into AMF so that the settings you change
+for all these different MCMs are backed up and saved so that on a new game they still apply." Plan:
+4. plans\amf-mcm-memory\PLAN.md.
+
+### Added
+- **MCM settings memory** (MCM menus page, "Settings memory"; McmMemory.cpp). A new game forgets what save-held MCM settings
+  were set to; AMF now remembers them in a profile and sets them again. MCM Memory's own code was not read; only its page
+  was, to know what players expect. It covers:
+  - SkyUI menus written only in a mod's script (phase 3);
+  - MCM Helper controls kept in a global or a script property (phase 2).
+  MCM Helper's ModSetting values are in its own INI and survive a new game already.
+  - **Automatic backup** (`[McmMemory] bAutoBackup=1`). AMF records each change it makes there.
+    - Script menus: after the page is rebuilt, the option's new value is read back.
+    - Action rows are never recorded.
+    - Each setting is kept by its raw page and label (and which of same-labelled options it is), so a language change
+      does not lose it.
+    - Settings are kept in the order first changed, so an "enable" switch comes back before what it reveals.
+  - **Back up all now**: opens every menu AMF can read, builds every page and reads every toggle, slider, menu, colour,
+    key and text field - including what was set in SkyUI's own menu.
+  - **Restore on a new game** (`bRestoreOnNewGame=1`): after a NEW game only (a loaded save keeps its own), once the
+    menus appear, from 40 s to 4 min.
+    - Script menus get the page's own calls (Request then accept, the page rebuilt after each) and OnConfigClose at the end.
+    - MCM Helper controls get the loader's own write, OnSettingChange and action, then OnConfigClose.
+    - Only settings that differ are touched; a menu's saved text is found again in its list (the saved index is the
+      fallback).
+  - **Restore now**, on demand.
+  - **Profiles**:
+    - stored as `SKSE\Plugins\ApocryphaMenuFramework\McmMemory\<name>.json`, outside the save and the download, written
+      through a .tmp;
+    - new (empty or a copy), switch and delete;
+    - `sProfile`.
+  - **Per menu**: whether it takes part in the automatic restore, and Forget. A menu not in this game stays in the profile
+    untouched.
+  - DevBench `amf.mcm op=memory`: action status | backup | restore | records | forget | auto | profile | create | delete |
+    newgame.
+  - 23 strings, in all eleven languages (`tools\mcm_memory_strings.py`).
 
 ### Changed
 - **A converted menu's "(MCM)" ending shows in the language picked** - "Photo Mode (Mod-Konfig.)", "Photo Mode （模组配置）" -

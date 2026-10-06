@@ -18,7 +18,9 @@
 // GlobalValue / PropertyValue* sources and CallFunction actions are shown read-only (phase 2).
 // ============================================================================================
 
+#include <functional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace mcmloader
@@ -92,6 +94,21 @@ namespace mcmloader
 	// kPostLoadGame / kNewGame: script objects belong to the loaded game; drop the cached ones so
 	// the next change resolves the config script afresh.
 	void OnGameLoaded();
+
+	// MCM settings memory (McmMemory.cpp): the MCM Helper menus with values that live in the save (GlobalValue /
+	// PropertyValue* controls - ModSetting* values are in MCM Helper's own INI and survive a new game by themselves).
+	struct MemoryMenu
+	{
+		std::string key;    // "mcmhelper|<mod>"
+		std::string entry;
+	};
+	std::vector<MemoryMenu> MemoryMenus();
+	// Queued to the main thread: read every such control live; a_done gets (id, value) pairs (empty when the mod's
+	// script or forms are not there yet).
+	void MemorySnapshot(const std::string& a_key, std::function<void(std::vector<std::pair<std::string, std::string>>)> a_done);
+	// Queued to the main thread: OnConfigOpen, each value that differs written through the page's own path (store,
+	// OnSettingChange, action), then OnConfigClose. a_done(applied, missing).
+	void MemoryRestore(const std::string& a_key, std::vector<std::pair<std::string, std::string>> a_values, std::function<void(int, int)> a_done);
 
 	// DevBench amf.mcm (rules 31 and 64). ops: list (default), get {mod,id}, set {mod,id,value},
 	// script {mod}. Thread-safe - runs on devbench's listener thread; a set is applied through the

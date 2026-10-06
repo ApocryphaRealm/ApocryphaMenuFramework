@@ -4,6 +4,7 @@
 
 #include "Keyboard.h"
 #include "Input.h"
+#include "McmMemory.h"
 #include "McmScripts.h"
 #include "McmShared.h"
 #include "PreciseSlider.h"
@@ -841,14 +842,29 @@ namespace mcmloader
 		// a_closeAfter: also send OnConfigClose at the end - for a change made with no page open (the DevBench tool), so
 		// a mod that applies its settings only when its menu closes (TrueHUD, True Directional Movement, Precision:
 		// "Event OnConfigClose() native") sees it, as it would after SkyUI's menu.
+		// Set while the MCM settings memory writes its own values back, so they are not recorded again.
+		std::atomic<bool> g_memoryWriting{ false };
+
 		void Apply(std::size_t a_mod, const Control& a_control, const std::string& a_value, bool a_closeAfter = false)
 		{
 			std::string modName;
+			std::string entryName;
 			{
 				std::scoped_lock lock(g_mutex);
 				if (a_mod >= g_mods.size()) { return; }
 				if (a_control.source != Source::kNone) { g_mods[a_mod]->values[a_control.key] = a_value; }
 				modName = g_mods[a_mod]->modName;
+				entryName = g_mods[a_mod]->entryName;
+			}
+			// MCM settings memory: a value kept in the save (a global or a script property) is remembered for the next new
+			// game; MCM Helper's own ModSetting values are in its INI already
+			if (IsLive(a_control.source) && !g_memoryWriting.load())
+			{
+				mcmmemory::Record record;
+				record.type = mcmmemory::Type::kHelper;
+				record.id = a_control.key;
+				record.value = a_value;
+				mcmmemory::Remember("mcmhelper|" + modName, entryName, record);
 			}
 			const auto tasks = SKSE::GetTaskInterface();
 			if (!tasks)
@@ -2100,6 +2116,7 @@ namespace mcmloader
 
 		json out;
 		if (op == "skyui") { return scripts::ToolJson(a_argsJson); }  // phase 3: script-only SkyUI menus
+		if (op == "memory") { return mcmmemory::ToolJson(a_argsJson); }  // the MCM settings memory (McmMemory.cpp)
 		if (op == "sort") { return SortToolJson(a_argsJson); }      // the auto-sort into separators (McmSort.cpp)
 		if (op == "import")
 		{
@@ -2377,6 +2394,127 @@ namespace mcmloader
 			return json{ { "ok", true }, { "id", id }, { "queued", text }, { "configCloseAfter", !pageOpen } }.dump();
 		}
 		return json{ { "ok", false }, { "error", "unknown op '" + op + "' (list, get, set, press, refresh, script)" } }.dump();
+	}
+
+	// ------------------------------------------------------------------------------------- MCM settings memory
+
+	std::vector<MemoryMenu> MemoryMenus()
+	{
+		std::vector<MemoryMenu> out;
+		std::scoped_lock lock(g_mutex);
+		for (const auto& mod : g_mods)
+		{
+			bool live = false;
+			for (const Page& page : mod->pages)
+			{
+				for (const Control& c : page.controls) { live = live || IsLive(c.source); }
+			}
+			if (live) { out.push_back({ "mcmhelper|" + mod->modName, mod->entryName }); }
+		}
+		return out;
+	}
+
+	namespace
+	{
+		std::optional<std::size_t> MemoryModIndex(const std::string& a_key)
+		{
+			if (a_key.rfind("mcmhelper|", 0) != 0) { return std::nullopt; }
+			const std::string name = a_key.substr(10);
+			std::scoped_lock lock(g_mutex);
+			for (std::size_t m = 0; m < g_mods.size(); ++m)
+			{
+				if (g_mods[m]->modName == name) { return m; }
+			}
+			return std::nullopt;
+		}
+	}
+
+	void MemorySnapshot(const std::string& a_key, std::function<void(std::vector<std::pair<std::string, std::string>>)> a_done)
+	{
+		const auto index = MemoryModIndex(a_key);
+		const auto tasks = SKSE::GetTaskInterface();
+		if (!index || !tasks)
+		{
+			a_done({});
+			return;
+		}
+		tasks->AddTask([mod = *index, a_done]() {
+			std::vector<std::pair<std::string, std::string>> values;
+			if (EnsureScript(mod))  // the forms and script of a game that is loaded
+			{
+				for (const Page& page : g_mods[mod]->pages)
+				{
+					for (const Control& c : page.controls)
+					{
+						if (!IsLive(c.source)) { continue; }
+						if (auto v = ReadLive(mod, c)) { values.emplace_back(c.key, std::move(*v)); }
+					}
+				}
+			}
+			a_done(std::move(values));
+		});
+	}
+
+	void MemoryRestore(const std::string& a_key, std::vector<std::pair<std::string, std::string>> a_values, std::function<void(int, int)> a_done)
+	{
+		const auto index = MemoryModIndex(a_key);
+		const auto tasks = SKSE::GetTaskInterface();
+		if (!index || !tasks)
+		{
+			a_done(0, static_cast<int>(a_values.size()));
+			return;
+		}
+		tasks->AddTask([mod = *index, values = std::move(a_values), a_done]() {
+			if (!EnsureScript(mod))
+			{
+				a_done(0, static_cast<int>(values.size()));
+				return;
+			}
+			// the writes wait for OnConfigOpen to FINISH (a mod's OnConfigOpen reloads its properties - SkyUI's UnequipArmor)
+			DispatchEvent(mod, "OnConfigOpen", nullptr, [mod, values, a_done]() {
+				const auto tasks = SKSE::GetTaskInterface();
+				if (!tasks)
+				{
+					a_done(0, static_cast<int>(values.size()));
+					return;
+				}
+				tasks->AddTask([mod, values, a_done]() {
+					int applied = 0;
+					int missing = 0;
+					g_memoryWriting = true;
+					for (const auto& [key, value] : values)
+					{
+						const Control* control = nullptr;
+						for (const Page& page : g_mods[mod]->pages)
+						{
+							for (const Control& c : page.controls)
+							{
+								if (c.key == key && IsLive(c.source)) { control = &c; }
+							}
+						}
+						const auto now = control ? ReadLive(mod, *control) : std::nullopt;
+						if (!control || !now)
+						{
+							++missing;
+							continue;
+						}
+						if (*now == value) { continue; }
+						Apply(mod, *control, value);  // queues the write, OnSettingChange and the action as one task
+						++applied;
+					}
+					g_memoryWriting = false;
+					// OnConfigClose after those tasks (the task queue is in order) - TrueHUD-style mods apply only there
+					if (const auto later = SKSE::GetTaskInterface())
+					{
+						later->AddTask([mod, applied, missing, a_done]() {
+							DispatchEvent(mod, "OnConfigClose", nullptr);
+							a_done(applied, missing);
+						});
+					}
+					else { a_done(applied, missing); }
+				});
+			});
+		});
 	}
 }
 

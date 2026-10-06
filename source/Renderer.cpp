@@ -1,6 +1,7 @@
 #include "Renderer.h"
 #include "Keyboard.h"
 #include "McmLoader.h"
+#include "McmMemory.h"
 #include "McmScripts.h"
 
 #include "ConsumerSurface.h"
@@ -309,6 +310,8 @@ namespace renderer
 		char g_presetName[64] = {};
 		char g_mcmImportFilter[64] = {};  // the settings page's filter over the MCM import list
 		std::string g_mcmSortStatus;      // the last MCM sort's one-line result under its buttons
+		char g_memProfileName[64] = {};   // MCM settings memory: the name typed for a new profile
+		std::string g_memStatus;          // MCM settings memory: why a button did nothing ("" when it ran)
 
 		std::string FormatSortStatus(const mcmloader::SortResult& a_r)
 		{
@@ -1314,6 +1317,114 @@ namespace renderer
 						ImGui::TreePop();
 					}
 
+					// SETTINGS MEMORY (the owner, 2026-10-06: "build it into AMF so that the settings you change for all these
+					// different MCMs are backed up and saved so that on a new game they still apply"). McmMemory.h.
+					ImGui::Spacing();
+					ImGui::Separator();
+					ImGui::TextUnformatted(TR("AMF_McmMemTitle", "Settings memory"));
+					ImGui::TextWrapped("%s", TR("AMF_McmMemHelp", "A new game forgets what menus written in a mod's script, and MCM Helper "
+									   "settings kept in your save, were set to. Those settings are remembered here and set again after a "
+									   "new game. MCM Helper's other settings are kept by MCM Helper itself."));
+					if (widgets::Toggle(TR("AMF_McmMemAuto", "Remember each change made here"), &values.mcmAutoBackup))
+					{
+						logger::info("settings page: MCM memory automatic backup -> {}", values.mcmAutoBackup);
+						settings::Save();
+					}
+					if (widgets::Toggle(TR("AMF_McmMemOnNewGame", "Set them again after a new game"), &values.mcmRestoreOnNewGame))
+					{
+						logger::info("settings page: MCM memory restore on a new game -> {}", values.mcmRestoreOnNewGame);
+						settings::Save();
+					}
+
+					const bool memBusy = mcmmemory::Busy();
+					if (memBusy) { ImGui::BeginDisabled(); }
+					// the profile in use, a new one (empty, or a copy of this one), and deleting another
+					const std::string memActive = mcmmemory::ActiveProfile();
+					const auto memProfiles = mcmmemory::Profiles();
+					ImGui::SetNextItemWidth(ImGui::GetFontSize() * 12.0f);
+					if (theme::BeginComboTight(TR("AMF_McmMemProfile", "Profile"), memActive.c_str()))
+					{
+						for (const auto& name : memProfiles)
+						{
+							if (ImGui::Selectable(name.c_str(), name == memActive) && name != memActive) { mcmmemory::SwitchProfile(name); }
+						}
+						ImGui::EndCombo();
+					}
+					ImGui::SameLine();
+					ImGui::SetNextItemWidth(ImGui::GetFontSize() * 9.0f);
+					ImGui::InputTextWithHint("##memprofile", TR("AMF_McmMemNewName", "New profile name"), g_memProfileName, sizeof(g_memProfileName));
+					keyboard::NoteTextField(ImGui::GetItemID());
+					const bool memNamed = g_memProfileName[0] != '\0';
+					if (!memNamed) { ImGui::BeginDisabled(); }
+					ImGui::SameLine();
+					if (ImGui::Button(TR("AMF_McmMemNew", "New")))
+					{
+						g_memStatus = mcmmemory::CreateProfile(g_memProfileName, false) ? "" : TR("AMF_McmMemExists", "A profile with that name exists already.");
+						g_memProfileName[0] = '\0';
+					}
+					ImGui::SameLine();
+					if (ImGui::Button(TR("AMF_McmMemCopy", "Copy this one")))
+					{
+						g_memStatus = mcmmemory::CreateProfile(g_memProfileName, true) ? "" : TR("AMF_McmMemExists", "A profile with that name exists already.");
+						g_memProfileName[0] = '\0';
+					}
+					if (!memNamed) { ImGui::EndDisabled(); }
+					{
+						const bool others = memProfiles.size() > 1;
+						ImGui::SameLine();
+						ImGui::SetNextItemWidth(ImGui::GetFontSize() * 9.0f);
+						if (!others) { ImGui::BeginDisabled(); }
+						if (theme::BeginComboTight("##memdelete", TR("AMF_McmMemDelete", "Delete a profile...")))
+						{
+							for (const auto& name : memProfiles)
+							{
+								if (name != memActive && ImGui::Selectable(name.c_str())) { mcmmemory::DeleteProfile(name); }
+							}
+							ImGui::EndCombo();
+						}
+						if (!others) { ImGui::EndDisabled(); }
+					}
+
+					if (ImGui::Button(TR("AMF_McmMemBackUp", "Back up all now")))
+					{
+						g_memStatus = mcmmemory::BackUpAll() ? "" : TR("AMF_McmMemWait", "Close the MCM page that is open, or wait for the backup or restore that is running.");
+					}
+					ImGui::SameLine();
+					if (ImGui::Button(TR("AMF_McmMemRestore", "Restore now")))
+					{
+						g_memStatus = mcmmemory::RestoreNow() ? "" : TR("AMF_McmMemWait", "Close the MCM page that is open, or wait for the backup or restore that is running.");
+					}
+					if (memBusy) { ImGui::EndDisabled(); }
+					ImGui::TextWrapped("%s", TR("AMF_McmMemButtonsHelp", "Back up all now reads every menu this menu can read - also what you "
+									   "set in SkyUI's own menu. Restore now sets this game's menus to the profile."));
+					const std::string memLast = mcmmemory::LastResult();
+					if (!g_memStatus.empty()) { ImGui::TextWrapped("%s", g_memStatus.c_str()); }
+					else if (!memLast.empty()) { ImGui::TextDisabled("%s", memLast.c_str()); }
+
+					const auto memRows = mcmmemory::Menus();
+					char memHeader[160];
+					snprintf(memHeader, sizeof(memHeader), TR("AMF_McmMemMenus", "Menus in this profile (%d)"), static_cast<int>(memRows.size()));
+					if (ImGui::TreeNode("##mcmmemory", "%s", memHeader))
+					{
+						ImGui::TextWrapped("%s", TR("AMF_McmMemMenusHelp", "Switch off a menu to leave it out of the automatic restore after a "
+										   "new game; Forget drops what this profile remembers of it."));
+						for (const auto& row : memRows)
+						{
+							ImGui::PushID(row.key.c_str());
+							bool on = row.autoRestore;
+							if (widgets::Toggle(personalization::ShownEntryName(row.entry).c_str(), &on)) { mcmmemory::SetAutoRestore(row.key, on); }
+							ImGui::SameLine();
+							if (row.present) { ImGui::TextDisabled(TR("AMF_McmMemSaved", "%d saved"), row.saved); }
+							else { ImGui::TextDisabled(TR("AMF_McmMemAbsent", "%d saved - not in this game"), row.saved); }
+							if (row.saved > 0)
+							{
+								ImGui::SameLine();
+								if (ImGui::SmallButton(TR("AMF_McmMemForget", "Forget"))) { mcmmemory::Forget(row.key); }
+							}
+							ImGui::PopID();
+						}
+						ImGui::TreePop();
+					}
 				}
 				ImGui::Spacing();
 				ImGui::EndTabItem();

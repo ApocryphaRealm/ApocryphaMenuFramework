@@ -2,6 +2,7 @@
 
 #include "Input.h"
 #include "Keyboard.h"
+#include "McmMemory.h"
 #include "McmShared.h"
 #include "PreciseSlider.h"
 #include "Registry.h"
@@ -703,16 +704,85 @@ namespace mcmloader::scripts
 			}
 		}
 
+		// ------------------------------------------------------- MCM settings memory: what a change left (McmMemory.cpp)
+
+		// Set while the memory drives a menu (a backup reading pages, a restore writing them): those are not the player's
+		// changes, so nothing is recorded.
+		std::atomic<bool> g_memoryDriving{ false };
+
+		// A value as the memory stores it: toggle "1"/"0", slider "%.6g", colour and key an integer, menu and input the text.
+		std::string MemoryValue(const Option& a_o)
+		{
+			char buf[32];
+			switch (a_o.type)
+			{
+			case kToggle: return a_o.num != 0.0f ? "1" : "0";
+			case kSlider: snprintf(buf, sizeof(buf), "%.6g", a_o.num); return buf;
+			case kColor:
+			case kKeymap: return std::to_string(static_cast<std::int64_t>(std::lround(a_o.num)));
+			default: return a_o.str;  // menu (its shown value) and input
+			}
+		}
+
+		bool Rememberable(const Option& a_o)
+		{
+			return a_o.type >= kToggle && a_o.type <= kInput && !a_o.text.empty();
+		}
+
+		// Which of the options with this label and type on the page a slot is (two "Enabled" switches in one menu).
+		int NthOf(const std::vector<Option>& a_options, int a_slot)
+		{
+			int nth = 0;
+			for (int i = 0; i < a_slot && i < static_cast<int>(a_options.size()); ++i)
+			{
+				if (a_options[i].type == a_options[a_slot].type && a_options[i].text == a_options[a_slot].text) { ++nth; }
+			}
+			return nth;
+		}
+
+		// After a change the page made and the page was rebuilt: the option's new value, recorded for the next new game.
+		void RememberSlot(int a_mod, int a_slot, int a_menuIndex)
+		{
+			if (g_memoryDriving.load() || a_slot < 0 || a_slot >= kSlots) { return; }
+			std::string key;
+			std::string entry;
+			mcmmemory::Record record;
+			{
+				std::scoped_lock lock(g_mutex);
+				if (g_open.load() != a_mod || a_mod < 0 || a_mod >= static_cast<int>(g_mods.size())) { return; }
+				const Option& o = g_session.options[a_slot];
+				if (!Rememberable(o)) { return; }  // a text row is an action, not a setting
+				key = "script|" + g_mods[a_mod]->plugin + "|" + g_mods[a_mod]->modName;
+				entry = g_mods[a_mod]->entryName;
+				record.type = static_cast<mcmmemory::Type>(o.type - kToggle);
+				record.page = g_session.pageName;
+				record.text = o.text;
+				record.nth = NthOf(g_session.options, a_slot);
+				record.value = MemoryValue(o);
+				record.menuIndex = o.type == kMenu ? a_menuIndex : -1;
+			}
+			mcmmemory::Remember(key, entry, record);
+		}
+
 		// An interaction: the Request (when the dialog has one, so _activeOption is this option even if another call ran
-		// in between), the accept, then the page rebuilt.
-		void QueueChange(int a_mod, int a_slot, const char* a_request, const char* a_accept, std::function<VarArgs()> a_acceptArgs, const std::string& a_key = {})
+		// in between), the accept, then the page rebuilt - and what it left remembered (a_menuIndex: the index a menu
+		// was set to, kept as the fallback when its text is not found again).
+		void QueueChange(int a_mod, int a_slot, const char* a_request, const char* a_accept, std::function<VarArgs()> a_acceptArgs, const std::string& a_key = {}, int a_menuIndex = -1)
 		{
 			std::string name = std::string(a_accept) + " " + std::to_string(a_slot);
-			Enqueue({ a_key, name, [a_mod, a_slot, a_request, a_accept, a_acceptArgs](std::function<void()> a_done) {
+			Enqueue({ a_key, name, [a_mod, a_slot, a_request, a_accept, a_acceptArgs, a_menuIndex](std::function<void()> a_done) {
 				const auto config = ScriptOf(a_mod);
 				if (!config || g_open.load() != a_mod) { a_done(); return; }
-				auto accept = [a_mod, config, a_accept, a_acceptArgs, a_done]() {
-					if (!Call(config, a_accept, a_acceptArgs(), [a_mod, config, a_done](const RE::BSScript::Variable&) { Rebuild(a_mod, config, a_done); })) { a_done(); }
+				auto accept = [a_mod, a_slot, a_menuIndex, config, a_accept, a_acceptArgs, a_done]() {
+					if (!Call(config, a_accept, a_acceptArgs(), [a_mod, a_slot, a_menuIndex, config, a_done](const RE::BSScript::Variable&) {
+							Rebuild(a_mod, config, [a_mod, a_slot, a_menuIndex, a_done]() {
+								RememberSlot(a_mod, a_slot, a_menuIndex);
+								a_done();
+							});
+						}))
+					{
+						a_done();
+					}
 				};
 				if (!a_request) { accept(); return; }
 				// the accept runs on a VM thread here; dispatching from it is what the manager's own events do
@@ -728,7 +798,7 @@ namespace mcmloader::scripts
 		}
 		void QueueMenu(int a_mod, int a_slot, int a_index)
 		{
-			QueueChange(a_mod, a_slot, "RequestMenuDialogData", "SetMenuIndex", [a_index]() { return Args(a_index); });
+			QueueChange(a_mod, a_slot, "RequestMenuDialogData", "SetMenuIndex", [a_index]() { return Args(a_index); }, {}, a_index);
 		}
 		void QueueColor(int a_mod, int a_slot, int a_color)
 		{
@@ -1363,6 +1433,7 @@ namespace mcmloader::scripts
 	{
 		g_open.store(-1);
 		ClearQueue();
+		g_memoryDriving = false;  // a backup or restore that was running belonged to the game just left
 		{
 			std::scoped_lock lock(g_captureMutex);
 			g_message = Message{};
@@ -1485,6 +1556,322 @@ namespace mcmloader::scripts
 		if (!settings::Get().loadSkyUIScriptMenus) { return 0; }
 		std::scoped_lock lock(g_mutex);
 		return static_cast<int>(std::count_if(g_mods.begin(), g_mods.end(), [](const auto& m) { return m->present; }));
+	}
+
+	// ------------------------------------------------------------------------------------- MCM settings memory
+
+	namespace
+	{
+		int ModForKey(const std::string& a_key)
+		{
+			std::scoped_lock lock(g_mutex);
+			for (std::size_t i = 0; i < g_mods.size(); ++i)
+			{
+				const SMod& m = *g_mods[i];
+				if (m.present && m.script && "script|" + m.plugin + "|" + m.modName == a_key) { return static_cast<int>(i); }
+			}
+			return -1;
+		}
+
+		struct RestoreState
+		{
+			std::vector<MemoryOption> records;
+			int applied = 0;
+			int same = 0;
+			int missing = 0;
+		};
+
+		// The slot of the option a record names on the page built now: same type, same raw label, the nth of those.
+		int FindSlot(const MemoryOption& a_r)
+		{
+			const int type = a_r.type + kToggle;
+			int seen = 0;
+			std::scoped_lock lock(g_mutex);
+			for (int i = 0; i < kSlots; ++i)
+			{
+				const Option& o = g_session.options[i];
+				if (o.type != type || o.text != a_r.text) { continue; }
+				if (seen == a_r.nth) { return i; }
+				++seen;
+			}
+			return -1;
+		}
+
+		bool SameValue(const Option& a_o, const MemoryOption& a_r)
+		{
+			switch (a_o.type)
+			{
+			case kToggle: return (a_o.num != 0.0f) == (a_r.value == "1");
+			case kSlider:
+				try { return std::fabs(a_o.num - std::stof(a_r.value)) < 1e-4f * std::max(1.0f, std::fabs(a_o.num)); }
+				catch (...) { return true; }
+			case kColor:
+			case kKeymap:
+				try { return std::lround(a_o.num) == std::stoll(a_r.value); }
+				catch (...) { return true; }
+			default: return a_o.str == a_r.value;
+			}
+		}
+
+		// VM or main thread, the record's page built: set the option when it differs, through the calls the page makes.
+		void MemoryApply(int a_mod, const ObjectPtr& a_config, std::shared_ptr<RestoreState> a_st, const MemoryOption& a_r, std::function<void()> a_done)
+		{
+			const int slot = FindSlot(a_r);
+			if (slot < 0)
+			{
+				logger::info("MCM memory: \"{}\" on page \"{}\" not found - left as it is", a_r.text, a_r.page);
+				++a_st->missing;
+				a_done();
+				return;
+			}
+			Option current;
+			{
+				std::scoped_lock lock(g_mutex);
+				current = g_session.options[slot];
+			}
+			if (SameValue(current, a_r))
+			{
+				++a_st->same;
+				a_done();
+				return;
+			}
+			auto finish = [a_mod, a_config, a_st, a_done]() {
+				++a_st->applied;
+				Rebuild(a_mod, a_config, a_done);  // the next record may be an option this one revealed
+			};
+			auto fail = [a_st, a_done]() {
+				++a_st->missing;
+				a_done();
+			};
+			// Request (sets _activeOption), then the accept - as QueueChange does
+			auto twoStep = [a_config, slot, finish, fail](const char* a_request, const char* a_accept, std::function<VarArgs()> a_args) {
+				if (!Call(a_config, a_request, Args(slot), [a_config, a_accept, a_args, finish](const RE::BSScript::Variable&) {
+						if (!Call(a_config, a_accept, a_args(), [finish](const RE::BSScript::Variable&) { finish(); })) { finish(); }
+					}))
+				{
+					fail();
+				}
+			};
+			try
+			{
+				switch (current.type)
+				{
+				case kToggle:
+					if (!Call(a_config, "SelectOption", Args(slot), [finish](const RE::BSScript::Variable&) { finish(); })) { fail(); }
+					return;
+				case kSlider:
+					{
+						const float v = std::stof(a_r.value);
+						twoStep("RequestSliderDialogData", "SetSliderValue", [v]() { return ArgsF(v); });
+					}
+					return;
+				case kColor:
+					{
+						const auto c = static_cast<std::int32_t>(std::stoll(a_r.value));
+						twoStep("RequestColorDialogData", "SetColorValue", [c]() { return Args(c); });
+					}
+					return;
+				case kInput:
+					{
+						const std::string text = a_r.value;
+						twoStep("RequestInputDialogData", "SetInputText", [text]() { return ArgsS(text); });
+					}
+					return;
+				case kKeymap:
+					{
+						VarArgs v;
+						v.args.resize(4);
+						v.args[0].SetSInt(slot);
+						v.args[1].SetSInt(static_cast<std::int32_t>(std::stoll(a_r.value)));
+						v.args[2].SetString("");
+						v.args[3].SetString("");
+						if (!Call(a_config, "RemapKey", std::move(v), [finish](const RE::BSScript::Variable&) { finish(); })) { fail(); }
+					}
+					return;
+				case kMenu:
+					{
+						// the list comes through the recorder; the saved TEXT is looked up in it, the saved index is the fallback
+						{
+							std::scoped_lock lock(g_captureMutex);
+							g_capturedMenu.clear();
+							g_menuCaptured = false;
+						}
+						const MemoryOption r = a_r;
+						if (!Call(a_config, "RequestMenuDialogData", Args(slot), [a_config, r, finish, fail](const RE::BSScript::Variable&) {
+								std::vector<std::string> list;
+								{
+									std::scoped_lock lock(g_captureMutex);
+									list = g_capturedMenu;
+								}
+								int index = -1;
+								for (std::size_t i = 0; i < list.size(); ++i)
+								{
+									if (list[i] == r.value) { index = static_cast<int>(i); }
+								}
+								if (index < 0) { index = r.menuIndex; }
+								if (index < 0)
+								{
+									logger::info("MCM memory: menu \"{}\" has no entry \"{}\" now - left as it is", r.text, r.value);
+									fail();
+									return;
+								}
+								if (!Call(a_config, "SetMenuIndex", Args(index), [finish](const RE::BSScript::Variable&) { finish(); })) { fail(); }
+							}))
+						{
+							fail();
+						}
+					}
+					return;
+				default: fail(); return;
+				}
+			}
+			catch (const std::exception&)
+			{
+				fail();  // a stored number that does not parse
+			}
+		}
+
+		// One record: its page built first when the page open now is another.
+		void MemoryRestoreOne(int a_mod, std::shared_ptr<RestoreState> a_st, std::size_t a_r, std::function<void()> a_done)
+		{
+			const auto config = ScriptOf(a_mod);
+			if (!config || g_open.load() != a_mod)
+			{
+				++a_st->missing;
+				a_done();
+				return;
+			}
+			const MemoryOption r = a_st->records[a_r];
+			std::string openPage;
+			bool built = false;
+			int pageIndex = -1;
+			bool pageFound = r.page.empty();
+			{
+				std::scoped_lock lock(g_mutex);
+				openPage = g_session.pageName;
+				built = g_session.page != -2;
+				const auto& pages = g_mods[a_mod]->pages;
+				for (std::size_t i = 0; i < pages.size(); ++i)
+				{
+					if (pages[i] == r.page)
+					{
+						pageIndex = static_cast<int>(i);
+						pageFound = true;
+						break;
+					}
+				}
+			}
+			auto apply = [a_mod, config, a_st, r, a_done]() { MemoryApply(a_mod, config, a_st, r, a_done); };
+			if (built && openPage == r.page)
+			{
+				apply();
+				return;
+			}
+			if (!pageFound)
+			{
+				logger::info("MCM memory: page \"{}\" is not in the menu now - \"{}\" left as it is", r.page, r.text);
+				++a_st->missing;
+				a_done();
+				return;
+			}
+			Build(a_mod, config, pageIndex, r.page, apply);
+		}
+
+		// The last op of a drive: close the menu as SkyUI does (OnConfigClose), then report.
+		void EndDrive(std::function<void()> a_report)
+		{
+			Enqueue({ "", "memory: close", [a_report](std::function<void()> a_done) {
+				Close();  // queues CloseConfig
+				Enqueue({ "", "memory: done", [a_report](std::function<void()> a_done2) {
+					g_memoryDriving = false;
+					a_report();
+					a_done2();
+				} });
+				a_done();
+			} });
+		}
+	}
+
+	bool MemoryIdle()
+	{
+		return g_open.load() < 0 && !g_memoryDriving.load();
+	}
+
+	std::vector<std::pair<std::string, std::string>> MemoryMenus()
+	{
+		std::vector<std::pair<std::string, std::string>> out;
+		std::scoped_lock lock(g_mutex);
+		for (const auto& m : g_mods)
+		{
+			if (m->present && m->script) { out.emplace_back("script|" + m->plugin + "|" + m->modName, m->entryName); }
+		}
+		return out;
+	}
+
+	bool MemorySnapshot(const std::string& a_key, std::function<void(std::vector<MemoryOption>)> a_done)
+	{
+		if (!MemoryIdle()) { return false; }
+		const int mod = ModForKey(a_key);
+		if (mod < 0) { return false; }
+		std::vector<std::pair<int, std::string>> pages;
+		{
+			std::scoped_lock lock(g_mutex);
+			const auto& names = g_mods[mod]->pages;
+			if (names.empty()) { pages.emplace_back(-1, std::string()); }
+			for (std::size_t i = 0; i < names.size(); ++i) { pages.emplace_back(static_cast<int>(i), names[i]); }
+		}
+		g_memoryDriving = true;
+		auto read = std::make_shared<std::vector<MemoryOption>>();
+		Open(mod, true);
+		for (const auto& [index, name] : pages)
+		{
+			Enqueue({ "", "memory: read page " + name, [mod, index, name, read](std::function<void()> a_done) {
+				const auto config = ScriptOf(mod);
+				if (!config || g_open.load() != mod) { a_done(); return; }
+				Build(mod, config, index, name, [name, read, a_done]() {
+					{
+						std::scoped_lock lock(g_mutex);
+						for (int i = 0; i < kSlots; ++i)
+						{
+							const Option& o = g_session.options[i];
+							if (!Rememberable(o) || (o.flags & kFlagHidden)) { continue; }
+							MemoryOption r;
+							r.type = o.type - kToggle;
+							r.page = name;
+							r.text = o.text;
+							r.nth = NthOf(g_session.options, i);
+							r.value = MemoryValue(o);
+							read->push_back(std::move(r));
+						}
+					}
+					a_done();
+				});
+			} });
+		}
+		EndDrive([read, a_done]() { a_done(*read); });
+		return true;
+	}
+
+	bool MemoryRestore(const std::string& a_key, std::vector<MemoryOption> a_records, std::function<void(int, int)> a_done)
+	{
+		if (!MemoryIdle()) { return false; }
+		const int mod = ModForKey(a_key);
+		if (mod < 0) { return false; }
+		g_memoryDriving = true;
+		auto state = std::make_shared<RestoreState>();
+		state->records = std::move(a_records);
+		Open(mod, true);
+		for (std::size_t r = 0; r < state->records.size(); ++r)
+		{
+			Enqueue({ "", "memory: restore " + state->records[r].text, [mod, state, r](std::function<void()> a_done) {
+				MemoryRestoreOne(mod, state, r, a_done);
+			} });
+		}
+		EndDrive([state, a_done]() {
+			logger::info("MCM memory: restore done - {} set, {} already right, {} not found", state->applied, state->same, state->missing);
+			a_done(state->applied, state->missing);
+		});
+		return true;
 	}
 
 	std::string ToolJson(const std::string& a_argsJson)

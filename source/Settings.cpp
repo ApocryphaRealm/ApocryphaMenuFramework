@@ -210,6 +210,16 @@ namespace settings
 				"; this mod, type  setstage SKI_ConfigManagerInstance 1  in the console.\n"
 				"bHideInSkyUI=" << (a_v.hideMcmInSkyUI ? 1 : 0) << "\n"
 				"\n"
+				"[McmMemory]\n"
+				"; MCM settings memory. A new game forgets what SkyUI menus written in a mod's script, and MCM Helper\n"
+				"; settings kept in a global or a script property, were set to (MCM Helper's own INI settings it\n"
+				"; already keeps). 1 = remember each such change made in this menu, in the profile below.\n"
+				"bAutoBackup=" << (a_v.mcmAutoBackup ? 1 : 0) << "\n"
+				"; 1 = after a NEW game (not a loaded save), set those menus to the profile again once they appear.\n"
+				"bRestoreOnNewGame=" << (a_v.mcmRestoreOnNewGame ? 1 : 0) << "\n"
+				"; The profile in use: SKSE\\Plugins\\ApocryphaMenuFramework\\McmMemory\\<name>.json.\n"
+				"sProfile=" << a_v.mcmMemoryProfile << "\n"
+				"\n"
 				"[Input]\n"
 				"; DirectInput scan code that toggles the framework menu, decimal or hex: 59 (0x3B) = F1.\n"
 				"; 0 = no key at all, which is the way to leave F1 entirely to the game. The same key as\n"
@@ -567,6 +577,9 @@ namespace settings
 			ReadBool(entries, "MCM.bLoadSkyUIScriptMenus", g_values.loadSkyUIScriptMenus);
 			ReadBool(entries, "MCM.bImportNewMenus", g_values.importNewMcmMenus);
 			ReadBool(entries, "MCM.bHideInSkyUI", g_values.hideMcmInSkyUI);
+			ReadBool(entries, "McmMemory.bAutoBackup", g_values.mcmAutoBackup);
+			ReadBool(entries, "McmMemory.bRestoreOnNewGame", g_values.mcmRestoreOnNewGame);
+			if (const auto it = entries.find("McmMemory.sProfile"); it != entries.end() && !it->second.empty()) { g_values.mcmMemoryProfile = it->second; }
 
 			// Window profiles. Each field defaults to -1, which the renderer reads as "this profile
 			// has never been moved, so use its default geometry"; a missing key therefore behaves
