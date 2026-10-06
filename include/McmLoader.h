@@ -95,7 +95,7 @@ namespace mcmloader
 	// the next change resolves the config script afresh.
 	void OnGameLoaded();
 
-	// MCM settings memory (McmMemory.cpp): the MCM Helper menus with values that live in the save (GlobalValue /
+	// remembered MCM settings (RememberedSettings.cpp): the MCM Helper menus with values that live in the save (GlobalValue /
 	// PropertyValue* controls - ModSetting* values are in MCM Helper's own INI and survive a new game by themselves).
 	struct MemoryMenu
 	{

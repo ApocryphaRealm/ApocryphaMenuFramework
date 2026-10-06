@@ -99,11 +99,11 @@ namespace settings
 		bool importNewMcmMenus = true;
 		// MCM loader: [MCM] bHideInSkyUI - take the mods AMF draws completely out of SkyUI's own MCM list.
 		bool hideMcmInSkyUI = false;
-		// MCM settings memory (McmMemory.h): [McmMemory] bAutoBackup - remember each MCM change made here;
+		// remembered MCM settings (RememberedSettings.h): [RememberedSettings] bAutoBackup - remember each MCM change made here;
 		// bRestoreOnNewGame - apply the profile again after a new game; sProfile - the active profile's name.
 		bool mcmAutoBackup = true;
 		bool mcmRestoreOnNewGame = true;
-		std::string mcmMemoryProfile = "Default";
+		std::string rememberedProfile = "Default";
 		bool watchdogEnabled = true;
 		// Fast exit (the author, 2026-09-05: "a way to deal with this on exit no kill function issue"):
 		// when the game asks Windows to exit, end the process at once instead of running every

@@ -66,14 +66,14 @@ namespace mcmloader::scripts
 	int Hidden();
 	int Count();
 
-	// MCM settings memory (McmMemory.cpp). Both drive the menu through the same one-call-at-a-time queue as the page, and
+	// remembered MCM settings (RememberedSettings.cpp). Both drive the menu through the same one-call-at-a-time queue as the page, and
 	// refuse (false, a_done not called) while a menu is open on AMF's page or another drive runs.
 	//   MemorySnapshot: open the menu, build every page, read every toggle / slider / menu / colour / key / input, close.
 	//   MemoryRestore:  open the menu, then for each record in order build its page, find the option (label + nth) and,
 	//                   when its value differs, make the page's own Request/accept calls; close (OnConfigClose runs).
 	struct MemoryOption
 	{
-		int type = 0;        // McmMemory's Type, as int
+		int type = 0;        // RememberedSettings' Type, as int
 		std::string page;    // raw page name ("" for a menu with no pages)
 		std::string text;    // raw option label
 		int nth = 0;

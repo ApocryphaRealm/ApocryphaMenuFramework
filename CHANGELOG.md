@@ -21,22 +21,22 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
-## 2.1.2 - 2026-10-06 - untested - the menu's words in every language, and an MCM settings memory
+## 2.1.2 - 2026-10-06 - untested - the menu's words in every language, and MCM settings that come back on a new game
 
 The owner, after 2.1.1: "Go ahead and make the changes, but don't post anything."
 
-The owner, 2026-10-06, after comparing MCM Memory (Nexus 189722): "Let's build it into AMF so that the settings you change
+The owner, 2026-10-06, after comparing another mod that saves MCM settings (Nexus 189722): "Let's build it into AMF so that the settings you change
 for all these different MCMs are backed up and saved so that on a new game they still apply." Plan:
-4. plans\amf-mcm-memory\PLAN.md.
+4. plans\amf-remembered-settings\PLAN.md.
 
 ### Added
-- **MCM settings memory** (MCM menus page, "Settings memory"; McmMemory.cpp). A new game forgets what save-held MCM settings
-  were set to; AMF now remembers them in a profile and sets them again. MCM Memory's own code was not read; only its page
+- **AMF remembers MCM settings and sets them again on a new game** (MCM menus page, "Remembered settings"; RememberedSettings.cpp). A new game forgets what save-held MCM settings
+  were set to; AMF now remembers them in a profile and sets them again. That mod's own code was not read; only its page
   was, to know what players expect. It covers:
   - SkyUI menus written only in a mod's script (phase 3);
   - MCM Helper controls kept in a global or a script property (phase 2).
   MCM Helper's ModSetting values are in its own INI and survive a new game already.
-  - **Automatic backup** (`[McmMemory] bAutoBackup=1`). AMF records each change it makes there.
+  - **Automatic backup** (`[RememberedSettings] bAutoBackup=1`). AMF records each change it makes there.
     - Script menus: after the page is rebuilt, the option's new value is read back.
     - Action rows are never recorded.
     - Each setting is kept by its raw page and label (and which of same-labelled options it is), so a language change
@@ -52,15 +52,16 @@ for all these different MCMs are backed up and saved so that on a new game they 
       fallback).
   - **Restore now**, on demand.
   - **Profiles**:
-    - stored as `SKSE\Plugins\ApocryphaMenuFramework\McmMemory\<name>.json`, outside the save and the download, written
+    - stored as `SKSE\Plugins\ApocryphaMenuFramework\RememberedSettings\<name>.json`, outside the save and the download, written
       through a .tmp;
     - new (empty or a copy), switch and delete;
     - `sProfile`.
   - **Per menu**: whether it takes part in the automatic restore, and Forget. A menu not in this game stays in the profile
     untouched.
-  - DevBench `amf.mcm op=memory`: action status | backup | restore | records | forget | auto | profile | create | delete |
+  - DevBench `amf.mcm op=remembered`: action status | backup | restore | records | forget | auto | profile | create | delete |
     newgame.
-  - 23 strings, in all eleven languages (`tools\mcm_memory_strings.py`).
+  - 23 strings, in all eleven languages (`tools\remembered_settings_strings.py`).
+  - Named "Remembered settings" everywhere - the page, the INI section `[RememberedSettings]`, the profile folder and the log, at the owner's request: it remembers settings and sets them again on a new game.
 
 ### Changed
 - **A converted menu's "(MCM)" ending shows in the language picked** - "Photo Mode (Mod-Konfig.)", "Photo Mode （模组配置）" -

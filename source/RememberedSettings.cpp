@@ -1,4 +1,4 @@
-#include "McmMemory.h"
+#include "RememberedSettings.h"
 
 #include "McmLoader.h"
 #include "McmScripts.h"
@@ -20,10 +20,10 @@
 #include <set>
 #include <thread>
 
-// See McmMemory.h. The menus are driven by the MCM loader's own paths (McmScripts' call queue, McmLoader's Apply); this
+// See RememberedSettings.h. The menus are driven by the MCM loader's own paths (McmScripts' call queue, McmLoader's Apply); this
 // file keeps the profile, decides what runs when, and runs one menu at a time.
 
-namespace mcmmemory
+namespace rememberedsettings
 {
 	namespace
 	{
@@ -33,7 +33,7 @@ namespace mcmmemory
 		using strings::TR;
 		namespace scripts = mcmloader::scripts;
 
-		constexpr const char* kDir = "Data/SKSE/Plugins/ApocryphaMenuFramework/McmMemory";
+		constexpr const char* kDir = "Data/SKSE/Plugins/ApocryphaMenuFramework/RememberedSettings";
 
 		struct MenuData
 		{
@@ -107,7 +107,7 @@ namespace mcmmemory
 		void LoadLocked()
 		{
 			g_menus.clear();
-			g_profile = SafeName(settings::Get().mcmMemoryProfile);
+			g_profile = SafeName(settings::Get().rememberedProfile);
 			g_loaded = true;
 			std::ifstream in(PathFor(g_profile), std::ios::binary);
 			if (!in) { return; }
@@ -133,18 +133,18 @@ namespace mcmmemory
 					}
 					g_menus[key] = std::move(data);
 				}
-				logger::info("MCM memory: profile \"{}\" read - {} menu(s)", g_profile, g_menus.size());
+				logger::info("Remembered settings: profile \"{}\" read - {} menu(s)", g_profile, g_menus.size());
 			}
 			catch (const std::exception& e)
 			{
-				logger::error("MCM memory: profile \"{}\" could not be read ({}) - it starts empty; the file is left as it is", g_profile, e.what());
+				logger::error("Remembered settings: profile \"{}\" could not be read ({}) - it starts empty; the file is left as it is", g_profile, e.what());
 				g_menus.clear();
 			}
 		}
 
 		void EnsureLoadedLocked()
 		{
-			if (!g_loaded || g_profile != SafeName(settings::Get().mcmMemoryProfile)) { LoadLocked(); }
+			if (!g_loaded || g_profile != SafeName(settings::Get().rememberedProfile)) { LoadLocked(); }
 		}
 
 		// Written to a .tmp beside it and moved over, so a crash mid-write never leaves half a profile.
@@ -180,13 +180,13 @@ namespace mcmmemory
 				std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
 				if (!out)
 				{
-					logger::error("MCM memory: {} could not be written", tmp.string());
+					logger::error("Remembered settings: {} could not be written", tmp.string());
 					return;
 				}
 				out << file.dump(1, '\t');
 			}
 			fs::rename(tmp, path, ec);
-			if (ec) { logger::error("MCM memory: {} could not replace {} ({})", tmp.string(), path.string(), ec.message()); }
+			if (ec) { logger::error("Remembered settings: {} could not replace {} ({})", tmp.string(), path.string(), ec.message()); }
 		}
 
 		// Merge records into a menu: a setting already there takes the new value in its place, a new one goes last.
@@ -252,7 +252,7 @@ namespace mcmmemory
 				snprintf(line, sizeof(line), TR("AMF_McmMemBackedUp", "Backed up: %d settings from %d menus."), a_job->settings, a_job->menus);
 			}
 			SetResult(line);
-			logger::info("MCM memory: {} - {} menu(s), {} setting(s), {} not found, {} skipped", a_job->restore ? "restore" : "backup",
+			logger::info("Remembered settings: {} - {} menu(s), {} setting(s), {} not found, {} skipped", a_job->restore ? "restore" : "backup",
 				a_job->menus, a_job->settings, a_job->missing, a_job->skipped);
 			g_busy = false;
 		}
@@ -383,7 +383,7 @@ namespace mcmmemory
 			job->restore = a_restore;
 			job->targets = std::move(a_targets);
 			SetResult(a_restore ? TR("AMF_McmMemRestoring", "Restoring...") : TR("AMF_McmMemBackingUp", "Backing up..."));
-			logger::info("MCM memory: {} started for {} menu(s)", a_restore ? "restore" : "backup", job->targets.size());
+			logger::info("Remembered settings: {} started for {} menu(s)", a_restore ? "restore" : "backup", job->targets.size());
 			Continue(job);
 			return true;
 		}
@@ -425,7 +425,7 @@ namespace mcmmemory
 		}
 		g_busy = false;  // a drive of the game just left never finishes
 		if (!settings::Get().mcmRestoreOnNewGame) { return; }
-		logger::info("MCM memory: new game - the profile is applied again once the menus appear (40 s to 4 min)");
+		logger::info("Remembered settings: new game - the profile is applied again once the menus appear (40 s to 4 min)");
 		std::thread([generation]() {
 			// the menus set themselves up over the first minutes of a new game (discovery looks at 2 s ... 8 min)
 			std::this_thread::sleep_for(std::chrono::seconds(40));
@@ -459,7 +459,7 @@ namespace mcmmemory
 		if (MergeLocked(a_key, a_entry, { a_record }) > 0)
 		{
 			SaveLocked();
-			logger::debug("MCM memory: {} - {} \"{}\" = {}", a_entry, TypeName(a_record.type),
+			logger::debug("Remembered settings: {} - {} \"{}\" = {}", a_entry, TypeName(a_record.type),
 				a_record.type == Type::kHelper ? a_record.id : a_record.text, a_record.value);
 		}
 	}
@@ -500,7 +500,7 @@ namespace mcmmemory
 		if (g_menus.erase(a_key) > 0)
 		{
 			SaveLocked();
-			logger::info("MCM memory: {} forgotten in profile \"{}\"", a_key, g_profile);
+			logger::info("Remembered settings: {} forgotten in profile \"{}\"", a_key, g_profile);
 		}
 	}
 
@@ -512,7 +512,7 @@ namespace mcmmemory
 		{
 			if (file.path().extension() == ".json") { out.push_back(file.path().stem().string()); }
 		}
-		const std::string active = SafeName(settings::Get().mcmMemoryProfile);
+		const std::string active = SafeName(settings::Get().rememberedProfile);
 		if (std::find(out.begin(), out.end(), active) == out.end()) { out.push_back(active); }
 		std::sort(out.begin(), out.end());
 		return out;
@@ -529,10 +529,10 @@ namespace mcmmemory
 	{
 		if (Busy()) { return false; }
 		std::scoped_lock lock(g_mutex);
-		settings::Get().mcmMemoryProfile = SafeName(a_name);
+		settings::Get().rememberedProfile = SafeName(a_name);
 		settings::Save();
 		LoadLocked();
-		logger::info("MCM memory: profile \"{}\" in use", g_profile);
+		logger::info("Remembered settings: profile \"{}\" in use", g_profile);
 		return true;
 	}
 
@@ -545,22 +545,22 @@ namespace mcmmemory
 		std::scoped_lock lock(g_mutex);
 		EnsureLoadedLocked();
 		auto copied = a_copyActive ? g_menus : std::map<std::string, MenuData>{};
-		settings::Get().mcmMemoryProfile = name;
+		settings::Get().rememberedProfile = name;
 		settings::Save();
 		g_profile = name;
 		g_menus = std::move(copied);
 		SaveLocked();
-		logger::info("MCM memory: profile \"{}\" made{}", name, a_copyActive ? " as a copy" : "");
+		logger::info("Remembered settings: profile \"{}\" made{}", name, a_copyActive ? " as a copy" : "");
 		return true;
 	}
 
 	bool DeleteProfile(const std::string& a_name)
 	{
 		const std::string name = SafeName(a_name);
-		if (name == SafeName(settings::Get().mcmMemoryProfile)) { return false; }
+		if (name == SafeName(settings::Get().rememberedProfile)) { return false; }
 		std::error_code ec;
 		const bool removed = fs::remove(PathFor(name), ec);
-		if (removed) { logger::info("MCM memory: profile \"{}\" deleted", name); }
+		if (removed) { logger::info("Remembered settings: profile \"{}\" deleted", name); }
 		return removed;
 	}
 
@@ -584,7 +584,7 @@ namespace mcmmemory
 		// a drive whose game was left, or whose callback never came, does not hold the memory for good
 		if (g_busy.load() && NowMs() - g_busySinceMs.load() > 5 * 60 * 1000)
 		{
-			logger::warn("MCM memory: a backup or restore has run for 5 minutes - no longer waiting for it");
+			logger::warn("Remembered settings: a backup or restore has run for 5 minutes - no longer waiting for it");
 			g_busy = false;
 		}
 		return g_busy.load();

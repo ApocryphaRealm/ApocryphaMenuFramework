@@ -1,4 +1,4 @@
-# The MCM settings memory's strings (2.1.2, the owner 2026-10-06), in every language AMF ships. Run once to append any key
+# The remembered settings' strings (2.1.2, the owner 2026-10-06), in every language AMF ships. Run once to append any key
 # a translation file lacks: python -I tools\mcm_memory_strings.py   (--check: report only). Files stay UTF-16 LE with a
 # BOM and CRLF, as SkyUI's and SKSE's translation files are. "MCM" is written out in body text in each language (2.1.2);
 # MCM Helper, a product name, stays.
@@ -9,7 +9,7 @@ DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'dist', 'In
 
 S = {
     'english': {
-        'AMF_McmMemTitle': 'Settings memory',
+        'AMF_McmMemTitle': 'Remembered settings',
         'AMF_McmMemHelp': "A new game forgets what menus written in a mod's script, and MCM Helper settings kept in your save, were set to. Those settings are remembered here and set again after a new game. MCM Helper's other settings are kept by MCM Helper itself.",
         'AMF_McmMemAuto': 'Remember each change made here',
         'AMF_McmMemOnNewGame': 'Set them again after a new game',

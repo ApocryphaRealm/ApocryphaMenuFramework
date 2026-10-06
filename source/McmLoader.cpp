@@ -4,7 +4,7 @@
 
 #include "Keyboard.h"
 #include "Input.h"
-#include "McmMemory.h"
+#include "RememberedSettings.h"
 #include "McmScripts.h"
 #include "McmShared.h"
 #include "PreciseSlider.h"
@@ -842,7 +842,7 @@ namespace mcmloader
 		// a_closeAfter: also send OnConfigClose at the end - for a change made with no page open (the DevBench tool), so
 		// a mod that applies its settings only when its menu closes (TrueHUD, True Directional Movement, Precision:
 		// "Event OnConfigClose() native") sees it, as it would after SkyUI's menu.
-		// Set while the MCM settings memory writes its own values back, so they are not recorded again.
+		// Set while the remembered MCM settings are written its own values back, so they are not recorded again.
 		std::atomic<bool> g_memoryWriting{ false };
 
 		void Apply(std::size_t a_mod, const Control& a_control, const std::string& a_value, bool a_closeAfter = false)
@@ -856,15 +856,15 @@ namespace mcmloader
 				modName = g_mods[a_mod]->modName;
 				entryName = g_mods[a_mod]->entryName;
 			}
-			// MCM settings memory: a value kept in the save (a global or a script property) is remembered for the next new
+			// Remembered MCM settings: a value kept in the save (a global or a script property) is remembered for the next new
 			// game; MCM Helper's own ModSetting values are in its INI already
 			if (IsLive(a_control.source) && !g_memoryWriting.load())
 			{
-				mcmmemory::Record record;
-				record.type = mcmmemory::Type::kHelper;
+				rememberedsettings::Record record;
+				record.type = rememberedsettings::Type::kHelper;
 				record.id = a_control.key;
 				record.value = a_value;
-				mcmmemory::Remember("mcmhelper|" + modName, entryName, record);
+				rememberedsettings::Remember("mcmhelper|" + modName, entryName, record);
 			}
 			const auto tasks = SKSE::GetTaskInterface();
 			if (!tasks)
@@ -2116,7 +2116,7 @@ namespace mcmloader
 
 		json out;
 		if (op == "skyui") { return scripts::ToolJson(a_argsJson); }  // phase 3: script-only SkyUI menus
-		if (op == "memory") { return mcmmemory::ToolJson(a_argsJson); }  // the MCM settings memory (McmMemory.cpp)
+		if (op == "remembered") { return rememberedsettings::ToolJson(a_argsJson); }  // the remembered MCM settings (RememberedSettings.cpp)
 		if (op == "sort") { return SortToolJson(a_argsJson); }      // the auto-sort into separators (McmSort.cpp)
 		if (op == "import")
 		{
@@ -2396,7 +2396,7 @@ namespace mcmloader
 		return json{ { "ok", false }, { "error", "unknown op '" + op + "' (list, get, set, press, refresh, script)" } }.dump();
 	}
 
-	// ------------------------------------------------------------------------------------- MCM settings memory
+	// ------------------------------------------------------------------------------------- remembered MCM settings
 
 	std::vector<MemoryMenu> MemoryMenus()
 	{

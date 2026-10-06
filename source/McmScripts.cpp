@@ -2,7 +2,7 @@
 
 #include "Input.h"
 #include "Keyboard.h"
-#include "McmMemory.h"
+#include "RememberedSettings.h"
 #include "McmShared.h"
 #include "PreciseSlider.h"
 #include "Registry.h"
@@ -704,7 +704,7 @@ namespace mcmloader::scripts
 			}
 		}
 
-		// ------------------------------------------------------- MCM settings memory: what a change left (McmMemory.cpp)
+		// ------------------------------------------------------- Remembered MCM settings: what a change left (RememberedSettings.cpp)
 
 		// Set while the memory drives a menu (a backup reading pages, a restore writing them): those are not the player's
 		// changes, so nothing is recorded.
@@ -746,7 +746,7 @@ namespace mcmloader::scripts
 			if (g_memoryDriving.load() || a_slot < 0 || a_slot >= kSlots) { return; }
 			std::string key;
 			std::string entry;
-			mcmmemory::Record record;
+			rememberedsettings::Record record;
 			{
 				std::scoped_lock lock(g_mutex);
 				if (g_open.load() != a_mod || a_mod < 0 || a_mod >= static_cast<int>(g_mods.size())) { return; }
@@ -754,14 +754,14 @@ namespace mcmloader::scripts
 				if (!Rememberable(o)) { return; }  // a text row is an action, not a setting
 				key = "script|" + g_mods[a_mod]->plugin + "|" + g_mods[a_mod]->modName;
 				entry = g_mods[a_mod]->entryName;
-				record.type = static_cast<mcmmemory::Type>(o.type - kToggle);
+				record.type = static_cast<rememberedsettings::Type>(o.type - kToggle);
 				record.page = g_session.pageName;
 				record.text = o.text;
 				record.nth = NthOf(g_session.options, a_slot);
 				record.value = MemoryValue(o);
 				record.menuIndex = o.type == kMenu ? a_menuIndex : -1;
 			}
-			mcmmemory::Remember(key, entry, record);
+			rememberedsettings::Remember(key, entry, record);
 		}
 
 		// An interaction: the Request (when the dialog has one, so _activeOption is this option even if another call ran
@@ -1558,7 +1558,7 @@ namespace mcmloader::scripts
 		return static_cast<int>(std::count_if(g_mods.begin(), g_mods.end(), [](const auto& m) { return m->present; }));
 	}
 
-	// ------------------------------------------------------------------------------------- MCM settings memory
+	// ------------------------------------------------------------------------------------- remembered MCM settings
 
 	namespace
 	{
@@ -1619,7 +1619,7 @@ namespace mcmloader::scripts
 			const int slot = FindSlot(a_r);
 			if (slot < 0)
 			{
-				logger::debug("MCM memory: \"{}\" on page \"{}\" not found - left as it is", a_r.text, a_r.page);
+				logger::debug("Remembered settings: \"{}\" on page \"{}\" not found - left as it is", a_r.text, a_r.page);
 				++a_st->missing;
 				a_done();
 				return;
@@ -1711,7 +1711,7 @@ namespace mcmloader::scripts
 								if (index < 0) { index = r.menuIndex; }
 								if (index < 0)
 								{
-									logger::debug("MCM memory: menu \"{}\" has no entry \"{}\" now - left as it is", r.text, r.value);
+									logger::debug("Remembered settings: menu \"{}\" has no entry \"{}\" now - left as it is", r.text, r.value);
 									fail();
 									return;
 								}
@@ -1769,7 +1769,7 @@ namespace mcmloader::scripts
 			}
 			if (!pageFound)
 			{
-				logger::debug("MCM memory: page \"{}\" is not in the menu now - \"{}\" left as it is", r.page, r.text);
+				logger::debug("Remembered settings: page \"{}\" is not in the menu now - \"{}\" left as it is", r.page, r.text);
 				++a_st->missing;
 				a_done();
 				return;
@@ -1875,7 +1875,7 @@ namespace mcmloader::scripts
 			entry = g_mods[mod]->entryName;
 		}
 		EndDrive([state, a_done, entry]() {
-			logger::info("MCM memory: {} restored - {} set, {} already right, {} not found{}", entry, state->applied, state->same, state->missing,
+			logger::info("Remembered settings: {} restored - {} set, {} already right, {} not found{}", entry, state->applied, state->same, state->missing,
 				state->missing > 0 ? " (options or pages not in the menu now - details at log level debug)" : "");
 			a_done(state->applied, state->missing);
 		});

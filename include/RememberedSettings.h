@@ -1,7 +1,7 @@
 #pragma once
 
 // ============================================================================================
-// MCM settings memory (the owner, 2026-10-06: "build it into AMF so that the settings you change
+// remembered MCM settings (the owner, 2026-10-06: "build it into AMF so that the settings you change
 // for all these different MCMs are backed up and saved so that on a new game they still apply").
 // Plan: D:\Claude output\4. plans\amf-mcm-memory\PLAN.md.
 //
@@ -11,7 +11,7 @@
 // recorded into the active profile; "Back up all now" reads every menu AMF can read; after a NEW
 // game the profile is played back through the same calls the pages make.
 //
-// A profile is SKSE\Plugins\ApocryphaMenuFramework\McmMemory\<name>.json - outside the save and
+// A profile is SKSE\Plugins\ApocryphaMenuFramework\RememberedSettings\<name>.json - outside the save and
 // the download. One record per setting, in the order each was first changed: an "enable" switch
 // usually reveals the rest, so it has to come back first.
 // ============================================================================================
@@ -20,7 +20,7 @@
 #include <string>
 #include <vector>
 
-namespace mcmmemory
+namespace rememberedsettings
 {
 	// SKI_ConfigBase option types this memory keeps (text rows are actions and are never recorded).
 	enum class Type { kToggle, kSlider, kMenu, kColor, kKeymap, kInput, kHelper };
@@ -49,7 +49,7 @@ namespace mcmmemory
 	void OnNewGame();
 	void OnSaveLoaded();
 
-	// Any thread. A change AMF just made, recorded when [McmMemory] bAutoBackup=1 (and never while a restore runs).
+	// Any thread. A change AMF just made, recorded when [RememberedSettings] bAutoBackup=1 (and never while a restore runs).
 	// a_key is the import key ("script|<plugin>|<ModName>" or "mcmhelper|<mod>"), a_entry the AMF entry name.
 	void Remember(const std::string& a_key, const std::string& a_entry, const Record& a_record);
 
@@ -80,7 +80,7 @@ namespace mcmmemory
 	// The last backup / restore, one line, in the active language ("" before the first).
 	std::string LastResult();
 
-	// DevBench amf.mcm op=memory: action status | backup {keys} | restore {keys} | records {key} | forget {key} |
+	// DevBench amf.mcm op=remembered: action status | backup {keys} | restore {keys} | records {key} | forget {key} |
 	// auto {key,on} | profile {name} | create {name,copy} | delete {name}. Thread-safe.
 	std::string ToolJson(const std::string& a_argsJson);
 }
