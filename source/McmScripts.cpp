@@ -1619,7 +1619,7 @@ namespace mcmloader::scripts
 			const int slot = FindSlot(a_r);
 			if (slot < 0)
 			{
-				logger::info("MCM memory: \"{}\" on page \"{}\" not found - left as it is", a_r.text, a_r.page);
+				logger::debug("MCM memory: \"{}\" on page \"{}\" not found - left as it is", a_r.text, a_r.page);
 				++a_st->missing;
 				a_done();
 				return;
@@ -1711,7 +1711,7 @@ namespace mcmloader::scripts
 								if (index < 0) { index = r.menuIndex; }
 								if (index < 0)
 								{
-									logger::info("MCM memory: menu \"{}\" has no entry \"{}\" now - left as it is", r.text, r.value);
+									logger::debug("MCM memory: menu \"{}\" has no entry \"{}\" now - left as it is", r.text, r.value);
 									fail();
 									return;
 								}
@@ -1769,7 +1769,7 @@ namespace mcmloader::scripts
 			}
 			if (!pageFound)
 			{
-				logger::info("MCM memory: page \"{}\" is not in the menu now - \"{}\" left as it is", r.page, r.text);
+				logger::debug("MCM memory: page \"{}\" is not in the menu now - \"{}\" left as it is", r.page, r.text);
 				++a_st->missing;
 				a_done();
 				return;
@@ -1867,8 +1867,16 @@ namespace mcmloader::scripts
 				MemoryRestoreOne(mod, state, r, a_done);
 			} });
 		}
-		EndDrive([state, a_done]() {
-			logger::info("MCM memory: restore done - {} set, {} already right, {} not found", state->applied, state->same, state->missing);
+		// one line per menu (Main Agent's run, 2026-10-06: the per-option "not found" lines - MenuMaid2 rows naming mods no
+		// longer installed - repeated for every page; they are at debug level now)
+		std::string entry;
+		{
+			std::scoped_lock lock(g_mutex);
+			entry = g_mods[mod]->entryName;
+		}
+		EndDrive([state, a_done, entry]() {
+			logger::info("MCM memory: {} restored - {} set, {} already right, {} not found{}", entry, state->applied, state->same, state->missing,
+				state->missing > 0 ? " (options or pages not in the menu now - details at log level debug)" : "");
 			a_done(state->applied, state->missing);
 		});
 		return true;
