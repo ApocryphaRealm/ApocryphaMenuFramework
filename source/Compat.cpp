@@ -89,12 +89,58 @@ namespace compat
 // SMF registration API (3 required + the optional unregister/version names the header probes)
 // --------------------------------------------------------------------------------------------
 
+namespace
+{
+	// A menu path as SKSE Menu Framework 3.18 reads it (its MenuPath::Parse): '/' separates the segments, "\/" is a
+	// literal slash inside one, and an empty segment makes the whole path invalid. The first segment is the mod's menu
+	// (AMF's section), the rest - joined with '/' again - its page. False for an invalid path.
+	bool SplitMenuPath(std::string_view a_path, std::string& a_section, std::string& a_page)
+	{
+		std::vector<std::string> segments;
+		std::string              segment;
+		for (std::size_t i = 0; i < a_path.size(); ++i)
+		{
+			const char c = a_path[i];
+			if (c == '\\' && i + 1 < a_path.size() && a_path[i + 1] == '/')
+			{
+				segment.push_back('/');
+				++i;
+				continue;
+			}
+			if (c == '/')
+			{
+				if (segment.empty())
+				{
+					return false;
+				}
+				segments.push_back(std::move(segment));
+				segment.clear();
+				continue;
+			}
+			segment.push_back(c);
+		}
+		if (segment.empty())
+		{
+			return false;
+		}
+		segments.push_back(std::move(segment));
+		a_section = segments.front();
+		a_page.clear();
+		for (std::size_t i = 1; i < segments.size(); ++i)
+		{
+			a_page += (i > 1 ? "/" : "") + segments[i];
+		}
+		return true;
+	}
+}
+
 AMF_EXPORT void AddSectionItem(const char* a_path, RenderFunction a_render)
 {
 	// The consumer-side idiom is SetSection("Mod Name") + AddSectionItem("Menu", cb), which
-	// arrives here as one "Mod Name/Menu" path - split at the FIRST slash so a menu name may
-	// itself contain one. Everything maps onto the native registry: section = the mod's one
-	// menu, item = a page (tabs when a mod has several).
+	// arrives here as one "Mod Name/Menu" path. The first segment is the section, the rest the page, read the way SMF
+	// 3.18 reads it (an escaped "\/" is a slash inside a name; 2.1.4 - before, the path was split at its first raw
+	// slash). Everything maps onto the native registry: section = the mod's one menu, item = a page (tabs when a mod
+	// has several).
 	if (!a_path || !a_render)
 	{
 		logger::warn("AddSectionItem refused: path={}, render={}",
@@ -103,12 +149,52 @@ AMF_EXPORT void AddSectionItem(const char* a_path, RenderFunction a_render)
 	}
 
 	const std::string path(a_path);
-	const auto slash = path.find('/');
-	const std::string section = slash == std::string::npos ? path : path.substr(0, slash);
-	const std::string item = slash == std::string::npos ? std::string("Settings") : path.substr(slash + 1);
+	std::string section, item;
+	if (!SplitMenuPath(path, section, item))
+	{
+		logger::warn("AddSectionItem refused: \"{}\" is not a menu path (an empty segment)", path);
+		return;
+	}
+	if (item.empty())
+	{
+		item = "Settings";
+	}
 
 	registry::Register(section.c_str(), item.c_str(), a_render);
 	logger::info("AddSectionItem (SMF-compat): \"{}\" -> section \"{}\", page \"{}\"", path, section, item);
+}
+
+// SKSE Menu Framework 3.18 (API version 1): rename or delete a menu entry by its path - the mod's whole menu
+// ("Mod") or one page and everything under it ("Mod/Page"). NPC Preset Applier needs 3.18 (a Nexus report, 2026-10-07:
+// its portraits did not show and could not be generated under AMF, which lacked these and the API version below).
+AMF_EXPORT bool RenameSection(const char* a_path, const char* a_newName)
+{
+	std::string section, page;
+	if (!a_path || !a_newName || !SplitMenuPath(a_path, section, page))
+	{
+		logger::warn("RenameSection (SMF-compat) refused: path=\"{}\", new name=\"{}\"", a_path ? a_path : "<null>",
+					 a_newName ? a_newName : "<null>");
+		return false;
+	}
+	std::string newName;
+	std::string ignored;
+	if (!SplitMenuPath(a_newName, newName, ignored) || !ignored.empty())
+	{
+		logger::warn("RenameSection (SMF-compat) refused: \"{}\" is not one name (escape a slash in it as \\/)", a_newName);
+		return false;
+	}
+	return registry::Rename(section, page, newName);
+}
+
+AMF_EXPORT bool DeleteSection(const char* a_path)
+{
+	std::string section, page;
+	if (!a_path || !SplitMenuPath(a_path, section, page))
+	{
+		logger::warn("DeleteSection (SMF-compat) refused: path=\"{}\"", a_path ? a_path : "<null>");
+		return false;
+	}
+	return registry::Remove(section, page);
 }
 
 AMF_EXPORT std::int64_t RegisterInpoutEvent(InputEventCallback a_callback)  // (sic) the name consumers resolve
@@ -177,7 +263,17 @@ AMF_EXPORT float GetMenuFrameworkVersion()
 	// number again, and NOT the contract; do not take the version from the resource.
 	//
 	// Bump this when the SMF interface we mirror moves, never when AMF's own version moves.
-	return 3.7f;
+	// 2.1.4: 3.8 - SKSE Menu Framework 3.18's own source returns 3.8f here (QTR-Modding/SKSE-Menu-Framework-3,
+	// src/SKSEMenuFramework.cpp, MENU_FRAMEWORK_VERSION, 2026-09-28), and AMF now mirrors that interface: RenameSection,
+	// DeleteSection and GetMenuFrameworkAPIVersion below.
+	return 3.8f;
+}
+
+// SKSE Menu Framework 3.18's interface number (its MENU_FRAMEWORK_API_VERSION, 1): the check a mod needing 3.18's
+// functions makes. Without this export AMF's stand-in returned 0 and such a mod took AMF for an older framework.
+AMF_EXPORT std::uint32_t GetMenuFrameworkAPIVersion()
+{
+	return 1;
 }
 
 // --------------------------------------------------------------------------------------------

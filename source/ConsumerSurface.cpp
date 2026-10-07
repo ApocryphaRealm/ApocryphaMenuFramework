@@ -11,6 +11,7 @@
 
 #include <d3d11.h>
 #include <WICTextureLoader.h>
+#include <DDSTextureLoader.h>
 
 // nanosvg (zlib, THIRD_PARTY_NOTICES.md): .svg textures for SKSE Menu Framework mods (2.1.3). This file is its one
 // implementation unit.
@@ -476,11 +477,25 @@ namespace consumer
 			}
 		}
 
-		const std::wstring wide(path.begin(), path.end());
+		// 2.1.4 (NPC Preset Applier, a Nexus report 2026-10-07: its generated portraits never showed), matching SKSE Menu
+		// Framework 3.18's TextureLoader: the path is UTF-8 (it was widened byte by byte, which broke every path with a
+		// non-English letter in it - a Windows user name, a localised folder), and a .dds is read as DDS (the game's own
+		// texture format; only WIC's PNG / JPG / BMP / TIFF decoders were tried before, and they cannot read a DDS).
+		std::wstring wide;
+		if (const int n = ::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path.data(), static_cast<int>(path.size()), nullptr, 0); n > 0) {
+			wide.resize(static_cast<std::size_t>(n));
+			::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path.data(), static_cast<int>(path.size()), wide.data(), n);
+		} else {
+			wide.assign(path.begin(), path.end());   // not valid UTF-8: the bytes as they are (the old behaviour)
+		}
+		std::string lowerPath = path;
+		std::transform(lowerPath.begin(), lowerPath.end(), lowerPath.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+		const bool dds = lowerPath.ends_with(".dds");
 		ID3D11Resource* resource = nullptr;
 		ID3D11ShaderResourceView* srv = nullptr;
 
-		if (FAILED(DirectX::CreateWICTextureFromFile(g_device, wide.c_str(), &resource, &srv))) {
+		if (FAILED(dds ? DirectX::CreateDDSTextureFromFile(g_device, wide.c_str(), &resource, &srv)
+					   : DirectX::CreateWICTextureFromFile(g_device, wide.c_str(), &resource, &srv))) {
 			std::scoped_lock lock(g_warnLock);
 			if (std::find(g_warnedTextures.begin(), g_warnedTextures.end(), path) == g_warnedTextures.end()) {
 				g_warnedTextures.push_back(path);

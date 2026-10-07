@@ -21,9 +21,24 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
-## 2.1.4 - 2026-10-07 - untested - D-pad right stays on the Mods row's controls
+## 2.1.4 - 2026-10-07 - untested - SKSE Menu Framework 3.18's interface; D-pad right stays on the Mods row's controls
+
+### Added
+- **SKSE Menu Framework 3.18's interface** (a Nexus report, 2026-10-07: NPC Preset Applier, which needs SMF 3.18,
+  opened under AMF but its preset portraits never showed and could not be generated). Compared export for export
+  with SMF 3's own source (QTR-Modding/SKSE-Menu-Framework-3, 2026-09-28), AMF lacked three functions - a mod
+  asking for them got AMF's logging stand-in, which returns nothing:
+  - `GetMenuFrameworkAPIVersion` - now 1, SMF 3.18's number: the check a mod needing 3.18's functions makes;
+  - `RenameSection` / `DeleteSection` - rename or remove a mod's whole menu, or one page and everything under it.
+  `GetMenuFrameworkVersion` now reports 3.8, what SMF 3.18 itself returns (it was 3.7).
+- **Menu paths read as SMF 3.18 reads them:** an escaped `\/` is a slash inside a name, and a path with an empty
+  segment is refused (AddSectionItem split at the first raw slash before).
 
 ### Fixed
+- **`LoadTexture` reads DDS files and paths with non-English letters.** A `.dds` went through Windows' WIC decoders,
+  which cannot read DDS, and failed with "could not decode"; it now loads as DDS, as SMF does. The path was widened
+  byte by byte, so any non-English letter in it (a Windows user name, a localised folder) broke the load; it is now
+  read as UTF-8.
 - **D-pad right on the Mods row skipped its own controls.** On the row with the alphabetical tick box, the A-Z / Z-A
   switch and the Sort button, right went straight across to the options pane instead of to the next control (the
   owner, 2026-10-07: "pressing D-pad right skips past the toggle and sort button and goes to the right pane"). A

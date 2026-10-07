@@ -43,6 +43,13 @@ namespace registry
 	// registered. The page stays registered - hiding only leaves it out of the menu's tabs.
 	bool SetPageVisible(const char* a_modName, const char* a_pageName, bool a_visible);
 
+	// 2.1.4: SKSE Menu Framework 3.18's RenameSection / DeleteSection (NPC Preset Applier, a Nexus report 2026-10-07).
+	// An empty a_pageName means the mod's whole entry. Rename: the mod, or the page's LAST path segment ("Presets/Old" ->
+	// "Presets/New"). Delete: the mod with every page, or the page and every page under it ("Presets" also removes
+	// "Presets/Old"). False when nothing matched (or the new name is empty / already taken).
+	bool Rename(const std::string& a_modName, const std::string& a_pageName, const std::string& a_newName);
+	bool Remove(const std::string& a_modName, const std::string& a_pageName);
+
 	// Render-thread snapshot access. The copy is cheap at menu scale (a handful of mods) and
 	// means the render loop never holds the registration lock across user callbacks.
 	std::vector<Entry> Snapshot();

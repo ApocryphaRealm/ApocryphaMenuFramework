@@ -2,6 +2,7 @@
 
 #include "utils/Logger.h"
 
+#include <algorithm>
 #include <mutex>
 
 namespace registry
@@ -85,6 +86,91 @@ namespace registry
 		}
 		logger::warn("AMF_SetPageVisible: \"{}\" has no registered page \"{}\"", a_modName, a_pageName);
 		return false;
+	}
+
+	bool Rename(const std::string& a_modName, const std::string& a_pageName, const std::string& a_newName)
+	{
+		if (a_modName.empty() || a_newName.empty())
+		{
+			logger::warn("RenameSection (SMF-compat) refused: mod=\"{}\", page=\"{}\", new name=\"{}\"", a_modName, a_pageName, a_newName);
+			return false;
+		}
+		std::scoped_lock lock(g_lock);
+		const auto mod = std::ranges::find(g_entries, a_modName, &Entry::modName);
+		if (mod == g_entries.end())
+		{
+			logger::warn("RenameSection (SMF-compat): no menu \"{}\"", a_modName);
+			return false;
+		}
+		if (a_pageName.empty())
+		{
+			if (std::ranges::find(g_entries, a_newName, &Entry::modName) != g_entries.end())
+			{
+				logger::warn("RenameSection (SMF-compat): a menu \"{}\" already exists - \"{}\" not renamed", a_newName, a_modName);
+				return false;
+			}
+			mod->modName = a_newName;
+			logger::info("RenameSection (SMF-compat): menu \"{}\" -> \"{}\"", a_modName, a_newName);
+			return true;
+		}
+		// the page itself and every page under it keep their place; only the renamed segment changes
+		const auto slash = a_pageName.rfind('/');
+		const std::string renamed = (slash == std::string::npos ? std::string() : a_pageName.substr(0, slash + 1)) + a_newName;
+		bool done = false;
+		for (auto& page : mod->pages)
+		{
+			if (page.pageName == a_pageName)
+			{
+				page.pageName = renamed;
+				done = true;
+			}
+			else if (page.pageName.starts_with(a_pageName + "/"))
+			{
+				page.pageName = renamed + page.pageName.substr(a_pageName.size());
+				done = true;
+			}
+		}
+		if (done)
+		{
+			logger::info("RenameSection (SMF-compat): \"{}\" page \"{}\" -> \"{}\"", a_modName, a_pageName, renamed);
+		}
+		else
+		{
+			logger::warn("RenameSection (SMF-compat): \"{}\" has no page \"{}\"", a_modName, a_pageName);
+		}
+		return done;
+	}
+
+	bool Remove(const std::string& a_modName, const std::string& a_pageName)
+	{
+		std::scoped_lock lock(g_lock);
+		const auto mod = std::ranges::find(g_entries, a_modName, &Entry::modName);
+		if (a_modName.empty() || mod == g_entries.end())
+		{
+			logger::warn("DeleteSection (SMF-compat): no menu \"{}\"", a_modName);
+			return false;
+		}
+		if (a_pageName.empty())
+		{
+			g_entries.erase(mod);
+			logger::info("DeleteSection (SMF-compat): menu \"{}\" removed with all its pages ({} mod(s) left)", a_modName, g_entries.size());
+			return true;
+		}
+		// the render thread draws from a snapshot, which holds its own copy of each callback - removing here is safe mid-frame
+		const auto before = mod->pages.size();
+		std::erase_if(mod->pages, [&](const Page& p) { return p.pageName == a_pageName || p.pageName.starts_with(a_pageName + "/"); });
+		const auto removed = before - mod->pages.size();
+		if (removed == 0)
+		{
+			logger::warn("DeleteSection (SMF-compat): \"{}\" has no page \"{}\"", a_modName, a_pageName);
+			return false;
+		}
+		logger::info("DeleteSection (SMF-compat): \"{}\" lost {} page(s) at \"{}\"", a_modName, removed, a_pageName);
+		if (mod->pages.empty())
+		{
+			g_entries.erase(mod);   // a menu with no page left is not listed (SMF drops the empty node too)
+		}
+		return true;
 	}
 
 	std::vector<Entry> Snapshot()
