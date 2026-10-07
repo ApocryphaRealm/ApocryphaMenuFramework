@@ -21,7 +21,14 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
-## 2.1.3 - 2026-10-07 - untested - no freeze when a page first draws Font Awesome icons
+## 2.1.3 - 2026-10-07 - untested - no freeze when a page first draws Font Awesome icons; SVG icons load
+
+### Added
+- **SVG textures for SKSE Menu Framework mods.** `LoadTexture` now reads `.svg` files (nanosvg, zlib licence - see
+  THIRD_PARTY_NOTICES.md). Walk With Me's icons (Data/Interface/WalkWithMe/*.svg) were all "could not decode" in a user's
+  2.1.2 log and missing from its page. An SVG is drawn with its long side at 256 px or more, so it stays sharp when shrunk;
+  the size reported to the mod is the SVG's own. Checked in game with Walk With Me 0.2.5: 12 SVGs loaded, its section
+  icons drawn.
 
 ### Fixed
 - **The game froze (2.1.1: crashed) the first time a page drawing Font Awesome icons was opened** - KnightQueen1 (Nexus,

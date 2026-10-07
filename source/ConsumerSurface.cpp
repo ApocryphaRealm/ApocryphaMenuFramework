@@ -12,6 +12,16 @@
 #include <d3d11.h>
 #include <WICTextureLoader.h>
 
+// nanosvg (zlib, THIRD_PARTY_NOTICES.md): .svg textures for SKSE Menu Framework mods (2.1.3). This file is its one
+// implementation unit.
+#include <cstring>
+#define NANOSVG_IMPLEMENTATION
+#define NANOSVGRAST_IMPLEMENTATION
+#pragma warning(push, 0)
+#include "nanosvg/nanosvg.h"
+#include "nanosvg/nanosvgrast.h"
+#pragma warning(pop)
+
 #include <algorithm>
 #include <atomic>
 #include <cstdio>
@@ -357,6 +367,60 @@ namespace consumer
 		g_device = a_device;
 	}
 
+	// SVG TEXTURES (2.1.3). SKSE Menu Framework mods may ship .svg icons (Walk With Me: Data/Interface/WalkWithMe/*.svg),
+	// and the WIC loader below reads only bitmaps - a user's log showed eight "could not decode" lines and the mod's
+	// icons missing (2026-10-07). nanosvg parses and rasterises the file; it is drawn at a size that stays sharp when the
+	// consumer scales it down (its long side at least kSvgMinPx), and the size reported back is the SVG's own (its
+	// width/height, or viewBox), so a consumer that draws "at the texture's size" draws it as its author sized it.
+	ID3D11ShaderResourceView* LoadSvgTexture(const std::string& a_path, float& a_width, float& a_height)
+	{
+		constexpr float kSvgMinPx = 256.0f;
+		NSVGimage* image = nsvgParseFromFile(a_path.c_str(), "px", 96.0f);
+		if (!image || image->width <= 0.0f || image->height <= 0.0f) {
+			if (image) { nsvgDelete(image); }
+			return nullptr;
+		}
+		const float scale = std::max(1.0f, kSvgMinPx / std::max(image->width, image->height));
+		const int w = std::max(1, static_cast<int>(std::ceil(image->width * scale)));
+		const int h = std::max(1, static_cast<int>(std::ceil(image->height * scale)));
+		std::vector<unsigned char> pixels(static_cast<std::size_t>(w) * h * 4, 0);
+		NSVGrasterizer* rast = nsvgCreateRasterizer();
+		if (!rast) {
+			nsvgDelete(image);
+			return nullptr;
+		}
+		nsvgRasterize(rast, image, 0.0f, 0.0f, scale, pixels.data(), w, h, w * 4);
+		nsvgDeleteRasterizer(rast);
+		a_width = image->width;
+		a_height = image->height;
+		nsvgDelete(image);
+
+		D3D11_TEXTURE2D_DESC desc{};
+		desc.Width = static_cast<UINT>(w);
+		desc.Height = static_cast<UINT>(h);
+		desc.MipLevels = 1;
+		desc.ArraySize = 1;
+		desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;   // nanosvg writes straight (not premultiplied) RGBA, as WIC's PNGs are
+		desc.SampleDesc.Count = 1;
+		desc.Usage = D3D11_USAGE_DEFAULT;
+		desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+		D3D11_SUBRESOURCE_DATA data{};
+		data.pSysMem = pixels.data();
+		data.SysMemPitch = static_cast<UINT>(w) * 4;
+		ID3D11Texture2D* tex = nullptr;
+		if (FAILED(g_device->CreateTexture2D(&desc, &data, &tex)) || !tex) {
+			return nullptr;
+		}
+		D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc{};
+		srvDesc.Format = desc.Format;
+		srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+		srvDesc.Texture2D.MipLevels = 1;
+		ID3D11ShaderResourceView* srv = nullptr;
+		const HRESULT hr = g_device->CreateShaderResourceView(tex, &srvDesc, &srv);
+		tex->Release();
+		return SUCCEEDED(hr) ? srv : nullptr;
+	}
+
 	void* LoadTexture(const char* a_path, ImVec2* a_outSize)
 	{
 		if (!a_path || !*a_path) {
@@ -383,6 +447,33 @@ namespace consumer
 				logger::warn("LoadTexture (SMF-compat): the D3D device is not up yet; \"{}\" not loaded", path);
 			}
 			return nullptr;
+		}
+
+		{
+			std::string ext = path.size() > 4 ? path.substr(path.size() - 4) : std::string();
+			std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+			if (ext == ".svg") {
+				TextureEntry entry;
+				entry.srv = LoadSvgTexture(path, entry.width, entry.height);
+				if (!entry.srv) {
+					std::scoped_lock lock(g_warnLock);
+					if (std::find(g_warnedTextures.begin(), g_warnedTextures.end(), path) == g_warnedTextures.end()) {
+						g_warnedTextures.push_back(path);
+						logger::warn("LoadTexture (SMF-compat): could not read \"{}\" as an SVG", path);
+					}
+					return nullptr;
+				}
+				{
+					std::scoped_lock lock(g_lock);
+					g_textures[path] = entry;
+				}
+				if (a_outSize) {
+					a_outSize->x = entry.width;
+					a_outSize->y = entry.height;
+				}
+				logger::info("LoadTexture (SMF-compat): \"{}\" loaded as an SVG ({}x{})", path, entry.width, entry.height);
+				return entry.srv;
+			}
 		}
 
 		const std::wstring wide(path.begin(), path.end());
