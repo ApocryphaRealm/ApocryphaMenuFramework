@@ -301,6 +301,17 @@ namespace renderer
 		// magnified. Changing the text-size slider rebuilds the atlas rather than stretching it.
 		constexpr float kBaseFontPx = 16.0f;   // at the 1080p baseline, before uiScale/textScale
 		std::atomic<bool> g_fontRebuildPending{ false };
+		// A Font Awesome face a mod asked for that the atlas lacks (2.1.3): ADDED to the built atlas, which is then built
+		// again - never Clear()ed. Clear() frees every ImFont, and a mod drawing through this framework may keep the
+		// ImFont* it was given (GetFont(), io.Fonts->Fonts[0], a pushed face): KnightQueen1, 2026-10-07, AE 1.6.1170 -
+		// the first click on Cinematic Conversation Camera or MCM Memory (both push "solid") froze the game right after
+		// "atlas 3 built" (2.1.1: a crash). ImGui 1.90.8 rebuilds the existing ImFont objects in place when the atlas is
+		// built again, so every pointer anyone holds stays valid. Full rebuilds stay for the player's own language,
+		// face and text-size changes.
+		std::atomic<bool> g_iconFaceAddPending{ false };
+		std::string g_lastTextFacePath;   // the text face the last full build used - every icon face is built on it
+		float g_lastFontPx = 0.0f;
+		bool g_iconFaceBuilt[consumer::kIconFaceCount] = {};
 
 		// When Save was last pressed, so "saved" can appear beside the button for a few seconds
 		// rather than the press doing nothing visible. settings::Save() returns nothing, so there
@@ -346,6 +357,8 @@ namespace renderer
 
 	// Strings::SetLanguage and kDataLoaded ask for a new atlas holding the language's glyphs.
 	void RequestFontRebuild() { g_fontRebuildPending = true; }
+	// A consumer pushed a Font Awesome face the atlas lacks: added at the next frame's start, nothing freed (2.1.3).
+	void RequestIconFaces() { g_iconFaceAddPending = true; }
 
 	namespace
 	{
@@ -422,6 +435,103 @@ namespace renderer
 				}
 			}
 			logger::info("font picker: {} face(s) available", g_fontChoices.size());
+		}
+
+		// One Font Awesome face (2.0.4): the text face (Latin, Latin Extended-A, Cyrillic) with that style's icons merged
+		// in, added to io.Fonts. nullptr when the icon file is missing or the text face cannot be read. Shared by the full
+		// build and by the add-only path (AddIconFaces, 2.1.3).
+		ImFont* AddIconFace(int a_face, const std::string& a_textFace, float a_px)
+		{
+			static constexpr const char* kIconFiles[consumer::kIconFaceCount] = { "fa-solid-900.ttf", "fa-regular-400.ttf", "fa-brands-400.ttf" };
+			static const ImWchar kIconTextRanges[] = { 0x0020, 0x00FF, 0x0100, 0x017F, 0x0400, 0x04FF, 0 };
+			static const ImWchar kIconRanges[] = { 0xE000, 0xF8FF, 0 };
+			static bool s_missingLogged[consumer::kIconFaceCount] = {};
+			if (a_face < 0 || a_face >= consumer::kIconFaceCount || a_textFace.empty())
+			{
+				return nullptr;
+			}
+			ImGuiIO& io = ImGui::GetIO();
+			const float iconPx = std::round(a_px * 0.8f);
+			const std::string path = std::string("Data/SKSE/Plugins/ApocryphaMenuFramework/icons/") + kIconFiles[a_face];
+			std::error_code ec;
+			if (!std::filesystem::exists(path, ec))
+			{
+				if (!s_missingLogged[a_face])
+				{
+					s_missingLogged[a_face] = true;
+					logger::warn("font: \"{}\" is missing - a mod asked for that Font Awesome face, so its icons "
+								 "draw as \"?\" (reinstall Apocrypha Menu Framework)", path);
+				}
+				return nullptr;
+			}
+			ImFont* const iconFont = io.Fonts->AddFontFromFileTTF(a_textFace.c_str(), a_px, nullptr, kIconTextRanges);
+			if (!iconFont)
+			{
+				return nullptr;
+			}
+			ImFontConfig icons;
+			icons.MergeMode = true;
+			icons.PixelSnapH = true;
+			icons.OversampleH = 1;
+			icons.GlyphMinAdvanceX = iconPx;
+			if (!io.Fonts->AddFontFromFileTTF(path.c_str(), iconPx, &icons, kIconRanges))
+			{
+				logger::warn("font: \"{}\" could not be read as a font - that icon face stays text only", path);
+			}
+			return iconFont;
+		}
+
+		void BuildFonts();
+
+		// THE ADD-ONLY PATH (2.1.3, KnightQueen1's freeze - see g_iconFaceAddPending). The faces a mod asked for that the
+		// atlas lacks are ADDED to it and the atlas is built again: no Clear(), so no ImFont anyone holds is freed - ImGui
+		// rebuilds the existing ones in place. Call OUTSIDE a frame, with the backend's device objects invalidated (the
+		// font texture is made again at the next NewFrame). Falls back to a full build when there was none to add to.
+		void AddIconFaces()
+		{
+			ImGuiIO& io = ImGui::GetIO();
+			if (g_lastTextFacePath.empty() || g_lastFontPx <= 0.0f || io.Fonts->Fonts.Size == 0)
+			{
+				BuildFonts();
+				return;
+			}
+			bool added = false;
+			for (int f = 0; f < consumer::kIconFaceCount; ++f)
+			{
+				if (!consumer::IconFaceWanted(f) || g_iconFaceBuilt[f])
+				{
+					continue;
+				}
+				g_iconFaceBuilt[f] = true;   // tried once per atlas: a missing file is not retried every frame
+				if (ImFont* face = AddIconFace(f, g_lastTextFacePath, g_lastFontPx))
+				{
+					consumer::SetIconFont(f, face);   // handed over AFTER the build below, before the next frame uses it
+					added = true;
+				}
+			}
+			if (!added)
+			{
+				return;
+			}
+			const int fontsBefore = io.Fonts->Fonts.Size;
+			ImFont* const textFace = io.Fonts->Fonts[0];   // what a mod that kept GetFont() holds
+			io.Fonts->ClearTexData();
+			io.Fonts->Build();
+			// the proof the fix rests on: the face a mod may hold is the same object, filled again, after the build
+			logger::info("font: the text face a mod may hold is {} after the build ({} glyphs)",
+						 io.Fonts->Fonts[0] == textFace && textFace->Glyphs.Size > 0 ? "the same object, rebuilt in place" : "NOT the same object",
+						 textFace->Glyphs.Size);
+			unsigned char* pixels = nullptr;
+			int w = 0, h = 0;
+			io.Fonts->GetTexDataAsRGBA32(&pixels, &w, &h);
+			std::string faces;
+			static constexpr const char* kFaceNames[consumer::kIconFaceCount] = { "solid", "regular", "brands" };
+			for (int f = 0; f < consumer::kIconFaceCount; ++f)
+			{
+				if (g_iconFaceBuilt[f] && consumer::IconFaceWanted(f)) { faces += (faces.empty() ? "" : ", ") + std::string(kFaceNames[f]); }
+			}
+			logger::info("font: Font Awesome face(s) added to the atlas without a rebuild - {} ({} fonts, {}x{}); every font "
+						 "a mod already holds stays valid", faces, fontsBefore, w, h);
 		}
 
 		// Rebuilds the font atlas at the current scale. Call OUTSIDE a frame (before NewFrame).
@@ -534,45 +644,14 @@ namespace renderer
 				// Files: Data/SKSE/Plugins/ApocryphaMenuFramework/icons/, shipped in the package with the
 				// SIL OFL 1.1 text beside them. A missing file is logged once and that face keeps the old
 				// behaviour (the current font is pushed).
-				struct IconFile { int face; const char* file; };
-				static constexpr IconFile kIconFiles[] = {
-					{ consumer::kIconSolid, "fa-solid-900.ttf" },
-					{ consumer::kIconRegular, "fa-regular-400.ttf" },
-					{ consumer::kIconBrands, "fa-brands-400.ttf" },
-				};
-				static const ImWchar kIconTextRanges[] = { 0x0020, 0x00FF, 0x0100, 0x017F, 0x0400, 0x04FF, 0 };
-				static const ImWchar kIconRanges[] = { 0xE000, 0xF8FF, 0 };
-				static bool s_missingLogged[consumer::kIconFaceCount] = {};
-				const float iconPx = std::round(px * 0.8f);
-				for (const IconFile& ic : kIconFiles)
+				for (int f = 0; f < consumer::kIconFaceCount; ++f)
 				{
-					if (!consumer::IconFaceWanted(ic.face)) { continue; }
-					const std::string path = std::string("Data/SKSE/Plugins/ApocryphaMenuFramework/icons/") + ic.file;
-					std::error_code ec;
-					if (!std::filesystem::exists(path, ec))
-					{
-						if (!s_missingLogged[ic.face])
-						{
-							s_missingLogged[ic.face] = true;
-							logger::warn("font: \"{}\" is missing - a mod asked for that Font Awesome face, so its icons "
-										 "draw as \"?\" (reinstall Apocrypha Menu Framework)", path);
-						}
-						continue;
-					}
-					ImFont* const iconFont = io.Fonts->AddFontFromFileTTF(loadedPath.c_str(), px, nullptr, kIconTextRanges);
-					if (!iconFont) { continue; }
-					ImFontConfig icons;
-					icons.MergeMode = true;
-					icons.PixelSnapH = true;
-					icons.OversampleH = 1;
-					icons.GlyphMinAdvanceX = iconPx;
-					if (!io.Fonts->AddFontFromFileTTF(path.c_str(), iconPx, &icons, kIconRanges))
-					{
-						logger::warn("font: \"{}\" could not be read as a font - that icon face stays text only", path);
-					}
-					iconFonts[ic.face] = iconFont;
+					iconFonts[f] = consumer::IconFaceWanted(f) ? AddIconFace(f, loadedPath, px) : nullptr;
 				}
 			}
+			g_lastTextFacePath = loaded ? loadedPath : std::string();
+			g_lastFontPx = px;
+			for (int f = 0; f < consumer::kIconFaceCount; ++f) { g_iconFaceBuilt[f] = iconFonts[f] != nullptr; }
 			if (!loaded)
 			{
 				// Never fail to render: fall back to the built-in face, magnified as before.
@@ -3124,8 +3203,14 @@ namespace renderer
 				// text-size slider changed (author playtest, 2026-08-31).
 				if (g_fontRebuildPending.exchange(false))
 				{
+					g_iconFaceAddPending = false;   // the full build takes every wanted face
 					ImGui_ImplDX11_InvalidateDeviceObjects();
 					BuildFonts();
+				}
+				else if (g_iconFaceAddPending.exchange(false))
+				{
+					ImGui_ImplDX11_InvalidateDeviceObjects();
+					AddIconFaces();
 				}
 
 				ImGui_ImplDX11_NewFrame();

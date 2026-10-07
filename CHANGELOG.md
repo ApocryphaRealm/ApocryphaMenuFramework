@@ -21,6 +21,22 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## 2.1.3 - 2026-10-07 - untested - no freeze when a page first draws Font Awesome icons
+
+### Fixed
+- **The game froze (2.1.1: crashed) the first time a page drawing Font Awesome icons was opened** - KnightQueen1 (Nexus,
+  2026-10-07, AE 1.6.1170): clicking Cinematic Conversation Camera or MCM Memory, both of which push the "solid" face.
+  Their log ended at "atlas 3 built", the rebuild that added the face. That rebuild began with `io.Fonts->Clear()`, which
+  frees every ImFont - and a mod drawing through this framework may keep the ImFont* it was handed (its HUD element, its
+  window, a pushed face); with ~100 mods, theirs did, and drew with a freed font on the next frame.
+  A face a mod asks for is now ADDED to the built atlas, which is built again: nothing is freed, and ImGui 1.90.8 refills
+  the existing ImFont objects in place. The log says so on each add ("the text face a mod may hold is the same object,
+  rebuilt in place"). Full rebuilds stay for the player's own language, face and text-size changes. (Renderer.cpp:
+  AddIconFace / AddIconFaces / RequestIconFaces; ConsumerSurface.cpp asks for the add.)
+- Checked in game (SE 1.5.97, profile MCM Minimal with MCM Memory 1.5.6, Cinematic Conversation Camera 1.5.0 and Risa's
+  All In One Menu 5.5): both pages draw their icons; the log shows the face added and the held text face unchanged. The
+  freeze itself did not happen here with 2.1.2 either - it needs a mod that keeps a font, which the reporter's list has.
+
 ## 2.1.2 - 2026-10-06 - untested - the menu's words in every language, and MCM settings that come back on a new game
 
 The owner, after 2.1.1: "Go ahead and make the changes, but don't post anything."

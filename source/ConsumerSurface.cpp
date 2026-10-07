@@ -22,7 +22,7 @@
 #include <utility>
 #include <vector>
 
-namespace renderer { void RequestFontRebuild(); }   // Renderer.cpp - a new atlas at the next frame's start
+namespace renderer { void RequestFontRebuild(); void RequestIconFaces(); }   // Renderer.cpp - at the next frame's start
 
 namespace
 {
@@ -311,7 +311,7 @@ namespace consumer
 		const int face = IconFaceFor(a_name);
 		if (face >= 0 && !g_iconWanted[face]) {
 			g_iconWanted[face] = true;
-			renderer::RequestFontRebuild();
+			renderer::RequestIconFaces();   // 2.1.3: added to the atlas, nothing freed (KnightQueen1)
 			logger::info("PushFont (SMF-compat): \"{}\" asked for the Font Awesome {} face - adding it to the font atlas",
 						 a_name, kIconFaceNames[face]);
 		}
