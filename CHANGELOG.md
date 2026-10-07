@@ -21,7 +21,7 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
-## 2.1.3 - 2026-10-07 - untested - no freeze when a page first draws Font Awesome icons; SVG icons load
+## 2.1.3 - 2026-10-07 - working - no freeze when a page first draws Font Awesome icons; SVG icons load
 
 ### Added
 - **SVG textures for SKSE Menu Framework mods.** `LoadTexture` now reads `.svg` files (nanosvg, zlib licence - see

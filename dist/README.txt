@@ -1,6 +1,6 @@
 ﻿ApocryphaRealm Menu Framework
 =============================
-Version 2.1.2
+Version 2.1.3
 
 An original, GPL-3.0-or-later in-game menu framework (embedding Dear ImGui) - a one-for-one
 replacement for SKSE Menu Framework's consumer surface, plus user-friendly features that do
@@ -46,6 +46,9 @@ reading.
 
 WHAT CHANGED
 ------------
+
+Version 2.1.3
+SVG icons: mods made for SKSE Menu Framework that ship their icons as .svg files (Walk With Me, for one) now show them. No more freeze (on 2.1.1, a crash) the first time a page drawing Font Awesome icons opens - Cinematic Conversation Camera or MCM Memory, for example - in a large load order: the icons are added without taking away the fonts other mods are drawing with. Thanks to KnightQueen1 for the report.
 
 Version 2.1.2
 The menu's own words in every language: a converted menu's "(MCM)" ending and every mention of MCM are written in the language you pick. Your menu names, order and renames are unchanged.
