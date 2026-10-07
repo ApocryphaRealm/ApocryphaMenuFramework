@@ -21,6 +21,17 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## 2.1.4 - 2026-10-07 - untested - D-pad right stays on the Mods row's controls
+
+### Fixed
+- **D-pad right on the Mods row skipped its own controls.** On the row with the alphabetical tick box, the A-Z / Z-A
+  switch and the Sort button, right went straight across to the options pane instead of to the next control (the
+  owner, 2026-10-07: "pressing D-pad right skips past the toggle and sort button and goes to the right pane"). A
+  right press in the list pane is now decided one frame late, the way the options pane's sideways press already
+  is: if it moved the highlight to a control beside it, it stays in the list pane; a press that moved nothing
+  (on a menu entry, or on the row's last control) goes across to the options as before. Renderer.cpp:
+  g_pendingSideRight.
+
 ## 2.1.3 - 2026-10-07 - working - no freeze when a page first draws Font Awesome icons; SVG icons load
 
 ### Added
