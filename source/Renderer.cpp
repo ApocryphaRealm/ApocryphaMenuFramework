@@ -3048,7 +3048,12 @@ namespace renderer
 								}
 							}
 							settings::Save();
-							logger::info("side list: fold all -> {} ({} of {} separator(s) changed)", foldValues.foldAllSeparators, changed, separators.size());
+							// the frame and the input that pressed it (the owner, 2026-10-07: one press logged fold-all then open-all 0.3 s
+							// apart, and "when it unfolds, it leaves some separators folded") - so a double fire shows its source
+							const ImGuiInputSource src = GImGui ? GImGui->ActiveIdSource : ImGuiInputSource_None;
+							logger::info("side list: fold all -> {} ({} of {} separator(s) changed) [frame {}, {}, nav {}]", foldValues.foldAllSeparators, changed,
+								separators.size(), ImGui::GetFrameCount(), src == ImGuiInputSource_Mouse ? "mouse" : src == ImGuiInputSource_Gamepad ? "gamepad" :
+								src == ImGuiInputSource_Keyboard ? "keyboard" : "other", GImGui ? GImGui->NavId : 0u);
 						}
 						ImGui::EndDisabled();
 						if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
@@ -3062,7 +3067,13 @@ namespace renderer
 														   [](const settings::Values::FilterWord& f) { return f.state != 0; });
 						ImGui::SameLine();
 						if (filtering) { ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_SliderGrab)); }
-						if (ImGui::SmallButton(TR("AMF_FilterButton", "Filter"))) { ImGui::OpenPopup("##listfilter"); }
+						// "Filter (n)" while words are in use (the owner, 2026-10-07: a saved "-mcm" hid every converted page and the
+						// groups looked empty - the tinted text alone did not show in Norden - Black, whose tint is near white)
+						const auto activeWords = std::count_if(filterValues.listFilters.begin(), filterValues.listFilters.end(),
+															   [](const settings::Values::FilterWord& f) { return f.state != 0; });
+						const std::string filterLabel = std::string(TR("AMF_FilterButton", "Filter")) +
+														(activeWords > 0 ? " (" + std::to_string(activeWords) + ")" : std::string()) + "###listfilterbtn";
+						if (ImGui::SmallButton(filterLabel.c_str())) { ImGui::OpenPopup("##listfilter"); }
 						if (filtering) { ImGui::PopStyleColor(); }
 						if (ImGui::IsItemHovered()) { ImGui::SetTooltip("%s", TR("AMF_FilterTip", "Words to show only, or to hide, in the list - kept between games.")); }
 						if (ImGui::BeginPopup("##listfilter"))
@@ -3256,7 +3267,8 @@ namespace renderer
 					for (auto& r : displayRows)
 					{
 						if (r.separator) { separator = &r; separator->children = 0; continue; }
-						if (separator && r.depth > 0 && !allPagesHidden(r)) { ++separator->children; }
+						// a row the Filter hides is not counted either, so a folded "(n)" promises only rows that will show
+						if (separator && r.depth > 0 && !allPagesHidden(r) && (!filterOut || passesFilter(r.displayName))) { ++separator->children; }
 					}
 				}
 				for (const personalization::DisplayEntry& row : displayRows)

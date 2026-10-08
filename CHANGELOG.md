@@ -111,6 +111,10 @@ different things", the "$" and underscores in section headings, and the help tex
   The same fault, same fix: the Filter words' +/- buttons (A worked once, then not until the highlight moved off and
   back - the owner, 2026-10-07), the A-Z / Z-A switch, and on converted MCM pages the key buttons ("..." while
   waiting) and text rows that show their own value.
+- **An active Filter was easy to miss**: a saved "-mcm" hid every converted page, so groups looked empty after Fold
+  opened them. The button now reads "Filter (n)" while words are in use, and a separator's "(n)" counts only the rows
+  the Filter lets through. The Fold press also logs its frame and input, to catch a double fire seen once (fold, then
+  open, 0.3 s apart).
 - **Section headings showed "$KEY_Names".** A heading wrapped in font tags (Atlas Map Markers:
   `<font color='#FF9900'>$ATLAS_GlobalMarkerSettings</font>`) was never looked up - only text starting with "$" was.
   The key inside the tags is now translated ("GLOBAL MARKER SETTINGS"). A key no translation file carries now reads as
