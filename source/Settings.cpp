@@ -269,6 +269,9 @@ namespace settings
 				"; Help bar (0/1): on, the highlighted option's help on a converted MCM page shows in a bar under the\n"
 				"; right pane, inside the menu. Off: it shows as a popup beside the option. On is the default.\n"
 				"bHelpBar=" << (a_v.helpBar ? 1 : 0) << "\n"
+				"; The Mods row's Fold switch (0/1): switched on it folds every separator, off opens them all. It acts only when\n"
+				"; switched - a separator folded or opened by hand afterwards stays as it is.\n"
+				"bFoldAllSeparators=" << (a_v.foldAllSeparators ? 1 : 0) << "\n"
 				"; Optional .ttf to rasterise the menu text from. Empty = a clean system font.\n"
 				"sFontPath=" << a_v.fontPath << "\n"
 				"; Language of the framework's own text: empty = the game's language; or a translation\n"
@@ -625,6 +628,7 @@ namespace settings
 			ReadBool(entries, "Window.bFreeResize", g_values.freeResize);
 			ReadBool(entries, "Display.bSeeThrough", g_values.seeThrough);
 			ReadBool(entries, "Display.bHelpBar", g_values.helpBar);
+			ReadBool(entries, "Display.bFoldAllSeparators", g_values.foldAllSeparators);
 			{
 				auto it = entries.find("Display.sFontPath");
 				if (it != entries.end()) { g_values.fontPath = it->second; }

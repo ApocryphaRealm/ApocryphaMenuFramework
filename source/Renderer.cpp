@@ -2952,6 +2952,34 @@ namespace renderer
 					if (widgets::Toggle(s_ascending ? TR("AMF_SortAsc", "A-Z") : TR("AMF_SortDesc", "Z-A"), &s_ascending)) { apply(); }
 					ImGui::EndDisabled();
 					if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) { ImGui::SetTooltip("%s", TR("AMF_SortDirTip", "On: A to Z. Off: Z to A.")); }
+					// FOLD ALL, next to A-Z with Sort kept at the far right (2.1.5, the owner, 2026-10-07: "next to the sort button ... a collapse and uncollapse toggle. When
+					// it's on, it collapses all [separators], and when it's off, it uncollapses them. And if the user goes and
+					// uncollapses one individually, then the toggle doesn't auto-reassert itself until it's toggled again").
+					// The switch acts once, when it is switched; a separator folded or opened by hand afterwards stays as it is.
+					{
+						auto& foldValues = settings::Get();
+						const auto separators = personalization::Separators();
+						ImGui::SameLine();
+						ImGui::BeginDisabled(separators.empty());
+						if (widgets::Toggle(TR("AMF_FoldAll", "Fold"), &foldValues.foldAllSeparators))
+						{
+							int changed = 0;
+							for (const auto& s : separators)
+							{
+								if (personalization::IsCollapsed(s.id) != foldValues.foldAllSeparators)
+								{
+									personalization::ToggleCollapsed(s.id);
+									++changed;
+								}
+							}
+							settings::Save();
+							logger::info("side list: fold all -> {} ({} of {} separator(s) changed)", foldValues.foldAllSeparators, changed, separators.size());
+						}
+						ImGui::EndDisabled();
+						if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+						{
+							ImGui::SetTooltip("%s", TR("AMF_FoldAllTip", "On: every separator folded. Off: every one open. Folding or opening one by hand afterwards leaves this switch as it is."));
+						}
 					const auto& sortValues = settings::Get();
 					if (sortValues.loadMcmHelperConfigs || sortValues.loadSkyUIScriptMenus)
 					{
@@ -2967,6 +2995,7 @@ namespace renderer
 							ImGui::SetTooltip("%s%s%s", TR("AMF_SortButtonTip", "Sort the MCM menus into categories, each under a separator for its kind. Undo is on Settings > Menu list."),
 											  g_mcmSortStatus.empty() ? "" : "\n\n", g_mcmSortStatus.c_str());
 						}
+					}
 					}
 				}
 

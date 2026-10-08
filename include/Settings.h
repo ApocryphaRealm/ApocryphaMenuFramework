@@ -60,6 +60,8 @@ namespace settings
 		// the right pane, inside the menu, like SkyUI's info line - "a toggle just in case anybody doesn't like" it: off
 		// shows it as a popup instead, wrapped to the right pane and kept inside the window. ON by default, as shipped.
 		bool helpBar = true;          // [Display] bHelpBar
+		// 2.1.5: the Mods row's Fold switch - on folds every separator, off opens them; it acts when switched only.
+		bool foldAllSeparators = false;   // [Display] bFoldAllSeparators
 		// THE PLAYER'S OWN COLOURS (2.1.5, the owner, 2026-10-07: "choose what color ... your headers to be blue text or
 		// yellow text ... the subtext or the help text", "tab color and slider color", then "add to the framework's own
 		// appearance page ... changing the different things that make up the framework's art, like its frame, box, sliders,

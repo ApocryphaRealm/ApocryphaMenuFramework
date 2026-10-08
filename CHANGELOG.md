@@ -73,6 +73,10 @@ different things", the "$" and underscores in section headings, and the help tex
 - **Y no longer acts like A in our window.** It reached ImGui as its "activate / type into" button, so on a page it
   switched a toggle and opened a slider as a text box. In AMF's window Y does only the framework's jobs; a mod's own
   window still gets it. The Controls page's text for that action says both jobs.
+- **Fold, on the Mods row** between A-Z and Sort (the owner: "a collapse and uncollapse toggle. When it's on, it
+  collapses all [separators], and when it's off, it uncollapses them. And if the user goes and uncollapses one
+  individually, then the toggle doesn't auto-reassert itself until it's toggled again"; "the sort button ... on the
+  farthest right"). It acts once, when switched; [Display] bFoldAllSeparators keeps where it was left.
 - **The persistence test is gone** from the bottom of Settings > General (the owner: "get rid of the persistence test");
   it showed only at log level 0. The per-save channel itself is unchanged.
 
