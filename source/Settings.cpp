@@ -283,6 +283,9 @@ namespace settings
 				"; Help bar (0/1): on, the highlighted option's help on a converted MCM page shows in a bar under the\n"
 				"; right pane, inside the menu. Off: it shows as a popup beside the option. On is the default.\n"
 				"bHelpBar=" << (a_v.helpBar ? 1 : 0) << "\n"
+				"; Appearance > Colours (0/1): on, a colour you pick changes the whole menu at once. Off: picks show only in the\n"
+				"; page's preview until you press Apply. On is the default.\n"
+				"bColorsApplyNow=" << (a_v.colorsApplyNow ? 1 : 0) << "\n"
 				"; The Mods row's Fold switch (0/1): switched on it folds every separator, off opens them all. It acts only when\n"
 				"; switched - a separator folded or opened by hand afterwards stays as it is.\n"
 				"bFoldAllSeparators=" << (a_v.foldAllSeparators ? 1 : 0) << "\n"
@@ -642,6 +645,7 @@ namespace settings
 			ReadBool(entries, "Window.bFreeResize", g_values.freeResize);
 			ReadBool(entries, "Display.bSeeThrough", g_values.seeThrough);
 			ReadBool(entries, "Display.bHelpBar", g_values.helpBar);
+			ReadBool(entries, "Display.bColorsApplyNow", g_values.colorsApplyNow);
 			ReadBool(entries, "Display.bFoldAllSeparators", g_values.foldAllSeparators);
 			ReadBool(entries, "ListFilter.bMatchAll", g_values.listFilterMatchAll);
 			if (const auto lf = entries.find("ListFilter.sWords"); lf != entries.end())

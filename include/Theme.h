@@ -144,6 +144,12 @@ namespace theme
 	std::array<std::string, kRoleCount>& PlayerColors();
 	bool RolePicked(int a_role);
 
+	// The Colours page's preview in picks not yet applied (2.1.5): Begin swaps that look in (ImGui colours, role colours,
+	// heading / help) for the widgets drawn until End puts the applied look back. PicksRoleColor: a role's colour under picks.
+	void BeginPreviewColors(const std::array<std::string, kRoleCount>& a_picks);
+	void EndPreviewColors();
+	std::uint32_t PicksRoleColor(const std::array<std::string, kRoleCount>& a_picks, int a_role);
+
 	// The text-role colours (2.1.5) for ImGui::PushStyleColor - RoleColor(kRoleHeading / kRoleHelp).
 	std::uint32_t HeaderTextColor();
 	std::uint32_t HelpTextColor();

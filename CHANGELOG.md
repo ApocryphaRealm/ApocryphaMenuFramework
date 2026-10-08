@@ -32,6 +32,10 @@ different things", the "$" and underscores in section headings, and the help tex
   change a color"): beside the colour list, tabs, a section heading, an option with its value and help, a switch with
   the theme's highlight frame round it, a tick box, a slider, a button, a selected row and a row under the mouse - all
   in the colours in use, so a pick shows at once. Off the D-pad's path.
+- **Preview only, then Apply** (Appearance > Colours, [Display] bColorsApplyNow; the owner, 2026-10-08): a switch
+  "Show changes everywhere straight away" - on (the default) a pick changes the whole menu at once; off, picks show only
+  in the preview until "Apply to <theme>" puts them on the current theme, or Discard drops them. Switching it back on
+  applies what is waiting. Theme.cpp now works a look out from any set of picks (BuildLook), which the preview borrows.
 - **Help bar** (Appearance, on by default; [Display] bHelpBar): on a converted MCM page the highlighted option's help
   shows in a bar under the right pane, inside the menu, like SkyUI's info line - with the mouse or the controller. It
   wraps to the pane and keeps the last help shown. Off: the help shows as a popup, now wrapped to the right pane's width

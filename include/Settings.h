@@ -60,6 +60,7 @@ namespace settings
 		// the right pane, inside the menu, like SkyUI's info line - "a toggle just in case anybody doesn't like" it: off
 		// shows it as a popup instead, wrapped to the right pane and kept inside the window. ON by default, as shipped.
 		bool helpBar = true;          // [Display] bHelpBar
+		bool colorsApplyNow = true;   // [Display] bColorsApplyNow - Appearance > Colours: picks change the whole menu at once
 		// 2.1.5: the Mods row's Fold switch - on folds every separator, off opens them; it acts when switched only.
 		bool foldAllSeparators = false;   // [Display] bFoldAllSeparators
 		// 2.1.5: the Mods row's FILTER WORDS, saved (the owner, 2026-10-07: "I want the filters to be persistent and saved

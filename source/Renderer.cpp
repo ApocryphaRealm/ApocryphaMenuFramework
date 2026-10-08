@@ -1265,6 +1265,35 @@ namespace renderer
 		{
 			// the ACTIVE theme's own picks: each theme keeps its changes, like a preset (the owner, 2026-10-07)
 			auto& colors = theme::PlayerColors();
+			auto& values = settings::Get();
+			// SHOW CHANGES EVERYWHERE STRAIGHT AWAY (the owner, 2026-10-08: "a little toggle ... whether you want your color
+			// changes to apply only to the preview or to the whole framework instantaneously ... then you can press a button to
+			// apply it to your current theme"). Off, picks go into a draft only the preview draws in, until Apply. The draft
+			// follows the applied picks while nothing is pending, and starts again from them on a theme change.
+			static std::array<std::string, theme::kRoleCount> s_draft;
+			static std::string s_draftTheme;
+			static bool s_pending = false;
+			const std::string themeId = theme::GetActiveTheme().id;
+			if (s_draftTheme != themeId) { s_pending = false; s_draftTheme = themeId; }
+			if (!s_pending) { s_draft = colors; }
+			if (widgets::Toggle(TR("AMF_ColorApplyNow", "Show changes everywhere straight away"), &values.colorsApplyNow))
+			{
+				// switched on with changes waiting: they go on, as the switch now says
+				if (values.colorsApplyNow && s_pending) { colors = s_draft; s_pending = false; theme::Apply(); }
+				logger::info("settings page: colours apply straight away -> {}", values.colorsApplyNow);
+				settings::Save();
+			}
+			if (ImGui::IsItemHovered())
+			{
+				ImGui::SetTooltip("%s", TR("AMF_ColorApplyNowTip", "On: each colour you pick changes the whole menu at once. Off: picks show only in the preview until you press Apply."));
+			}
+			const bool live = values.colorsApplyNow;
+			auto& picks = live ? colors : s_draft;
+			const auto commit = [&]() {
+				if (live) { settings::Save(); theme::Apply(); }
+				else { s_pending = picks != colors; }
+			};
+
 			struct Role { const char* key; const char* fallback; int role; };
 			static constexpr Role kRoles[] = {
 				{ "AMF_ColorBackground", "Background", theme::kRoleBackground },
@@ -1283,13 +1312,12 @@ namespace renderer
 			// Presets: black, dark grey, grey, off-white, gold, yellow, orange, red, green, light blue, blue, purple.
 			static constexpr std::uint32_t kSwatches[] = { 0x000000, 0x333333, 0x9A9A9A, 0xF5F2E9, 0xD8C27A, 0xF0E070,
 														   0xE8A050, 0xD86A6A, 0x8CC88C, 0x9FC8E8, 0x6A9FE0, 0xB89AE0 };
-			auto setColor = [&colors](int a_role, std::uint32_t a_rgb, const char* a_name) {
+			auto setColor = [&](int a_role, std::uint32_t a_rgb, const char* a_name) {
 				char hex[8];
 				snprintf(hex, sizeof(hex), "#%06X", a_rgb & 0xFFFFFF);
-				colors[a_role] = hex;
-				logger::info("settings page: {} colour ({}) -> {}", a_name, theme::GetActiveTheme().id, colors[a_role]);
-				settings::Save();
-				theme::Apply();
+				picks[a_role] = hex;
+				logger::info("settings page: {} colour ({}{}) -> {}", a_name, themeId, live ? "" : ", preview only", picks[a_role]);
+				commit();
 			};
 			const float swatch = ImGui::GetFrameHeight() * 0.8f;
 			// the role list on the left, a live sample of every part on the right (DrawColorPreview)
@@ -1304,7 +1332,8 @@ namespace renderer
 			for (const Role& r : kRoles)
 			{
 				ImGui::PushID(r.role);
-				const std::uint32_t abgr = theme::RoleColor(r.role);   // what draws now: the player's, else the theme's
+				// what draws now: the player's, else the theme's - or, previewing, what the draft would draw
+				const std::uint32_t abgr = live ? theme::RoleColor(r.role) : theme::PicksRoleColor(picks, r.role);
 				float col[3] = { (abgr & 0xFF) / 255.0f, ((abgr >> 8) & 0xFF) / 255.0f, ((abgr >> 16) & 0xFF) / 255.0f };
 				if (ImGui::ColorEdit3(TR(r.key, r.fallback), col, ImGuiColorEditFlags_NoInputs))
 				{
@@ -1312,14 +1341,13 @@ namespace renderer
 					setColor(r.role, (c8(col[0]) << 16) | (c8(col[1]) << 8) | c8(col[2]), r.fallback);
 				}
 				ImGui::SameLine();
-				if (!colors[r.role].empty())
+				if (!picks[r.role].empty())
 				{
 					if (ImGui::SmallButton(TR("AMF_ColorTheme", "Theme")))
 					{
-						colors[r.role].clear();
-						logger::info("settings page: {} colour -> the theme's", r.fallback);
-						settings::Save();
-						theme::Apply();
+						picks[r.role].clear();
+						logger::info("settings page: {} colour -> the theme's{}", r.fallback, live ? "" : " (preview only)");
+						commit();
 					}
 				}
 				else { ImGui::TextDisabled("%s", TR("AMF_ColorFromTheme", "(the theme's)")); }
@@ -1335,20 +1363,51 @@ namespace renderer
 				ImGui::PopID();
 			}
 			bool any = false;
-			for (const auto& c : colors) { any = any || !c.empty(); }
+			for (const auto& c : picks) { any = any || !c.empty(); }
 			if (!any) { ImGui::BeginDisabled(); }
 			if (ImGui::Button(TR("AMF_ColorAllTheme", "All back to the theme")))
 			{
-				for (auto& c : colors) { c.clear(); }
-				logger::info("settings page: every colour -> the theme's");
-				settings::Save();
-				theme::Apply();
+				for (auto& c : picks) { c.clear(); }
+				logger::info("settings page: every colour -> the theme's{}", live ? "" : " (preview only)");
+				commit();
 			}
 			if (!any) { ImGui::EndDisabled(); }
+			// previewing: the picks wait here until Apply puts them on this theme, or Discard drops them
+			if (!live)
+			{
+				ImGui::BeginDisabled(!s_pending);
+				const std::string applyLabel = mcmstyle::Fmt(TR("AMF_ColorApply", "Apply to %s"), theme::GetActiveTheme().name.c_str()) + "###colourapply";
+				if (ImGui::Button(applyLabel.c_str()))
+				{
+					colors = s_draft;
+					s_pending = false;
+					logger::info("settings page: preview colours applied to {}", themeId);
+					settings::Save();
+					theme::Apply();
+				}
+				ImGui::SameLine();
+				if (ImGui::Button(TR("AMF_ColorDiscard", "Discard")))
+				{
+					s_pending = false;
+					s_draft = colors;
+					logger::info("settings page: preview colours discarded");
+				}
+				ImGui::EndDisabled();
+				if (s_pending)
+				{
+					ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
+					ImGui::PushTextWrapPos(0.0f);
+					ImGui::TextUnformatted(TR("AMF_ColorPending", "Not applied yet - only the preview shows these colours."));
+					ImGui::PopTextWrapPos();
+					ImGui::PopStyleColor();
+				}
+			}
 			if (table)
 			{
 				ImGui::TableSetColumnIndex(1);
+				if (!live) { theme::BeginPreviewColors(s_draft); }
 				DrawColorPreview();
+				if (!live) { theme::EndPreviewColors(); }
 				ImGui::EndTable();
 			}
 		}
