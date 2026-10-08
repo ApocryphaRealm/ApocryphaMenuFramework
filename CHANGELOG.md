@@ -122,6 +122,9 @@ different things", the "$" and underscores in section headings, and the help tex
   open, 0.3 s apart).
 - **The highlight follows the bumpers**: switching a tab with LB/RB changed the tab but left the highlight where it
   was (the owner, 2026-10-07). The opened tab now takes it - the main tabs and the settings sub-tabs.
+- **A-Z / Z-A did nothing in a list of separators**: it sorted only the mods above the first separator. It now sorts
+  the mods inside every separator (and the loose ones), and never moves a separator (the owner, 2026-10-08). Moving a
+  mod while sorted changes your own order underneath, so unticking alphabetical still gives back the order you made.
 - **Section headings showed "$KEY_Names".** A heading wrapped in font tags (Atlas Map Markers:
   `<font color='#FF9900'>$ATLAS_GlobalMarkerSettings</font>`) was never looked up - only text starting with "$" was.
   The key inside the tags is now translated ("GLOBAL MARKER SETTINGS"). A key no translation file carries now reads as

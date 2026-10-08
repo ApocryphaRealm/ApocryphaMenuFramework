@@ -84,7 +84,7 @@ namespace personalization
 		// Off custom mode it is plain alphabetical (no separators exist then - creating one turns custom mode on). A forced
 		// A-Z / Z-A sorts the loose mods only (the owner, 2026-10-02: "let's make the A to Z sorting ignore mods in a
 		// separator"); it is a way of LOOKING at the list, so g_order is not rewritten by it - only an edit bakes it in.
-		std::vector<std::string> CanonicalLocked(const std::vector<registry::Entry>& a_entries)
+		std::vector<std::string> CanonicalLocked(const std::vector<registry::Entry>& a_entries, bool a_sorted = true)
 		{
 			std::vector<std::string> present;
 			present.reserve(a_entries.size());
@@ -117,11 +117,21 @@ namespace personalization
 					sequence.insert(at, name);
 				}
 			}
-			if (g_sortMode != SortMode::kListOrder)
+			// A-Z / Z-A sorts the mods INSIDE every group - the loose ones and each separator's - and never moves a separator
+			// (the owner, 2026-10-08: "it should be sorting everything in the separators in A to Z fashion, or in reverse ...
+			// But it shouldn't affect the actual separators themselves"). It sorted only the loose mods above the first
+			// separator before, so with every mod under a separator the switch changed nothing.
+			if (a_sorted && g_sortMode != SortMode::kListOrder)
 			{
-				const auto firstSeparator = std::find_if(sequence.begin(), sequence.end(), [](const std::string& n) { return IsSeparator(n); });
-				std::sort(sequence.begin(), firstSeparator, AlphaLess);
-				if (g_sortMode == SortMode::kAlphaDesc) { std::reverse(sequence.begin(), firstSeparator); }
+				auto runStart = sequence.begin();
+				while (runStart != sequence.end())
+				{
+					if (IsSeparator(*runStart)) { ++runStart; continue; }
+					const auto runEnd = std::find_if(runStart, sequence.end(), [](const std::string& n) { return IsSeparator(n); });
+					std::sort(runStart, runEnd, AlphaLess);
+					if (g_sortMode == SortMode::kAlphaDesc) { std::reverse(runStart, runEnd); }
+					runStart = runEnd;
+				}
 			}
 			return sequence;
 		}
@@ -301,7 +311,7 @@ namespace personalization
 		if (from == target) { return; }
 		const std::string anchor = display[static_cast<std::size_t>(target)].modName;
 
-		std::vector<std::string> canonical = CanonicalLocked(a_entries);
+		std::vector<std::string> canonical = CanonicalLocked(a_entries, false);   // the hand order: the sort is only how it shows
 		std::vector<std::string> block;
 		if (IsSeparator(a_modName))
 		{
@@ -340,7 +350,7 @@ namespace personalization
 	{
 		++g_layoutRevision;
 		std::scoped_lock lock(g_lock);
-		std::vector<std::string> canonical = CanonicalLocked(a_entries);
+		std::vector<std::string> canonical = CanonicalLocked(a_entries, false);   // the hand order: the sort is only how it shows
 		const std::string id = std::string(kSeparatorPrefix) + std::to_string(NextSeparatorNumberLocked());
 		const auto at = std::find(canonical.begin(), canonical.end(), a_beforeName);
 		canonical.insert(at, id);   // end() when a_beforeName is empty or unknown
@@ -371,7 +381,7 @@ namespace personalization
 		++g_layoutRevision;
 		std::scoped_lock lock(g_lock);
 		if (IsSeparator(a_modName)) { return false; }
-		std::vector<std::string> canonical = CanonicalLocked(a_entries);
+		std::vector<std::string> canonical = CanonicalLocked(a_entries, false);   // the hand order: the sort is only how it shows
 		const auto self = std::find(canonical.begin(), canonical.end(), a_modName);
 		if (self == canonical.end()) { return false; }
 		canonical.erase(self);
@@ -400,7 +410,7 @@ namespace personalization
 		++g_layoutRevision;
 		std::scoped_lock lock(g_lock);
 		if (IsSeparator(a_modName)) { return false; }
-		std::vector<std::string> canonical = CanonicalLocked(a_entries);
+		std::vector<std::string> canonical = CanonicalLocked(a_entries, false);   // the hand order: the sort is only how it shows
 		const auto self = std::find(canonical.begin(), canonical.end(), a_modName);
 		if (self == canonical.end()) { return false; }
 		// its group's head: just after the nearest separator above it, or the very start (the loose mods)
