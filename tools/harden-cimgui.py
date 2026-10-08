@@ -160,6 +160,12 @@ def main() -> int:
     HEADER_PREFIXES = ("igCollapsingHeader_", "igTreeNode_", "igTreeNodeV_", "igTreeNodeEx_", "igTreeNodeExV_")
     HEADER_NAMES = {"igTreeNodeBehavior"}
     wrapped = []
+    # 2.1.6 (the owner's screenshots of Show Player In Inventory: its sliders and its button sat on top of their own
+    # labels): a consumer's SameLine(<pixels>) - "Offset X" then SameLine(130.0f) - is a column laid out for SKSE Menu
+    # Framework's small text. At a big text size the label is wider than the column and the next item lands on it.
+    # The export goes through amf_ConsumerSameLine (ConsumerSurface.cpp), which keeps the column when the label fits
+    # and otherwise starts the next item just after the label, as SameLine() would.
+    sameline = 0
     for m in fn.finditer(src):
         ret, name, args = m.group(2).strip(), m.group(3), m.group(4).strip()
         lines = guards_for(ret, args)
@@ -178,7 +184,13 @@ def main() -> int:
             # this script changed - nothing has to be inferred from a line's position
             marker = "   // AMF null guard"
             out.append("".join("\n    " + L + marker for L in lines))
-        if name in TEXT_FIELDS:
+        if name == "igSameLine":
+            body_end = src.index("\n}", pos)
+            assert src[pos:body_end].strip() == "return ImGui::SameLine(offset_from_start_x,spacing);", src[pos:body_end]
+            out.append("\n    return amf_ConsumerSameLine(offset_from_start_x, spacing);   // AMF: never on top of the label (2.1.6)")
+            pos = body_end
+            sameline += 1
+        elif name in TEXT_FIELDS:
             body_end = src.index("\n}", pos)
             body = src[pos:body_end]
             assert body.strip().startswith("return ImGui::"), name
@@ -222,7 +234,7 @@ def main() -> int:
         "// pointers they resolved by name, so nothing else validates what they pass); the four text-field\n"
         "// exports note their item for the on-screen keyboard; and the collapsing-header / tree-node\n"
         "// exports run with ImGui's stock window padding so a framed header's edge sits where it does\n"
-        "// under SKSE Menu Framework (2.0.6).\n"
+        "// under SKSE Menu Framework (2.0.6); and SameLine never puts an item on top of the one before it (2.1.6).\n"
         "// The generator's docstring explains exactly what is guarded and what is deliberately not -\n"
         "// in particular that ImGui's optional p_* pointers are left alone, because guarding p_open\n"
         "// would stop every window without a close button from drawing.\n"
@@ -232,8 +244,11 @@ def main() -> int:
     assert noted == 4, noted
     # 2.0.6: the header-widening pair the wrapped tree-node exports call (defined in ConsumerSurface.cpp).
     assert len(wrapped) == 13, wrapped
+    # 2.1.6: the column-overlap guard the SameLine export calls (defined in ConsumerSurface.cpp).
+    assert sameline == 1, sameline
     text = (banner + "void amf_NoteTextField(unsigned int a_itemId);\n"
-            "void amf_BeginConsumerHeader();\nvoid amf_EndConsumerHeader();\n" + "".join(out))
+            "void amf_BeginConsumerHeader();\nvoid amf_EndConsumerHeader();\n"
+            "void amf_ConsumerSameLine(float a_offsetFromStartX, float a_spacing);\n" + "".join(out))
     os.makedirs(os.path.dirname(TARGET), exist_ok=True)
     io.open(TARGET, "w", encoding="utf-8", newline="\n").write(text)
 

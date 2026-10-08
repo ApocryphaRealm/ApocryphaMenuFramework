@@ -619,6 +619,29 @@ namespace
 	float g_headerSavedPadX = 0.0f;
 }
 
+// 2.1.6 (the owner's screenshots of Show Player In Inventory): a consumer's SameLine(130.0f) after a label is a column
+// laid out for SKSE Menu Framework's small text. Under a bigger text size the label is wider than the column and the
+// slider or button that follows was drawn on top of it ("they're overriding each other's in the same amount of space").
+// The column is kept whenever the label fits; when it does not, the next item starts just after the label instead - the
+// row is a little out of line with its neighbours, but nothing is hidden. A SameLine with no column is untouched.
+void amf_ConsumerSameLine(float a_offsetFromStartX, float a_spacing)
+{
+	ImGuiWindow* window = ImGui::GetCurrentWindow();
+	if (window && !window->SkipItems && a_offsetFromStartX != 0.0f)
+	{
+		const float spacingW = a_spacing < 0.0f ? 0.0f : a_spacing;
+		const float columnX = window->Pos.x - window->Scroll.x + a_offsetFromStartX + spacingW + window->DC.GroupOffset.x +
+		                      window->DC.ColumnsOffset.x;
+		const float afterLast = window->DC.CursorPosPrevLine.x + ImGui::GetStyle().ItemSpacing.x;
+		if (columnX < afterLast)
+		{
+			ImGui::SameLine(0.0f, a_spacing);
+			return;
+		}
+	}
+	ImGui::SameLine(a_offsetFromStartX, a_spacing);
+}
+
 void amf_BeginConsumerHeader()
 {
 	g_headerWindow = nullptr;

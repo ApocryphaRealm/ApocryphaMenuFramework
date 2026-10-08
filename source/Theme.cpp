@@ -2,6 +2,7 @@
 
 #include "KnotworkBorder.h"
 
+#include "Renderer.h"
 #include "Settings.h"
 #include "utils/Logger.h"
 
@@ -340,6 +341,8 @@ namespace theme
 		PushListPadding();
 		const bool changed = ImGui::Combo(a_label, a_current, a_items, a_count);
 		ImGui::PopStyleVar();
+		// 2.1.6: a dropdown draws its box itself (not through the art hook), so its hover frame is noted here
+		if (ImGui::IsItemHovered()) { renderer::NoteHoverRect(ImGui::GetWindowDrawList(), ImGui::GetItemRectMin(), ImGui::GetItemRectMax()); }
 		return changed;
 	}
 

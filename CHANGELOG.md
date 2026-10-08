@@ -147,6 +147,15 @@ line under a section header ... the on-screen keyboard ... and anything else tha
 - tools/make-theme-art.py writes its art into the library; the theme INIs are edited by hand.
 
 ### Fixed
+- **The mouse brings up the hover frame on every control** (testing, the owner: "hovering over a lot of different
+  items on the menu interface doesn't bring up its frame ... within AMF settings page"). It was added to items one at a
+  time (the menu names, the Mods row's buttons); now any control drawn in its hovered state - fields, sliders, tick
+  boxes, buttons, rows, tabs, dropdowns, switches - gets the theme's frame, on AMF's own pages and every mod's.
+- **An SKSE Menu Framework mod's control no longer lands on its own label** (testing, the owner's screenshots of Show
+  Player In Inventory: its sliders covered "Offset X" and its button sat on "Rotate Button"). Such a mod puts its
+  controls in a column a fixed number of pixels in - SameLine(130) - sized for SMF's small text; at a bigger text size
+  the label is wider than the column. The column is kept whenever the label fits; when it does not, the control starts
+  just after the label.
 - **A slow menu's scripts are no longer paused mid-call** (testing: C.O.I.N. and I.C.O.W. pages waiting out the 15 s
   cut-off). While a converted page's script call runs, the menu lets the game run so the script can; it used to pause
   again after 3 s, and a paused game runs no scripts, so a slow OpenConfig could only sit out the rest of the 15 s.

@@ -3,6 +3,9 @@
 #include <string>
 
 struct ImDrawList;
+struct ImVec2;
+
+struct ImDrawList;
 
 // ============================================================================================
 // M1: the render loop. Two trampoline call-hooks (survey §7.1), a probed D3D-init site
@@ -27,6 +30,12 @@ namespace renderer
 		bool hasKana = false, hasHangul = false, hasHanzi = false, hasCyrillic = false;
 	};
 	FontProbe GetFontProbe();
+
+	// 2.1.6 (the owner, testing: "using the mouse cursor and hovering over a lot of different items on the menu interface
+	// doesn't bring up its frame ... within AMF settings page"): the art hook calls this for every control ImGui draws in
+	// its hovered state - fields, sliders, tick boxes, buttons, rows, tabs, dropdowns - so the theme's hover frame goes
+	// round whatever is under the mouse, in AMF's own pages and in every mod's. Render thread only.
+	void NoteHoverRect(ImDrawList* a_drawList, const ImVec2& a_min, const ImVec2& a_max);
 
 	// Installs the D3D-init and present hooks. Returns false (after logging exactly what did
 	// not match) when any pattern guard refuses; the plugin then loads inert rather than crashing.

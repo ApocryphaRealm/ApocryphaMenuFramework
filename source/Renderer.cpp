@@ -484,12 +484,20 @@ namespace renderer
 				if (!m.drawList) { continue; }
 				if (!m.nav)
 				{
-					bool underNav = false;   // the hover frame stays off the row the nav frame is already round
-					for (const HighlightMark& o : g_highlights)
+					// the hover frame stays off the row the nav frame is already round, and an item noted twice (by hand and
+					// by the art hook, 2.1.6) draws once - the same item within a couple of pixels
+					auto same = [&](const HighlightMark& o) {
+						return o.drawList == m.drawList && std::abs(o.min.x - m.min.x) < 3.0f && std::abs(o.min.y - m.min.y) < 3.0f &&
+							   std::abs(o.max.x - m.max.x) < 3.0f && std::abs(o.max.y - m.max.y) < 3.0f;
+					};
+					bool skip = false;
+					for (std::size_t j = 0; j < g_highlights.size() && !skip; ++j)
 					{
-						underNav = underNav || (o.nav && o.drawList == m.drawList && o.min.x == m.min.x && o.min.y == m.min.y);
+						const HighlightMark& o = g_highlights[j];
+						skip = (o.nav && o.drawList == m.drawList && (same(o) || (o.min.x == m.min.x && o.min.y == m.min.y))) ||
+							   (j < i && !o.nav && same(o));
 					}
-					if (underNav) { continue; }
+					if (skip) { continue; }
 				}
 				m.drawList->PushClipRect(m.clipMin, m.clipMax, false);
 				DrawHighlightFrame(m.drawList, m.min, m.max, m.nav ? 1.0f : 0.6f);
@@ -4980,6 +4988,12 @@ namespace renderer
 		}
 		logger::info("Framework window {} ({})", a_visible ? "shown" : "hidden",
 			a_nested ? "nested in the game's System menu" : "external/DevBench");
+	}
+
+	void NoteHoverRect(ImDrawList* a_drawList, const ImVec2& a_min, const ImVec2& a_max)
+	{
+		if (!a_drawList) { return; }
+		g_highlights.push_back({ a_drawList, a_min, a_max, a_drawList->GetClipRectMin(), a_drawList->GetClipRectMax(), false });
 	}
 
 	void SetSelectedNode(const std::string& a_node)

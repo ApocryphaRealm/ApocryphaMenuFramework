@@ -1,6 +1,7 @@
 #include "PCH.h"
 
 #include "ArtHooks.h"
+#include "Renderer.h"
 
 #include "Skin.h"
 #include "Theme.h"
@@ -268,9 +269,31 @@ namespace arthooks
 			NineSlice(a_dl, part->main, part->corner, dcs, a_bb, tint ? static_cast<ImU32>(tint) : IM_COL32_WHITE, false);
 		}
 
+		// 2.1.6: a control drawn in its hovered (or held) colours is the one under the mouse - the theme's hover frame goes
+		// round it, whatever page it is on (the owner: the mouse should bring up the frame the controller does). Scroll bars
+		// and resize grips have colours of their own, so they never match.
+		void NoteIfHovered(ImDrawList* a_dl, int a_part, const ImRect& a_bb, ImU32 a_col)
+		{
+			if (a_part != ImGuiArtPart_Frame && a_part != ImGuiArtPart_TickBox && a_part != ImGuiArtPart_SliderTrack &&
+				a_part != ImGuiArtPart_Tab)
+			{
+				return;
+			}
+			for (const ImGuiCol c : { ImGuiCol_FrameBgHovered, ImGuiCol_FrameBgActive, ImGuiCol_ButtonHovered, ImGuiCol_ButtonActive,
+									  ImGuiCol_HeaderHovered, ImGuiCol_HeaderActive, ImGuiCol_TabHovered })
+			{
+				if (ImGui::GetColorU32(c) == a_col)
+				{
+					renderer::NoteHoverRect(a_dl, a_bb.Min, a_bb.Max);
+					return;
+				}
+			}
+		}
+
 		bool Hook(ImDrawList* a_dl, int a_part, const ImRect& a_bb, ImU32 a_col, int a_arg)
 		{
 			if (!a_dl) { return false; }
+			NoteIfHovered(a_dl, a_part, a_bb, a_col);
 			switch (a_part)
 			{
 			case ImGuiArtPart_Frame:

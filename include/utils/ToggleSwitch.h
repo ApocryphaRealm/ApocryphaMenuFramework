@@ -6,6 +6,7 @@
 // but written against the real embedded Dear ImGui API rather than SMF's cimgui exports,
 // because this framework owns its ImGui.
 
+#include "Renderer.h"
 #include "Skin.h"
 #include "Theme.h"
 
@@ -29,6 +30,9 @@ namespace widgets
 
 		const bool changed = ImGui::InvisibleButton("##toggle", ImVec2(width, height));
 		const bool hovered = ImGui::IsItemHovered();
+		// 2.1.6: the theme's hover frame round the switch under the mouse, as round every other control (drawn by hand, so
+		// not through the art hook)
+		if (hovered) { renderer::NoteHoverRect(drawList, pos, ImVec2(pos.x + width, pos.y + height)); }
 
 		if (changed && a_value)
 		{
