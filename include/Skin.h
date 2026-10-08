@@ -111,6 +111,9 @@ namespace skin
 	// instead of stretching (a pattern along the edge), and whether a highlighted item gets only the line and the four
 	// corners (art with solid edge bands, which would cover the text) rather than the whole frame.
 	float  FrameDrawCorner();
+	// uBand (2.1.6): how far the frame's art reaches in from its outer edge, in texture pixels (0 = not given) - a framed
+	// pane keeps its scroll bar inside it (the owner: the scroll bar art "isn't visible through the frame art")
+	float  FrameBand();
 	bool   FrameTiles();
 	bool   FrameHighlightCorners();
 	// Whether ANY frame draws round the window: loaded art, or the Skyrim theme's built-in knotwork when its art did not

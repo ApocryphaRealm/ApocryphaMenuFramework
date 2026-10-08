@@ -39,6 +39,7 @@ namespace skin
 		float g_frameCorner = 64.0f;
 		// 2.1.6: the frame's cut from its .ini, and what the library resolved to (for the Art page and StatusJson)
 		float g_frameDrawCorner = 0.0f;
+		float g_frameBand = 0.0f;
 		bool  g_frameTiles = false;
 		bool  g_frameHighlightCorners = false;
 		bool  g_frameNone = false;   // the player picked "none" for the frame - not even the built-in knotwork
@@ -123,6 +124,7 @@ namespace skin
 		{
 			std::uint32_t corner = 0;
 			std::uint32_t drawCorner = 0;
+			std::uint32_t band = 0;   // 2.1.6: uBand - how far a frame's art reaches in from its edge
 			bool tile = false;
 			bool highlightCorners = false;
 			float hotX = 0.0f, hotY = 0.0f;
@@ -146,6 +148,7 @@ namespace skin
 				{
 					if (key == "ucorner") { cut.corner = static_cast<std::uint32_t>(std::stoul(value)); }
 					else if (key == "udrawcorner") { cut.drawCorner = static_cast<std::uint32_t>(std::stoul(value)); }
+					else if (key == "uband") { cut.band = static_cast<std::uint32_t>(std::stoul(value)); }
 					else if (key == "btileedges") { cut.tile = value == "1" || Lower(value) == "true"; }
 					else if (key == "shighlight") { cut.highlightCorners = Lower(value) == "corners"; }
 					else if (key == "uhotx") { cut.hotX = std::stof(value); }
@@ -300,6 +303,7 @@ namespace skin
 		bool          toggleNone = false;
 		g_frameNone = false;
 		g_frameDrawCorner = 0.0f;
+		g_frameBand = 0.0f;
 		g_frameTiles = false;
 		g_frameHighlightCorners = false;
 		g_activeArt = {};
@@ -384,6 +388,7 @@ namespace skin
 			const FrameCut cut = ReadCut("frames", frameName);
 			if (cut.corner > 0) { corner = cut.corner; }
 			g_frameDrawCorner = static_cast<float>(cut.drawCorner);
+			g_frameBand = static_cast<float>(cut.band);
 			g_frameTiles = cut.tile;
 			g_frameHighlightCorners = cut.highlightCorners;
 		}
@@ -438,6 +443,7 @@ namespace skin
 	ImVec2 FrameSize() { return g_frame.size; }
 	float  FrameCorner() { return g_frameCorner; }
 	float  FrameDrawCorner() { return g_frameDrawCorner; }
+	float  FrameBand() { return g_frameBand; }
 	bool   FrameTiles() { return g_frame.srv && g_frameTiles; }
 	bool   FrameHighlightCorners() { return g_frame.srv && g_frameHighlightCorners; }
 

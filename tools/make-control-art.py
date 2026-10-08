@@ -31,6 +31,11 @@ big text size on a 4K screen, so it was stretched and soft; now it is always sca
     arrows/      pointing right: chevron, blade, diamond, arrowhead
     cursors/     pointers in their own colours (not tinted), with the hot spot in the .ini
 
+What can be selected has no frame of its own (2.1.6, testing - the owner: "the things that can be selected and hovered
+over ... when selected and hovered over they have a frame that goes around them. They don't need a frame of their own"):
+boxes, buttons, tick boxes, tabs, switches and slider tracks are the theme's SHAPE only, no -edge layer; the theme's
+hover / selection frame goes round them. Scroll bars and their tracks, which are never selected, keep their framed art.
+
 Original art drawn from shapes; no game or mod files. Run from the repo root:  python tools/make-control-art.py
 """
 import math
@@ -240,6 +245,45 @@ def map_grab(w, h):
     med = map_medallion(w)
     edge.alpha_composite(med, (0, 0))
     edge.alpha_composite(med, (0, h - w))
+    return Image.new("RGBA", (w, h), (0, 0, 0, 0)), edge
+
+
+SELECTABLE = ("boxes", "buttons", "tickboxes", "tabs", "slidertracks")   # shape only, no frame of their own
+
+
+def shape_only(theme, w, h, r, top_only=False):
+    """A selectable control's part: the theme's shape, white (tinted with the control's colour), K times the design size.
+    The knotwork and map-edge sets are plain rectangles - their character is in the hover frame round them."""
+    if theme in ("skyrim", "oblivion"):
+        return Image.new("RGBA", (w * K, h * K), (255, 255, 255, 255))
+    return to_rgba(shape_mask(theme, w, h, r, top_only), w, h)
+
+
+def save_shape(folder, t, img):
+    """Save a selectable part and remove any frame layer an earlier run left beside it."""
+    save(img, folder, t)
+    edge = os.path.join(ASSETS, folder, t + "-edge.png")
+    if os.path.exists(edge):
+        os.remove(edge)
+
+
+def knot_grab(w, h):
+    """A Skyrim grab: the knotwork's twin strand, grey on black, down the middle, with the frame's corner knot at each end
+    (the owner: "its own Nordic Knotwork based scroll bar", like Oblivion's rope with a compass rose at each end).
+    (main, edge); the main is empty - the grab is the art itself (bThreeSlice: the caps are w tall)."""
+    n = 8
+    W, H = w * n, h * n
+    edge = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(edge)
+    cx = W / 2
+    for dx in (-W * 0.15, W * 0.15):
+        d.line([(cx + dx, W * 0.5), (cx + dx, H - W * 0.5)], fill=(0, 0, 0, 255), width=int(W * 0.2))
+    for dx in (-W * 0.15, W * 0.15):
+        d.line([(cx + dx, W * 0.5), (cx + dx, H - W * 0.5)], fill=(153, 153, 153, 255), width=int(W * 0.08))
+    edge = edge.resize((w, h), Image.LANCZOS)
+    knot = knot_medallion(w)
+    edge.alpha_composite(knot, (0, 0))
+    edge.alpha_composite(knot, (0, h - w))
     return Image.new("RGBA", (w, h), (0, 0, 0, 0)), edge
 
 
@@ -561,16 +605,13 @@ def main():
     note = "drawn for AMF's %s look (tools/make-control-art.py) - original art from shapes"
     for t in THEMES:
         n = note % t
-        main_, edge = plate(t, 64, 64, 16)
-        save(main_, "boxes", t); save(edge, "boxes", t + "-edge")
+        save_shape("boxes", t, shape_only(t, 64, 64, 16))
         ini("boxes", t, ["uCorner=%d" % (16 * K), "uDrawCorner=8"], n)
 
-        main_, edge = plate(t, 64, 64, 16, double=True)
-        save(main_, "buttons", t); save(edge, "buttons", t + "-edge")
+        save_shape("buttons", t, shape_only(t, 64, 64, 16))
         ini("buttons", t, ["uCorner=%d" % (16 * K), "uDrawCorner=8"], n)
 
-        main_, edge = plate(t, 48, 48, 12)
-        save(main_, "tickboxes", t); save(edge, "tickboxes", t + "-edge"); save(tick_mark(t), "tickboxes", t + "-mark")
+        save_shape("tickboxes", t, shape_only(t, 48, 48, 12)); save(tick_mark(t), "tickboxes", t + "-mark")
         ini("tickboxes", t, ["uCorner=%d" % (12 * K), "uDrawCorner=6"], n)
 
         main_, edge = plate(t, 24, 48, 8)
@@ -592,12 +633,10 @@ def main():
         ini("scrolltracks", t, ["uCorner=%d" % (10 * K), "uDrawCorner=5"], n)
 
         # a slider's track: the family's plate, long and low, behind the grab
-        main_, edge = plate(t, 128, 32, 10)
-        save(main_, "slidertracks", t); save(edge, "slidertracks", t + "-edge")
+        save_shape("slidertracks", t, shape_only(t, 128, 32, 10))
         ini("slidertracks", t, ["uCorner=%d" % (10 * K), "uDrawCorner=5"], n)
 
-        main_, edge = plate(t, 96, 48, 16, top_only=True)
-        save(main_, "tabs", t); save(edge, "tabs", t + "-edge")
+        save_shape("tabs", t, shape_only(t, 96, 48, 16, top_only=True))
         ini("tabs", t, ["uCorner=%d" % (16 * K), "uDrawCorner=8"], n)
 
         save(section(t), "sections", t)
@@ -607,23 +646,27 @@ def main():
 
         save(arrow(t), "arrows", t)
 
-        if t == "oblivion":   # the switch track: the Oblivion plate, like its boxes and tabs (replaces oblivion-scroll)
-            m_, e_ = plate(t, 128, 64, 22)      # the map-edge frame round the switch, like the other Oblivion plates
-            save(m_, "toggles", t); save(e_, "toggles", t + "-edge")
-        if t == "skyrim":   # the switch track: a white plate (the switch colour tints it) and the knotwork as its own layer
-            m_, e_ = plate(t, 128, 64, 22)
-            save(m_, "toggles", t); save(e_, "toggles", t + "-edge")
-        if t in THEME_TOGGLES:   # the three themes' own switch tracks, redrawn at K times their size and split again
-            save(THEME_TOGGLES[t](), "toggles", t)
-            edge_path = os.path.join(ASSETS, "toggles", t + "-edge.png")
-            if os.path.exists(edge_path):
-                os.remove(edge_path)
-        split_toggles()
+        # the switch track: shape only (it is selected, so the hover frame frames it) - Skyrim and Oblivion square, so it
+        # fills that frame (the owner: "I want their shape to be square"); Norden, Oathvein and Vel'dun their own shapes,
+        # the whole silhouette in white (the switch's on / off colour tints it)
+        if t in ("skyrim", "oblivion"):
+            save_shape("toggles", t, shape_only(t, 128, 64, 22))
+        elif t in THEME_TOGGLES:
+            a = THEME_TOGGLES[t]().split()[3]
+            sil = Image.new("RGBA", a.size, (255, 255, 255, 0))
+            sil.putalpha(a)
+            save_shape("toggles", t, sil)
 
         img, hot = cursor(t)
         save(img, "cursors", t)
         ini("cursors", t, ["; 24 px tall on a 1080p screen; the hot spot is the tip, in the art's own (written) pixels",
                            "uDrawCorner=24", "uHotX=%d" % hot[0], "uHotY=%d" % hot[1]], n)
+        if t == "skyrim":     # the scroll grab: the knotwork's twin strand with a knot at each end
+            m_, e_ = knot_grab(24 * K, 96 * K)
+            save(m_, "scrollbars", t); save(e_, "scrollbars", t + "-edge")
+            ini("scrollbars", t, ["; the knotwork's twin strand with the frame's corner knot at each end (the owner: \"its own Nordic",
+                                  "; Knotwork based scroll bar\"): a cap the art's width tall at each end, the strand repeated between",
+                                  "uCorner=%d" % (12 * K), "uDrawCorner=6", "bThreeSlice=1", "bTileEdges=1", "bOwnColours=1"], n)
         if t == "oblivion":   # the grabs: a line of rope with a compass rose at each end
             for folder, (gw, gh) in (("sliders", (24, 72)), ("scrollbars", (24, 96))):
                 m_, e_ = map_grab(gw * K, gh * K)
@@ -632,7 +675,7 @@ def main():
                                 "; frame art with its ending circles art at either end\"): a cap the art's width tall at each end",
                                 "uCorner=%d" % (12 * K), "uDrawCorner=6", "bThreeSlice=1", "bTileEdges=1", "bOwnColours=1"], n)
         if t in ("skyrim", "oblivion"):   # their edges are art in its own colours (and the map edge's rope repeats)
-            for folder in ("boxes", "buttons", "tickboxes", "tabs", "slidertracks", "scrolltracks") + (("sliders", "scrollbars") if t == "skyrim" else ()):
+            for folder in ("scrolltracks",) + (("sliders",) if t == "skyrim" else ()):
                 path = os.path.join(ASSETS, folder, t + ".ini")
                 text = open(path, encoding="utf-8").read()
                 add = ["bOwnColours=1"] + (["bTileEdges=1"] if t == "oblivion" else [])

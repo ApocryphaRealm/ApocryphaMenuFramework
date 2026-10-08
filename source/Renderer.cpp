@@ -270,21 +270,41 @@ namespace renderer
 		// otherwise the embedded 78x78 knotwork. A supplied frame REPLACES the knotwork rather
 		// than drawing over it - a theme in this project means replacement art, not a second
 		// ornament on top of the first.
+		// 2.1.6: a frame drawn at its own on-screen corner (the map edge: art at twice its size) scales with the layout, as on
+		// the Oblivion port - the window padding is the knotwork corner + 8 px at the 1080p baseline times the UI scale, so the
+		// band grows with the text and always fits the padding it sits in. 0 = the corner at its texture size.
+		float FrameDrawCornerOnScreen()
+		{
+			float dcs = skin::FrameDrawCorner();
+			if (dcs > 0.0f)
+			{
+				const float base = static_cast<float>(knotwork::kCorner) + 8.0f;
+				dcs *= std::max(1.0f, ImGui::GetStyle().WindowPadding.x / base);
+			}
+			return dcs;
+		}
+
+		// 2.1.6 (the owner, testing: the scroll bar art "isn't visible through the frame art. So you can tell that it's
+		// moving, but you can't see the art"): how far the frame round a pane reaches into it on screen, so the pane's scroll
+		// bar can sit inside it rather than under the frame's band.
+		float FrameBandOnScreen()
+		{
+			if (skin::HasFrame())
+			{
+				const float cs = skin::FrameCorner();
+				const float dcs = FrameDrawCornerOnScreen() > 0.0f ? FrameDrawCornerOnScreen() : cs;
+				const float band = skin::FrameBand() > 0.0f ? skin::FrameBand() : cs * 0.5f;   // no uBand: half the corner
+				return cs > 0.0f ? band * dcs / cs : 0.0f;
+			}
+			return skin::DrawsFrame() ? 10.0f : 0.0f;   // the built-in knotwork, drawn at its own size: 10 px of its 26 px corner
+		}
+
 		void DrawKnotworkFrame(ImDrawList* dl, const ImVec2& p0, const ImVec2& p1)
 		{
 			if (skin::HasFrame())
 			{
 				const ImVec2 sz = skin::FrameSize();
-				// 2.1.6: a frame drawn at its own on-screen corner (the map edge: art at twice its size) scales with the
-				// layout, as on the Oblivion port - the window padding is the knotwork corner + 8 px at the 1080p baseline
-				// times the UI scale, so the band grows with the text and always fits the padding it sits in.
-				float dcs = skin::FrameDrawCorner();
-				if (dcs > 0.0f)
-				{
-					const float base = static_cast<float>(knotwork::kCorner) + 8.0f;
-					dcs *= std::max(1.0f, ImGui::GetStyle().WindowPadding.x / base);
-				}
-				DrawNineSlice(dl, skin::FrameTexture(), sz.x, sz.y, skin::FrameCorner(), p0, p1, skin::FrameTiles(), dcs);
+				DrawNineSlice(dl, skin::FrameTexture(), sz.x, sz.y, skin::FrameCorner(), p0, p1, skin::FrameTiles(), FrameDrawCornerOnScreen());
 				return;
 			}
 			if (!skin::DrawsFrame()) { return; }   // 2.1.6: the player picked no frame - not even the knotwork
@@ -1347,10 +1367,15 @@ namespace renderer
 					const int first = offerNone ? 2 : 1;
 					if (offerNone) { labels.push_back(noArtLabel[k]); }
 					int current = 0;
+					// the theme's own part is entry 0 already - not listed a second time below it (2.1.6, testing - the owner:
+					// "Theme's own (Skyrim)" and then "Skyrim" just below it is a duplicate)
+					std::vector<std::size_t> listed;
 					for (std::size_t i = 0; i < parts.size(); ++i)
 					{
+						if (!own.empty() && parts[i] == own) { continue; }
+						if (pick == parts[i]) { current = static_cast<int>(listed.size()) + first; }
+						listed.push_back(i);
 						labels.push_back(ArtLabel(parts[i]));
-						if (pick == parts[i]) { current = static_cast<int>(i) + first; }
 					}
 					if (offerNone && pick == skin::kArtNone) { current = 1; }
 					std::vector<const char*> cLabels;
@@ -1367,7 +1392,7 @@ namespace renderer
 					{
 						auto& slot = values.themeArt[active.id][k];
 						slot = current == 0 ? std::string() : (offerNone && current == 1) ? std::string(skin::kArtNone)
-						                                                                 : parts[static_cast<std::size_t>(current - first)];
+						                                                                 : parts[listed[static_cast<std::size_t>(current - first)]];
 						logger::info("settings page: art {} for theme {} -> \"{}\"", skin::kArtKeys[k] + 1, active.id, slot.empty() ? "theme's own" : slot);
 						changed = true;
 					}
@@ -3585,7 +3610,12 @@ namespace renderer
 				// contained in each pane and the crossing is done explicitly below, which is also exactly
 				// what the controller spec asks for.
 				if (g_focusPane == 1) { ImGui::SetNextWindowFocus(); g_focusPane = 0; g_frameWindowFocus = ImGui::GetFrameCount(); }
+				// the frame drawn round this pane reaches into it: its scroll bar sits inside that band (GImGuiScrollbarInset is
+				// read by Begin only, so it is set for this one call)
+				const float paneScrollInset = knot ? std::max(0.0f, std::ceil(FrameBandOnScreen() - kKnotOutset + 2.0f)) : 0.0f;
+				GImGuiScrollbarInset = paneScrollInset;
 				ImGui::BeginChild("##side", ImVec2(leftWidth, 0.0f), true);
+				GImGuiScrollbarInset = 0.0f;
 				// 2.1.6 (the owner: the background art "only changes the top row when it should apply to all of the background"):
 				// the panes paint their own colour over the window's, so the art is drawn in each pane too, over that colour
 				if (skin::HasBackground())
@@ -4194,7 +4224,9 @@ namespace renderer
 				// height plus the same gap the knotwork frames keep between the panes.
 				const bool helpBarOn = helpbar::Active();
 				const float helpBarGap = knot ? kKnotOutset * 4.0f : ImGui::GetStyle().ItemSpacing.y;
+				GImGuiScrollbarInset = paneScrollInset;
 				ImGui::BeginChild("##content", ImVec2(0.0f, helpBarOn ? -(helpbar::Height() + helpBarGap) : 0.0f), true);
+				GImGuiScrollbarInset = 0.0f;
 				// 2.1.6 (the owner: the background art "only changes the top row when it should apply to all of the background"):
 				// the panes paint their own colour over the window's, so the art is drawn in each pane too, over that colour
 				if (skin::HasBackground())

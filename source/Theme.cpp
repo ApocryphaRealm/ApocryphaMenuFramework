@@ -619,9 +619,19 @@ namespace theme
 			// 2.1.6: the knotwork is also a part, assets/frames/skyrim-knotwork.png, so it can be picked for any theme; the copy
 			// built into the DLL (knotwork = true) still draws if that file is missing.
 			skyrim.art[static_cast<std::size_t>(skin::ArtKind::kFrame)] = "skyrim-knotwork";
-			// 2.1.6 (the owner: "The Skyrim theme should use its own art set" - its knotwork frame and its own built-in controls;
-			// the "Skyrim" art set in assets/ is a pick for the other themes). Its knob is the knot from its own frame's corner.
-			skyrim.art[static_cast<std::size_t>(skin::ArtKind::kKnob)] = "skyrim";
+			// 2.1.6 (the owner: "The Skyrim theme should use its own art set ... should follow its Nordic knotwork design and
+			// color"): every control kind is its namesake "skyrim" part, drawn from the knotwork - as every other theme names its
+			// own - so "Theme's own (Skyrim)" on Appearance > Art IS the Skyrim set, not a second look beside it (testing, the
+			// owner: the two side by side read as a duplicate). Among them: the knob is the knot from the frame's corner; the
+			// switch is square, so it fills the hover frame; the scroll bar is "its own Nordic Knotwork based scroll bar" in a
+			// knotwork-framed track. What can be selected keeps no frame of its own - the hover frame frames it.
+			for (const auto kind : { skin::ArtKind::kToggle, skin::ArtKind::kBox, skin::ArtKind::kButton, skin::ArtKind::kTickBox,
+			                         skin::ArtKind::kSlider, skin::ArtKind::kScrollbar, skin::ArtKind::kSection, skin::ArtKind::kTab,
+			                         skin::ArtKind::kArrow, skin::ArtKind::kCursor, skin::ArtKind::kKnob, skin::ArtKind::kSliderTrack,
+			                         skin::ArtKind::kScrollTrack })
+			{
+				skyrim.art[static_cast<std::size_t>(kind)] = "skyrim";
+			}
 			RegisterTheme(std::move(skyrim));
 
 			g_activeId = "skyrim";

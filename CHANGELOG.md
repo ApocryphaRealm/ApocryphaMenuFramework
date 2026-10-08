@@ -95,6 +95,16 @@ line under a section header ... the on-screen keyboard ... and anything else tha
   built-in knob.
 
 ### Changed
+- **What you can select has no frame of its own** (testing, the owner: "take the frame art off of the search box and
+  the buttons ... so that the frame accentuates the plain appearance", then as the rule: "the things that can be
+  selected and hovered over ... when selected and hovered over they have a frame that goes around them. They don't
+  need a frame of their own"). In every art set, boxes (the search box, dropdowns), buttons, tick boxes, tabs,
+  switches and slider tracks are the set's shape only - the hover / selection frame goes round them. Scroll bars and
+  their tracks, which are never selected, keep their framed art.
+- **The Skyrim theme uses its knotwork set for every kind**, as every other theme uses its namesakes - so its
+  "Theme's own (Skyrim)" on Appearance > Art is the Skyrim set. Its switch is square, so it fills the hover frame,
+  and its scroll bar is a knotwork one - the twin strand with the frame's corner knot at each end, in a
+  knotwork-framed track, like Oblivion's rope with a compass rose at each end.
 - **Every art piece is sharp at any size** (the owner: "make sure that everything is nice and sharp looking, as they're
   all pretty tiny. And make sure all the art pieces for every theme are nice and sharp"). The parts were drawn at twice
   their 1080p size, so at a big text size on a 4K screen the game stretched them and they went soft. Every generated
@@ -131,6 +141,13 @@ line under a section header ... the on-screen keyboard ... and anything else tha
 - tools/make-theme-art.py writes its art into the library; the theme INIs are edited by hand.
 
 ### Fixed
+- **A framed pane's scroll bar sits inside its frame** (testing, the owner: the scroll bar art "isn't visible through
+  the frame art. So you can tell that it's moving, but you can't see the art"). The frame round the mod list and the
+  page reaches into them, and the scroll bar sat under its band - Oblivion's rope grab over the frame's own rope. The
+  scroll bar now sits inside the band (each frame's .ini says how far it reaches: uBand), the pane's content
+  narrowing to match; a frame-less theme is unchanged.
+- **No duplicate in the Art lists** (testing, the owner): the theme's own part, already the first entry ("Theme's own
+  (Skyrim)"), is no longer listed again below it.
 - **Colours stay inside their frames** (the owner: the switches' "color leaks out from the green and red coloring" and
   "The frame should go around the color, not on top of it"). Each switch track is a fill, tinted on / off, and its
   outline as its own layer in its own colours; and every plate's fill - boxes, buttons, tick boxes, tabs, slider and
