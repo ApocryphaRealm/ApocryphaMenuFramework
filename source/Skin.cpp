@@ -15,7 +15,10 @@
 #include <cctype>
 #include <filesystem>
 #include <format>
+#include <fstream>
+#include <map>
 #include <string>
+#include <vector>
 
 namespace skin
 {
@@ -33,6 +36,14 @@ namespace skin
 		Entry g_background;
 		std::array<Entry, static_cast<std::size_t>(Plate::kCount)> g_plates;
 		float g_frameCorner = 64.0f;
+		// 2.1.6: the frame's cut from its .ini, and what the library resolved to (for the Art page and StatusJson)
+		float g_frameDrawCorner = 0.0f;
+		bool  g_frameTiles = false;
+		bool  g_frameHighlightCorners = false;
+		bool  g_frameNone = false;   // the player picked "none" for the frame - not even the built-in knotwork
+		std::array<std::string, static_cast<std::size_t>(ArtKind::kCount)> g_activeArt;
+
+		constexpr const char* kAssetDir = "SKSE/Plugins/ApocryphaMenuFramework/assets";
 
 		constexpr const char* kPlateFile[] = { "toggle.png", "slider.png", "tab.png" };
 		constexpr const char* kPlateName[] = { "toggle", "slider", "tab" };
@@ -96,6 +107,103 @@ namespace skin
 			a_entry.size = size;
 			logger::info("skin: {} loaded from \"{}\" ({:.0f}x{:.0f})", a_what, a_entry.path, size.x, size.y);
 		}
+
+		// assets/<folder>/<name>.png, as a path under Data (Resolve's form).
+		std::string ArtPath(ArtKind a_kind, const std::string& a_name)
+		{
+			return std::format("{}/{}/{}.png", kAssetDir, kArtFolders[static_cast<std::size_t>(a_kind)], a_name);
+		}
+
+		// A frame's cut, from the <name>.ini beside it. A missing file or key keeps the old behaviour: the corner the
+		// caller had, drawn at its own size, edges stretched, the whole frame round a highlighted item.
+		struct FrameCut
+		{
+			std::uint32_t corner = 0;
+			std::uint32_t drawCorner = 0;
+			bool tile = false;
+			bool highlightCorners = false;
+		};
+
+		FrameCut ReadFrameCut(const std::string& a_name)
+		{
+			FrameCut cut;
+			std::ifstream in(std::filesystem::path("Data") / kAssetDir / "frames" / (a_name + ".ini"));
+			std::string line;
+			while (std::getline(in, line))
+			{
+				if (!line.empty() && line.back() == '\r') { line.pop_back(); }
+				const auto eq = line.find('=');
+				if (line.empty() || line[0] == ';' || line[0] == '[' || eq == std::string::npos) { continue; }
+				const std::string key = Lower(line.substr(0, eq));
+				const std::string value = line.substr(eq + 1);
+				try
+				{
+					if (key == "ucorner") { cut.corner = static_cast<std::uint32_t>(std::stoul(value)); }
+					else if (key == "udrawcorner") { cut.drawCorner = static_cast<std::uint32_t>(std::stoul(value)); }
+					else if (key == "btileedges") { cut.tile = value == "1" || Lower(value) == "true"; }
+					else if (key == "shighlight") { cut.highlightCorners = Lower(value) == "corners"; }
+				}
+				catch (...)
+				{
+					logger::warn("skin: frame \"{}\" .ini has a bad line \"{}\"", a_name, line);
+				}
+			}
+			return cut;
+		}
+
+		// The theme's own part of a kind.
+		const std::string& PaletteArt(const theme::Palette& a_t, ArtKind a_kind)
+		{
+			switch (a_kind)
+			{
+			case ArtKind::kFrame:      return a_t.frameArt;
+			case ArtKind::kBackground: return a_t.backgroundArt;
+			default:                   return a_t.toggleArt;
+			}
+		}
+	}
+
+	std::vector<std::string> ListArt(ArtKind a_kind)
+	{
+		std::vector<std::string> out;
+		const auto dir = std::filesystem::path("Data") / kAssetDir / kArtFolders[static_cast<std::size_t>(a_kind)];
+		std::error_code ec;
+		for (std::filesystem::directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec))
+		{
+			if (it->is_regular_file(ec) && Lower(it->path().extension().string()) == ".png")
+			{
+				out.push_back(it->path().stem().string());
+			}
+		}
+		std::sort(out.begin(), out.end());
+		return out;
+	}
+
+	std::string ThemeArt(ArtKind a_kind)
+	{
+		if (theme::ListThemes().empty()) { return {}; }
+		return PaletteArt(theme::GetActiveTheme(), a_kind);
+	}
+
+	std::string ActiveArt(ArtKind a_kind)
+	{
+		return g_activeArt[static_cast<std::size_t>(a_kind)];
+	}
+
+	void* ArtThumb(ArtKind a_kind, const std::string& a_name, ImVec2* a_size)
+	{
+		static std::map<std::string, std::pair<void*, ImVec2>> cache;   // render thread only; a few small PNGs, kept
+		const std::string path = Resolve(ArtPath(a_kind, a_name));
+		auto it = cache.find(path);
+		if (it == cache.end())
+		{
+			ImVec2 size{ 0.0f, 0.0f };
+			std::error_code ec;
+			void* srv = std::filesystem::exists(path, ec) ? consumer::LoadTexture(path.c_str(), &size) : nullptr;
+			it = cache.emplace(path, std::make_pair(srv, size)).first;
+		}
+		if (a_size) { *a_size = it->second.second; }
+		return it->second.first;
 	}
 
 	void Reload()
@@ -111,6 +219,13 @@ namespace skin
 		std::string   frame, background, plates;
 		std::uint32_t corner = 64;
 		const char*   source = "none";
+		std::string   toggle, frameName;   // 2.1.6: the switch part's file, and the library frame's name (its .ini)
+		bool          toggleNone = false;
+		g_frameNone = false;
+		g_frameDrawCorner = 0.0f;
+		g_frameTiles = false;
+		g_frameHighlightCorners = false;
+		g_activeArt = {};
 		// 2.1.5: the switch on with NO [Skin] paths set used to leave every art theme bare - Oathvein, Vel'dun and Norden lost
 		// their frame and background while Skyrim's built-in knotwork stayed (the owner, 2026-10-07, after a stray press had
 		// switched it on). The switch only means something when a UI author's art is actually named; otherwise the theme's own.
@@ -130,19 +245,52 @@ namespace skin
 			plates = t.skinPlates;
 			corner = t.skinFrameCorner;
 			source = "theme";
+
+			// 2.1.6: THE ART PARTS, BY NAME - the player's pick for this theme (Appearance > Art) wins, then the theme's
+			// own part; either wins over the old path keys above. "none" = no art of that kind, not even the theme's.
+			const auto picks = v.themeArt.find(t.id);
+			for (std::size_t k = 0; k < static_cast<std::size_t>(ArtKind::kCount); ++k)
+			{
+				const auto kind = static_cast<ArtKind>(k);
+				std::string name = PaletteArt(t, kind);
+				if (picks != v.themeArt.end() && !picks->second[k].empty()) { name = picks->second[k]; }
+				if (name.empty()) { continue; }
+				const bool none = Lower(name) == kArtNone;
+				const std::string path = none ? std::string() : ArtPath(kind, name);
+				switch (kind)
+				{
+				case ArtKind::kFrame:      frame = path; g_frameNone = none; frameName = none ? "" : name; break;
+				case ArtKind::kBackground: background = path; break;
+				default:                   toggle = path; toggleNone = none; break;
+				}
+				if (!none) { g_activeArt[k] = name; }
+			}
 		}
 
 		g_frame = Entry{};
 		g_background = Entry{};
 		for (std::size_t i = 0; i < g_plates.size(); ++i) { g_plates[i] = Entry{}; }
-		if (frame.empty() && background.empty() && plates.empty())
+		if (frame.empty() && background.empty() && plates.empty() && toggle.empty())
 		{
+			g_activeArt = {};
 			return;
 		}
 		logger::info("skin: loading art from {}", source);
 
 		Load(g_frame, Resolve(frame), "frame");
 		Load(g_background, Resolve(background), "background");
+		if (!g_frame.srv) { g_activeArt[static_cast<std::size_t>(ArtKind::kFrame)].clear(); }
+		if (!g_background.srv) { g_activeArt[static_cast<std::size_t>(ArtKind::kBackground)].clear(); }
+
+		// A library frame says how it is cut in the .ini beside it (2.1.6).
+		if (g_frame.srv && !frameName.empty())
+		{
+			const FrameCut cut = ReadFrameCut(frameName);
+			if (cut.corner > 0) { corner = cut.corner; }
+			g_frameDrawCorner = static_cast<float>(cut.drawCorner);
+			g_frameTiles = cut.tile;
+			g_frameHighlightCorners = cut.highlightCorners;
+		}
 
 		// Plates live by fixed name inside one folder, so the author has one path to get right
 		// and can supply any subset of the three.
@@ -157,6 +305,11 @@ namespace skin
 				Load(g_plates[i], file, kPlateName[i]);
 			}
 		}
+		// The switch part by name (2.1.6) replaces a plates-folder toggle.png; "none" takes the switch plate away.
+		auto& togglePlate = g_plates[static_cast<std::size_t>(Plate::kToggle)];
+		if (!toggle.empty()) { Load(togglePlate, Resolve(toggle), "toggle"); }
+		else if (toggleNone) { togglePlate = Entry{}; }
+		if (!togglePlate.srv) { g_activeArt[static_cast<std::size_t>(ArtKind::kToggle)].clear(); }
 
 		// Clamp the corner so two of them always fit inside the frame texture. An artist who
 		// types 64 for a 96px image would otherwise get flipped middle slices, which looks like
@@ -179,6 +332,16 @@ namespace skin
 	void*  FrameTexture() { return g_frame.srv; }
 	ImVec2 FrameSize() { return g_frame.size; }
 	float  FrameCorner() { return g_frameCorner; }
+	float  FrameDrawCorner() { return g_frameDrawCorner; }
+	bool   FrameTiles() { return g_frame.srv && g_frameTiles; }
+	bool   FrameHighlightCorners() { return g_frame.srv && g_frameHighlightCorners; }
+
+	bool DrawsFrame()
+	{
+		if (g_frame.srv) { return true; }
+		if (g_frameNone || theme::ListThemes().empty()) { return false; }
+		return theme::GetActiveTheme().knotwork;
+	}
 
 	bool   HasBackground() { return g_background.srv != nullptr; }
 	void*  BackgroundTexture() { return g_background.srv; }
@@ -232,8 +395,12 @@ namespace skin
 			if (!plates.empty()) { plates += ","; }
 			plates += one(kPlateName[i], g_plates[i]);
 		}
-		return std::format(R"({{"frame":{},"frameCorner":{:.0f},"background":{},"backgroundTiles":{},"plates":[{}]}})",
-						   one("frame", g_frame), g_frameCorner, one("background", g_background),
+		// 2.1.6: the library parts drawing now (by name) and the frame's cut from its .ini
+		return std::format(R"({{"frame":{},"frameCorner":{:.0f},"frameDrawCorner":{:.0f},"frameTiles":{},"frameHighlight":"{}",)"
+						   R"("frameNone":{},"art":{{"frame":"{}","background":"{}","toggle":"{}"}},"background":{},"backgroundTiles":{},"plates":[{}]}})",
+						   one("frame", g_frame), g_frameCorner, g_frameDrawCorner, FrameTiles() ? "true" : "false",
+						   FrameHighlightCorners() ? "corners" : "whole", g_frameNone ? "true" : "false", esc(g_activeArt[0]),
+						   esc(g_activeArt[1]), esc(g_activeArt[2]), one("background", g_background),
 						   BackgroundTiles() ? "true" : "false", plates);
 	}
 }

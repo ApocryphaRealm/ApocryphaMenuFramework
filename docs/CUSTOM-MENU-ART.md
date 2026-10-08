@@ -1,6 +1,6 @@
 # Custom menu art for Apocrypha Menu Framework
 
-<!-- DOC-VERSION: 1.0.1 | 2026-09-25 -->
+<!-- DOC-VERSION: 1.0.2 | 2026-10-08 -->
 
 How to make the framework's menu wear your interface's artwork instead of its built-in look. Written
 for a UI author who has never seen this codebase.
@@ -128,18 +128,58 @@ sTextHeader=#CDBF8E       ; (2.1.5) section headings on converted MCM pages - de
 sTextHelp=#A8B9B5         ; (2.1.5) help text and page notes on converted MCM pages - default: sTextDim toward sText
 fBorderThickness=1.0
 bKnotwork=0               ; 1 = the built-in Nordic knotwork frame (ignored when you ship a frame)
-sSkinFrame=SKSE/Plugins/ApocryphaMenuFramework/themes/yourui/frame.png
-uSkinFrameCorner=26
-sSkinBackground=SKSE/Plugins/ApocryphaMenuFramework/themes/yourui/background.png
-sSkinPlates=SKSE/Plugins/ApocryphaMenuFramework/themes/yourui
+sFrameArt=yourui          ; (2.1.6) parts by name from the art library - see below
+sBackgroundArt=yourui
+sToggleArt=yourui
 ```
 
-The art keys mean exactly what their `[Skin]` namesakes do, and draw whenever that theme is picked.
-A player who has switched `[Skin]` on still sees their own art instead. The themes AMF ships -
-`veldun.ini`, `oathvein.ini`, `norden.ini` and `norden-black.ini` - are complete worked examples (two themes may
-share one art folder, as the two Norden themes do); their frames are 78x78 with a 26px corner,
-the same size as the built-in knotwork, which keeps a frame hugging every window and pane at the same
-distance the knotwork does.
+The art draws whenever that theme is picked. A player who has switched `[Skin]` on still sees their
+own art instead, and a player can swap any part on **Appearance > Art**. The themes AMF ships -
+`veldun.ini`, `oathvein.ini`, `norden.ini`, `norden-black.ini` and `oblivion.ini` - are complete worked
+examples (two themes may share parts, as the two Norden themes do); their frames are 78x78 with a 26px
+corner, the same size as the built-in knotwork, which keeps a frame hugging every window and pane at the
+same distance the knotwork does.
+
+A theme made before 2.1.6 may still name files instead: `sSkinFrame`, `uSkinFrameCorner`,
+`sSkinBackground` and `sSkinPlates` take paths under `Data`, exactly as their `[Skin]` namesakes do. A
+part name wins over a path.
+
+### The art library (2.1.6)
+
+Every theme's art is filed as one **part** per kind, so a player can mix them:
+
+```
+Data/SKSE/Plugins/ApocryphaMenuFramework/assets/
+    frames/<name>.png        the nine-slice frame, transparent centre
+    frames/<name>.ini        how that frame is cut (below)
+    backgrounds/<name>.png   a tile (512 px or smaller both ways) or a full picture
+    toggles/<name>.png       the on/off switch track, drawn white so the on / off colour tints it
+```
+
+Drop a PNG into one of those folders and it appears in that kind's dropdown on Appearance > Art; a
+theme names it with `sFrameArt`, `sBackgroundArt` or `sToggleArt` (the file name without `.png`). The
+library ships five shapes of each kind, the default look among them:
+
+| Kind | Parts |
+|---|---|
+| Frame | `skyrim-knotwork` (the default), `norden`, `oathvein`, `veldun`, `oblivion-map-edge` |
+| Background | plain - no picture, the theme's colour (the default), `grain`, `parchment`, `weave`, `lattice` |
+| Switch | rounded - the built-in switch, no picture (the default), `norden`, `oathvein`, `veldun`, `oblivion-scroll` |
+
+A frame's `.ini` - every key optional:
+
+```ini
+[Frame]
+uCorner=26          ; the corner's size in the PNG (same meaning as uFrameCorner)
+uDrawCorner=26      ; the corner's size on a 1080p screen, when the PNG is drawn larger (scaled with the layout)
+bTileEdges=1        ; 1 = the edges repeat at their own size instead of stretching - for a pattern along the edge
+sHighlight=corners  ; round a highlighted item: "whole" frame (thin-line art) or the line and four "corners"
+                    ; (art with solid edge bands, which would cover the item's text)
+```
+
+The player's picks are kept per theme in `User.ini`, one `[Art.<theme id>]` section each
+(`sFrame`, `sBackground`, `sToggle`; `none` = no art of that kind). Appearance > Colours > Frame art
+tints every part.
 
 ---
 
@@ -160,6 +200,8 @@ reload its art. Through DevBench:
 ```
 amf.process  op=skinreload      reloads every skin texture from disk and reports what loaded
 amf.process  op=skin            reports what is loaded right now, without reloading
+amf.menu     op=art             (2.1.6) lists the library's parts; with kind=frame|background|toggle and
+                                name=<part>|none|"" picks one for the active theme, as Appearance > Art does
 ```
 
 Both return the same structure, so "my art is not showing" is answered by asking the framework

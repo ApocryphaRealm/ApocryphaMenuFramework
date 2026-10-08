@@ -78,6 +78,9 @@ namespace renderer
 	// save it. Exposed for DevBench so a visual comparison of two themes can be photographed in
 	// ONE game session instead of one launch per theme. Returns false for an unknown id.
 	bool SetTheme(const std::string& a_themeId);
+	// 2.1.6 (amf.menu op=art): list the art library's parts, or with a_set pick one for the active theme - a_kind is
+	// frame / background / toggle, a_name "" (the theme's own), "none", or a part name. Returns the reply JSON.
+	std::string ArtOp(const std::string& a_kind, const std::string& a_name, bool a_set);
 
 	// Driving the pane and tab navigation from DevBench (amf.menu op=nav / op=focus), so the
 	// controller scheme can be exercised with no keypress at all (rule 64). QueueNav queues a

@@ -224,6 +224,9 @@ namespace theme
 				else if (key == "sSkinFrame") { palette.skinFrame = std::string(value); }
 				else if (key == "sSkinBackground") { palette.skinBackground = std::string(value); }
 				else if (key == "sSkinPlates") { palette.skinPlates = std::string(value); }
+				else if (key == "sFrameArt") { palette.frameArt = std::string(value); }   // 2.1.6 art parts, by name
+				else if (key == "sBackgroundArt") { palette.backgroundArt = std::string(value); }
+				else if (key == "sToggleArt") { palette.toggleArt = std::string(value); }
 				else if (key == "uSkinFrameCorner")
 				{
 					std::uint32_t v{};
@@ -577,6 +580,9 @@ namespace theme
 				/*accent*/ 0xFF2B91A1, /*knotwork*/ true };
 			skyrim.textHeader = 0xFF7AC2D8;
 			skyrim.textHelp = 0xFFCCB89F;
+			// 2.1.6: the knotwork is also a part, assets/frames/skyrim-knotwork.png, so it can be picked for any theme; the copy
+			// built into the DLL (knotwork = true) still draws if that file is missing.
+			skyrim.frameArt = "skyrim-knotwork";
 			RegisterTheme(std::move(skyrim));
 
 			g_activeId = "skyrim";

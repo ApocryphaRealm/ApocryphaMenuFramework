@@ -2,6 +2,7 @@
 
 #include "Bindings.h"
 #include "Personalization.h"
+#include "Skin.h"
 #include "Theme.h"
 #include "utils/Logger.h"
 
@@ -239,6 +240,20 @@ namespace settings
 				for (int r = 0; r < theme::kRoleCount; ++r)
 				{
 					if (!picks[r].empty()) { file << theme::kColorRoleKeys[r] << "=" << picks[r] << "\n"; }
+				}
+				file << "\n";
+			}
+			// 2.1.6: the player's own art, kept per theme (Appearance > Art) - one [Art.<theme id>] section for each theme
+			// changed: a part name from assets/frames, assets/backgrounds, assets/toggles, or "none"; a key left out is the theme's.
+			for (const auto& [themeId, picks] : a_v.themeArt)
+			{
+				bool any = false;
+				for (const auto& c : picks) { any = any || !c.empty(); }
+				if (!any) { continue; }
+				file << "[Art." << themeId << "]\n";
+				for (std::size_t k = 0; k < picks.size(); ++k)
+				{
+					if (!picks[k].empty()) { file << skin::kArtKeys[k] << "=" << picks[k] << "\n"; }
 				}
 				file << "\n";
 			}
@@ -690,6 +705,21 @@ namespace settings
 					for (int r = 0; r < theme::kRoleCount; ++r)
 					{
 						if (roleKey == theme::kColorRoleKeys[r]) { g_values.themeColors[themeId][r] = value; }
+					}
+				}
+				// 2.1.6: the player's own art per theme: "Art.<theme id>.<key>"
+				static_assert(std::tuple_size_v<decltype(Values{}.themeArt)::mapped_type> == static_cast<std::size_t>(skin::ArtKind::kCount),
+							  "Values::themeArt must hold one entry per skin::ArtKind");
+				for (const auto& [key, value] : entries)
+				{
+					if (key.rfind("Art.", 0) != 0 || value.empty()) { continue; }
+					const auto dot = key.rfind('.');
+					if (dot <= 4) { continue; }
+					const std::string themeId = key.substr(4, dot - 4);
+					const std::string artKey = key.substr(dot + 1);
+					for (std::size_t k = 0; k < static_cast<std::size_t>(skin::ArtKind::kCount); ++k)
+					{
+						if (artKey == skin::kArtKeys[k]) { g_values.themeArt[themeId][k] = value; }
 					}
 				}
 			}

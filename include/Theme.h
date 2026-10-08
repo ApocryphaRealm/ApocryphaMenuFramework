@@ -59,6 +59,14 @@ namespace theme
 		std::string   skinBackground;
 		std::string   skinPlates;
 
+		// 2.1.6 - THE THEME'S ART PARTS, BY NAME (the owner, 2026-10-08: "break down the themes into their art parts and put
+		// them into the subfolders for the theme to draw from"): a name in assets/frames, assets/backgrounds or
+		// assets/toggles (sFrameArt / sBackgroundArt / sToggleArt). A name wins over the old path keys above; a player's
+		// own pick on Appearance > Art wins over both.
+		std::string   frameArt;
+		std::string   backgroundArt;
+		std::string   toggleArt;
+
 		// TEXT ROLES on the pages AMF builds from MCM menus (2.1.5, the owner, 2026-10-07: "regular text could be
 		// white, gray for other things, and then ... the non-selectable text that's like a heading of a section be
 		// one color, and help text a different color"). Labels keep `text`, values keep `textDim`. Kept at the END

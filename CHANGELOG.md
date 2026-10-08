@@ -21,6 +21,48 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## 2.1.6 - 2026-10-08 - untested - the art library: build your own look; the Oblivion theme
+
+The owner, 2026-10-08: "start working on the new file structure for amf, add an assets folder with sub folders for the
+customization section to choose from, and import the oblivion theme and break down the themes into their art parts and put
+them into the subfolders for the theme to draw from and fix the small things that need fixing from before", then "i want 5
+art options for each kind that all have different shapes, include the default as one of those 5" and "make sure the help
+pages are up to date too".
+
+### Added
+- **The art library** - `SKSE/Plugins/ApocryphaMenuFramework/assets/frames`, `assets/backgrounds`, `assets/toggles`: every
+  theme's art as one PART per kind, named after where it came from. A frame carries a `<name>.ini` saying how it is cut
+  (uCorner, uDrawCorner, bTileEdges, sHighlight = whole / corners). A theme names its parts (sFrameArt, sBackgroundArt,
+  sToggleArt) instead of file paths; the old sSkinFrame / sSkinBackground / sSkinPlates path keys still work for themes
+  made before.
+- **Five shapes of each kind, the default among them.** Frames: Skyrim knotwork (default), Norden, Oathvein, Vel'dun,
+  Oblivion map edge. Backgrounds: plain (default), grain, parchment, weave, lattice. Switches: rounded (default), Norden,
+  Oathvein, Vel'dun, Oblivion scroll. The three themes' grain tiles were the same speckle three times, so they are one
+  part, grain; parchment, weave, lattice and the scroll switch are new (tools/make-art-parts.py, original art drawn from
+  shapes).
+- **Appearance > Art**: a dropdown per kind - the theme's own, the kind's default, or any part - with a picture of the part
+  drawing now; kept per theme ([Art.<theme id>] in User.ini, like the colours), Theme's own art puts them all back.
+  Colours > Frame art tints them. "None" for the frame takes even the Skyrim knotwork away.
+- **The Oblivion theme**, from the Oblivion Remastered port: brown ink on parchment with brass accents, the embroidered
+  map-edge frame (its stitched edges repeat instead of stretching, scaled with the layout as on the port), a parchment
+  ground and a scroll-shaped switch.
+- DevBench amf.menu op=art: lists the parts, or picks one for the active theme; op=skin reports the parts drawing and the
+  frame's cut.
+
+### Changed
+- The Skyrim knotwork is now a part too (frames/skyrim-knotwork.png); the copy built into the DLL stays as the fallback
+  when the assets folder is missing.
+- The highlight frame round a selected item takes its form from the frame's .ini: line-and-corners for the knotwork and
+  the map edge, the whole frame for the thin-line frames.
+- The in-game help (Help > How it looks) covers the Theme and text, Window, Colours and Art pages, in all 11 languages.
+- tools/make-theme-art.py writes its art into the library; the theme INIs are edited by hand.
+
+### Fixed
+- The slider in the Colours preview moves one step of its shown digit per press, like every other slider (rule 68); the
+  package gate's temporary exemption for the framework is gone.
+- The Choose-menus help ("Switch off a menu to keep it in SkyUI's menu only ...") shows again: 2.1.5's MCM Memory import
+  help had taken its translation key. That help has its own key now (AMF_McmMemImportHelp), in all 11 languages.
+
 ## 2.1.5 - 2026-10-08 - working - converted MCM pages: help bar, heading colours, icons, translated headings
 
 The owner, 2026-10-07, after comparing AMF's converted MCM pages with MCM Bridge's: "it's really not that bad in

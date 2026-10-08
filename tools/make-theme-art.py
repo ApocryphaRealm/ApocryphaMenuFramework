@@ -20,7 +20,11 @@ GEOMETRY
     does around every window and pane and the layout does not move when the theme changes.
     Edge slices are uniform along their run, because the nine-slice stretches them.
 
-Usage:  python tools/make-theme-art.py            (writes into dist/SKSE/Plugins/ApocryphaMenuFramework/themes)
+Usage:  python tools/make-theme-art.py            (writes the art parts into dist/SKSE/Plugins/ApocryphaMenuFramework/assets)
+
+2.1.6: the art goes into the art library as parts - assets/frames/<theme>.png, assets/backgrounds/<theme>.png,
+assets/toggles/<theme>.png - and the theme INIs are no longer written here: they have been edited by hand since (2.1.5
+text roles, 2.1.6 part names), so the "ini" text below is the 1.9.8 original, kept for provenance only.
 """
 import os
 import random
@@ -28,7 +32,7 @@ import random
 from PIL import Image, ImageDraw
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-OUT = os.path.normpath(os.path.join(HERE, "..", "dist", "SKSE", "Plugins", "ApocryphaMenuFramework", "themes"))
+OUT = os.path.normpath(os.path.join(HERE, "..", "dist", "SKSE", "Plugins", "ApocryphaMenuFramework", "assets"))
 DATA_REL = "SKSE/Plugins/ApocryphaMenuFramework/themes"
 
 SS = 8           # supersampling factor for smooth lines
@@ -282,15 +286,14 @@ sSkinPlates={rel}/norden
 
 def main():
     for tid, t in THEMES.items():
-        if "frame" in t:   # a theme without art of its own points at another theme's folder
-            folder = os.path.join(OUT, tid)
-            os.makedirs(folder, exist_ok=True)
-            t["frame"]().save(os.path.join(folder, "frame.png"))
-            t["toggle"]().save(os.path.join(folder, "toggle.png"))
-            grain_tile(*t["grain"]).save(os.path.join(folder, "background.png"))
-        with open(os.path.join(OUT, tid + ".ini"), "w", encoding="utf-8", newline="\r\n") as f:
-            f.write(t["ini"].format(rel=DATA_REL))
-        print("wrote", tid)
+        if "frame" not in t:   # a theme without art of its own uses another theme's parts (Norden - Black: norden)
+            continue
+        for kind in ("frames", "backgrounds", "toggles"):
+            os.makedirs(os.path.join(OUT, kind), exist_ok=True)
+        t["frame"]().save(os.path.join(OUT, "frames", tid + ".png"))
+        t["toggle"]().save(os.path.join(OUT, "toggles", tid + ".png"))
+        grain_tile(*t["grain"]).save(os.path.join(OUT, "backgrounds", tid + ".png"))
+        print("wrote parts", tid)
 
 
 if __name__ == "__main__":

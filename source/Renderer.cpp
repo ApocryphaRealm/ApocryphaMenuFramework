@@ -191,19 +191,25 @@ namespace renderer
 		// frame art (skin::FrameTexture) goes through exactly the same geometry the built-in
 		// knotwork always did - one implementation, so a supplied frame cannot draw differently
 		// from the one this was proven on.
+		// a_tile / a_dcs (2.1.6, from the Oblivion port with its map-edge frame): a_tile REPEATS the edges' middle strip at
+		// its own size instead of stretching it - for art with a pattern along the edge (the map edge's stitches), which
+		// stretching would smear; the last repeat on each side is cut short, UVs and all, so nothing overhangs the far
+		// corner. a_dcs is the corner's size ON SCREEN when it differs from its size in the texture (0 = the same).
 		void DrawNineSlice(ImDrawList* dl, void* a_srv, float W, float H, float cs,
-						   const ImVec2& p0, const ImVec2& p1)
+						   const ImVec2& p0, const ImVec2& p1, bool a_tile = false, float a_dcs = 0.0f)
 		{
 			if (!a_srv || !dl || W <= 0.0f || H <= 0.0f || cs <= 0.0f)
 			{
 				return;
 			}
+			const float dcs = a_dcs > 0.0f ? a_dcs : cs;
+			const float k = dcs / cs;   // screen pixels per texture pixel
 
-			// UV split points (source), and screen split points (dest, corners at fixed cs px).
+			// UV split points (source), and screen split points (dest, corners at dcs px).
 			const float u0 = 0.0f, u1 = cs / W, u2 = (W - cs) / W, u3 = 1.0f;
 			const float v0 = 0.0f, v1 = cs / H, v2 = (H - cs) / H, v3 = 1.0f;
-			const float x0 = p0.x, x1 = p0.x + cs, x2 = p1.x - cs, x3 = p1.x;
-			const float y0 = p0.y, y1 = p0.y + cs, y2 = p1.y - cs, y3 = p1.y;
+			const float x0 = p0.x, x1 = p0.x + dcs, x2 = p1.x - dcs, x3 = p1.x;
+			const float y0 = p0.y, y1 = p0.y + dcs, y2 = p1.y - dcs, y3 = p1.y;
 
 			// Degenerate guard: a window smaller than two corners would flip the middle slices.
 			if (x2 <= x1 || y2 <= y1)
@@ -224,6 +230,29 @@ namespace renderer
 			slice(x2, y0, x3, y1, u2, v0, u3, v1);  // top-right
 			slice(x0, y2, x1, y3, u0, v2, u1, v3);  // bottom-left
 			slice(x2, y2, x3, y3, u2, v2, u3, v3);  // bottom-right
+			if (a_tile && W > 2.0f * cs && H > 2.0f * cs)
+			{
+				const float runU = (W - 2.0f * cs) * k;   // the strip's own length, on screen
+				const float runV = (H - 2.0f * cs) * k;
+				constexpr int kMaxRepeats = 512;
+				int n = 0;
+				for (float x = x1; x < x2 && n < kMaxRepeats; x += runU, ++n)
+				{
+					const float xe = std::min(x + runU, x2);
+					const float ue = u1 + (u2 - u1) * ((xe - x) / runU);
+					slice(x, y0, xe, y1, u1, v0, ue, v1);   // top
+					slice(x, y2, xe, y3, u1, v2, ue, v3);   // bottom
+				}
+				n = 0;
+				for (float y = y1; y < y2 && n < kMaxRepeats; y += runV, ++n)
+				{
+					const float ye = std::min(y + runV, y2);
+					const float ve = v1 + (v2 - v1) * ((ye - y) / runV);
+					slice(x0, y, x1, ye, u0, v1, u1, ve);   // left
+					slice(x2, y, x3, ye, u2, v1, u3, ve);   // right
+				}
+				return;
+			}
 			// edges (stretched along their run)
 			slice(x1, y0, x2, y1, u1, v0, u2, v1);  // top
 			slice(x1, y2, x2, y3, u1, v2, u2, v3);  // bottom
@@ -240,9 +269,19 @@ namespace renderer
 			if (skin::HasFrame())
 			{
 				const ImVec2 sz = skin::FrameSize();
-				DrawNineSlice(dl, skin::FrameTexture(), sz.x, sz.y, skin::FrameCorner(), p0, p1);
+				// 2.1.6: a frame drawn at its own on-screen corner (the map edge: art at twice its size) scales with the
+				// layout, as on the Oblivion port - the window padding is the knotwork corner + 8 px at the 1080p baseline
+				// times the UI scale, so the band grows with the text and always fits the padding it sits in.
+				float dcs = skin::FrameDrawCorner();
+				if (dcs > 0.0f)
+				{
+					const float base = static_cast<float>(knotwork::kCorner) + 8.0f;
+					dcs *= std::max(1.0f, ImGui::GetStyle().WindowPadding.x / base);
+				}
+				DrawNineSlice(dl, skin::FrameTexture(), sz.x, sz.y, skin::FrameCorner(), p0, p1, skin::FrameTiles(), dcs);
 				return;
 			}
+			if (!skin::DrawsFrame()) { return; }   // 2.1.6: the player picked no frame - not even the knotwork
 			DrawNineSlice(dl, g_knotSRV, static_cast<float>(knotwork::kWidth),
 						  static_cast<float>(knotwork::kHeight), static_cast<float>(knotwork::kCorner), p0, p1);
 		}
@@ -328,7 +367,7 @@ namespace renderer
 			const float pad = std::max(2.0f, std::round(2.0f * unit));
 			p0 = ImVec2(p0.x - pad, p0.y - pad);
 			p1 = ImVec2(p1.x + pad, p1.y + pad);
-			const bool art = theme::GetActiveTheme().knotwork || skin::HasFrame();
+			const bool art = skin::DrawsFrame();
 			if (!art)
 			{
 				const ImVec4 b = ImGui::GetStyleColorVec4(ImGuiCol_Border);
@@ -347,7 +386,9 @@ namespace renderer
 			// round a row (the owner, same evening: "Oathvein looks fine"), so it keeps that; the knotwork's solid bands get
 			// the line-and-corners form.
 			const float h = p1.y - p0.y, w = p1.x - p0.x;
-			const bool wholeFrame = skin::HasFrame();
+			// 2.1.6: which form is now the frame's own say (sHighlight in its .ini): the knotwork and the map edge are
+			// "corners", the themes' thin-line frames "whole". A frame from a path, with no .ini, keeps the whole frame.
+			const bool wholeFrame = skin::HasFrame() && !skin::FrameHighlightCorners();
 			const float cs = std::clamp(std::min(h, w) * (wholeFrame ? 0.42f : 0.4f), std::min(4.0f * unit, csSrc), csSrc);
 			const float u1 = csSrc / size.x, u2 = (size.x - csSrc) / size.x, v1 = csSrc / size.y, v2 = (size.y - csSrc) / size.y;
 			if (w <= cs || h <= cs * 0.5f) { return; }
@@ -1201,6 +1242,112 @@ namespace renderer
 			bool _open = false;
 		};
 
+		// ART (2.1.6, the owner, 2026-10-08: an asset library where a player picks the frame, background and switch from any
+		// theme's art "and build their own theme", recoloured by the colour roles). One dropdown per kind of part, kept per
+		// theme like the colours: the theme's own, none, or any part in assets/<kind>/. A picture of the part beside each.
+		std::string ArtLabel(const std::string& a_name)
+		{
+			if (a_name == "veldun") { return "Vel'dun"; }   // the theme's own spelling; a file name cannot carry it
+			std::string out = a_name;
+			for (char& c : out) { if (c == '-' || c == '_') { c = ' '; } }
+			if (!out.empty()) { out[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(out[0]))); }
+			return out;
+		}
+
+		void DrawArtPicks()
+		{
+			auto& values = settings::Get();
+			const theme::Palette& active = theme::GetActiveTheme();
+			// The part lists are read from disk when the page opens and every few seconds after, not every frame.
+			static std::array<std::vector<std::string>, static_cast<std::size_t>(skin::ArtKind::kCount)> s_parts;
+			static double s_scannedAt = -1.0;
+			const double now = ImGui::GetTime();
+			if (s_scannedAt < 0.0 || now - s_scannedAt > 5.0)
+			{
+				for (std::size_t k = 0; k < s_parts.size(); ++k) { s_parts[k] = skin::ListArt(static_cast<skin::ArtKind>(k)); }
+				s_scannedAt = now;
+			}
+			if (values.skinEnabled && !(values.skinFrame.empty() && values.skinBackground.empty() && values.skinPlates.empty()))
+			{
+				ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
+				ImGui::TextWrapped("%s", TR("AMF_ArtSkinOverride", "Custom menu art from a UI author is on (Theme and text), so its art draws instead of the picks below."));
+				ImGui::PopStyleColor();
+				ImGui::Spacing();
+			}
+			const char* kindLabel[] = { TR("AMF_ArtFrame", "Frame"), TR("AMF_ArtBackground", "Background"), TR("AMF_ArtSwitch", "Switch") };
+			// FIVE SHAPES OF EACH KIND, THE DEFAULT ONE OF THEM (the owner, 2026-10-08). The default look of a kind is the
+			// Skyrim theme's: the knotwork frame (a part), and for a background or switch no picture at all - the plain
+			// colour, the built-in rounded switch - which is what the "no art" entry draws, so that entry is named for it.
+			const char* noArtLabel[] = { TR("AMF_ArtNone", "None"), TR("AMF_ArtPlainDefault", "Plain (default)"),
+				TR("AMF_ArtRoundedDefault", "Rounded (default)") };
+			const char* noArtWord[] = { TR("AMF_ArtNoneWord", "none"), TR("AMF_ArtPlainWord", "plain"), TR("AMF_ArtRoundedWord", "rounded") };
+			constexpr const char* kDefaultFrame = "skyrim-knotwork";
+			const float thumb = ImGui::GetFontSize() * 4.0f;
+			bool changed = false;
+			for (std::size_t k = 0; k < s_parts.size(); ++k)
+			{
+				const auto kind = static_cast<skin::ArtKind>(k);
+				const auto& parts = s_parts[k];
+				const std::string own = skin::ThemeArt(kind);
+				auto found = values.themeArt.find(active.id);
+				const std::string pick = found != values.themeArt.end() ? found->second[k] : std::string();
+				// entry 0: the theme's own (named when it has one), 1: none, then every part
+				std::vector<std::string> labels;
+				labels.push_back(std::format("{} ({})", TR("AMF_ArtThemeOwn", "Theme's own"), own.empty() ? std::string(noArtWord[k]) : ArtLabel(own)));
+				labels.push_back(noArtLabel[k]);
+				int current = 0;
+				for (std::size_t i = 0; i < parts.size(); ++i)
+				{
+					labels.push_back(kind == skin::ArtKind::kFrame && parts[i] == kDefaultFrame
+					                     ? std::format("{} ({})", ArtLabel(parts[i]), TR("AMF_ArtDefaultWord", "default"))
+					                     : ArtLabel(parts[i]));
+					if (pick == parts[i]) { current = static_cast<int>(i) + 2; }
+				}
+				if (pick == skin::kArtNone) { current = 1; }
+				std::vector<const char*> cLabels;
+				for (const auto& l : labels) { cLabels.push_back(l.c_str()); }
+
+				ImGui::PushID(static_cast<int>(k));
+				ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.5f);
+				if (theme::ComboTight(kindLabel[k], &current, cLabels.data(), static_cast<int>(cLabels.size())))
+				{
+					auto& slot = values.themeArt[active.id][k];
+					slot = current == 0 ? std::string() : current == 1 ? std::string(skin::kArtNone) : parts[static_cast<std::size_t>(current - 2)];
+					logger::info("settings page: art {} for theme {} -> \"{}\"", skin::kArtFolders[k], active.id, slot.empty() ? "theme's own" : slot);
+					changed = true;
+				}
+				// the part drawing now, as a small picture (the art tint applies, so the Frame art colour shows here too)
+				const std::string shown = skin::ActiveArt(kind);
+				ImVec2 size{ 0.0f, 0.0f };
+				void* tex = shown.empty() ? nullptr : skin::ArtThumb(kind, shown, &size);
+				if (tex && size.x > 0.0f && size.y > 0.0f)
+				{
+					const float s = std::min(thumb / size.x, thumb / size.y);
+					const std::uint32_t tint = theme::RoleColor(theme::kRoleArt);
+					ImGui::Image(reinterpret_cast<ImTextureID>(tex), ImVec2(size.x * s, size.y * s), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f),
+								 ImGui::ColorConvertU32ToFloat4(tint ? static_cast<ImU32>(tint) : IM_COL32_WHITE),
+								 ImGui::GetStyleColorVec4(ImGuiCol_Border));
+				}
+				else
+				{
+					ImGui::TextDisabled("%s", TR("AMF_ArtNoneShown", "No art of this kind is drawing."));
+				}
+				ImGui::PopID();
+				ImGui::Spacing();
+			}
+			if (ImGui::Button(TR("AMF_ArtReset", "Theme's own art")))
+			{
+				values.themeArt.erase(active.id);
+				logger::info("settings page: art for theme {} -> theme's own", active.id);
+				changed = true;
+			}
+			if (changed)
+			{
+				settings::Save();
+				skin::Reload();
+			}
+		}
+
 		// COLOURS (2.1.5, the owner, 2026-10-07): the player's own colour for every part of the framework's look - "its frame,
 		// box, sliders, and other things", the background ("like how Oathvein is gray, but Norden and Skyrim themes are black"),
 		// switches, and the converted MCM pages' headings and help ("blue text or yellow text"). A picker per role for the
@@ -1252,7 +1399,7 @@ namespace renderer
 				widgets::Toggle(TR("AMF_PreviewOff", "Switched off"), &off);
 				ImGui::Checkbox(TR("AMF_PreviewTick", "Tick box"), &tick);
 				ImGui::SetNextItemWidth(-FLT_MIN);
-				ImGui::SliderFloat("##previewslider", &slider, 0.0f, 1.0f, "%.2f");
+				precise::SliderFloat("##previewslider", &slider, 0.0f, 1.0f, "%.2f");   // 2.1.6: one step of the shown digit per nudge, like every slider
 				ImGui::Button(TR("AMF_PreviewButton", "Button"));
 				ImGui::Spacing();
 				// a selected row, and a row as it looks under the mouse (Selection, Hover highlight)
@@ -1590,7 +1737,7 @@ namespace renderer
 				// SUB-TABS (2.1.5, the owner: "sub tabs for it rather than a long page with collapsible sections").
 				{
 					static int s_appearanceSub = 0;
-					SubTabs sub("##appearancesub", 3, s_appearanceSub);
+					SubTabs sub("##appearancesub", 4, s_appearanceSub);
 					if (sub.Tab(TR("AMF_SubThemeText", "Theme and text")))
 					{
 					// Theme picker (design decision, 2026-08-27) - supersedes the original "no theme UI by design"
@@ -1768,6 +1915,15 @@ namespace renderer
 						ImGui::TextWrapped("%s", TR("AMF_ColorsHelp", "Your own colour for each part of the menu, over the theme's. Each starts as "
 							"the theme's own; Theme puts one back. Frame art tints the theme's frame and background pictures."));
 						DrawColorRoles();
+						ImGui::EndTabItem();
+					}
+					// 2.1.6: the theme's art parts, swapped for any theme's, kept per theme (DrawArtPicks).
+					if (sub.Tab(TR("AMF_SubArt", "Art")))
+					{
+						ImGui::TextWrapped("%s", TR("AMF_ArtHelp", "Build your own look from every theme's art: pick a frame, background and "
+							"switch for this theme. Each theme keeps its own picks. Colours > Frame art tints them."));
+						ImGui::Spacing();
+						DrawArtPicks();
 						ImGui::EndTabItem();
 					}
 				}
@@ -2018,7 +2174,7 @@ namespace renderer
 									rememberedsettings::ImportFromMcmMemory(s_mmProfiles[static_cast<std::size_t>(s_mmPick)]);
 								}
 								if (memBusy) { ImGui::EndDisabled(); }
-								ImGui::TextWrapped("%s", TR("AMF_McmImportHelp", "Brings every setting MCM Memory saved in that profile into this "
+								ImGui::TextWrapped("%s", TR("AMF_McmMemImportHelp", "Brings every setting MCM Memory saved in that profile into this "
 									"profile, so you can switch MCM Memory off afterwards: AMF sets them again after each new game. Its files "
 									"are only read, never changed."));
 							}
@@ -2732,13 +2888,22 @@ namespace renderer
 						"type into: put 3 in a row's number and it moves there, and everything else re-flows around it."));
 
 				ImGui::SeparatorText(TR("AMF_ManLook", "How it looks"));
-				bullet(TR("AMF_ManLook1", "Theme: Skyrim is the Nordic knotwork frame; the others are plainer. Settings -> Appearance -> Theme."));
-				bullet(TR("AMF_ManLook2", "Font: drop a .ttf into Data/SKSE/Plugins/ApocryphaMenuFramework/fonts and pick it under Settings -> Appearance -> Font."));
+				// 2.1.6 (the owner, 2026-10-08: "make sure the help pages are up to date too"): Appearance has four sub-tabs now -
+				// Theme and text, Window, Colours (2.1.5) and Art (2.1.6) - and each has its line here.
+				bullet(TR("AMF_ManLook1", "Theme: Skyrim is the Nordic knotwork frame; Vel'dun, Oathvein, Norden, Norden - Black and "
+						  "Oblivion each bring their own art, and Untarnished is plain lines. Settings -> Appearance -> Theme and text."));
+				bullet(TR("AMF_ManLook2", "Font: drop a .ttf into Data/SKSE/Plugins/ApocryphaMenuFramework/fonts and pick it under Settings -> Appearance -> Theme and text."));
 				bullet(TR("AMF_ManLook3", "Text size scales on top of the automatic resolution scale, so the menu reads the same on "
 						  "a 1080p screen and a 4K one."));
 				bullet(TR("AMF_ManLook4", "Language: the framework's own text follows the game's language unless you force one."));
-				bullet(TR("AMF_ManLook5", "The window remembers where you leave it, separately for each way of opening it. Drag it "
-						  "by its title, drag a corner to resize."));
+				bullet(TR("AMF_ManLook5", "Window: move it by its title and resize it from any edge or corner, each with its own switch, "
+						  "and it remembers where you leave it, separately for each way of opening it. See-through lets the game show "
+						  "behind it. Settings -> Appearance -> Window."));
+				bullet(TR("AMF_ManLook6", "Colours: your own colour for each part of the menu - background, borders, text, selection, "
+						  "sliders, switches, headings and help - kept for each theme. Settings -> Appearance -> Colours."));
+				bullet(TR("AMF_ManLook7", "Art: build your own look from every theme's art - five frames, five backgrounds and five "
+						  "switches, each a different shape, the Skyrim look's default among them. Each theme keeps its own picks, and "
+						  "Colours -> Frame art tints them. Settings -> Appearance -> Art."));
 				ImGui::EndTabItem();
 			}
 
@@ -3084,7 +3249,7 @@ namespace renderer
 				// panel below and the outer window for a consistent framed look.
 				// A supplied frame is drawn whatever the theme says: an author who ships frame art
 				// has asked for a frame, and it replaces the knotwork rather than adding to it.
-				const bool knot = theme::GetActiveTheme().knotwork || skin::HasFrame();
+				const bool knot = skin::DrawsFrame();   // 2.1.6: also off when the player picked no frame
 
 				const std::vector<registry::Entry> entries = registry::Snapshot();
 				// THE SIDE PANE FITS ITS NAMES (the owner, 2026-10-02: "make it so that the names are always fully visible
@@ -4540,6 +4705,40 @@ namespace renderer
 		return false;
 	}
 
+	// 2.1.6 - amf.menu op=art: the Appearance > Art page's dropdowns for a driving tool. No kind = list every part per kind;
+	// a kind sets the active theme's pick ("" = the theme's own, "none", or a part name) exactly as the page does.
+	std::string ArtOp(const std::string& a_kind, const std::string& a_name, bool a_set)
+	{
+		auto list = [](skin::ArtKind a_k) {
+			std::string out;
+			for (const auto& n : skin::ListArt(a_k)) { out += (out.empty() ? "\"" : ",\"") + n + "\""; }
+			return "[" + out + "]";
+		};
+		const theme::Palette& active = theme::GetActiveTheme();
+		if (a_set)
+		{
+			std::size_t k = 0;
+			while (k < static_cast<std::size_t>(skin::ArtKind::kCount) && a_kind != skin::kArtFolders[k] && a_kind + "s" != skin::kArtFolders[k]) { ++k; }
+			if (k == static_cast<std::size_t>(skin::ArtKind::kCount))
+			{
+				return "{\"ok\":false,\"op\":\"art\",\"error\":\"kind must be frame, background or toggle\"}";
+			}
+			const auto parts = skin::ListArt(static_cast<skin::ArtKind>(k));
+			if (!a_name.empty() && a_name != skin::kArtNone && std::find(parts.begin(), parts.end(), a_name) == parts.end())
+			{
+				return "{\"ok\":false,\"op\":\"art\",\"error\":\"no part '" + a_name + "' in assets/" + skin::kArtFolders[k] + "\"}";
+			}
+			auto& values = settings::Get();
+			values.themeArt[active.id][k] = a_name;
+			settings::Save();
+			skin::Reload();
+			logger::info("art {} for theme {} -> \"{}\" (DevBench)", skin::kArtFolders[k], active.id, a_name.empty() ? "theme's own" : a_name);
+		}
+		return std::string("{\"ok\":true,\"op\":\"art\",\"theme\":\"") + active.id + "\",\"parts\":{\"frames\":" + list(skin::ArtKind::kFrame) +
+			   ",\"backgrounds\":" + list(skin::ArtKind::kBackground) + ",\"toggles\":" + list(skin::ArtKind::kToggle) +
+			   "},\"skin\":" + skin::StatusJson() + "}";
+	}
+
 	bool SetModAlias(const std::string& a_modName, const std::string& a_alias)
 	{
 		if (personalization::IsSeparator(a_modName))
@@ -4639,7 +4838,7 @@ namespace renderer
 	bool DrawThemeFrameAround(ImDrawList* a_drawList, float a_x0, float a_y0, float a_x1, float a_y1)
 	{
 		if (!a_drawList || a_x1 <= a_x0 || a_y1 <= a_y0) { return false; }
-		const bool knot = theme::GetActiveTheme().knotwork || skin::HasFrame();
+		const bool knot = skin::DrawsFrame();   // 2.1.6: also off when the player picked no frame
 		if (!knot) { return false; }
 		DrawKnotworkAround(a_drawList, ImVec2(a_x0, a_y0), ImVec2(a_x1, a_y1));
 		return true;

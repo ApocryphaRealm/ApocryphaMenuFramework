@@ -157,6 +157,18 @@ def main(out_root=None):
     if not os.path.isdir(themes_src) or not any(f.endswith(".ini") for f in os.listdir(themes_src)):
         fail("no theme INIs in dist/SKSE/Plugins/ApocryphaMenuFramework/themes (run tools/make-theme-art.py)")
     shutil.copytree(themes_src, themes_dst, dirs_exist_ok=True)
+
+    # The art library (2.1.6): every theme's art as parts - assets/frames (each PNG with the .ini that says how it is
+    # cut), assets/backgrounds, assets/toggles - which the themes name and the Appearance > Art page lists.
+    assets_src = os.path.join(REPO, "dist", "SKSE", "Plugins", "ApocryphaMenuFramework", "assets")
+    assets_dst = os.path.join(common, "SKSE", "Plugins", "ApocryphaMenuFramework", "assets")
+    if not os.path.isdir(assets_src):
+        fail("no dist/SKSE/Plugins/ApocryphaMenuFramework/assets (run tools/make-asset-library.py)")
+    shutil.copytree(assets_src, assets_dst, dirs_exist_ok=True)
+    for name in os.listdir(os.path.join(assets_dst, "frames")):
+        if name.endswith(".png") and not os.path.isfile(os.path.join(assets_dst, "frames", name[:-4] + ".ini")):
+            fail("frame %s has no .ini beside it saying how it is cut" % name)
+
     for name in os.listdir(themes_dst):
         if not name.endswith(".ini"):
             continue
@@ -166,6 +178,10 @@ def main(out_root=None):
                 rel = val.replace("SKSE/Plugins/ApocryphaMenuFramework/themes/", "", 1)
                 if not os.path.isfile(os.path.join(themes_dst, rel.replace("/", os.sep))):
                     fail("theme %s names %s, which is not in the package" % (name, val))
+            # a part named by a theme must be in the library, or the theme shows in the picker and draws nothing
+            kind = {"sFrameArt": "frames", "sBackgroundArt": "backgrounds", "sToggleArt": "toggles"}.get(key)
+            if kind and val and not os.path.isfile(os.path.join(assets_dst, kind, val + ".png")):
+                fail("theme %s names the %s part %s, which is not in assets/%s" % (name, kind[:-1], val, kind))
 
     # The Font Awesome icon faces (2.0.4) and their SIL OFL 1.1 licence text, which the OFL requires
     # to travel with the fonts. A missing face only costs icons in game, so the build stops instead.

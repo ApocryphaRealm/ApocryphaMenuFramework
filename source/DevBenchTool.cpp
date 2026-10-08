@@ -152,6 +152,13 @@ namespace devbenchtool
 				const bool ok = renderer::SetTheme(id);
 				result = std::string("{\"ok\":") + (ok ? "true" : "false") + ",\"op\":\"theme\",\"id\":\"" + id + "\"}";
 			}
+			else if (op == "art")
+			{
+				// 2.1.6: the Appearance > Art picks. {"op":"art"} lists; {"op":"art","kind":"frame","name":"oathvein"} sets
+				// (name "" = the theme's own, "none" = no art of that kind).
+				const std::string kind = JsonStr(args, "kind");
+				result = renderer::ArtOp(kind, JsonStr(args, "name"), !kind.empty());
+			}
 			else if (op == "alias")
 			{
 				// Menu-shell personalization: rename a mod's entry (empty name clears the alias).

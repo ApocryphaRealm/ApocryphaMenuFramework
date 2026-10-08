@@ -1,6 +1,6 @@
 ﻿ApocryphaRealm Menu Framework
 =============================
-Version 2.1.5
+Version 2.1.6
 
 An original, GPL-3.0-or-later in-game menu framework (embedding Dear ImGui) - a one-for-one
 replacement for SKSE Menu Framework's consumer surface, plus user-friendly features that do
@@ -20,12 +20,15 @@ WHAT YOU GET
   * Your list, your way: rename any mod's entry and set the order of the list. It starts
     alphabetical and every entry shows its number; type a new number and the rest re-flow
     around it. One button puts it back.
-  * Six themes - Skyrim (the knotwork frame, the default), Untarnished (the same layout with
-    clean lines and no frame art), and four made to sit beside other interfaces, each with its
-    own frame, background and switches: Vel'dun, Oathvein, Norden and Norden - Black - plus a
-    font picker (drop a .ttf into Data/SKSE/Plugins/ApocryphaMenuFramework/fonts) and a
-    text-size slider. A theme is one INI and a few PNGs, so you can add your own
-    (CUSTOM-MENU-ART.md).
+  * Seven themes - Skyrim (the knotwork frame, the default), Untarnished (the same layout with
+    clean lines and no frame art), Oblivion (the Oblivion Remastered port's paper look: a
+    map-edge frame on parchment), and four made to sit beside other interfaces: Vel'dun,
+    Oathvein, Norden and Norden - Black - plus a font picker (drop a .ttf into
+    Data/SKSE/Plugins/ApocryphaMenuFramework/fonts) and a text-size slider.
+  * Build your own look: every theme's art is a part in an art library (assets folder) - five
+    frames, five backgrounds and five switches, each a different shape - and Appearance > Art
+    picks any of them for any theme, recoloured by Appearance > Colours. Each theme keeps its
+    own picks. A theme is one INI naming its parts, so you can add your own (CUSTOM-MENU-ART.md).
   * Full controller navigation. Keyboard or controller is detected from whatever you last
     used - there is nothing to configure and nothing to switch on.
   * Menu-key rebinding (default F1), per-save persistence of menu state, and a hang watchdog
@@ -46,6 +49,9 @@ reading.
 
 WHAT CHANGED
 ------------
+
+Version 2.1.6
+Build your own look: Appearance > Art picks the frame, background and switch for each theme from every theme's art - five of each, each a different shape, the Skyrim look's default among them - and Colours tints them. New Oblivion theme: the Oblivion Remastered port's map-edge frame on parchment with a scroll-shaped switch. The slider in the Colours preview moves one step per press like every other slider, the Choose-menus help reads right again, and the in-game help covers the Window, Colours and Art pages.
 
 Version 2.1.5
 Converted MCM pages read more clearly: section headings in their own colour, help text in another, values in grey, and Font Awesome icons on key buttons, text fields, colours, buttons and notes. The highlighted option's help shows in a help bar under the right pane, inside the menu, like SkyUI's info line (Appearance > Help bar; off shows it as a popup kept inside the pane). Section headings no longer show "$KEY_Names": keys inside font tags are translated, and a key with no translation reads as words. "\n" in help is a line break, and values no longer run into the next column.
