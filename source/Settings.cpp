@@ -284,7 +284,7 @@ namespace settings
 				"; right pane, inside the menu. Off: it shows as a popup beside the option. On is the default.\n"
 				"bHelpBar=" << (a_v.helpBar ? 1 : 0) << "\n"
 				"; Appearance > Colours (0/1): on, a colour you pick changes the whole menu at once. Off: picks show only in the\n"
-				"; page's preview until you press Apply. On is the default.\n"
+				"; page's preview until you press Apply, beside the switch. Off is the default.\n"
 				"bColorsApplyNow=" << (a_v.colorsApplyNow ? 1 : 0) << "\n"
 				"; The Mods row's Fold switch (0/1): switched on it folds every separator, off opens them all. It acts only when\n"
 				"; switched - a separator folded or opened by hand afterwards stays as it is.\n"

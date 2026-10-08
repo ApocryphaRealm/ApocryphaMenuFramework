@@ -1287,6 +1287,28 @@ namespace renderer
 			{
 				ImGui::SetTooltip("%s", TR("AMF_ColorApplyNowTip", "On: each colour you pick changes the whole menu at once. Off: picks show only in the preview until you press Apply."));
 			}
+			// APPLY, RIGHT BESIDE THE SWITCH (the owner, 2026-10-08: "default to ... the preview only and then just have a button
+			// right next to it that says apply which will apply it to your theme"). Live once anything is waiting.
+			{
+				ImGui::SameLine();
+				ImGui::BeginDisabled(values.colorsApplyNow || !s_pending);
+				if (ImGui::Button(TR("AMF_ColorApply", "Apply")))
+				{
+					colors = s_draft;
+					s_pending = false;
+					logger::info("settings page: preview colours applied to {}", themeId);
+					settings::Save();
+					theme::Apply();
+				}
+				ImGui::SameLine();
+				if (ImGui::Button(TR("AMF_ColorDiscard", "Discard")))
+				{
+					s_pending = false;
+					s_draft = colors;
+					logger::info("settings page: preview colours discarded");
+				}
+				ImGui::EndDisabled();
+			}
 			const bool live = values.colorsApplyNow;
 			auto& picks = live ? colors : s_draft;
 			const auto commit = [&]() {
@@ -1375,24 +1397,6 @@ namespace renderer
 			// previewing: the picks wait here until Apply puts them on this theme, or Discard drops them
 			if (!live)
 			{
-				ImGui::BeginDisabled(!s_pending);
-				const std::string applyLabel = mcmstyle::Fmt(TR("AMF_ColorApply", "Apply to %s"), theme::GetActiveTheme().name.c_str()) + "###colourapply";
-				if (ImGui::Button(applyLabel.c_str()))
-				{
-					colors = s_draft;
-					s_pending = false;
-					logger::info("settings page: preview colours applied to {}", themeId);
-					settings::Save();
-					theme::Apply();
-				}
-				ImGui::SameLine();
-				if (ImGui::Button(TR("AMF_ColorDiscard", "Discard")))
-				{
-					s_pending = false;
-					s_draft = colors;
-					logger::info("settings page: preview colours discarded");
-				}
-				ImGui::EndDisabled();
 				if (s_pending)
 				{
 					ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
