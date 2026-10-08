@@ -21,7 +21,7 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
-## 2.1.4 - 2026-10-07 - untested - SKSE Menu Framework 3.18's interface; D-pad right stays on the Mods row's controls
+## 2.1.4 - 2026-10-07 - working - SKSE Menu Framework 3.18's interface; D-pad right stays on the Mods row's controls
 
 ### Added
 - **SKSE Menu Framework 3.18's interface** (a Nexus report, 2026-10-07: NPC Preset Applier, which needs SMF 3.18,

@@ -1,6 +1,6 @@
 ﻿ApocryphaRealm Menu Framework
 =============================
-Version 2.1.3
+Version 2.1.4
 
 An original, GPL-3.0-or-later in-game menu framework (embedding Dear ImGui) - a one-for-one
 replacement for SKSE Menu Framework's consumer surface, plus user-friendly features that do
@@ -46,6 +46,9 @@ reading.
 
 WHAT CHANGED
 ------------
+
+Version 2.1.4
+NPC Preset Applier and other mods made for SKSE Menu Framework 3.18 work under AMF: their preset portraits are made and shown. AMF now sends SMF's menu and frame events (NPA's portrait maker waits on them), has SMF 3.18's three new functions (API version, rename and delete a menu section), loads .dds images, and reads image paths with non-English letters. D-pad right on the Mods row now steps through the tick box, the A-Z switch and Sort before crossing to the settings. Thanks to ladydias for the report.
 
 Version 2.1.3
 SVG icons: mods made for SKSE Menu Framework that ship their icons as .svg files (Walk With Me, for one) now show them. No more freeze (on 2.1.1, a crash) the first time a page drawing Font Awesome icons opens - Cinematic Conversation Camera or MCM Memory, for example - in a large load order: the icons are added without taking away the fonts other mods are drawing with. Thanks to KnightQueen1 for the report.
