@@ -85,14 +85,14 @@ def veldun_frame():
     return down(img, SIZE, SIZE)
 
 
-def veldun_toggle():
+def veldun_toggle(k=1):
     w, h = 128, 64
     img = canvas(w, h)
     d = ImageDraw.Draw(img)
     cut = 14
     pts = [(cut, 2), (w - cut, 2), (w - 2, h / 2), (w - cut, h - 2), (cut, h - 2), (2, h / 2)]
     d.polygon([(S(x), S(y)) for x, y in pts], fill=(255, 255, 255, 255), outline=(150, 142, 124, 255), width=S(3))
-    return down(img, w, h)
+    return down(img, w * k, h * k)   # k: written k times larger (make-control-art.py asks for 2)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -126,14 +126,14 @@ def oathvein_frame():
     return down(img, SIZE, SIZE)
 
 
-def oathvein_toggle():
+def oathvein_toggle(k=1):
     w, h = 128, 64
     img = canvas(w, h)
     d = ImageDraw.Draw(img)
     d.rectangle([S(2), S(2), S(w - 2), S(h - 2)], fill=(255, 255, 255, 255), outline=(120, 120, 120, 255), width=S(3))
     # one diagonal notch across the right end - Oathvein's slash, as a darker cut in the plate
     d.line([(S(w - 30), S(h - 3)), (S(w - 14), S(3))], fill=(150, 150, 150, 255), width=S(2))
-    return down(img, w, h)
+    return down(img, w * k, h * k)   # k: written k times larger (make-control-art.py asks for 2)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -160,13 +160,13 @@ def norden_frame():
     return down(img, SIZE, SIZE)
 
 
-def norden_toggle():
+def norden_toggle(k=1):
     w, h = 128, 64
     img = canvas(w, h)
     d = ImageDraw.Draw(img)
     d.rounded_rectangle([S(2), S(6), S(w - 2), S(h - 6)], radius=S(10), fill=(255, 255, 255, 255),
                         outline=(140, 146, 150, 255), width=S(3))
-    return down(img, w, h)
+    return down(img, w * k, h * k)   # k: written k times larger (make-control-art.py asks for 2)
 
 
 # ---------------------------------------------------------------------------------------------

@@ -1,5 +1,4 @@
 diff --git a/imgui.cpp b/imgui.cpp
-index 65b7b24..854a0da 100644
 --- a/imgui.cpp
 +++ b/imgui.cpp
 @@ -3584,10 +3584,15 @@ void ImGui::RenderTextEllipsis(ImDrawList* draw_list, const ImVec2& pos_min, con
@@ -28,7 +27,6 @@ index 65b7b24..854a0da 100644
                  bg_draw_list->ChannelsSetCurrent(DOCKING_HOST_DRAW_CHANNEL_FG);
          }
 diff --git a/imgui_draw.cpp b/imgui_draw.cpp
-index be237e3..2738778 100644
 --- a/imgui_draw.cpp
 +++ b/imgui_draw.cpp
 @@ -4217,6 +4217,8 @@ void ImGui::RenderArrow(ImDrawList* draw_list, ImVec2 pos, ImU32 col, ImGuiDir d
@@ -41,10 +39,9 @@ index be237e3..2738778 100644
      ImVec2 a, b, c;
      switch (dir)
 diff --git a/imgui_internal.h b/imgui_internal.h
-index 2b660b1..b6f533b 100644
 --- a/imgui_internal.h
 +++ b/imgui_internal.h
-@@ -3918,3 +3918,27 @@ extern const char*  ImGuiTestEngine_FindItemDebugLabel(ImGuiContext* ctx, ImGuiI
+@@ -3918,3 +3918,28 @@ extern const char*  ImGuiTestEngine_FindItemDebugLabel(ImGuiContext* ctx, ImGuiI
  #endif
  
  #endif // #ifndef IMGUI_DISABLE
@@ -68,12 +65,12 @@ index 2b660b1..b6f533b 100644
 +    ImGuiArtPart_Tab,           // TabItemBackground; arg = ImGuiTabItemFlags
 +    ImGuiArtPart_Arrow,         // RenderArrow; bb = the arrow's square; arg = ImGuiDir
 +    ImGuiArtPart_Popup,         // a popup or tooltip window's rect, after its background; arg = ImGuiWindowFlags
++    ImGuiArtPart_SliderTrack,   // SliderScalar / VSliderScalar: the frame behind the grab   (via GImGuiArtFrameHint)
 +};
 +typedef bool (*ImGuiArtHookFn)(ImDrawList* draw_list, int part, const ImRect& bb, ImU32 col, int arg);
 +extern IMGUI_API ImGuiArtHookFn GImGuiArtHook;
 +extern IMGUI_API int            GImGuiArtFrameHint;   // set by a widget around its own RenderFrame call; -1 = none
 diff --git a/imgui_widgets.cpp b/imgui_widgets.cpp
-index aeb7b88..96edd55 100644
 --- a/imgui_widgets.cpp
 +++ b/imgui_widgets.cpp
 @@ -1025,13 +1025,15 @@ bool ImGui::ScrollbarEx(const ImRect& bb_frame, ImGuiID id, ImGuiAxis axis, ImS6
@@ -145,7 +142,17 @@ index aeb7b88..96edd55 100644
              window->DrawList->AddLine(ImVec2(sep1_x1, seps_y), ImVec2(sep2_x2, seps_y), separator_col, separator_thickness);
      }
  }
-@@ -3120,7 +3126,7 @@ bool ImGui::SliderScalar(const char* label, ImGuiDataType data_type, void* p_dat
+@@ -3111,7 +3117,9 @@ bool ImGui::SliderScalar(const char* label, ImGuiDataType data_type, void* p_dat
+     // Draw frame
+     const ImU32 frame_col = GetColorU32(g.ActiveId == id ? ImGuiCol_FrameBgActive : hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg);
+     RenderNavHighlight(frame_bb, id);
++    GImGuiArtFrameHint = ImGuiArtPart_SliderTrack;
+     RenderFrame(frame_bb.Min, frame_bb.Max, frame_col, true, g.Style.FrameRounding);
++    GImGuiArtFrameHint = -1;
+ 
+     // Slider behavior
+     ImRect grab_bb;
+@@ -3120,7 +3128,7 @@ bool ImGui::SliderScalar(const char* label, ImGuiDataType data_type, void* p_dat
          MarkItemEdited(id);
  
      // Render grab
@@ -154,7 +161,17 @@ index aeb7b88..96edd55 100644
          window->DrawList->AddRectFilled(grab_bb.Min, grab_bb.Max, GetColorU32(g.ActiveId == id ? ImGuiCol_SliderGrabActive : ImGuiCol_SliderGrab), style.GrabRounding);
  
      // Display value using user-provided display format so user can add prefix/suffix/decorations to the value.
-@@ -3269,7 +3275,7 @@ bool ImGui::VSliderScalar(const char* label, const ImVec2& size, ImGuiDataType d
+@@ -3260,7 +3268,9 @@ bool ImGui::VSliderScalar(const char* label, const ImVec2& size, ImGuiDataType d
+     // Draw frame
+     const ImU32 frame_col = GetColorU32(g.ActiveId == id ? ImGuiCol_FrameBgActive : hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg);
+     RenderNavHighlight(frame_bb, id);
++    GImGuiArtFrameHint = ImGuiArtPart_SliderTrack;
+     RenderFrame(frame_bb.Min, frame_bb.Max, frame_col, true, g.Style.FrameRounding);
++    GImGuiArtFrameHint = -1;
+ 
+     // Slider behavior
+     ImRect grab_bb;
+@@ -3269,7 +3279,7 @@ bool ImGui::VSliderScalar(const char* label, const ImVec2& size, ImGuiDataType d
          MarkItemEdited(id);
  
      // Render grab
@@ -163,7 +180,7 @@ index aeb7b88..96edd55 100644
          window->DrawList->AddRectFilled(grab_bb.Min, grab_bb.Max, GetColorU32(g.ActiveId == id ? ImGuiCol_SliderGrabActive : ImGuiCol_SliderGrab), style.GrabRounding);
  
      // Display value using user-provided display format so user can add prefix/suffix/decorations to the value.
-@@ -9043,6 +9049,8 @@ void ImGui::TabItemBackground(ImDrawList* draw_list, const ImRect& bb, ImGuiTabI
+@@ -9043,6 +9053,8 @@ void ImGui::TabItemBackground(ImDrawList* draw_list, const ImRect& bb, ImGuiTabI
      const float width = bb.GetWidth();
      IM_UNUSED(flags);
      IM_ASSERT(width > 0.0f);

@@ -32,6 +32,15 @@ the boxes are different from the frame ... sliders ... the toggles ... the lines
 line under a section header ... the on-screen keyboard ... and anything else that you can think of".
 
 ### Added
+- **Slider tracks and scroll bar tracks are kinds of their own** (the owner, 2026-10-08: "define ... the slider itself and
+  then the slider grab separately ... and the same for the scroll bar"). Appearance > Art gains Slider tracks and Scroll
+  bar tracks, one shape per set (assets/slidertracks, assets/scrolltracks), and Colours gains Slider tracks. A slider's
+  track used to take the Box art; the ImGui patch now marks it (ImGuiArtPart_SliderTrack), as it marks a tick box.
+- **A colour for every art kind** (the owner, 2026-10-08: the Skyrim scroll bar "is currently the same color as its
+  background and I don't have an option ... all the different kinds should have a color change option"). Appearance >
+  Colours gains Buttons, Tabs, Tick marks, Scroll bar, Scroll bar track, Section lines, Arrows, Switch knob, Popups and
+  lists (art) and Mouse pointer (art); Boxes, Selection and Slider grabs are now just those. Each new one follows the colour
+  it used to share until it is picked, so nothing looks different until then; each theme keeps its own picks.
 - **The art library** - `SKSE/Plugins/ApocryphaMenuFramework/assets/frames`, `assets/backgrounds`, `assets/toggles`: every
   theme's art as one PART per kind, named after where it came from. A frame carries a `<name>.ini` saying how it is cut
   (uCorner, uDrawCorner, bTileEdges, sHighlight = whole / corners). A theme names its parts (sFrameArt, sBackgroundArt,
@@ -75,8 +84,44 @@ line under a section header ... the on-screen keyboard ... and anything else tha
   FLICK per calling mod, so a mod sent to FLICK gets the real FLICK and the rest stay here. "Both at once" is not
   possible - a FLICK mod hands its page to one framework. Kept in FlickLeftToFlick.txt with the mod's name; applies from
   the next game start. DevBench amf.menu op=flick dll=... place=amf|flick.
+- **Switch knobs, a kind of their own** (the owner, 2026-10-08: the switch art "only changed the outline shape of the switch,
+  but not the button or circle that's white that's on top of it" - the knobs "should be a separate thing and should be
+  gold or match the frame art ... that piece that's at the corner of each frame"). Appearance > Art > Switch knobs, beside
+  Switch: one knob per theme, made from that theme's section-line end piece (the owner: "use the art ... at the end of
+  each one of those section lines or some variation of them"), in the colours of its frame art and tinted only by the
+  Frame art colour (assets/knobs, tools/make-knob-art.py) - Vel'dun's riveted diamond, Oblivion's gold compass star in
+  its ring, Oathvein's ridged blade, a rounded plate with Norden's corner ticks (its serifed bar does not read as a
+  knob), and for Skyrim the knot from the knotwork frame's corner. Each theme uses its own; Circle (default) is the
+  built-in knob.
 
 ### Changed
+- **Every art piece is sharp at any size** (the owner: "make sure that everything is nice and sharp looking, as they're
+  all pretty tiny. And make sure all the art pieces for every theme are nice and sharp"). The parts were drawn at twice
+  their 1080p size, so at a big text size on a 4K screen the game stretched them and they went soft. Every generated
+  part - boxes, buttons, tick boxes and ticks, tabs, slider and scroll grabs and tracks, switch tracks, knobs, arrows,
+  pointers - is now drawn at four times its 1080p size (the .ini corners follow; on-screen sizes are unchanged), and the
+  art library's textures load with mipmaps, so a part drawn small is filtered cleanly instead of shimmering. The theme
+  frames already draw at their art's own size and are unchanged. The scroll bar's old "-track" layers (replaced by the
+  Scroll bar tracks kind) are removed.
+- **The Oblivion switch matches its set** (the owner: its "outline and shape doesn't match" - "I meant like how the tab,
+  slider grab, scroll grab boxes look"). The scroll cartouche is replaced by the Oblivion plate the tabs and grabs use -
+  scooped corners, a brass-brown outline - named "oblivion" like the other sets (the theme's sToggleArt follows), so
+  the Switch list stays at five.
+- **Every theme is its own art; a Skyrim set** (the owner, 2026-10-08: "each theme should basically be its own built-in" -
+  "Theme's own (built-in)" beside a separate "Built-in (default)" said the same thing twice). Every Art dropdown is now
+  "Theme's own (...)" then the five sets, and a theme with no part of a kind names itself there - "Theme's own (Skyrim)"
+  - since its built-in shape IS its own look. The Skyrim theme keeps its own art (the knotwork frame, its built-in
+  controls, and now the knot knob cut from its frame); the new **Skyrim** set is a pick for the other themes, made from
+  the knotwork itself in its own grey strands on black (the owner: "any of its art ... should follow its Nordic knotwork
+  design and color"): the frame nine-sliced down to each plate, its corner knot as the tick and the section line's ends,
+  double strands for the line and the arrow, a grey pointer. Background keeps Plain beside its four textures.
+- **Converted menus: one MCM tab** (the owner, 2026-10-08: "I just want the tabs that apply to MCM menus to be within a tab
+  called MCM"). The sub-tabs are MCM | FLICK | Prisma | Spacing; MCM holds its own row - Menus, Choose menus,
+  Remembered settings. The shoulder buttons walk the outer row (it had declared five tabs for six, so they never reached
+  Prisma); the D-pad reaches the inner one.
+- **The mouse gets the highlight frame on the side list's controls** (the owner, 2026-10-08: hovering "the filter and sort
+  buttons doesn't make the frame art appear over them like it does with the controller"): the tick box, A-Z, Fold, Filter,
+  Sort and the search box, as the mod names already had.
 - The Skyrim knotwork is now a part too (frames/skyrim-knotwork.png); the copy built into the DLL stays as the fallback
   when the assets folder is missing.
 - The highlight frame round a selected item takes its form from the frame's .ini: line-and-corners for the knotwork and
@@ -86,6 +131,34 @@ line under a section header ... the on-screen keyboard ... and anything else tha
 - tools/make-theme-art.py writes its art into the library; the theme INIs are edited by hand.
 
 ### Fixed
+- **Colours stay inside their frames** (the owner: the switches' "color leaks out from the green and red coloring" and
+  "The frame should go around the color, not on top of it"). Each switch track is a fill, tinted on / off, and its
+  outline as its own layer in its own colours; and every plate's fill - boxes, buttons, tick boxes, tabs, slider and
+  scroll grabs and tracks, switches - is cut to the inside of its outline, so no colour shows outside the frame or
+  between the knotwork's strands (tools/make-control-art.py contain()).
+- **The Skyrim knotwork frame no longer fills the middle with black** (the owner: "I just don't want it to have a
+  background attached to the middle of the frame ... protruding so harshly"). It keeps its black backing under the
+  knots and a thin black outline under every strand; the solid black inside the frame is gone, so the menu's
+  Background colour shows there. The built-in copy (KnotworkBorder.h) matches (tools/knotwork-transparent.py).
+- **Buttons art reaches every button** (the owner: it "doesn't actually seem to apply to ... the filter or sort buttons, or
+  where mods keep their save, reload ... and restore defaults buttons"). A framed item was told apart by its colour alone,
+  so a theme whose buttons and fields share a colour drew every button with the Box art, and a mod's button in colours of
+  its own got none. Now text fields, sliders and drags (ImGui's "inputable" items) are boxes, rows and headers keep
+  their look, and every other framed item is a button.
+- **Background art covers the whole menu** (the owner: it "only changes the top row when it should apply to all of the
+  background"). The panes paint their own colour over the window's, so the art is now drawn in each pane too, over that
+  colour. The four textures are three to five times stronger - grain, weave and parchment barely showed before.
+- **Section lines redrawn** (the owner's screenshot, 2026-10-08: "not sharp or detailed", and the end pieces "poking into
+  the things above and below them when the rows are too close together"). The four lines are drawn at three times the
+  size, so the screen always scales them down and they stay sharp, with a dark outline that reads on parchment and black,
+  and smaller, finer end pieces (a cut diamond with rivets, a ringed compass star, serifed bars, a ridged blade). A line
+  is never drawn taller than the gap between rows, and a short piece - the bit before a heading - is the rail alone.
+- **A theme's own art is its namesake in every kind** (the owner: the Oblivion theme's own section lines "differs from its
+  namesake"). Norden, Norden - Black, Oathvein, Vel'dun and Oblivion name their own boxes, buttons, tick boxes, slider
+  grabs, scroll bars, section lines, tabs, arrows and pointer, so "Theme's own" on Appearance > Art is the same look as
+  picking the theme's name there; before, those kinds fell back to the built-in shapes.
+- **The Oblivion frame was missing from Appearance > Art.** The list hid every picture ending in "-edge" as another part's
+  edge layer, and the frame is named oblivion-map-edge; a layer is now hidden only when the part it belongs to is there.
 - The slider in the Colours preview moves one step of its shown digit per press, like every other slider (rule 68); the
   package gate's temporary exemption for the framework is gone.
 - The Choose-menus help ("Switch off a menu to keep it in SkyUI's menu only ...") shows again: 2.1.5's MCM Memory import

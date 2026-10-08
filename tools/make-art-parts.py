@@ -126,7 +126,9 @@ def main():
     parchment().save(os.path.join(ASSETS, "backgrounds", "parchment.png"))
     weave().save(os.path.join(ASSETS, "backgrounds", "weave.png"))
     lattice().save(os.path.join(ASSETS, "backgrounds", "lattice.png"))
-    oblivion_scroll().save(os.path.join(ASSETS, "toggles", "oblivion-scroll.png"))
+    # 2.1.6: the Oblivion switch track is now drawn by make-control-art.py (oblivion_track) to match the map-edge frame;
+    # the scroll cartouche below is kept as code only
+    # oblivion_scroll().save(os.path.join(ASSETS, "toggles", "oblivion-scroll.png"))
     print("drew parchment, weave, lattice, oblivion-scroll")
 
 

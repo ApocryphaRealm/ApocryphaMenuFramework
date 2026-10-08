@@ -79,13 +79,16 @@ namespace skin
 	{
 		ArtImage main;       // <name>.png
 		ArtImage edge;       // <name>-edge.png
-		ArtImage extra;      // <name>-mark.png (tick box) or <name>-track.png (scroll bar)
-		ArtImage extraEdge;  // <name>-track-edge.png
+		ArtImage extra;      // <name>-mark.png (a tick box's tick; the scroll bar track is its own kind since 2.1.6)
 		float corner = 0.0f;       // uCorner in the texture (0 = a quarter of its smaller side)
 		float drawCorner = 0.0f;   // uDrawCorner on a 1080p screen (0 = the same as corner); a cursor: its height there
 		bool  tile = false;        // bTileEdges
 		float hotX = 0.0f, hotY = 0.0f;   // a cursor's hot spot, in texture pixels
 		bool  cornersOnly = false; // sHighlight=corners (a frame picked for Highlight: the line and four corners)
+		bool  threeSlice = false;  // bThreeSlice (2.1.6): a grab drawn as a square cap at each end (the art's width tall) and the
+		                           // middle between them, stretched or (bTileEdges) repeated - a line with an ornament at each end
+		bool  ownColours = false;  // bOwnColours (2.1.6): the edge layer is art in its own colours (the knotwork, the map edge) -
+		                           // drawn as painted (the Frame art tint), or in the kind's own colour once the player picks one
 	};
 	// The part drawing now for a kind, or null for the built-in look. Frame, Background and Switch keep their own
 	// accessors below; Popup and Highlight are frames.
@@ -123,6 +126,8 @@ namespace skin
 	// Optional per-control plates.
 	bool   HasPlate(Plate a_plate);
 	void*  PlateTexture(Plate a_plate);
+	// 2.1.6: the switch track's outline layer, or null (drawn untinted by the switch colour)
+	void*  ToggleEdgeTexture();
 	ImVec2 PlateSize(Plate a_plate);
 
 	// What actually loaded, for the DevBench tool and the log - so "my art is not showing" is

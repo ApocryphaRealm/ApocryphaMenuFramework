@@ -422,7 +422,7 @@ namespace consumer
 		return SUCCEEDED(hr) ? srv : nullptr;
 	}
 
-	void* LoadTexture(const char* a_path, ImVec2* a_outSize)
+	void* LoadTexture(const char* a_path, ImVec2* a_outSize, bool a_mips)
 	{
 		if (!a_path || !*a_path) {
 			return nullptr;
@@ -494,8 +494,14 @@ namespace consumer
 		ID3D11Resource* resource = nullptr;
 		ID3D11ShaderResourceView* srv = nullptr;
 
-		if (FAILED(dds ? DirectX::CreateDDSTextureFromFile(g_device, wide.c_str(), &resource, &srv)
-					   : DirectX::CreateWICTextureFromFile(g_device, wide.c_str(), &resource, &srv))) {
+		// 2.1.6: the art library's textures get mipmaps (generated on the immediate context - this runs on the render thread)
+		ID3D11DeviceContext* mipContext = nullptr;
+		if (a_mips && !dds) { g_device->GetImmediateContext(&mipContext); }
+		const HRESULT loaded = dds ? DirectX::CreateDDSTextureFromFile(g_device, wide.c_str(), &resource, &srv)
+		                     : mipContext ? DirectX::CreateWICTextureFromFile(g_device, mipContext, wide.c_str(), &resource, &srv)
+		                                  : DirectX::CreateWICTextureFromFile(g_device, wide.c_str(), &resource, &srv);
+		if (mipContext) { mipContext->Release(); }
+		if (FAILED(loaded)) {
 			std::scoped_lock lock(g_warnLock);
 			if (std::find(g_warnedTextures.begin(), g_warnedTextures.end(), path) == g_warnedTextures.end()) {
 				g_warnedTextures.push_back(path);

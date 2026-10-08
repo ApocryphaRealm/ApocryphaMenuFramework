@@ -32,15 +32,18 @@ namespace skin
 		kPopup,        // the frame round dropdown lists, right-click menus and tooltips - from the frames
 		kHighlight,    // the frame round the highlighted item - from the frames
 		kCursor,       // the mouse pointer
+		kKnob,         // the switch's knob, the part that slides (2.1.6: from each frame's corner piece; "Switch knobs" on the page)
+		kSliderTrack,  // a slider's track, behind its grab (2.1.6, the owner: "the slider itself and then the slider grab separately")
+		kScrollTrack,  // the scroll bar's track, behind its grab (was the scroll bar part's -track layer)
 		kCount
 	};
 	inline constexpr std::size_t kArtKindCount = static_cast<std::size_t>(ArtKind::kCount);
 
 	// [Art.<theme id>] keys; the theme INI's key is the same with "Art" added (sBox -> sBoxArt).
 	inline constexpr const char* kArtKeys[kArtKindCount] = { "sFrame", "sBackground", "sToggle", "sBox", "sButton", "sTickBox",
-		"sSlider", "sScrollbar", "sSection", "sTab", "sArrow", "sPopup", "sHighlight", "sCursor" };
+		"sSlider", "sScrollbar", "sSection", "sTab", "sArrow", "sPopup", "sHighlight", "sCursor", "sKnob", "sSliderTrack", "sScrollTrack" };
 	// assets/<folder>/ - Popup and Highlight pick from the frames.
 	inline constexpr const char* kArtFolders[kArtKindCount] = { "frames", "backgrounds", "toggles", "boxes", "buttons",
-		"tickboxes", "sliders", "scrollbars", "sections", "tabs", "arrows", "frames", "frames", "cursors" };
+		"tickboxes", "sliders", "scrollbars", "sections", "tabs", "arrows", "frames", "frames", "cursors", "knobs", "slidertracks", "scrolltracks" };
 	inline constexpr const char* kArtNone = "none";   // a player's pick meaning "no art of this kind" (the built-in shape)
 }

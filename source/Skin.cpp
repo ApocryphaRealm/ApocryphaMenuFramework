@@ -35,6 +35,7 @@ namespace skin
 		Entry g_frame;
 		Entry g_background;
 		std::array<Entry, static_cast<std::size_t>(Plate::kCount)> g_plates;
+		Entry g_toggleEdge;   // 2.1.6: the switch track's outline (<name>-edge.png), drawn in its own colours
 		float g_frameCorner = 64.0f;
 		// 2.1.6: the frame's cut from its .ini, and what the library resolved to (for the Art page and StatusJson)
 		float g_frameDrawCorner = 0.0f;
@@ -96,7 +97,7 @@ namespace skin
 			}
 
 			ImVec2 size{ 0.0f, 0.0f };
-			void* srv = consumer::LoadTexture(a_entry.path.c_str(), &size);
+			void* srv = consumer::LoadTexture(a_entry.path.c_str(), &size, true);
 			if (!srv)
 			{
 				a_entry.error = "could not decode";
@@ -125,6 +126,8 @@ namespace skin
 			bool tile = false;
 			bool highlightCorners = false;
 			float hotX = 0.0f, hotY = 0.0f;
+			bool ownColours = false;   // 2.1.6: bOwnColours - the edge layer is drawn as painted, not in the line colour
+			bool threeSlice = false;   // 2.1.6: bThreeSlice - a grab: a square cap at each end, the middle between them
 		};
 
 		FrameCut ReadCut(const char* a_folder, const std::string& a_name)
@@ -147,6 +150,8 @@ namespace skin
 					else if (key == "shighlight") { cut.highlightCorners = Lower(value) == "corners"; }
 					else if (key == "uhotx") { cut.hotX = std::stof(value); }
 					else if (key == "uhoty") { cut.hotY = std::stof(value); }
+					else if (key == "bowncolours") { cut.ownColours = value == "1" || Lower(value) == "true"; }
+					else if (key == "bthreeslice") { cut.threeSlice = value == "1" || Lower(value) == "true"; }
 				}
 				catch (...)
 				{
@@ -175,7 +180,7 @@ namespace skin
 				if (std::filesystem::exists(a_resolved, ec))
 				{
 					ImVec2 size{ 0.0f, 0.0f };
-					img.srv = consumer::LoadTexture(a_resolved.c_str(), &size);
+					img.srv = consumer::LoadTexture(a_resolved.c_str(), &size, true);
 					if (img.srv) { img.w = size.x; img.h = size.y; }
 					else { logger::warn("skin: \"{}\" could not be decoded - is it a real 32-bit RGBA PNG?", a_resolved); }
 				}
@@ -201,7 +206,6 @@ namespace skin
 			}
 			part.edge = file("-edge");
 			if (a_kind == ArtKind::kTickBox) { part.extra = file("-mark"); }
-			if (a_kind == ArtKind::kScrollbar) { part.extra = file("-track"); part.extraEdge = file("-track-edge"); }
 			const FrameCut cut = ReadCut(folder, a_name);
 			part.corner = static_cast<float>(cut.corner);
 			if (part.corner <= 0.0f) { part.corner = std::floor(std::min(part.main.w, part.main.h) * 0.25f); }
@@ -211,6 +215,8 @@ namespace skin
 			part.hotX = cut.hotX;
 			part.hotY = cut.hotY;
 			part.cornersOnly = cut.highlightCorners;
+			part.ownColours = cut.ownColours;
+			part.threeSlice = cut.threeSlice;
 			g_parts[k] = part;
 			logger::info("skin: {} part \"{}\" loaded ({:.0f}x{:.0f}{}{})", kArtKeys[k] + 1, a_name, part.main.w, part.main.h,
 						 part.edge.srv ? ", edge" : "", part.extra.srv ? ", extra" : "");
@@ -240,7 +246,18 @@ namespace skin
 					const std::size_t n = std::char_traits<char>::length(a_suf);
 					return low.size() > n && low.compare(low.size() - n, n, a_suf) == 0;
 				};
-				if (ends("-edge") || ends("-mark") || ends("-track")) { continue; }
+				// ...only when the part it belongs to is there: "oblivion-map-edge" is a frame of its own (2.1.6 - it was missing
+				// from the Art picks), "norden-edge" beside "norden" is norden's edge layer
+				bool layer = false;
+				for (const char* suffix : { "-edge", "-mark", "-track" })
+				{
+					if (ends(suffix))
+					{
+						const std::string base = stem.substr(0, stem.size() - std::char_traits<char>::length(suffix));
+						layer = std::filesystem::exists(dir / (base + ".png"), ec);
+					}
+				}
+				if (layer) { continue; }
 				out.push_back(stem);
 			}
 		}
@@ -386,7 +403,16 @@ namespace skin
 		}
 		// The switch part by name (2.1.6) replaces a plates-folder toggle.png; "none" takes the switch plate away.
 		auto& togglePlate = g_plates[static_cast<std::size_t>(Plate::kToggle)];
-		if (!toggle.empty()) { Load(togglePlate, Resolve(toggle), "toggle"); }
+		g_toggleEdge = Entry{};
+		if (!toggle.empty())
+		{
+			Load(togglePlate, Resolve(toggle), "toggle");
+			// 2.1.6 (the owner: the switches' "color leaks out from the green and red coloring"): the outline is its own layer
+			std::string edge = toggle;
+			if (edge.size() > 4 && edge.compare(edge.size() - 4, 4, ".png") == 0) { edge.insert(edge.size() - 4, "-edge"); }
+			std::error_code ec;
+			if (edge != toggle && std::filesystem::exists(Resolve(edge), ec)) { Load(g_toggleEdge, Resolve(edge), "toggle outline"); }
+		}
 		else if (toggleNone) { togglePlate = Entry{}; }
 		if (!togglePlate.srv) { g_activeArt[static_cast<std::size_t>(ArtKind::kToggle)].clear(); }
 
@@ -437,6 +463,8 @@ namespace skin
 		const auto i = static_cast<std::size_t>(a_plate);
 		return i < g_plates.size() && g_plates[i].srv != nullptr;
 	}
+
+	void* ToggleEdgeTexture() { return g_toggleEdge.srv; }
 
 	void* PlateTexture(Plate a_plate)
 	{

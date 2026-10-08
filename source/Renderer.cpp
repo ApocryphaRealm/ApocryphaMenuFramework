@@ -1217,9 +1217,11 @@ namespace renderer
 		class SubTabs
 		{
 		public:
-			SubTabs(const char* a_id, int a_count, int& a_current) : _current(a_current)
+			// a_declare false (2.1.6): a row INSIDE a sub-tab (Converted menus > MCM) is a plain tab bar - the D-pad reaches it,
+			// and the bumpers keep walking the row it sits in.
+			SubTabs(const char* a_id, int a_count, int& a_current, bool a_declare = true) : _current(a_current)
 			{
-				_request = DeclareInnerTabs(a_count, a_current);
+				if (a_declare) { _request = DeclareInnerTabs(a_count, a_current); }
 				_open = ImGui::BeginTabBar(a_id, ImGuiTabBarFlags_FittingPolicyScroll);
 			}
 			~SubTabs()
@@ -1292,22 +1294,24 @@ namespace renderer
 				TR("AMF_ArtSwitch", "Switch"), TR("AMF_ArtBox", "Boxes"), TR("AMF_ArtButton", "Buttons"), TR("AMF_ArtTickBox", "Tick boxes"),
 				TR("AMF_ArtSlider", "Slider grabs"), TR("AMF_ArtScrollbar", "Scroll bars"), TR("AMF_ArtSection", "Section lines"),
 				TR("AMF_ArtTab", "Tabs"), TR("AMF_ArtArrow", "Arrows"), TR("AMF_ArtPopup", "Popups and lists"),
-				TR("AMF_ArtHighlight", "Highlight frame"), TR("AMF_ArtCursor", "Mouse pointer") };
+				TR("AMF_ArtHighlight", "Highlight frame"), TR("AMF_ArtCursor", "Mouse pointer"), TR("AMF_ArtKnob", "Switch knobs"),
+				TR("AMF_ArtSliderTrack", "Slider tracks"), TR("AMF_ArtScrollTrack", "Scroll bar tracks") };
 			const char* builtIn = TR("AMF_ArtBuiltInDefault", "Built-in (default)");
-			const char* noArtLabel[skin::kArtKindCount] = { TR("AMF_ArtNone", "None"), TR("AMF_ArtPlainDefault", "Plain (default)"),
+			const char* noArtLabel[skin::kArtKindCount] = { TR("AMF_ArtNone", "None"), TR("AMF_ArtPlain", "Plain"),
 				TR("AMF_ArtRoundedDefault", "Rounded (default)"), builtIn, builtIn, builtIn, builtIn, builtIn, builtIn, builtIn, builtIn,
-				TR("AMF_ArtNoneDefault", "None (default)"), TR("AMF_ArtWindowFrameDefault", "Window frame (default)"), builtIn };
-			const char* builtInWord = TR("AMF_ArtBuiltInWord", "built-in");
+				TR("AMF_ArtNoneDefault", "None (default)"), TR("AMF_ArtWindowFrameDefault", "Window frame (default)"), builtIn,
+				TR("AMF_ArtCircleDefault", "Circle (default)"), builtIn, builtIn };
+			const char* builtInWord = TR("AMF_ArtPlainWord", "plain");   // 2.1.6: the Untarnished theme's look
 			const char* noArtWord[skin::kArtKindCount] = { TR("AMF_ArtNoneWord", "none"), TR("AMF_ArtPlainWord", "plain"),
-				TR("AMF_ArtRoundedWord", "rounded"), builtInWord, builtInWord, builtInWord, builtInWord, builtInWord, builtInWord,
-				builtInWord, builtInWord, TR("AMF_ArtNoneWord", "none"), TR("AMF_ArtWindowFrameWord", "window frame"), builtInWord };
-			constexpr const char* kDefaultFrame = "skyrim-knotwork";
+				builtInWord, builtInWord, builtInWord, builtInWord, builtInWord, builtInWord, builtInWord,
+				builtInWord, builtInWord, TR("AMF_ArtNoneWord", "none"), TR("AMF_ArtWindowFrameWord", "window frame"), builtInWord,
+				builtInWord, builtInWord, builtInWord };
 			// the page's groups, in the order a player thinks of them
 			struct Group { const char* title; std::vector<ArtKind> kinds; };
 			const Group groups[] = {
 				{ TR("AMF_ArtGroupWindow", "Window"), { ArtKind::kFrame, ArtKind::kBackground, ArtKind::kPopup, ArtKind::kHighlight } },
 				{ TR("AMF_ArtGroupControls", "Controls"), { ArtKind::kBox, ArtKind::kButton, ArtKind::kTickBox, ArtKind::kToggle,
-					ArtKind::kSlider, ArtKind::kScrollbar, ArtKind::kTab, ArtKind::kArrow } },
+					ArtKind::kKnob, ArtKind::kSlider, ArtKind::kSliderTrack, ArtKind::kScrollbar, ArtKind::kScrollTrack, ArtKind::kTab, ArtKind::kArrow } },
 				{ TR("AMF_ArtGroupLines", "Lines and pointer"), { ArtKind::kSection, ArtKind::kCursor } },
 			};
 			const float thumb = ImGui::GetFrameHeight() * 1.6f;
@@ -1329,19 +1333,26 @@ namespace renderer
 					const std::string own = skin::ThemeArt(kind);
 					auto found = values.themeArt.find(active.id);
 					const std::string pick = found != values.themeArt.end() ? found->second[k] : std::string();
-					// entry 0: the theme's own (named), 1: the kind's default / no art, then every part
+					// entry 0: the theme's own (named); then the no-art entry where it is a real choice - Background's Plain, or a
+					// pick of "none" kept from before - and every part. (2.1.6, the owner: "each theme should basically be its own
+					// built-in" - a separate Built-in entry beside "Theme's own (built-in)" said the same thing twice.)
 					std::vector<std::string> labels;
-					labels.push_back(std::format("{} ({})", TR("AMF_ArtThemeOwn", "Theme's own"), own.empty() ? std::string(noArtWord[k]) : ArtLabel(own)));
-					labels.push_back(noArtLabel[k]);
+					// a theme with no part of this kind draws its own built-in shape: say whose (2.1.6, the owner: "each theme should
+					// basically be its own built-in") - the window kinds keep their words (none, plain, window frame)
+					const bool windowKind = kind == ArtKind::kFrame || kind == ArtKind::kBackground || kind == ArtKind::kPopup ||
+					                        kind == ArtKind::kHighlight;
+					const std::string ownWord = !own.empty() ? ArtLabel(own) : windowKind ? std::string(noArtWord[k]) : active.name;
+					labels.push_back(std::format("{} ({})", TR("AMF_ArtThemeOwn", "Theme's own"), ownWord));
+					const bool offerNone = kind == ArtKind::kBackground || pick == skin::kArtNone;
+					const int first = offerNone ? 2 : 1;
+					if (offerNone) { labels.push_back(noArtLabel[k]); }
 					int current = 0;
 					for (std::size_t i = 0; i < parts.size(); ++i)
 					{
-						labels.push_back(kind == ArtKind::kFrame && parts[i] == kDefaultFrame
-						                     ? std::format("{} ({})", ArtLabel(parts[i]), TR("AMF_ArtDefaultWord", "default"))
-						                     : ArtLabel(parts[i]));
-						if (pick == parts[i]) { current = static_cast<int>(i) + 2; }
+						labels.push_back(ArtLabel(parts[i]));
+						if (pick == parts[i]) { current = static_cast<int>(i) + first; }
 					}
-					if (pick == skin::kArtNone) { current = 1; }
+					if (offerNone && pick == skin::kArtNone) { current = 1; }
 					std::vector<const char*> cLabels;
 					for (const auto& l : labels) { cLabels.push_back(l.c_str()); }
 
@@ -1355,7 +1366,8 @@ namespace renderer
 					if (theme::ComboTight("##pick", &current, cLabels.data(), static_cast<int>(cLabels.size())))
 					{
 						auto& slot = values.themeArt[active.id][k];
-						slot = current == 0 ? std::string() : current == 1 ? std::string(skin::kArtNone) : parts[static_cast<std::size_t>(current - 2)];
+						slot = current == 0 ? std::string() : (offerNone && current == 1) ? std::string(skin::kArtNone)
+						                                                                 : parts[static_cast<std::size_t>(current - first)];
 						logger::info("settings page: art {} for theme {} -> \"{}\"", skin::kArtKeys[k] + 1, active.id, slot.empty() ? "theme's own" : slot);
 						changed = true;
 					}
@@ -1372,7 +1384,8 @@ namespace renderer
 						ImGui::Dummy(ImVec2(thumb * 2.0f, thumb));
 						ImDrawList* dl = ImGui::GetWindowDrawList();
 						const bool plate = kind == ArtKind::kBox || kind == ArtKind::kButton || kind == ArtKind::kTickBox ||
-						                   kind == ArtKind::kSlider || kind == ArtKind::kScrollbar || kind == ArtKind::kTab;
+						                   kind == ArtKind::kSlider || kind == ArtKind::kScrollbar || kind == ArtKind::kTab ||
+						                   kind == ArtKind::kSliderTrack || kind == ArtKind::kScrollTrack;
 						const bool ink = kind == ArtKind::kSection || kind == ArtKind::kArrow;
 						const std::uint32_t artTint = theme::RoleColor(theme::kRoleArt);
 						const ImU32 tint = plate ? ImGui::GetColorU32(ImGuiCol_Button) : ink ? ImGui::GetColorU32(ImGuiCol_Text)
@@ -1390,7 +1403,7 @@ namespace renderer
 					else
 					{
 						ImGui::AlignTextToFramePadding();
-						ImGui::TextDisabled("%s", noArtWord[k]);
+						ImGui::TextDisabled("%s", windowKind ? noArtWord[k] : active.name.c_str());
 					}
 					ImGui::PopID();
 				}
@@ -1544,13 +1557,24 @@ namespace renderer
 				{ "AMF_ColorBackground", "Background", theme::kRoleBackground },
 				{ "AMF_ColorBorder", "Frame lines and borders", theme::kRoleBorder },
 				{ "AMF_ColorArt", "Frame art", theme::kRoleArt },
-				{ "AMF_ColorBoxes", "Boxes and buttons", theme::kRoleBoxes },
+				{ "AMF_ColorBoxesOnly", "Boxes", theme::kRoleBoxes },
+				{ "AMF_ColorButtons", "Buttons", theme::kRoleButtons },
+				{ "AMF_ColorTabs", "Tabs", theme::kRoleTabs },
 				{ "AMF_ColorText", "Text", theme::kRoleText },
 				{ "AMF_ColorTextDim", "Secondary text", theme::kRoleTextDim },
-				{ "AMF_ColorAccent", "Selection and tabs", theme::kRoleAccent },
-				{ "AMF_ColorSlider", "Sliders and tick marks", theme::kRoleSlider },
+				{ "AMF_ColorSelection", "Selection", theme::kRoleAccent },
+				{ "AMF_ColorSliderGrabs", "Slider grabs", theme::kRoleSlider },
+				{ "AMF_ColorSliderTrack", "Slider tracks", theme::kRoleSliderTrack },
+				{ "AMF_ColorTickMark", "Tick marks", theme::kRoleTickMark },
+				{ "AMF_ColorScrollbar", "Scroll bar", theme::kRoleScrollbar },
+				{ "AMF_ColorScrollTrack", "Scroll bar track", theme::kRoleScrollTrack },
+				{ "AMF_ColorSection", "Section lines", theme::kRoleSection },
+				{ "AMF_ColorArrows", "Arrows", theme::kRoleArrows },
 				{ "AMF_ColorSwitchOn", "Switch on", theme::kRoleSwitchOn },
 				{ "AMF_ColorSwitchOff", "Switch off", theme::kRoleSwitchOff },
+				{ "AMF_ColorKnob", "Switch knob", theme::kRoleKnob },
+				{ "AMF_ColorPopups", "Popups and lists (art)", theme::kRolePopups },
+				{ "AMF_ColorPointer", "Mouse pointer (art)", theme::kRolePointer },
 				{ "AMF_ColorHeading", "Section headings", theme::kRoleHeading },
 				{ "AMF_ColorHelp", "Help text", theme::kRoleHelp },
 				{ "AMF_ColorHover", "Hover highlight", theme::kRoleHover } };
@@ -2007,8 +2031,15 @@ namespace renderer
 				// sections"): where the menus come from, which ones, what is remembered, and how converted pages are spaced.
 				{
 					static int s_mcmSub = 0;
-					SubTabs sub("##mcmsub", 5, s_mcmSub);
-					if (sub.Tab(TR("AMF_SubMcmSources", "Menus")))
+					// 2.1.6 (the owner, 2026-10-08: "I just want the tabs that apply to MCM menus to be within a tab called MCM"):
+					// one tab per menu system - MCM | FLICK | Prisma - and Spacing, which covers every converted page.
+					SubTabs sub("##mcmsub", 4, s_mcmSub);
+					if (sub.Tab(TR("AMF_SubMcm", "MCM")))
+					{
+					static int s_mcmInner = 0;
+					{
+					SubTabs inner("##mcminner", 3, s_mcmInner, false);
+					if (inner.Tab(TR("AMF_SubMcmSources", "Menus")))
 					{
 					// The MCM loader's switches (the owner, 2026-10-04): MCM Helper menus, SkyUI script menus, SkyUI's list.
 					if (widgets::Toggle(TR("AMF_McmLoad", "MCM Helper menus here"), &values.loadMcmHelperConfigs))
@@ -2047,7 +2078,7 @@ namespace renderer
 					if (!anyMcm) { ImGui::EndDisabled(); }
 						ImGui::EndTabItem();
 					}
-					if (sub.Tab(TR("AMF_SubMcmChoose", "Choose menus")))
+					if (inner.Tab(TR("AMF_SubMcmChoose", "Choose menus")))
 					{
 						if (!anyMcm) { ImGui::TextDisabled("%s", TR("AMF_McmNoneOn", "Switch on MCM Helper menus or SkyUI script menus on the Menus tab first.")); }
 					// Which MCM menus come into this menu (xLenax, 2026-10-04: "an option to choose which MCMs I'd like to import
@@ -2130,7 +2161,7 @@ namespace renderer
 					}
 						ImGui::EndTabItem();
 					}
-					if (sub.Tab(TR("AMF_McmMemTitle", "Remembered settings")))
+					if (inner.Tab(TR("AMF_McmMemTitle", "Remembered settings")))
 					{
 						if (!anyMcm) { ImGui::TextDisabled("%s", TR("AMF_McmNoneOn", "Switch on MCM Helper menus or SkyUI script menus on the Menus tab first.")); }
 					if (anyMcm)
@@ -2291,31 +2322,8 @@ namespace renderer
 					}
 						ImGui::EndTabItem();
 					}
-					if (sub.Tab(TR("AMF_SubMcmSpacing", "Spacing")))
-					{
-					// SPACING OF CONVERTED PAGES (2.1.5, the owner, 2026-10-07: a player "didn't like the spacing of the generated menus
-					// for some of them like Atlas map markers which are very close together"). Their colours are framework-wide, on
-					// Appearance > Colours (the owner: "some of these features may be redundant ... if we just move them over").
-					{
-						ImGui::TextWrapped("%s", TR("AMF_McmLookHelp", "The room between the columns and rows of the pages built from MCM "
-										   "menus. Their colours are on Appearance > Colours."));
-						ImGui::Spacing();
-						ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
-						precise::SliderInt(TR("AMF_McmColumnGap", "Gap between columns"), &values.mcmColumnGap, 0, 200, "%d%%");
-						if (ImGui::IsItemDeactivatedAfterEdit())
-						{
-							logger::info("settings page: converted pages' column gap -> {}%", values.mcmColumnGap);
-							settings::Save();
-						}
-						ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
-						precise::SliderInt(TR("AMF_McmRowSpacing", "Space between rows"), &values.mcmRowSpacing, 0, 100, "%d%%");
-						if (ImGui::IsItemDeactivatedAfterEdit())
-						{
-							logger::info("settings page: converted pages' row spacing -> {}%", values.mcmRowSpacing);
-							settings::Save();
-						}
 					}
-						ImGui::EndTabItem();
+					ImGui::EndTabItem();
 					}
 					// 2.1.6: FLICK - the mods written for FLICK whose pages AMF draws (FlickHost.h)
 					if (sub.Tab(TR("AMF_SubFlick", "FLICK")))
@@ -2479,6 +2487,32 @@ namespace renderer
 						ImGui::Spacing();
 						ImGui::TextDisabled("%s", TR("AMF_PrismaPmcm", "PMCM menus (the other Prisma settings system) are web pages of their own and "
 							"stay in PMCM."));
+						ImGui::EndTabItem();
+					}
+					if (sub.Tab(TR("AMF_SubMcmSpacing", "Spacing")))
+					{
+					// SPACING OF CONVERTED PAGES (2.1.5, the owner, 2026-10-07: a player "didn't like the spacing of the generated menus
+					// for some of them like Atlas map markers which are very close together"). Their colours are framework-wide, on
+					// Appearance > Colours (the owner: "some of these features may be redundant ... if we just move them over").
+					{
+						ImGui::TextWrapped("%s", TR("AMF_McmLookHelp", "The room between the columns and rows of the pages built from MCM "
+										   "menus. Their colours are on Appearance > Colours."));
+						ImGui::Spacing();
+						ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
+						precise::SliderInt(TR("AMF_McmColumnGap", "Gap between columns"), &values.mcmColumnGap, 0, 200, "%d%%");
+						if (ImGui::IsItemDeactivatedAfterEdit())
+						{
+							logger::info("settings page: converted pages' column gap -> {}%", values.mcmColumnGap);
+							settings::Save();
+						}
+						ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
+						precise::SliderInt(TR("AMF_McmRowSpacing", "Space between rows"), &values.mcmRowSpacing, 0, 100, "%d%%");
+						if (ImGui::IsItemDeactivatedAfterEdit())
+						{
+							logger::info("settings page: converted pages' row spacing -> {}%", values.mcmRowSpacing);
+							settings::Save();
+						}
+					}
 						ImGui::EndTabItem();
 					}
 				}
@@ -3552,6 +3586,13 @@ namespace renderer
 				// what the controller spec asks for.
 				if (g_focusPane == 1) { ImGui::SetNextWindowFocus(); g_focusPane = 0; g_frameWindowFocus = ImGui::GetFrameCount(); }
 				ImGui::BeginChild("##side", ImVec2(leftWidth, 0.0f), true);
+				// 2.1.6 (the owner: the background art "only changes the top row when it should apply to all of the background"):
+				// the panes paint their own colour over the window's, so the art is drawn in each pane too, over that colour
+				if (skin::HasBackground())
+				{
+					const ImVec2 pp = ImGui::GetWindowPos(), ps = ImGui::GetWindowSize();
+					DrawSkinBackground(ImGui::GetWindowDrawList(), pp, ImVec2(pp.x + ps.x, pp.y + ps.y));
+				}
 				auto sideItem = [&](const char* label, const char* id) {
 					const bool isOpen = (sel == id);
 					if (isOpen && navToSelected)
@@ -3591,13 +3632,17 @@ namespace renderer
 					};
 					ImGui::SameLine();
 					if (ImGui::Checkbox("##alphabetical", &alphabetical)) { apply(); }
+					NoteHoverFrame();   // 2.1.6: the mouse gets the frame the controller gets (the owner, 2026-10-08)
 					if (ImGui::IsItemHovered()) { ImGui::SetTooltip("%s", TR("AMF_SortAlphaTip", "Sort the list alphabetically. Off: the order you arranged by hand.")); }
 					ImGui::SameLine();
 					ImGui::BeginDisabled(!alphabetical);
 					// "###sortdir": the label flips A-Z / Z-A, and a label-made ID would make every press a new item - the next A did
 					// nothing until the highlight left and came back (the owner, 2026-10-07, on the Filter +/- buttons; same cause)
 					const std::string sortDirLabel = std::string(s_ascending ? TR("AMF_SortAsc", "A-Z") : TR("AMF_SortDesc", "Z-A")) + "###sortdir";
+					ImGui::BeginGroup();   // the switch and its label as one item, for the hover frame
 					if (widgets::Toggle(sortDirLabel.c_str(), &s_ascending)) { apply(); }
+					ImGui::EndGroup();
+					NoteHoverFrame();   // 2.1.6: the mouse gets the frame the controller gets (the owner, 2026-10-08)
 					ImGui::EndDisabled();
 					if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) { ImGui::SetTooltip("%s", TR("AMF_SortDirTip", "On: A to Z. Off: Z to A.")); }
 					// FOLD ALL, next to A-Z with Sort kept at the far right (2.1.5, the owner, 2026-10-07: "next to the sort button ... a collapse and uncollapse toggle. When
@@ -3609,6 +3654,7 @@ namespace renderer
 						const auto separators = personalization::Separators();
 						ImGui::SameLine();
 						ImGui::BeginDisabled(separators.empty());
+						ImGui::BeginGroup();
 						if (widgets::Toggle(TR("AMF_FoldAll", "Fold"), &foldValues.foldAllSeparators))
 						{
 							int changed = 0;
@@ -3628,6 +3674,8 @@ namespace renderer
 								separators.size(), ImGui::GetFrameCount(), src == ImGuiInputSource_Mouse ? "mouse" : src == ImGuiInputSource_Gamepad ? "gamepad" :
 								src == ImGuiInputSource_Keyboard ? "keyboard" : "other", GImGui ? GImGui->NavId : 0u);
 						}
+						ImGui::EndGroup();
+						NoteHoverFrame();   // 2.1.6: the mouse gets the frame the controller gets (the owner, 2026-10-08)
 						ImGui::EndDisabled();
 						if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
 						{
@@ -3647,6 +3695,7 @@ namespace renderer
 						const std::string filterLabel = std::string(TR("AMF_FilterButton", "Filter")) +
 														(activeWords > 0 ? " (" + std::to_string(activeWords) + ")" : std::string()) + "###listfilterbtn";
 						if (ImGui::SmallButton(filterLabel.c_str())) { ImGui::OpenPopup("##listfilter"); }
+						NoteHoverFrame();   // 2.1.6: the mouse gets the frame the controller gets (the owner, 2026-10-08)
 						if (filtering) { ImGui::PopStyleColor(); }
 						if (ImGui::IsItemHovered()) { ImGui::SetTooltip("%s", TR("AMF_FilterTip", "Words to show only, or to hide, in the list - kept between games.")); }
 						if (ImGui::BeginPopup("##listfilter"))
@@ -3733,7 +3782,9 @@ namespace renderer
 					if (sortValues.loadMcmHelperConfigs || sortValues.loadSkyUIScriptMenus)
 					{
 						ImGui::SameLine();
-						if (ImGui::SmallButton(TR("AMF_SortButton", "Sort")))
+						const bool sortPressed = ImGui::SmallButton(TR("AMF_SortButton", "Sort"));
+						NoteHoverFrame();   // 2.1.6: the mouse gets the frame the controller gets (the owner, 2026-10-08)
+						if (sortPressed)
 						{
 							const auto r = mcmloader::SortIntoCategories(false);
 							g_mcmSortStatus = FormatSortStatus(r);
@@ -3760,6 +3811,7 @@ namespace renderer
 				// notes itself, or the on-screen keyboard works on every mod's box except ours (the owner,
 				// 2026-09-18: "the keyboard appears while in item explorer but not when using amfs own search bar").
 				keyboard::NoteTextField(ImGui::GetItemID());
+				NoteHoverFrame();   // 2.1.6: the mouse gets the frame the controller gets (the owner, 2026-10-08)
 				g_frameSearchDrawn = ImGui::GetFrameCount();
 				// Mirrored for the driving tool (report 2026-09-12: the box stops taking input after the
 				// text is erased). Rect so the REAL box can be clicked; active/text/key state so the
@@ -4143,6 +4195,13 @@ namespace renderer
 				const bool helpBarOn = helpbar::Active();
 				const float helpBarGap = knot ? kKnotOutset * 4.0f : ImGui::GetStyle().ItemSpacing.y;
 				ImGui::BeginChild("##content", ImVec2(0.0f, helpBarOn ? -(helpbar::Height() + helpBarGap) : 0.0f), true);
+				// 2.1.6 (the owner: the background art "only changes the top row when it should apply to all of the background"):
+				// the panes paint their own colour over the window's, so the art is drawn in each pane too, over that colour
+				if (skin::HasBackground())
+				{
+					const ImVec2 pp = ImGui::GetWindowPos(), ps = ImGui::GetWindowSize();
+					DrawSkinBackground(ImGui::GetWindowDrawList(), pp, ImVec2(pp.x + ps.x, pp.y + ps.y));
+				}
 				// Re-measured every frame. A pane with no tab bar leaves these at zero, so left
 				// falls straight back to the mod list exactly as it always did.
 				g_prevTabIndex = g_tabIndex;   // 2.1.5: where Y sends the highlight

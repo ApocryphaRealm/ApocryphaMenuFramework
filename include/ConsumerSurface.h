@@ -92,7 +92,9 @@ namespace consumer
 
 	// ---- textures ---------------------------------------------------------------------------
 	// Cached by path: a consumer calling LoadTexture every frame (they do) must not re-decode.
-	void* LoadTexture(const char* a_path, ImVec2* a_outSize);
+	// a_mips (2.1.6): build mipmaps too - the art library's parts are drawn at many sizes, so a big texture drawn small stays
+	// smooth instead of aliasing. Consumers' own textures load as before.
+	void* LoadTexture(const char* a_path, ImVec2* a_outSize, bool a_mips = false);
 	void DisposeTexture(const char* a_path);
 
 	// Handed the game's device by the renderer at D3D init; textures cannot be created before it.

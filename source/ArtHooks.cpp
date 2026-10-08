@@ -36,7 +36,7 @@ namespace arthooks
 		// Nine-slice: corners at a_dcs on screen, edges stretched (or repeated, a_tile), centre stretched - for a plate
 		// the centre is the plate itself, so unlike the window frame it is drawn.
 		void NineSlice(ImDrawList* a_dl, const skin::ArtImage& a_img, float a_cs, float a_dcs, const ImRect& a_bb, ImU32 a_col,
-					   bool a_centre = true)
+					   bool a_centre = true, bool a_tile = false)
 		{
 			if (!a_img.srv || a_img.w <= 0.0f || a_img.h <= 0.0f || a_cs <= 0.0f || a_dcs <= 0.0f) { return; }
 			const float W = a_img.w, H = a_img.h, cs = a_cs, dcs = a_dcs;
@@ -53,38 +53,139 @@ namespace arthooks
 			slice(x2, y0, x3, y1, u2, 0.0f, 1.0f, v1);
 			slice(x0, y2, x1, y3, 0.0f, v2, u1, 1.0f);
 			slice(x2, y2, x3, y3, u2, v2, 1.0f, 1.0f);
-			slice(x1, y0, x2, y1, u1, 0.0f, u2, v1);
-			slice(x1, y2, x2, y3, u1, v2, u2, 1.0f);
-			slice(x0, y1, x1, y2, 0.0f, v1, u1, v2);
-			slice(x2, y1, x3, y2, u2, v1, 1.0f, v2);
+			if (!a_tile)
+			{
+				slice(x1, y0, x2, y1, u1, 0.0f, u2, v1);
+				slice(x1, y2, x2, y3, u1, v2, u2, 1.0f);
+				slice(x0, y1, x1, y2, 0.0f, v1, u1, v2);
+				slice(x2, y1, x3, y2, u2, v1, 1.0f, v2);
+			}
+			else
+			{
+				// 2.1.6: bTileEdges on a part - the sides repeat at the art's own scale instead of stretching (a rope's twist, a
+				// stitch); the last repeat is cut to fit
+				const float k = dcs / cs;
+				const float stepX = std::max(1.0f, (W - 2.0f * cs) * k), stepY = std::max(1.0f, (H - 2.0f * cs) * k);
+				for (float x = x1; x < x2 - 0.5f; x += stepX)
+				{
+					const float e = std::min(x + stepX, x2);
+					const float ue = u1 + (u2 - u1) * ((e - x) / stepX);
+					slice(x, y0, e, y1, u1, 0.0f, ue, v1);
+					slice(x, y2, e, y3, u1, v2, ue, 1.0f);
+				}
+				for (float y = y1; y < y2 - 0.5f; y += stepY)
+				{
+					const float e = std::min(y + stepY, y2);
+					const float ve = v1 + (v2 - v1) * ((e - y) / stepY);
+					slice(x0, y, x1, e, 0.0f, v1, u1, ve);
+					slice(x2, y, x3, e, u2, v1, 1.0f, ve);
+				}
+			}
 			if (a_centre) { slice(x1, y1, x2, y2, u1, v1, u2, v2); }
 		}
 
 		// A plate (box, button, tick box, slider grab, scroll grab, tab): the shape tinted with the colour the control has
 		// right now - so the theme's colours, the player's Colours picks and the hover / held states all still show - and
 		// its edge layer, when it has one, in the theme's line colour.
+		// 2.1.6 (the owner: the Oblivion slider and scroll grabs "should just be a single line of the frame art with its ending
+		// circles art at either end of it"): a cap the art's width tall at each end of the long side, the middle between them.
+		void ThreeSlice(ImDrawList* a_dl, const skin::ArtImage& a_img, const ImRect& a_bb, ImU32 a_col, bool a_tile)
+		{
+			if (!a_img.srv || a_img.w <= 0.0f || a_img.h <= a_img.w) { return; }
+			const auto tex = reinterpret_cast<ImTextureID>(a_img.srv);
+			const bool vertical = a_bb.GetHeight() >= a_bb.GetWidth();
+			const float across = vertical ? a_bb.GetWidth() : a_bb.GetHeight();
+			const float along = vertical ? a_bb.GetHeight() : a_bb.GetWidth();
+			const float cap = std::min(across, along * 0.5f);
+			const float v1 = a_img.w / a_img.h, v2 = 1.0f - v1;   // the caps are the art's width tall
+			// the art is drawn standing up; a horizontal grab lies it on its side
+			auto quad = [&](float s0, float s1, float t0, float t1) {
+				if (s1 - s0 <= 0.0f) { return; }
+				if (vertical)
+				{
+					a_dl->AddImage(tex, ImVec2(a_bb.Min.x, a_bb.Min.y + s0), ImVec2(a_bb.Max.x, a_bb.Min.y + s1), ImVec2(0.0f, t0), ImVec2(1.0f, t1), a_col);
+				}
+				else
+				{
+					const ImVec2 a(a_bb.Min.x + s0, a_bb.Min.y), b(a_bb.Min.x + s1, a_bb.Min.y), c(a_bb.Min.x + s1, a_bb.Max.y), d(a_bb.Min.x + s0, a_bb.Max.y);
+					a_dl->AddImageQuad(tex, a, b, c, d, ImVec2(1.0f, t0), ImVec2(1.0f, t1), ImVec2(0.0f, t1), ImVec2(0.0f, t0), a_col);
+				}
+			};
+			quad(0.0f, cap, 0.0f, v1);
+			quad(along - cap, along, v2, 1.0f);
+			const float midLen = along - 2.0f * cap;
+			if (midLen <= 0.0f) { return; }
+			if (!a_tile) { quad(cap, along - cap, v1, v2); return; }
+			const float step = std::max(1.0f, (a_img.h - 2.0f * a_img.w) * (across / a_img.w));
+			for (float s = cap; s < along - cap - 0.5f; s += step)
+			{
+				const float e = std::min(s + step, along - cap);
+				quad(s, e, v1, v1 + (v2 - v1) * ((e - s) / step));
+			}
+		}
+
+		// The colour role that recolours a kind's own-colour art when the player picks it.
+		int OwnRole(ArtKind a_kind)
+		{
+			switch (a_kind)
+			{
+			case ArtKind::kBox:         return theme::kRoleBoxes;
+			case ArtKind::kButton:      return theme::kRoleButtons;
+			case ArtKind::kTickBox:     return theme::kRoleBoxes;
+			case ArtKind::kSlider:      return theme::kRoleSlider;
+			case ArtKind::kScrollbar:   return theme::kRoleScrollbar;
+			case ArtKind::kTab:         return theme::kRoleTabs;
+			case ArtKind::kSliderTrack: return theme::kRoleSliderTrack;
+			case ArtKind::kScrollTrack: return theme::kRoleScrollTrack;
+			default:                    return -1;
+			}
+		}
+
 		bool DrawPlate(ImDrawList* a_dl, ArtKind a_kind, const ImRect& a_bb, ImU32 a_col)
 		{
 			const skin::ArtPart* part = skin::Part(a_kind);
 			if (!part || a_bb.GetWidth() < 2.0f || a_bb.GetHeight() < 2.0f) { return false; }
 			const float dcs = ScreenCorner(*part, a_bb);
-			NineSlice(a_dl, part->main, part->corner, dcs, a_bb, a_col);
-			if (part->edge.srv) { NineSlice(a_dl, part->edge, part->corner, dcs, a_bb, ImGui::GetColorU32(ImGuiCol_Border)); }
+			if (!part->threeSlice) { NineSlice(a_dl, part->main, part->corner, dcs, a_bb, a_col); }
+			else { ThreeSlice(a_dl, part->main, a_bb, a_col, false); }
+			if (part->edge.srv)
+			{
+				ImU32 edgeCol = ImGui::GetColorU32(ImGuiCol_Border);
+				if (part->ownColours)
+				{
+					// art in its own colours: as painted (the Frame art tint), or the kind's own colour once picked
+					const int role = OwnRole(a_kind);
+					const std::uint32_t c = role >= 0 && theme::RolePicked(role) ? theme::RoleColor(role) : theme::RoleColor(theme::kRoleArt);
+					edgeCol = c ? static_cast<ImU32>(c) : IM_COL32_WHITE;
+				}
+				if (part->threeSlice) { ThreeSlice(a_dl, part->edge, a_bb, edgeCol, part->tile); }
+				else { NineSlice(a_dl, part->edge, part->corner, dcs, a_bb, edgeCol, true, part->tile); }
+			}
 			return true;
 		}
 
 		// RenderFrame is every widget's field and every button: told apart by the colour ImGui asked for.
+		// 2.1.6 (the owner: Buttons art "doesn't actually seem to apply to ... the filter or sort buttons, or where mods keep
+		// their save, reload ... and restore defaults buttons"): told apart by WHAT the item is first, the colour second. A
+		// theme whose buttons and fields share a colour sent every button to Box, and a mod's button in its own colours
+		// matched neither. The item RenderFrame draws for was just added: text fields, sliders and drags are "inputable".
 		int FrameKind(ImU32 a_col)
 		{
-			for (const ImGuiCol c : { ImGuiCol_FrameBg, ImGuiCol_FrameBgHovered, ImGuiCol_FrameBgActive })
+			for (const ImGuiCol c : { ImGuiCol_Header, ImGuiCol_HeaderHovered, ImGuiCol_HeaderActive })
 			{
-				if (ImGui::GetColorU32(c) == a_col) { return static_cast<int>(ArtKind::kBox); }
+				if (ImGui::GetColorU32(c) == a_col) { return -1; }   // rows and headers keep ImGui's own look
 			}
+			const ImGuiContext& g = *GImGui;
+			if (g.LastItemData.InFlags & ImGuiItemFlags_Inputable) { return static_cast<int>(ArtKind::kBox); }
 			for (const ImGuiCol c : { ImGuiCol_Button, ImGuiCol_ButtonHovered, ImGuiCol_ButtonActive })
 			{
 				if (ImGui::GetColorU32(c) == a_col) { return static_cast<int>(ArtKind::kButton); }
 			}
-			return -1;   // rows (Header*) and anything else keep ImGui's own look
+			for (const ImGuiCol c : { ImGuiCol_FrameBg, ImGuiCol_FrameBgHovered, ImGuiCol_FrameBgActive })
+			{
+				if (ImGui::GetColorU32(c) == a_col) { return static_cast<int>(ArtKind::kBox); }
+			}
+			return static_cast<int>(ArtKind::kButton);   // a mod's button in colours of its own
 		}
 
 		// The section line: a strip drawn as end caps and a stretched middle, centred on the line ImGui would draw, its
@@ -93,15 +194,25 @@ namespace arthooks
 		{
 			const skin::ArtPart* part = skin::Part(ArtKind::kSection);
 			if (!part || a_bb.GetWidth() < 4.0f) { return false; }
-			const float k = (part->drawCorner > 0.0f ? part->drawCorner / std::max(1.0f, part->corner) : 0.5f) * Unit();
+			float k = (part->drawCorner > 0.0f ? part->drawCorner / std::max(1.0f, part->corner) : 0.5f) * Unit();
+			// 2.1.6 (the owner's screenshot: the caps "end up poking into the things above and below them when the rows are too
+			// close together"): never taller than the gap between rows allows
+			const float maxH = std::max(4.0f, ImGui::GetStyle().ItemSpacing.y * 2.0f + a_bb.GetHeight());
+			if (part->main.h * k > maxH) { k = maxH / part->main.h; }
 			const float h = std::max(2.0f, std::round(part->main.h * k));
-			float cap = part->corner * k;
-			cap = std::min(cap, a_bb.GetWidth() * 0.5f);
+			const float cap = part->corner * k;
 			const float cy = std::round((a_bb.Min.y + a_bb.Max.y) * 0.5f);
 			const float y0 = cy - h * 0.5f, y1 = y0 + h;
-			const float x0 = a_bb.Min.x, x3 = a_bb.Max.x, x1 = x0 + cap, x2 = x3 - cap;
+			const float x0 = a_bb.Min.x, x3 = a_bb.Max.x;
 			const float u1 = part->corner / part->main.w, u2 = 1.0f - u1;
 			const auto tex = reinterpret_cast<ImTextureID>(part->main.srv);
+			// a short piece (the bit before a heading's text) is the rail alone - two squeezed caps read as a smudge
+			if (a_bb.GetWidth() < cap * 3.0f)
+			{
+				a_dl->AddImage(tex, ImVec2(x0, y0), ImVec2(x3, y1), ImVec2(u1, 0.0f), ImVec2(u2, 1.0f), a_col);
+				return true;
+			}
+			const float x1 = x0 + cap, x2 = x3 - cap;
 			a_dl->AddImage(tex, ImVec2(x0, y0), ImVec2(x1, y1), ImVec2(0.0f, 0.0f), ImVec2(u1, 1.0f), a_col);
 			if (x2 > x1) { a_dl->AddImage(tex, ImVec2(x1, y0), ImVec2(x2, y1), ImVec2(u1, 0.0f), ImVec2(u2, 1.0f), a_col); }
 			a_dl->AddImage(tex, ImVec2(x2, y0), ImVec2(x3, y1), ImVec2(u2, 0.0f), ImVec2(1.0f, 1.0f), a_col);
@@ -112,7 +223,26 @@ namespace arthooks
 		bool DrawArrow(ImDrawList* a_dl, const ImRect& a_bb, ImU32 a_col, int a_dir)
 		{
 			const skin::ArtPart* part = skin::Part(ArtKind::kArrow);
-			if (!part) { return false; }
+			// 2.1.6: the Arrows colour (Text until picked). Only the text-coloured arrows take it - a disabled row's dim one stays.
+			const bool picked = theme::RolePicked(theme::kRoleArrows) && a_col == ImGui::GetColorU32(ImGuiCol_Text);
+			if (picked) { a_col = static_cast<ImU32>(theme::RoleColor(theme::kRoleArrows)); }
+			if (!part)
+			{
+				if (!picked) { return false; }
+				// the built-in triangle, in the picked colour (ImGui's own RenderArrow, scale 1)
+				const ImVec2 c((a_bb.Min.x + a_bb.Max.x) * 0.5f, (a_bb.Min.y + a_bb.Max.y) * 0.5f);
+				const float r = (a_bb.Max.x - a_bb.Min.x) * 0.5f * 0.40f;
+				ImVec2 a, b, d;
+				switch (a_dir)
+				{
+				case ImGuiDir_Up:    a = ImVec2(0, -0.75f); b = ImVec2(-0.866f, 0.75f); d = ImVec2(0.866f, 0.75f); break;
+				case ImGuiDir_Down:  a = ImVec2(0, 0.75f); b = ImVec2(-0.866f, -0.75f); d = ImVec2(0.866f, -0.75f); break;
+				case ImGuiDir_Left:  a = ImVec2(-0.75f, 0); b = ImVec2(0.75f, 0.866f); d = ImVec2(0.75f, -0.866f); break;
+				default:             a = ImVec2(0.75f, 0); b = ImVec2(-0.75f, -0.866f); d = ImVec2(-0.75f, 0.866f); break;
+				}
+				a_dl->AddTriangleFilled(ImVec2(c.x + a.x * r, c.y + a.y * r), ImVec2(c.x + b.x * r, c.y + b.y * r), ImVec2(c.x + d.x * r, c.y + d.y * r), a_col);
+				return true;
+			}
 			const ImVec2 a = a_bb.Min, b(a_bb.Max.x, a_bb.Min.y), c = a_bb.Max, d(a_bb.Min.x, a_bb.Max.y);
 			// UVs at the four screen corners (top-left, top-right, bottom-right, bottom-left) for each turn
 			ImVec2 uv[4] = { { 0, 0 }, { 1, 0 }, { 1, 1 }, { 0, 1 } };   // right: as drawn
@@ -134,7 +264,7 @@ namespace arthooks
 			if (!part) { return; }
 			const float base = part->drawCorner > 0.0f ? part->drawCorner : part->corner;
 			const float dcs = std::min({ base * Unit() * 0.6f, a_bb.GetWidth() * 0.3f, a_bb.GetHeight() * 0.3f });
-			const std::uint32_t tint = theme::RoleColor(theme::kRoleArt);
+			const std::uint32_t tint = theme::RoleColor(theme::kRolePopups);   // 2.1.6: its own role (Frame art until picked)
 			NineSlice(a_dl, part->main, part->corner, dcs, a_bb, tint ? static_cast<ImU32>(tint) : IM_COL32_WHITE, false);
 		}
 
@@ -160,14 +290,26 @@ namespace arthooks
 				}
 			case ImGuiArtPart_SliderGrab: return a_arg == 0 && DrawPlate(a_dl, ArtKind::kSlider, a_bb, a_col);
 			case ImGuiArtPart_ScrollGrab: return a_arg == ImGuiAxis_Y && DrawPlate(a_dl, ArtKind::kScrollbar, a_bb, a_col);
-			case ImGuiArtPart_ScrollTrack:
+			case ImGuiArtPart_ScrollTrack:   // 2.1.6: its own kind (Scroll bar tracks), in the Scroll bar track colour
+				return a_arg == ImGuiAxis_Y && DrawPlate(a_dl, ArtKind::kScrollTrack, a_bb, a_col);
+			case ImGuiArtPart_SliderTrack:   // 2.1.6: a slider's track, its own kind and colour (the owner)
 				{
-					const skin::ArtPart* part = skin::Part(ArtKind::kScrollbar);
-					if (a_arg != ImGuiAxis_Y || !part || !part->extra.srv) { return false; }
-					const float cs = std::min(part->corner, std::min(part->extra.w, part->extra.h) * 0.5f - 1.0f);
-					const float dcs = ScreenCorner(*part, a_bb);
-					NineSlice(a_dl, part->extra, cs, dcs, a_bb, a_col);
-					if (part->extraEdge.srv) { NineSlice(a_dl, part->extraEdge, cs, dcs, a_bb, ImGui::GetColorU32(ImGuiCol_Border)); }
+					const bool picked = theme::RolePicked(theme::kRoleSliderTrack);
+					if (picked)
+					{
+						// the track's own colour, with ImGui's hover / active shading kept as a lighter step
+						const ImVec4 base = ImGui::ColorConvertU32ToFloat4(static_cast<ImU32>(theme::RoleColor(theme::kRoleSliderTrack)));
+						const float lift = a_col == ImGui::GetColorU32(ImGuiCol_FrameBg) ? 0.0f : 0.08f;
+						a_col = ImGui::ColorConvertFloat4ToU32(ImVec4(std::min(base.x + lift, 1.0f), std::min(base.y + lift, 1.0f), std::min(base.z + lift, 1.0f), base.w));
+					}
+					if (DrawPlate(a_dl, ArtKind::kSliderTrack, a_bb, a_col)) { return true; }
+					if (!picked) { return false; }
+					const ImGuiStyle& st = ImGui::GetStyle();
+					a_dl->AddRectFilled(a_bb.Min, a_bb.Max, a_col, st.FrameRounding);
+					if (st.FrameBorderSize > 0.0f)
+					{
+						a_dl->AddRect(a_bb.Min, a_bb.Max, ImGui::GetColorU32(ImGuiCol_Border), st.FrameRounding, 0, st.FrameBorderSize);
+					}
 					return true;
 				}
 			case ImGuiArtPart_Separator:  return DrawSection(a_dl, a_bb, a_col);
@@ -196,8 +338,10 @@ namespace arthooks
 		const float h = (part->drawCorner > 0.0f ? part->drawCorner : part->main.h * 0.5f) * Unit();
 		const float k = h / part->main.h;
 		const ImVec2 at(io.MousePos.x - part->hotX * k, io.MousePos.y - part->hotY * k);
+		const std::uint32_t tint = theme::RoleColor(theme::kRolePointer);   // 2.1.6: the Mouse pointer colour (white = as drawn)
 		ImGui::GetForegroundDrawList()->AddImage(reinterpret_cast<ImTextureID>(part->main.srv), at,
-												 ImVec2(at.x + part->main.w * k, at.y + h));
+												 ImVec2(at.x + part->main.w * k, at.y + h), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f),
+												 tint ? static_cast<ImU32>(tint) : IM_COL32_WHITE);
 		return true;
 	}
 }

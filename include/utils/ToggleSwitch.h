@@ -55,12 +55,34 @@ namespace widgets
 			drawList->AddImage(reinterpret_cast<ImTextureID>(skin::PlateTexture(skin::Plate::kToggle)),
 							   pos, ImVec2(pos.x + width, pos.y + height),
 							   ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), trackColor);
+			// 2.1.6: the outline over it in its own colours (the Frame art tint), so the green and red stay inside the track
+			if (void* edge = skin::ToggleEdgeTexture())
+			{
+				const std::uint32_t artTint = theme::RoleColor(theme::kRoleArt);
+				drawList->AddImage(reinterpret_cast<ImTextureID>(edge), pos, ImVec2(pos.x + width, pos.y + height),
+								   ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), artTint ? static_cast<ImU32>(artTint) : IM_COL32_WHITE);
+			}
 		}
 		else
 		{
 			drawList->AddRectFilled(pos, ImVec2(pos.x + width, pos.y + height), trackColor, radius);
 		}
-		drawList->AddCircleFilled(ImVec2(knobX, pos.y + radius), radius - 2.0f, IM_COL32(240, 240, 240, 255), 32);
+		// 2.1.6 (the owner, 2026-10-08: the knob "should have a different shape as well ... a separate thing ... match the frame
+		// art ... that piece that's at the corner of each frame"): a Switch knobs part draws in the frame art's colour.
+		if (const skin::ArtPart* knob = skin::Part(skin::ArtKind::kKnob); knob && knob->main.srv)
+		{
+			const std::uint32_t knobTint = theme::RoleColor(theme::kRoleKnob);   // the Switch knob colour (white = as drawn)
+			const float r = radius - 1.0f;
+			drawList->AddImage(reinterpret_cast<ImTextureID>(knob->main.srv), ImVec2(knobX - r, pos.y + radius - r),
+							   ImVec2(knobX + r, pos.y + radius + r), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f),
+							   knobTint ? static_cast<ImU32>(knobTint) : IM_COL32_WHITE);
+		}
+		else
+		{
+			const bool picked = theme::RolePicked(theme::kRoleKnob);
+			drawList->AddCircleFilled(ImVec2(knobX, pos.y + radius), radius - 2.0f,
+									  picked ? static_cast<ImU32>(theme::RoleColor(theme::kRoleKnob)) : IM_COL32(240, 240, 240, 255), 32);
+		}
 
 		ImGui::PopID();
 

@@ -84,7 +84,7 @@ namespace settings
 		// they change the highlight color on the Skyrim theme from yellow to blue, then it should stay that color only in the
 		// Skyrim theme", "each theme can be considered a kind of preset"): theme id -> "#RRGGBB" per role, indexed by
 		// theme::ColorRole; empty = that theme's own colour. [Colors.<theme id>] in the INI, one section per theme changed.
-		std::map<std::string, std::array<std::string, 13>> themeColors;   // 13 = theme::kRoleCount (Settings.cpp checks)
+		std::map<std::string, std::array<std::string, 24>> themeColors;   // 24 = theme::kRoleCount (Settings.cpp checks; 2.1.6 added eleven)
 		// 2.1.6: the player's own art per theme (Appearance > Art) - frame, background, switch, each a part name from
 		// assets/<kind>/; empty = that theme's own, "none" = no art of that kind. [Art.<theme id>] in the INI.
 		std::map<std::string, std::array<std::string, skin::kArtKindCount>> themeArt;   // one per kind (ArtKinds.h)

@@ -76,7 +76,8 @@ ART_FOLDERS = {
     "sFrameArt": "frames", "sBackgroundArt": "backgrounds", "sToggleArt": "toggles", "sBoxArt": "boxes",
     "sButtonArt": "buttons", "sTickBoxArt": "tickboxes", "sSliderArt": "sliders", "sScrollbarArt": "scrollbars",
     "sSectionArt": "sections", "sTabArt": "tabs", "sArrowArt": "arrows", "sPopupArt": "frames",
-    "sHighlightArt": "frames", "sCursorArt": "cursors",
+    "sHighlightArt": "frames", "sCursorArt": "cursors", "sKnobArt": "knobs", "sSliderTrackArt": "slidertracks",
+    "sScrollTrackArt": "scrolltracks",
 }
 
 
