@@ -613,7 +613,9 @@ namespace theme
 			Palette skyrim{ "skyrim", "Skyrim",
 				/*background*/ 0xFF000000, /*frame*/ 0xFFB0B0B0, /*borderThickness*/ 1.0f,
 				/*border*/ 0xFFB0B0B0, /*text*/ 0xFFE9F2F5, /*textDim*/ 0xFF717171,
-				/*accent*/ 0xFF2B91A1, /*knotwork*/ true };
+				/*accent*/ 0xFFE9F2F5, /*knotwork*/ true };
+			// 2.1.6, testing (the owner): the accent - the highlight, and the tick marks and slider grabs that follow it - is the
+			// knotwork's white (#F5F2E9), not the old gold: "Everything that was originally yellow ... should be now white."
 			skyrim.textHeader = 0xFF7AC2D8;
 			skyrim.textHelp = 0xFFCCB89F;
 			// 2.1.6: the knotwork is also a part, assets/frames/skyrim-knotwork.png, so it can be picked for any theme; the copy

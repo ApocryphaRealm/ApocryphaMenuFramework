@@ -1881,7 +1881,7 @@ namespace renderer
 						values.themeId = themes[currentIndex].id;
 						settings::Save();
 					}
-					ImGui::TextWrapped("%s", TR("AMF_ThemeHelp", "\"Skyrim\" is the knotwork look - the Nordic frame with silver and gold "
+					ImGui::TextWrapped("%s", TR("AMF_ThemeHelp", "\"Skyrim\" is the knotwork look - the Nordic frame with silver and white "
 									   "lines. \"Untarnished\" is the framework's original identity: the same "
 									   "layout with clean lines and no frame art."));
 		
@@ -4595,8 +4595,10 @@ namespace renderer
 				{
 					static bool s_lifted = false;   // render thread only
 					const auto waiting = mcmloader::scripts::WaitingFor();
-					// at most 3 s for any one call: a call stuck for some other reason must not leave the world running behind the menu
-					const bool lift = waiting < std::chrono::milliseconds(3000) &&
+					// until the call finishes or the queue's own 15 s watchdog moves on from it (2.1.6, testing: the old 3 s cap paused
+					// the game again under a slow menu's OpenConfig - C.O.I.N., I.C.O.W. - and a paused game runs no scripts, so the
+					// call could only sit out the rest of the 15 s; the cap guaranteed the stall it was meant to bound)
+					const bool lift = waiting < std::chrono::milliseconds(15000) &&
 						(waiting >= std::chrono::milliseconds(120) || (s_lifted && waiting.count() > 0));
 					if (lift != s_lifted)
 					{

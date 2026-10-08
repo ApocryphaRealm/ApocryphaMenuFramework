@@ -603,6 +603,14 @@ namespace mcmloader::scripts
 			return g_mods[a_mod]->script;
 		}
 
+		// 2.1.6: the menu a queued call belongs to, for the log - "OpenConfig has not finished" named no mod (testing)
+		std::string LabelOf(int a_mod)
+		{
+			std::scoped_lock lock(g_mutex);
+			if (a_mod < 0 || a_mod >= static_cast<int>(g_mods.size())) { return {}; }
+			return " (" + g_mods[a_mod]->modName + ")";
+		}
+
 		// ------------------------------------------------------------------------------- the ops SkyUI's manager makes
 
 		void PrefetchSliders(int a_mod);
@@ -658,7 +666,7 @@ namespace mcmloader::scripts
 
 		void QueueOpen(int a_mod)
 		{
-			Enqueue({ "", "OpenConfig", [a_mod](std::function<void()> a_done) {
+			Enqueue({ "", "OpenConfig" + LabelOf(a_mod), [a_mod](std::function<void()> a_done) {
 				const auto config = ScriptOf(a_mod);
 				if (!config || !Call(config, "OpenConfig", Args(), [a_done](const RE::BSScript::Variable&) { a_done(); })) { a_done(); }
 			} });
@@ -676,7 +684,7 @@ namespace mcmloader::scripts
 		void QueueClose(int a_mod)
 		{
 			ClearQueue();  // whatever was waiting belonged to the config being closed
-			Enqueue({ "", "CloseConfig", [a_mod](std::function<void()> a_done) {
+			Enqueue({ "", "CloseConfig" + LabelOf(a_mod), [a_mod](std::function<void()> a_done) {
 				const auto config = ScriptOf(a_mod);
 				if (!config || !Call(config, "CloseConfig", Args(), [a_done](const RE::BSScript::Variable&) { a_done(); })) { a_done(); }
 			} });

@@ -35,8 +35,8 @@ What can be selected has no frame of its own (2.1.6, testing - the owner: "the t
 over ... when selected and hovered over they have a frame that goes around them. They don't need a frame of their own"):
 boxes, buttons, tick boxes, tabs, switches and slider tracks are the theme's SHAPE only, no -edge layer; the theme's
 hover / selection frame goes round them. Scroll bars and their tracks, which are never selected, keep their framed art.
-A slider's track alone keeps a single hairline in the theme's line colour, as minimal as Untarnished's, so a slider's
-length shows on the page.
+A slider's track and a tab keep a single hairline in the theme's line colour, as minimal as Untarnished's, so a
+slider's length and a tab's edges show on the page.
 
 Original art drawn from shapes; no game or mod files. Run from the repo root:  python tools/make-control-art.py
 """
@@ -644,7 +644,14 @@ def main():
         save(to_rgba(outline(track_mask, 1.2), 128, 32), "slidertracks", t + "-edge")
         ini("slidertracks", t, ["uCorner=%d" % (10 * K), "uDrawCorner=5"], n)
 
-        save_shape("tabs", t, shape_only(t, 96, 48, 16, top_only=True))
+        # tabs keep the same single hairline as the slider tracks, open along the bottom (testing, the owner: "all the
+        # tabs also have a simple, minimal outline as well, like the slider boxes do")
+        tab_mask = shape_mask("skyrim" if t == "oblivion" else t, 96, 48, 16, top_only=True)
+        tab_line = outline(tab_mask, 1.2)
+        open_bottom = Image.new("L", tab_mask.size, 255)
+        ImageDraw.Draw(open_bottom).rectangle([0, tab_mask.size[1] - S(3), tab_mask.size[0], tab_mask.size[1]], fill=0)
+        save(shape_only(t, 96, 48, 16, top_only=True), "tabs", t)
+        save(to_rgba(ImageChops.multiply(tab_line, open_bottom), 96, 48), "tabs", t + "-edge")
         ini("tabs", t, ["uCorner=%d" % (16 * K), "uDrawCorner=8"], n)
 
         save(section(t), "sections", t)

@@ -95,14 +95,18 @@ line under a section header ... the on-screen keyboard ... and anything else tha
   built-in knob.
 
 ### Changed
+- **The Skyrim theme's accent is white** (testing, the owner: "Everything that was originally yellow ... should be now
+  white"): the highlight, and the tick marks and slider grabs that follow it, are the knotwork's white (#F5F2E9)
+  instead of the old gold; its description on Appearance > Theme and text says so, in all eleven languages.
 - **What you can select has no frame of its own** (testing, the owner: "take the frame art off of the search box and
   the buttons ... so that the frame accentuates the plain appearance", then as the rule: "the things that can be
   selected and hovered over ... when selected and hovered over they have a frame that goes around them. They don't
   need a frame of their own"). In every art set, boxes (the search box, dropdowns), buttons, tick boxes, tabs,
   switches and slider tracks are the set's shape only - the hover / selection frame goes round them. Scroll bars and
-  their tracks, which are never selected, keep their framed art. A slider's track alone keeps a single hairline in the
+  their tracks, which are never selected, keep their framed art. Slider tracks and tabs keep a single hairline in the
   theme's line colour, as minimal as Untarnished's (the owner: without "even a simple thin frame ... you can't see
-  where the sliders actually are on the page" - in Skyrim the track's fill is the window's own black).
+  where the sliders actually are on the page" - in Skyrim the track's fill is the window's own black - then "all the
+  tabs also have a simple, minimal outline as well"); a tab's is open along the bottom.
 - **The Skyrim theme uses its knotwork set for every kind**, as every other theme uses its namesakes - so its
   "Theme's own (Skyrim)" on Appearance > Art is the Skyrim set. Its switch is square, so it fills the hover frame,
   and its scroll bar is a knotwork one - the twin strand with the frame's corner knot at each end, in a
@@ -143,6 +147,11 @@ line under a section header ... the on-screen keyboard ... and anything else tha
 - tools/make-theme-art.py writes its art into the library; the theme INIs are edited by hand.
 
 ### Fixed
+- **A slow menu's scripts are no longer paused mid-call** (testing: C.O.I.N. and I.C.O.W. pages waiting out the 15 s
+  cut-off). While a converted page's script call runs, the menu lets the game run so the script can; it used to pause
+  again after 3 s, and a paused game runs no scripts, so a slow OpenConfig could only sit out the rest of the 15 s.
+  The game now runs until the call finishes or the cut-off moves on. The cut-off's log line names the mod. (A mod
+  still starting up on a new game - Honed Metal finished its own start about a minute in - answers once it is ready.)
 - **A framed pane's scroll bar sits inside its frame** (testing, the owner: the scroll bar art "isn't visible through
   the frame art. So you can tell that it's moving, but you can't see the art"). The frame round the mod list and the
   page reaches into them, and the scroll bar sat under its band - Oblivion's rope grab over the frame's own rope. The
