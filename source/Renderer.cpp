@@ -1098,28 +1098,19 @@ namespace renderer
 		// (the list then leaves Y alone); the focus request is answered by the main tab bar's open tab as it is submitted.
 		// 2.1.5 - THE LIST FILTER (the owner, 2026-10-07: "a filter button that when you press it next to sort, it will open
 		// up a small context menu where you can type in a word ... whether you want to filter for that item or filter out
-		// that item"). Words split by commas, matched against the names the player reads; "only" shows just the matches
-		// (flat, as the search box does), "out" hides them and keeps the separators. For the session.
-		char g_listFilterEdit[128] = {};   // the popup's text box
-		std::string g_listFilter;          // the words in force ("" = no filter)
-		bool g_listFilterOut = false;      // true: hide the matches; false: show only them
+		// that item", then "persistent and saved within AMF ... the same way that Mod Organizer 2 does it with a little
+		// colored button with a plus minus ... right next to the word"). A saved list of words (settings listFilters), each
+		// with a tri-state button as MO2's filter rows cycle (FilterList::cycleItem at v2.5.2: left click Inactive -> Active
+		// -> Inverted, right click back): off, green + (show only rows with it), red - (hide rows with it). Matched against
+		// the names the player reads. Any + word makes the list flat, as the search does; - alone keeps the separators.
+		char g_listFilterEdit[64] = {};   // the popup's "add a word" box
 
-		std::vector<std::string> ListFilterWords()
+		int NextFilterState(int a_state, int a_dir)   // MO2's cycle: 0 -> +1 -> -1 -> 0 (a_dir 1), the reverse for -1
 		{
-			std::vector<std::string> words;
-			std::string word;
-			for (const char c : g_listFilter + ",")
-			{
-				if (c == ',')
-				{
-					while (!word.empty() && word.front() == ' ') { word.erase(0, 1); }
-					while (!word.empty() && word.back() == ' ') { word.pop_back(); }
-					if (!word.empty()) { words.push_back(word); }
-					word.clear();
-				}
-				else { word += static_cast<char>(std::tolower(static_cast<unsigned char>(c))); }
-			}
-			return words;
+			static constexpr int kOrder[3] = { 0, 1, -1 };
+			int i = 0;
+			while (i < 3 && kOrder[i] != a_state) { ++i; }
+			return kOrder[((i % 3) + a_dir + 3) % 3];
 		}
 		bool g_contentNavLastFrame = false;
 		bool g_focusMainTabs = false;
@@ -3005,51 +2996,92 @@ namespace renderer
 						{
 							ImGui::SetTooltip("%s", TR("AMF_FoldAllTip", "On: every separator folded. Off: every one open. Folding or opening one by hand afterwards leaves this switch as it is."));
 						}
-					// FILTER, just before Sort (Sort stays at the far right): a small popup with a word box and the two ways to use it.
+					// FILTER, just before Sort (Sort stays at the far right): the saved words, each with its +/- button.
 					{
-						const bool filtering = !g_listFilter.empty();
+						auto& filterValues = settings::Get();
+						const bool filtering = std::any_of(filterValues.listFilters.begin(), filterValues.listFilters.end(),
+														   [](const settings::Values::FilterWord& f) { return f.state != 0; });
 						ImGui::SameLine();
 						if (filtering) { ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_SliderGrab)); }
-						if (ImGui::SmallButton(TR("AMF_FilterButton", "Filter")))
-						{
-							std::snprintf(g_listFilterEdit, sizeof(g_listFilterEdit), "%s", g_listFilter.c_str());
-							ImGui::OpenPopup("##listfilter");
-						}
+						if (ImGui::SmallButton(TR("AMF_FilterButton", "Filter"))) { ImGui::OpenPopup("##listfilter"); }
 						if (filtering) { ImGui::PopStyleColor(); }
-						if (ImGui::IsItemHovered())
-						{
-							if (filtering)
-							{
-								ImGui::SetTooltip(g_listFilterOut ? TR("AMF_FilterActiveOut", "Hiding: %s") : TR("AMF_FilterActiveOnly", "Showing only: %s"),
-												  g_listFilter.c_str());
-							}
-							else { ImGui::SetTooltip("%s", TR("AMF_FilterTip", "Show only the menus with a word in their name, or hide them.")); }
-						}
+						if (ImGui::IsItemHovered()) { ImGui::SetTooltip("%s", TR("AMF_FilterTip", "Words to show only, or to hide, in the list - kept between games.")); }
 						if (ImGui::BeginPopup("##listfilter"))
 						{
-							if (ImGui::IsWindowAppearing()) { ImGui::SetKeyboardFocusHere(); }
-							ImGui::SetNextItemWidth(ImGui::GetFontSize() * 14.0f);
-							const bool entered = ImGui::InputTextWithHint("##filterwords", TR("AMF_FilterHint", "A word, or several split by commas"),
+							bool dirty = false;
+							int remove = -1;
+							const float side = ImGui::GetFrameHeight();
+							for (int i = 0; i < static_cast<int>(filterValues.listFilters.size()); ++i)
+							{
+								auto& f = filterValues.listFilters[static_cast<std::size_t>(i)];
+								ImGui::PushID(i);
+								// the coloured state button: green +, red -, plain when off (left click forward, right click back)
+								const ImVec4 green{ 0.30f, 0.69f, 0.31f, 1.0f }, red{ 0.75f, 0.27f, 0.27f, 1.0f };
+								int colours = 0;
+								if (f.state != 0)
+								{
+									const ImVec4 c = f.state > 0 ? green : red;
+									ImGui::PushStyleColor(ImGuiCol_Button, c);
+									ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(c.x + 0.08f, c.y + 0.08f, c.z + 0.08f, 1.0f));
+									ImGui::PushStyleColor(ImGuiCol_ButtonActive, c);
+									ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+									colours = 4;
+								}
+								if (ImGui::Button(f.state > 0 ? "+##state" : f.state < 0 ? "-##state" : " ##state", ImVec2(side, side)))
+								{
+									f.state = NextFilterState(f.state, 1);
+									dirty = true;
+								}
+								if (ImGui::IsItemClicked(ImGuiMouseButton_Right))
+								{
+									f.state = NextFilterState(f.state, -1);
+									dirty = true;
+								}
+								if (colours) { ImGui::PopStyleColor(colours); }
+								if (ImGui::IsItemHovered())
+								{
+									ImGui::SetTooltip("%s", f.state > 0 ? TR("AMF_FilterStateOnly", "+ : only menus with this word")
+															: f.state < 0 ? TR("AMF_FilterStateOut", "- : menus with this word are hidden")
+																		  : TR("AMF_FilterStateOff", "Off: kept, not used"));
+								}
+								ImGui::SameLine();
+								ImGui::TextUnformatted(f.word.c_str());
+								ImGui::SameLine();
+								if (ImGui::SmallButton((std::string(icons::kClear) + "##remove").c_str())) { remove = i; }
+								if (ImGui::IsItemHovered()) { ImGui::SetTooltip("%s", TR("AMF_FilterRemove", "Remove this word")); }
+								ImGui::PopID();
+							}
+							if (remove >= 0)
+							{
+								filterValues.listFilters.erase(filterValues.listFilters.begin() + remove);
+								dirty = true;
+							}
+							if (filterValues.listFilters.empty()) { ImGui::TextDisabled("%s", TR("AMF_FilterNone", "No words yet.")); }
+							ImGui::Separator();
+							ImGui::SetNextItemWidth(ImGui::GetFontSize() * 11.0f);
+							const bool entered = ImGui::InputTextWithHint("##filteradd", TR("AMF_FilterHint", "A word to filter by"),
 																		  g_listFilterEdit, sizeof(g_listFilterEdit), ImGuiInputTextFlags_EnterReturnsTrue);
 							keyboard::NoteTextField(ImGui::GetItemID());
-							const bool only = ImGui::Button(TR("AMF_FilterOnly", "Show only these")) || entered;
 							ImGui::SameLine();
-							const bool out = ImGui::Button(TR("AMF_FilterOut", "Hide these"));
-							ImGui::SameLine();
-							const bool clear = ImGui::Button(TR("AMF_FilterClear", "Clear"));
-							if (only || out)
+							if ((ImGui::Button(TR("AMF_FilterAdd", "Add")) || entered) && g_listFilterEdit[0] != '\0')
 							{
-								g_listFilter = g_listFilterEdit;
-								g_listFilterOut = out;
-								logger::info("side list: filter {} \"{}\"", out ? "out" : "only", g_listFilter);
-								ImGui::CloseCurrentPopup();
-							}
-							else if (clear)
-							{
-								g_listFilter.clear();
+								std::string word = g_listFilterEdit;
+								word.erase(std::remove(word.begin(), word.end(), ';'), word.end());   // ';' splits the saved list
+								const auto lowerOf = [](std::string s) { for (char& c : s) { c = static_cast<char>(std::tolower(static_cast<unsigned char>(c))); } return s; };
+								const bool known = std::any_of(filterValues.listFilters.begin(), filterValues.listFilters.end(),
+															   [&](const settings::Values::FilterWord& f) { return lowerOf(f.word) == lowerOf(word); });
+								if (!word.empty() && !known) { filterValues.listFilters.push_back({ word, 1 }); dirty = true; }
 								g_listFilterEdit[0] = '\0';
-								logger::info("side list: filter cleared");
-								ImGui::CloseCurrentPopup();
+							}
+							if (widgets::Toggle(TR("AMF_FilterMatchAll", "Match every + word"), &filterValues.listFilterMatchAll)) { dirty = true; }
+							if (ImGui::IsItemHovered()) { ImGui::SetTooltip("%s", TR("AMF_FilterMatchAllTip", "On: a menu needs every + word. Off: any one of them.")); }
+							if (dirty)
+							{
+								settings::Save();
+								logger::info("side list: filter words now {} ({} in use, match {})", filterValues.listFilters.size(),
+											 std::count_if(filterValues.listFilters.begin(), filterValues.listFilters.end(),
+														   [](const settings::Values::FilterWord& f) { return f.state != 0; }),
+											 filterValues.listFilterMatchAll ? "all" : "any");
 							}
 							ImGui::EndPopup();
 						}
@@ -3108,13 +3140,22 @@ namespace renderer
 					return a_in;
 				};
 				const std::string needle = lower(s_modFilter);
-				// 2.1.5: the Filter button's words (see g_listFilter): "only" lists the matches flat, as the search does
-				const std::vector<std::string> filterWords = ListFilterWords();
-				const bool filterOnly = !filterWords.empty() && !g_listFilterOut;
-				const bool filterOut = !filterWords.empty() && g_listFilterOut;
-				const auto filterMatch = [&](const std::string& a_name) {
+				// 2.1.5: the Filter button's saved words - + words show only matching rows (all of them or any one), - words hide
+				std::vector<std::string> filterIn, filterOutWords;
+				for (const auto& f : settings::Get().listFilters)
+				{
+					if (f.state > 0) { filterIn.push_back(lower(f.word)); }
+					else if (f.state < 0) { filterOutWords.push_back(lower(f.word)); }
+				}
+				const bool filterMatchAll = settings::Get().listFilterMatchAll;
+				const bool filterOnly = !filterIn.empty();
+				const bool filterOut = !filterOutWords.empty();
+				const auto passesFilter = [&](const std::string& a_name) {
 					const std::string name = lower(a_name);
-					return std::any_of(filterWords.begin(), filterWords.end(), [&](const std::string& w) { return name.find(w) != std::string::npos; });
+					const auto has = [&](const std::string& w) { return name.find(w) != std::string::npos; };
+					if (std::any_of(filterOutWords.begin(), filterOutWords.end(), has)) { return false; }
+					if (filterIn.empty()) { return true; }
+					return filterMatchAll ? std::all_of(filterIn.begin(), filterIn.end(), has) : std::any_of(filterIn.begin(), filterIn.end(), has);
 				};
 				const bool flatList = !needle.empty() || filterOnly;
 
@@ -3169,8 +3210,8 @@ namespace renderer
 						continue;
 					}
 					// 2.1.5: the Filter button - only the matches (flat), or everything but them (separators kept)
-					if (filterOnly && (row.separator || !filterMatch(row.displayName))) { continue; }
-					if (filterOut && !row.separator && filterMatch(row.displayName)) { continue; }
+					if (filterOnly && row.separator) { continue; }
+					if ((filterOnly || filterOut) && !row.separator && !passesFilter(row.displayName)) { continue; }
 					// a folded separator hides its mods (MO2's collapse - the owner, 2026-10-02)
 					if (!flatList && row.hidden) { continue; }
 

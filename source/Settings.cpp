@@ -214,6 +214,20 @@ namespace settings
 				"uColumnGap=" << a_v.mcmColumnGap << "\n"
 				"uRowSpacing=" << a_v.mcmRowSpacing << "\n"
 				"\n";
+			// 2.1.5: the Mods row's Filter words, kept between games (its own section, after the scalar ones)
+			{
+				std::string words;
+				for (const auto& f : a_v.listFilters)
+				{
+					if (f.word.empty()) { continue; }
+					words += (words.empty() ? "" : ";") + std::string(f.state > 0 ? "+" : f.state < 0 ? "-" : "0") + f.word;
+				}
+				file << "[ListFilter]\n"
+						"; The Mods row's Filter words, kept between games: each is +word (show only rows with it), -word (hide rows with\n"
+						"; it) or 0word (kept, not in use), split by ';'. bMatchAll=1: a row needs every + word; 0: any one of them.\n"
+						"sWords=" << words << "\n"
+						"bMatchAll=" << (a_v.listFilterMatchAll ? 1 : 0) << "\n\n";
+			}
 			// 2.1.5: the player's own colours, kept per theme (Appearance > Colours) - one [Colors.<theme id>] section for each
 			// theme changed, a key per role picked (#RRGGBB); a role left out is that theme's own colour.
 			for (const auto& [themeId, picks] : a_v.themeColors)
@@ -629,6 +643,31 @@ namespace settings
 			ReadBool(entries, "Display.bSeeThrough", g_values.seeThrough);
 			ReadBool(entries, "Display.bHelpBar", g_values.helpBar);
 			ReadBool(entries, "Display.bFoldAllSeparators", g_values.foldAllSeparators);
+			ReadBool(entries, "ListFilter.bMatchAll", g_values.listFilterMatchAll);
+			if (const auto lf = entries.find("ListFilter.sWords"); lf != entries.end())
+			{
+				// "+word;-word;0word" - a word without a sign is an include, as typed
+				g_values.listFilters.clear();
+				std::string item;
+				for (const char c : lf->second + ";")
+				{
+					if (c != ';') { item += c; continue; }
+					while (!item.empty() && item.front() == ' ') { item.erase(0, 1); }
+					while (!item.empty() && item.back() == ' ') { item.pop_back(); }
+					if (!item.empty())
+					{
+						Values::FilterWord f;
+						if (item[0] == '+' || item[0] == '-' || item[0] == '0')
+						{
+							f.state = item[0] == '+' ? 1 : item[0] == '-' ? -1 : 0;
+							item.erase(0, 1);
+						}
+						f.word = item;
+						if (!f.word.empty()) { g_values.listFilters.push_back(f); }
+					}
+					item.clear();
+				}
+			}
 			{
 				auto it = entries.find("Display.sFontPath");
 				if (it != entries.end()) { g_values.fontPath = it->second; }

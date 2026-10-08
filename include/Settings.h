@@ -62,6 +62,17 @@ namespace settings
 		bool helpBar = true;          // [Display] bHelpBar
 		// 2.1.5: the Mods row's Fold switch - on folds every separator, off opens them; it acts when switched only.
 		bool foldAllSeparators = false;   // [Display] bFoldAllSeparators
+		// 2.1.5: the Mods row's FILTER WORDS, saved (the owner, 2026-10-07: "I want the filters to be persistent and saved
+		// within AMF ... the same way that Mod Organizer 2 does it with a little colored button with a plus minus ... right
+		// next to the word"). Each word has a state: 0 off, 1 include (green +), -1 exclude (red -). [ListFilter] sWords
+		// ("+word;-word;0word"), bMatchAll (1: a row needs every + word; 0: any one, MO2's OR).
+		struct FilterWord
+		{
+			std::string word;
+			int state = 1;
+		};
+		std::vector<FilterWord> listFilters;
+		bool listFilterMatchAll = false;
 		// THE PLAYER'S OWN COLOURS (2.1.5, the owner, 2026-10-07: "choose what color ... your headers to be blue text or
 		// yellow text ... the subtext or the help text", "tab color and slider color", then "add to the framework's own
 		// appearance page ... changing the different things that make up the framework's art, like its frame, box, sliders,
