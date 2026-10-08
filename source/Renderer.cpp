@@ -99,14 +99,12 @@ namespace renderer
 		// g_pauseHeld says whether this framework is holding one - so a close, a toggle flip or a save/load between
 		// them can never leave the game paused, or take a count some other menu holds.
 		bool g_pauseHeld = false;   // main thread only
-		// 2.1.5 - PAUSES BORROWED FOR A PAGE'S SCRIPTS (the owner, 2026-10-08: opened from the System row, Atlas Map Markers'
-		// pages never loaded - the journal holds its own pause, and a converted page's scripts wait while the game is paused).
-		// While a page's script call waits, every pause count is taken off - our own and the journal's - and given back the
-		// moment the queue is empty. Unsigned arithmetic gives back the right count even if a menu closed in between.
-		std::uint32_t g_pausesBorrowed = 0;   // main thread only
+		// NEVER TAKE ANOTHER MENU'S PAUSE COUNT (2.1.5, tested 2026-10-08): setting numPausesGame to 0 under the open journal, so
+		// a converted page's scripts could run, froze the game on the spot - no frame after it, the owner's cursor gone, the
+		// process killed. Only our own count is ever let go (a_lift).
 
 		// a_wantOwn: our own pause (the setting, our window open on its own - never on top of the journal's, which already
-		// pauses). a_lift: a page's scripts are waiting, so no pause at all for now.
+		// pauses). a_lift: a page's scripts are waiting, so our own pause is let go for now.
 		void SyncGamePause(bool a_wantOwn, bool a_lift)
 		{
 			static bool lastOwn = false, lastLift = false;   // render thread only
@@ -129,12 +127,6 @@ namespace renderer
 					logger::warn("pause: UI singleton not ready - pause {} skipped", a_wantOwn ? "on" : "off");
 					return;
 				}
-				if (!a_lift && g_pausesBorrowed > 0)
-				{
-					ui->numPausesGame += g_pausesBorrowed;
-					logger::info("pause: {} borrowed pause(s) given back after a menu's scripts (pause count now {})", g_pausesBorrowed, ui->numPausesGame);
-					g_pausesBorrowed = 0;
-				}
 				const bool own = a_wantOwn && !a_lift;
 				if (own && !g_pauseHeld)
 				{
@@ -150,12 +142,6 @@ namespace renderer
 					}
 					g_pauseHeld = false;
 					logger::info("pause: released (menu closed, setting off, or a menu's scripts running) - game resumed (pause count now {})", ui->numPausesGame);
-				}
-				if (a_lift && g_pausesBorrowed == 0 && ui->numPausesGame > 0)
-				{
-					g_pausesBorrowed = ui->numPausesGame;
-					ui->numPausesGame = 0;
-					logger::info("pause: {} other pause(s) borrowed (the journal's) while a menu's scripts run", g_pausesBorrowed);
 				}
 			});
 		}

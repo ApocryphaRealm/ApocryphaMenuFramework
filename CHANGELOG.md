@@ -133,10 +133,9 @@ different things", the "$" and underscores in section headings, and the help tex
 - **A converted MCM page stuck on "Loading"** with "Pause the game" on (the owner, 2026-10-08, Atlas Map Markers: the
   first page drew, the others only after closing and opening AMF). The game's script engine can stop while the game is
   paused, so the page's SetPage waited out its 15 s. While a menu's script call has been waiting 0.12 s, the pause now
-  lets go, and holds again once the queue is empty - time moves only while a page loads. Opened from the System row,
-  the journal's own pause is borrowed the same way and given back as it was (the owner, 2026-10-08: no page loaded there),
-  and AMF no longer adds its own pause on top of the journal's. At most 3 s per call, so a call stuck for another reason
-  never leaves the world running behind the menu.
+  lets go, and holds again once the queue is empty - time moves only while a page loads (at most 3 s per call). AMF no
+  longer adds its own pause on top of the journal's when opened from the System row. Taking the journal's own pause away
+  as well froze the game in testing, so it is never touched.
 - **A-Z / Z-A did nothing in a list of separators**: it sorted only the mods above the first separator. It now sorts
   the mods inside every separator (and the loose ones), and never moves a separator (the owner, 2026-10-08). Moving a
   mod while sorted changes your own order underneath, so unticking alphabetical still gives back the order you made.
