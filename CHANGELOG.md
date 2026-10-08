@@ -42,8 +42,19 @@ different things", the "$" and underscores in section headings, and the help tex
   tint over the theme's frame and background pictures), boxes and buttons, text, secondary text, selection and tabs,
   sliders and tick marks, switch on, switch off, section headings, help text. A picker each, a row of twelve preset
   swatches the D-pad walks, Theme to go back, and All back to the theme. Every shade the theme works out (hover washes,
-  separators, the see-through fade) follows the picked colour. [Colors] in the INI; empty = the theme's own, so a theme
-  switch still shows.
+  separators, the see-through fade) follows the picked colour. **Kept per theme** (the owner: "if they change the
+  highlight color on the Skyrim theme from yellow to blue, then it should stay that color only in the Skyrim theme" -
+  "each theme can be considered a kind of preset"): each theme keeps its own changes, saved as they are made, in a
+  [Colors.<theme id>] section of User.ini; All back to the theme clears the active theme's only. Plus a **Hover
+  highlight** colour.
+- **The theme's frame round the highlighted item** (the owner: "the same thing that Skyrim for Witcher 3 does by having
+  frame art on the selected box ... while your mouse hovers over different menu names, it has a frame going around it",
+  "the frame should match the theme frame"): the active theme's own frame art - Skyrim's knotwork, or a theme's
+  frame.png - round the controller / keyboard highlight anywhere in the menu and, fainter, round the menu name under the
+  mouse. A theme's own frame art (Oathvein, Vel'dun, Norden) is the whole frame, scaled to the row; the Skyrim knotwork,
+  whose solid bands covered the row's text when squeezed onto it (the owner's screenshot), is a thin line with its corner
+  ornaments. Untarnished, which has no art, gets a plain line. The blue nav box stays. The Hover highlight colour
+  (Appearance > Colours) sets the hover wash and the hover frame's tint; unset, it follows the selection colour.
 - **Spacing of converted pages** (Settings > MCM menus; a player found Atlas Map Markers' rows "very close together"):
   the gap between the two columns and extra space between rows, precise sliders ([MCM] uColumnGap, uRowSpacing).
 - **Font Awesome icons** on converted pages: key buttons (keyboard), clear (x), reset to default, text fields (pen),

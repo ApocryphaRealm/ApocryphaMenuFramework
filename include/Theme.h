@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -126,15 +127,22 @@ namespace theme
 		kRoleSwitchOff,        // sSwitchOff  - ... and when off
 		kRoleHeading,          // sHeading    - section headings on converted MCM pages
 		kRoleHelp,             // sHelp       - help text and page notes
+		kRoleHover,            // sHover      - the highlight under the mouse: the hover wash on rows and tabs, and the hover
+		                       //               frame's tint (the owner, 2026-10-07)
 		kRoleCount
 	};
 	inline constexpr const char* kColorRoleKeys[kRoleCount] = { "sBackground", "sBorder", "sArt", "sBoxes", "sText", "sTextDim",
-		"sAccent", "sSlider", "sSwitchOn", "sSwitchOff", "sHeading", "sHelp" };
+		"sAccent", "sSlider", "sSwitchOn", "sSwitchOff", "sHeading", "sHelp", "sHover" };
 
 	// The colour a role draws in now (the player's when set, else the theme's), and the theme's own one (what "Theme" on
 	// the settings page puts back). ImU32 (ABGR). Computed by Apply(), so both follow a theme switch.
 	std::uint32_t RoleColor(int a_role);
 	std::uint32_t ThemeRoleColor(int a_role);
+
+	// The player's picks for the ACTIVE theme (settings themeColors[active id]) - each theme keeps its own (2.1.5). The
+	// mutable form creates the theme's entry; RolePicked says whether the player set that role for the active theme.
+	std::array<std::string, kRoleCount>& PlayerColors();
+	bool RolePicked(int a_role);
 
 	// The text-role colours (2.1.5) for ImGui::PushStyleColor - RoleColor(kRoleHeading / kRoleHelp).
 	std::uint32_t HeaderTextColor();

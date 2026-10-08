@@ -213,13 +213,22 @@ namespace settings
 				"; extra space between rows (0-100).\n"
 				"uColumnGap=" << a_v.mcmColumnGap << "\n"
 				"uRowSpacing=" << a_v.mcmRowSpacing << "\n"
-				"\n"
-				"[Colors]\n"
-				"; Your own colours over the theme's (Appearance > Colours), #RRGGBB. Empty = the theme's own colour, so\n"
-				"; switching theme still shows. sArt tints the theme's frame and background art (white = as drawn).\n";
-			for (int r = 0; r < theme::kRoleCount; ++r) { file << theme::kColorRoleKeys[r] << "=" << a_v.colors[r] << "\n"; }
+				"\n";
+			// 2.1.5: the player's own colours, kept per theme (Appearance > Colours) - one [Colors.<theme id>] section for each
+			// theme changed, a key per role picked (#RRGGBB); a role left out is that theme's own colour.
+			for (const auto& [themeId, picks] : a_v.themeColors)
+			{
+				bool any = false;
+				for (const auto& c : picks) { any = any || !c.empty(); }
+				if (!any) { continue; }
+				file << "[Colors." << themeId << "]\n";
+				for (int r = 0; r < theme::kRoleCount; ++r)
+				{
+					if (!picks[r].empty()) { file << theme::kColorRoleKeys[r] << "=" << picks[r] << "\n"; }
+				}
+				file << "\n";
+			}
 			file <<
-				"\n"
 				"[RememberedSettings]\n"
 				"; Remembered MCM settings: AMF remembers MCM settings and sets them again on a new game. A new game forgets what SkyUI menus written in a mod's script, and MCM Helper\n"
 				"; settings kept in a global or a script property, were set to (MCM Helper's own INI settings it\n"
@@ -621,9 +630,20 @@ namespace settings
 				if (it != entries.end()) { g_values.fontPath = it->second; }
 				if (const auto lt = entries.find("Display.sLanguage"); lt != entries.end()) { g_values.language = lt->second; }
 				// 2.1.5: the player's own colours (empty = the theme's)
-				for (int r = 0; r < theme::kRoleCount; ++r)
+				// per theme: "Colors.<theme id>.<key>" (a theme id may itself hold dots, so the key is split off the end)
+				static_assert(std::tuple_size_v<decltype(Values{}.themeColors)::mapped_type> == theme::kRoleCount,
+							  "Values::themeColors must hold one entry per theme::ColorRole");
+				for (const auto& [key, value] : entries)
 				{
-					if (const auto ct = entries.find(std::string("Colors.") + theme::kColorRoleKeys[r]); ct != entries.end()) { g_values.colors[r] = ct->second; }
+					if (key.rfind("Colors.", 0) != 0 || value.empty()) { continue; }
+					const auto dot = key.rfind('.');
+					if (dot <= 7) { continue; }
+					const std::string themeId = key.substr(7, dot - 7);
+					const std::string roleKey = key.substr(dot + 1);
+					for (int r = 0; r < theme::kRoleCount; ++r)
+					{
+						if (roleKey == theme::kColorRoleKeys[r]) { g_values.themeColors[themeId][r] = value; }
+					}
 				}
 			}
 			ReadBool(entries, "Watchdog.bEnabled", g_values.watchdogEnabled);

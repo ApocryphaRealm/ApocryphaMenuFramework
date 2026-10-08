@@ -451,26 +451,32 @@ namespace theme
 			themeRole[kRoleHelp] = active.textHelp ? unpack(active.textHelp)
 				: ImVec4{ d.x + (t.x - d.x) / 3.0f, d.y + (t.y - d.y) / 3.0f, d.z + (t.z - d.z) / 3.0f, 1.0f };
 		}
+		themeRole[kRoleHover] = themeRole[kRoleAccent];   // the hover wash is the selection colour unless picked
 		ImVec4 role[kRoleCount];
 		{
-			const auto& sv = settings::Get();
+			// THIS theme's picks only (each theme keeps its own - the owner: "it should stay that color only in the Skyrim theme")
+			static const std::array<std::string, kRoleCount> kNone{};
+			const auto& all = settings::Get().themeColors;
+			const auto found = all.find(active.id);
+			const auto& mine = found != all.end() ? found->second : kNone;
 			std::string picked;
 			for (int r = 0; r < kRoleCount; ++r)
 			{
 				role[r] = themeRole[r];
 				std::uint32_t abgr = 0;
-				if (!sv.colors[r].empty() && ParseColor(sv.colors[r], abgr))
+				if (!mine[r].empty() && ParseColor(mine[r], abgr))
 				{
 					role[r] = unpack(abgr);
-					picked += std::string(picked.empty() ? "" : ", ") + kColorRoleKeys[r] + "=" + sv.colors[r];
+					picked += std::string(picked.empty() ? "" : ", ") + kColorRoleKeys[r] + "=" + mine[r];
 				}
 			}
+			if (mine[kRoleHover].empty()) { role[kRoleHover] = role[kRoleAccent]; }   // follows a picked selection colour
 			for (int r = 0; r < kRoleCount; ++r)
 			{
 				g_themeRoleU32[r] = ImGui::ColorConvertFloat4ToU32(themeRole[r]);
 				g_roleU32[r] = ImGui::ColorConvertFloat4ToU32(role[r]);
 			}
-			logger::debug("theme colours: {}", picked.empty() ? std::string("all the theme's own") : "the player's " + picked);
+			logger::debug("theme colours ({}): {}", active.id, picked.empty() ? std::string("all the theme's own") : "the player's " + picked);
 		}
 
 		const ImVec4 black = role[kRoleBackground];
@@ -487,6 +493,7 @@ namespace theme
 		const ImVec4 borderSoft = tint(border, 0.28f);                   // hover fills
 		const ImVec4 accentFaint = tint(accent, 0.22f);                  // selected row (gold wash)
 		const ImVec4 accentSoft = tint(accent, 0.42f);                   // hovered/active selection
+		const ImVec4 hoverSoft = tint(role[kRoleHover], 0.42f);          // 2.1.5: the hover wash (the player's Hover highlight)
 
 		ImVec4* c = style.Colors;
 		c[ImGuiCol_WindowBg] = black;
@@ -515,12 +522,12 @@ namespace theme
 
 		// Selection (Selectable, tree, list rows) = the gold accent wash - the Skyrim warmth.
 		c[ImGuiCol_Header] = accentFaint;
-		c[ImGuiCol_HeaderHovered] = accentSoft;
+		c[ImGuiCol_HeaderHovered] = hoverSoft;
 		c[ImGuiCol_HeaderActive] = accentSoft;
 
 		// Tabs: quiet by default, gold when active/selected.
 		c[ImGuiCol_Tab] = boxes;
-		c[ImGuiCol_TabHovered] = accentSoft;
+		c[ImGuiCol_TabHovered] = hoverSoft;
 		c[ImGuiCol_TabActive] = accentFaint;
 		c[ImGuiCol_TabUnfocused] = boxes;
 		c[ImGuiCol_TabUnfocusedActive] = borderFaint;
@@ -604,6 +611,16 @@ namespace theme
 
 	std::uint32_t HeaderTextColor() { return g_headerTextU32; }
 	std::uint32_t HelpTextColor() { return g_helpTextU32; }
+	std::array<std::string, kRoleCount>& PlayerColors() { return settings::Get().themeColors[GetActiveTheme().id]; }
+
+	bool RolePicked(int a_role)
+	{
+		if (a_role < 0 || a_role >= kRoleCount) { return false; }
+		const auto& all = settings::Get().themeColors;
+		const auto found = all.find(GetActiveTheme().id);
+		return found != all.end() && !found->second[a_role].empty();
+	}
+
 	std::uint32_t RoleColor(int a_role) { return a_role >= 0 && a_role < kRoleCount ? g_roleU32[a_role] : 0xFFFFFFFF; }
 	std::uint32_t ThemeRoleColor(int a_role) { return a_role >= 0 && a_role < kRoleCount ? g_themeRoleU32[a_role] : 0xFFFFFFFF; }
 }

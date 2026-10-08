@@ -8,7 +8,9 @@
 // (project rule 16) - the shipped file lives at dist/ApocryphaMenuFramework.ini in this repo.
 // ============================================================================================
 
+#include <array>
 #include <cstdint>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -62,9 +64,11 @@ namespace settings
 		// yellow text ... the subtext or the help text", "tab color and slider color", then "add to the framework's own
 		// appearance page ... changing the different things that make up the framework's art, like its frame, box, sliders,
 		// and other things to different colors" - one place, Appearance > Colours, not a second list on the MCM tab).
-		// [Colors] "#RRGGBB" per role; empty (the default) = the active theme's own colour, so a theme switch still shows.
-		// Indexed by theme::ColorRole.
-		std::string colors[12];
+		// PER THEME (the owner, same evening: "the appearance changes ... specific to the theme that they've selected. So if
+		// they change the highlight color on the Skyrim theme from yellow to blue, then it should stay that color only in the
+		// Skyrim theme", "each theme can be considered a kind of preset"): theme id -> "#RRGGBB" per role, indexed by
+		// theme::ColorRole; empty = that theme's own colour. [Colors.<theme id>] in the INI, one section per theme changed.
+		std::map<std::string, std::array<std::string, 13>> themeColors;   // 13 = theme::kRoleCount (Settings.cpp checks)
 
 		// [Input]
 		std::int32_t toggleKey = 0x3B;   // DirectInput scan code; 0x3B = F1 (framework convention, the author 2026-08-27)

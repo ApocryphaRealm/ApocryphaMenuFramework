@@ -295,6 +295,125 @@ namespace renderer
 							  ImVec2(p1.x + kKnotOutset, p1.y + kKnotOutset));
 		}
 
+		// THE THEME'S FRAME ROUND A HIGHLIGHTED ENTRY (2.1.5, the owner, 2026-10-07: "I want Skyrim for AMF to do the same thing
+		// that Skyrim for Witcher 3 does by having frame art on the selected box. So while your mouse hovers over different menu
+		// names, it has a frame going around it" - "and the frame should match the theme frame"). The theme's own frame art -
+		// the knotwork, or a theme's frame.png - nine-sliced around the item with its corners scaled to the row's height, drawn
+		// over everything just before Render so no item's fill covers it. Full strength round the controller / keyboard
+		// highlight anywhere in the menu, fainter round the menu name under the mouse. A theme with no art (Untarnished) gets
+		// its own plain line. The bright-blue nav box stays (the owner, 2026-09-15); the frame sits just outside it.
+		struct HighlightMark
+		{
+			ImDrawList* drawList = nullptr;
+			ImVec2 min, max, clipMin, clipMax;
+			bool nav = false;
+		};
+		std::vector<HighlightMark> g_highlights;   // render thread: this frame's framed items
+
+		void DrawHighlightFrame(ImDrawList* dl, ImVec2 p0, ImVec2 p1, float a_alpha)
+		{
+			const float unit = ImGui::GetFontSize() / 16.0f;   // the resolution scale, read from the text size it set
+			const float pad = std::max(2.0f, std::round(2.0f * unit));
+			p0 = ImVec2(p0.x - pad, p0.y - pad);
+			p1 = ImVec2(p1.x + pad, p1.y + pad);
+			const bool art = theme::GetActiveTheme().knotwork || skin::HasFrame();
+			if (!art)
+			{
+				const ImVec4 b = ImGui::GetStyleColorVec4(ImGuiCol_Border);
+				dl->AddRect(p0, p1, ImGui::GetColorU32(ImVec4(b.x, b.y, b.z, b.w * a_alpha)), 0.0f, 0, std::max(1.0f, std::round(unit)));
+				return;
+			}
+			void* srv = skin::HasFrame() ? skin::FrameTexture() : g_knotSRV;
+			const ImVec2 size = skin::HasFrame() ? skin::FrameSize() : ImVec2(static_cast<float>(knotwork::kWidth), static_cast<float>(knotwork::kHeight));
+			const float csSrc = skin::HasFrame() ? skin::FrameCorner() : static_cast<float>(knotwork::kCorner);
+			if (!srv || size.x <= 0.0f || size.y <= 0.0f || csSrc <= 0.0f) { return; }
+			// NOTHING OVER THE TEXT (the owner's screenshot, 2026-10-07: the full nine-slice on one row "blocks out part of the
+			// text and text box, so you can't see the inside" - the art's edge bands are solid). So: a thin line round the
+			// item, just outside it, and only the art's four CORNER ornaments, small and centred on the line's corners - a
+			// quarter of each reaches inside, clear of the text, which starts a frame-padding in from the edge.
+			// A theme's OWN frame art (Oathvein, Vel'dun, Norden: thin lines with open bands) reads well as the whole nine-slice
+			// round a row (the owner, same evening: "Oathvein looks fine"), so it keeps that; the knotwork's solid bands get
+			// the line-and-corners form.
+			const float h = p1.y - p0.y, w = p1.x - p0.x;
+			const bool wholeFrame = skin::HasFrame();
+			const float cs = std::clamp(std::min(h, w) * (wholeFrame ? 0.42f : 0.4f), std::min(4.0f * unit, csSrc), csSrc);
+			const float u1 = csSrc / size.x, u2 = (size.x - csSrc) / size.x, v1 = csSrc / size.y, v2 = (size.y - csSrc) / size.y;
+			if (w <= cs || h <= cs * 0.5f) { return; }
+			// The art's tint: the player's Hover highlight colour round a hovered name when they set one, else the Frame art
+			// tint (white = the art as drawn).
+			const bool hoverPicked = a_alpha < 1.0f && theme::RolePicked(theme::kRoleHover);
+			const std::uint32_t artTint = theme::RoleColor(hoverPicked ? theme::kRoleHover : theme::kRoleArt);
+			ImVec4 tint = ImGui::ColorConvertU32ToFloat4(artTint ? static_cast<ImU32>(artTint) : IM_COL32_WHITE);
+			tint.w *= a_alpha * ImGui::GetStyle().Alpha;
+			const ImU32 col = ImGui::ColorConvertFloat4ToU32(tint);
+			const auto tex = reinterpret_cast<ImTextureID>(srv);
+			auto slice = [&](float ax, float ay, float bx, float by, float au, float av, float bu, float bv) {
+				dl->AddImage(tex, ImVec2(ax, ay), ImVec2(bx, by), ImVec2(au, av), ImVec2(bu, bv), col);
+			};
+			if (wholeFrame)
+			{
+				const float x1 = p0.x + cs, x2 = p1.x - cs, y1 = p0.y + cs, y2 = p1.y - cs;
+				if (x2 <= x1 || y2 <= y1) { return; }
+				slice(p0.x, p0.y, x1, y1, 0.0f, 0.0f, u1, v1);
+				slice(x2, p0.y, p1.x, y1, u2, 0.0f, 1.0f, v1);
+				slice(p0.x, y2, x1, p1.y, 0.0f, v2, u1, 1.0f);
+				slice(x2, y2, p1.x, p1.y, u2, v2, 1.0f, 1.0f);
+				slice(x1, p0.y, x2, y1, u1, 0.0f, u2, v1);
+				slice(x1, y2, x2, p1.y, u1, v2, u2, 1.0f);
+				slice(p0.x, y1, x1, y2, 0.0f, v1, u1, v2);
+				slice(x2, y1, p1.x, y2, u2, v1, 1.0f, v2);
+				return;
+			}
+			// the line, in the frame-line colour with the same strength as the art
+			{
+				const ImVec4 b = ImGui::GetStyleColorVec4(ImGuiCol_Border);
+				dl->AddRect(p0, p1, ImGui::GetColorU32(ImVec4(b.x, b.y, b.z, b.w * a_alpha)), 0.0f, 0, std::max(1.0f, std::round(unit)));
+			}
+			const float half = cs * 0.5f;
+			slice(p0.x - half, p0.y - half, p0.x + half, p0.y + half, 0.0f, 0.0f, u1, v1);   // top-left
+			slice(p1.x - half, p0.y - half, p1.x + half, p0.y + half, u2, 0.0f, 1.0f, v1);   // top-right
+			slice(p0.x - half, p1.y - half, p0.x + half, p1.y + half, 0.0f, v2, u1, 1.0f);   // bottom-left
+			slice(p1.x - half, p1.y - half, p1.x + half, p1.y + half, u2, v2, 1.0f, 1.0f);   // bottom-right
+		}
+
+		// Right after an item the mouse may be over: a hover frame round it when it is (the mod list's names).
+		void NoteHoverFrame()
+		{
+			if (!ImGui::IsItemHovered()) { return; }
+			ImDrawList* dl = ImGui::GetWindowDrawList();
+			g_highlights.push_back({ dl, ImGui::GetItemRectMin(), ImGui::GetItemRectMax(), dl->GetClipRectMin(), dl->GetClipRectMax(), false });
+		}
+
+		// Before Render: the nav item's frame (ImGui's own nav rect, wherever the highlight is), then every frame noted.
+		void FlushHighlightFrames()
+		{
+			ImGuiContext& g = *GImGui;
+			if (g.NavWindow && g.NavId != 0 && !g.NavDisableHighlight && g.NavWindow->DrawList)
+			{
+				const ImRect r = ImGui::WindowRectRelToAbs(g.NavWindow, g.NavWindow->NavRectRel[g.NavLayer]);
+				const ImRect clip = g.NavWindow->InnerClipRect;
+				g_highlights.push_back({ g.NavWindow->DrawList, r.Min, r.Max, clip.Min, clip.Max, true });
+			}
+			for (std::size_t i = 0; i < g_highlights.size(); ++i)
+			{
+				const HighlightMark& m = g_highlights[i];
+				if (!m.drawList) { continue; }
+				if (!m.nav)
+				{
+					bool underNav = false;   // the hover frame stays off the row the nav frame is already round
+					for (const HighlightMark& o : g_highlights)
+					{
+						underNav = underNav || (o.nav && o.drawList == m.drawList && o.min.x == m.min.x && o.min.y == m.min.y);
+					}
+					if (underNav) { continue; }
+				}
+				m.drawList->PushClipRect(m.clipMin, m.clipMax, false);
+				DrawHighlightFrame(m.drawList, m.min, m.max, m.nav ? 1.0f : 0.6f);
+				m.drawList->PopClipRect();
+			}
+			g_highlights.clear();
+		}
+
 		// M1.1 (the author's smoke-test feedback): at 3200x1800 the stock ImGui font and a fixed
 		// 520x340 window are "far too small". One scale factor, derived from the real display
 		// height against 1080p as the baseline, applied to the font, the style metrics and the
@@ -988,7 +1107,8 @@ namespace renderer
 		// mouse, a row of preset swatches the D-pad walks, and Theme to go back to the active theme's own colour.
 		void DrawColorRoles()
 		{
-			auto& values = settings::Get();
+			// the ACTIVE theme's own picks: each theme keeps its changes, like a preset (the owner, 2026-10-07)
+			auto& colors = theme::PlayerColors();
 			struct Role { const char* key; const char* fallback; int role; };
 			static constexpr Role kRoles[] = {
 				{ "AMF_ColorBackground", "Background", theme::kRoleBackground },
@@ -1002,15 +1122,16 @@ namespace renderer
 				{ "AMF_ColorSwitchOn", "Switch on", theme::kRoleSwitchOn },
 				{ "AMF_ColorSwitchOff", "Switch off", theme::kRoleSwitchOff },
 				{ "AMF_ColorHeading", "Section headings", theme::kRoleHeading },
-				{ "AMF_ColorHelp", "Help text", theme::kRoleHelp } };
+				{ "AMF_ColorHelp", "Help text", theme::kRoleHelp },
+				{ "AMF_ColorHover", "Hover highlight", theme::kRoleHover } };
 			// Presets: black, dark grey, grey, off-white, gold, yellow, orange, red, green, light blue, blue, purple.
 			static constexpr std::uint32_t kSwatches[] = { 0x000000, 0x333333, 0x9A9A9A, 0xF5F2E9, 0xD8C27A, 0xF0E070,
 														   0xE8A050, 0xD86A6A, 0x8CC88C, 0x9FC8E8, 0x6A9FE0, 0xB89AE0 };
-			auto setColor = [&values](int a_role, std::uint32_t a_rgb, const char* a_name) {
+			auto setColor = [&colors](int a_role, std::uint32_t a_rgb, const char* a_name) {
 				char hex[8];
 				snprintf(hex, sizeof(hex), "#%06X", a_rgb & 0xFFFFFF);
-				values.colors[a_role] = hex;
-				logger::info("settings page: {} colour -> {}", a_name, values.colors[a_role]);
+				colors[a_role] = hex;
+				logger::info("settings page: {} colour ({}) -> {}", a_name, theme::GetActiveTheme().id, colors[a_role]);
 				settings::Save();
 				theme::Apply();
 			};
@@ -1026,11 +1147,11 @@ namespace renderer
 					setColor(r.role, (c8(col[0]) << 16) | (c8(col[1]) << 8) | c8(col[2]), r.fallback);
 				}
 				ImGui::SameLine();
-				if (!values.colors[r.role].empty())
+				if (!colors[r.role].empty())
 				{
 					if (ImGui::SmallButton(TR("AMF_ColorTheme", "Theme")))
 					{
-						values.colors[r.role].clear();
+						colors[r.role].clear();
 						logger::info("settings page: {} colour -> the theme's", r.fallback);
 						settings::Save();
 						theme::Apply();
@@ -1049,11 +1170,11 @@ namespace renderer
 				ImGui::PopID();
 			}
 			bool any = false;
-			for (const auto& c : values.colors) { any = any || !c.empty(); }
+			for (const auto& c : colors) { any = any || !c.empty(); }
 			if (!any) { ImGui::BeginDisabled(); }
 			if (ImGui::Button(TR("AMF_ColorAllTheme", "All back to the theme")))
 			{
-				for (auto& c : values.colors) { c.clear(); }
+				for (auto& c : colors) { c.clear(); }
 				logger::info("settings page: every colour -> the theme's");
 				settings::Save();
 				theme::Apply();
@@ -2729,6 +2850,7 @@ namespace renderer
 						g_frameFocusHere = ImGui::GetFrameCount();
 					}
 					if (ImGui::Selectable(label, isOpen)) { sel = id; changed = true; }
+					NoteHoverFrame();   // 2.1.5: the theme's frame round the name under the mouse
 				};
 				ImGui::TextDisabled("%s", TR("AMF_Framework", "Framework"));
 				sideItem(TR("AMF_Settings", "Settings"), "settings");
@@ -2902,6 +3024,7 @@ namespace renderer
 					const float rowIndent = gutter + (needle.empty() && row.depth > 0 ? ImGui::GetFontSize() * 0.9f : 0.0f);
 					ImGui::Indent(rowIndent);
 					const bool picked = ImGui::Selectable(row.displayName.c_str(), isOpen);
+					NoteHoverFrame();   // 2.1.5: the theme's frame round the menu name under the mouse
 					ImGui::Unindent(rowIndent);
 
 					// the picked-up mod is boxed, so it reads as held rather than merely highlighted
@@ -3676,6 +3799,10 @@ namespace renderer
 						DrawFrameworkWindow();
 					}
 				}
+				// 2.1.5: the theme's frame round the highlighted and hovered items, over every window's own drawing.
+				if (IsMainWindowVisible()) { FlushHighlightFrames(); }
+				else { g_highlights.clear(); }
+
 				// The on-screen keyboard, after the window so this frame's text fields are known. It
 				// closes itself when the window is not up.
 				keyboard::Draw();
