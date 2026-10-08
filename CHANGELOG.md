@@ -21,7 +21,7 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
-## 2.1.5 - 2026-10-07 - untested - converted MCM pages: help bar, heading colours, icons, translated headings
+## 2.1.5 - 2026-10-08 - working - converted MCM pages: help bar, heading colours, icons, translated headings
 
 The owner, 2026-10-07, after comparing AMF's converted MCM pages with MCM Bridge's: "it's really not that bad in
 comparison. If anything, I just want AMF to include Font Awesome for the generated menus ... different colors to
