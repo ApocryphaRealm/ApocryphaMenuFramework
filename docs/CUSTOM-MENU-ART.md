@@ -146,40 +146,71 @@ part name wins over a path.
 
 ### The art library (2.1.6)
 
-Every theme's art is filed as one **part** per kind, so a player can mix them:
+Every piece of the menu's art is filed as a **part** of a kind, so a player can mix them on
+**Appearance > Art**, one pick per kind, kept per theme:
 
-```
-Data/SKSE/Plugins/ApocryphaMenuFramework/assets/
-    frames/<name>.png        the nine-slice frame, transparent centre
-    frames/<name>.ini        how that frame is cut (below)
-    backgrounds/<name>.png   a tile (512 px or smaller both ways) or a full picture
-    toggles/<name>.png       the on/off switch track, drawn white so the on / off colour tints it
-```
+| Kind (theme key) | Folder | What it is |
+|---|---|---|
+| Frame (`sFrameArt`) | `frames/` | the frame round the window and panes |
+| Background (`sBackgroundArt`) | `backgrounds/` | a tile (512 px or smaller both ways) or a full picture |
+| Popups and lists (`sPopupArt`) | `frames/` | a frame round dropdown lists, right-click menus and tooltips |
+| Highlight frame (`sHighlightArt`) | `frames/` | the frame round the highlighted item |
+| Boxes (`sBoxArt`) | `boxes/` | text boxes, dropdowns, slider tracks - every field |
+| Buttons (`sButtonArt`) | `buttons/` | every button, the on-screen keyboard's keys among them |
+| Tick boxes (`sTickBoxArt`) | `tickboxes/` | the box, and `<name>-mark.png` for the tick |
+| Switch (`sToggleArt`) | `toggles/` | the on/off switch track |
+| Slider grabs (`sSliderArt`) | `sliders/` | the part of a slider you drag |
+| Scroll bars (`sScrollbarArt`) | `scrollbars/` | the grab, and `<name>-track.png` for the track |
+| Tabs (`sTabArt`) | `tabs/` | the tabs across a page |
+| Arrows (`sArrowArt`) | `arrows/` | fold and dropdown arrows, drawn pointing right and turned as needed |
+| Section lines (`sSectionArt`) | `sections/` | the line under a section heading, and every separator |
+| Mouse pointer (`sCursorArt`) | `cursors/` | the pointer, in its own colours |
 
-Drop a PNG into one of those folders and it appears in that kind's dropdown on Appearance > Art; a
-theme names it with `sFrameArt`, `sBackgroundArt` or `sToggleArt` (the file name without `.png`). The
-library ships five shapes of each kind, the default look among them:
+All under `Data/SKSE/Plugins/ApocryphaMenuFramework/assets/`. The on-screen keyboard has no kind of its own:
+its keys are buttons and its panel a framed window, so it follows Buttons, Frame and Background.
 
-| Kind | Parts |
+Drop a PNG into a folder and it appears in that kind's dropdown; a theme names it with the theme key
+(the file name without `.png`). Beside a part, all optional:
+
+* `<name>.ini` - how it is cut (below).
+* `<name>-edge.png` - a second layer for boxes, buttons, tick boxes, slider grabs, scroll bars and tabs.
+  The part itself is drawn **white** and tinted with the colour the control has at that moment (at rest,
+  under the mouse, held - the theme's colours and the player's Colours picks), and the edge layer is
+  tinted with the theme's line colour. So one part suits every theme.
+* `<name>-mark.png` (tick boxes), `<name>-track.png` and `<name>-track-edge.png` (scroll bars).
+
+Draw parts at **twice their size on a 1080p screen** and say so with `uDrawCorner`, so they stay sharp at 4K.
+
+The library ships five shapes of each kind, the default look among them. The default of every kind but
+the frame is the built-in shape (no picture); the other four follow the themes' shape languages -
+Norden's rounded corners and bright ticks, Oathvein's slanted cut and scratch, Vel'dun's cut corners and
+inner line, and the Oblivion scroll's scooped corners and brass studs:
+
+| Kind | The five |
 |---|---|
 | Frame | `skyrim-knotwork` (the default), `norden`, `oathvein`, `veldun`, `oblivion-map-edge` |
-| Background | plain - no picture, the theme's colour (the default), `grain`, `parchment`, `weave`, `lattice` |
-| Switch | rounded - the built-in switch, no picture (the default), `norden`, `oathvein`, `veldun`, `oblivion-scroll` |
+| Background | plain - no picture (the default), `grain`, `parchment`, `weave`, `lattice` |
+| Switch | rounded - built in (the default), `norden`, `oathvein`, `veldun`, `oblivion-scroll` |
+| Popups and lists | none (the default), or any of the frames |
+| Highlight frame | the window's frame (the default), or any of the frames |
+| Boxes, Buttons, Tick boxes, Slider grabs, Scroll bars, Tabs, Arrows, Section lines, Mouse pointer | built in (the default), `norden`, `oathvein`, `veldun`, `oblivion` |
 
-A frame's `.ini` - every key optional:
+A part's `.ini` - every key optional:
 
 ```ini
-[Frame]
-uCorner=26          ; the corner's size in the PNG (same meaning as uFrameCorner)
-uDrawCorner=26      ; the corner's size on a 1080p screen, when the PNG is drawn larger (scaled with the layout)
-bTileEdges=1        ; 1 = the edges repeat at their own size instead of stretching - for a pattern along the edge
-sHighlight=corners  ; round a highlighted item: "whole" frame (thin-line art) or the line and four "corners"
-                    ; (art with solid edge bands, which would cover the item's text)
+[Part]
+uCorner=16          ; the corner's size in the PNG (frames: same meaning as uFrameCorner; section lines: the end cap)
+uDrawCorner=8       ; the corner's size on a 1080p screen (a cursor: its height there)
+bTileEdges=1        ; frames: 1 = the edges repeat at their own size instead of stretching
+sHighlight=corners  ; frames: round a highlighted item, the "whole" frame or the line and four "corners"
+uHotX=4             ; cursors: the hot spot, in the PNG's own pixels
+uHotY=3
 ```
 
-The player's picks are kept per theme in `User.ini`, one `[Art.<theme id>]` section each
-(`sFrame`, `sBackground`, `sToggle`; `none` = no art of that kind). Appearance > Colours > Frame art
-tints every part.
+The player's picks are kept per theme in `User.ini`, one `[Art.<theme id>]` section each, keyed as the
+theme keys without `Art` (`sFrame`, `sBox`, `sCursor`, ...); `none` = the built-in look of that kind.
+The parts are drawn by a hook inside Dear ImGui itself (`cmake/ports/imgui/amf-art-hooks.patch`), so they
+reach every page alike - the framework's own, converted MCM pages and every mod's page.
 
 ---
 
@@ -200,7 +231,7 @@ reload its art. Through DevBench:
 ```
 amf.process  op=skinreload      reloads every skin texture from disk and reports what loaded
 amf.process  op=skin            reports what is loaded right now, without reloading
-amf.menu     op=art             (2.1.6) lists the library's parts; with kind=frame|background|toggle and
+amf.menu     op=art             (2.1.6) lists the library's parts; with kind=Frame|Box|TickBox|... and
                                 name=<part>|none|"" picks one for the active theme, as Appearance > Art does
 ```
 

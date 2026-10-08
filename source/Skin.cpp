@@ -41,7 +41,9 @@ namespace skin
 		bool  g_frameTiles = false;
 		bool  g_frameHighlightCorners = false;
 		bool  g_frameNone = false;   // the player picked "none" for the frame - not even the built-in knotwork
-		std::array<std::string, static_cast<std::size_t>(ArtKind::kCount)> g_activeArt;
+		std::array<std::string, kArtKindCount> g_activeArt;
+		std::array<ArtPart, kArtKindCount> g_parts;   // the control kinds (Box .. Cursor); Frame / Background / Switch above
+		std::array<bool, kArtKindCount> g_partLoaded{};
 
 		constexpr const char* kAssetDir = "SKSE/Plugins/ApocryphaMenuFramework/assets";
 
@@ -114,7 +116,7 @@ namespace skin
 			return std::format("{}/{}/{}.png", kAssetDir, kArtFolders[static_cast<std::size_t>(a_kind)], a_name);
 		}
 
-		// A frame's cut, from the <name>.ini beside it. A missing file or key keeps the old behaviour: the corner the
+		// A part's cut, from the <name>.ini beside it. A missing file or key keeps the old behaviour: the corner the
 		// caller had, drawn at its own size, edges stretched, the whole frame round a highlighted item.
 		struct FrameCut
 		{
@@ -122,12 +124,13 @@ namespace skin
 			std::uint32_t drawCorner = 0;
 			bool tile = false;
 			bool highlightCorners = false;
+			float hotX = 0.0f, hotY = 0.0f;
 		};
 
-		FrameCut ReadFrameCut(const std::string& a_name)
+		FrameCut ReadCut(const char* a_folder, const std::string& a_name)
 		{
 			FrameCut cut;
-			std::ifstream in(std::filesystem::path("Data") / kAssetDir / "frames" / (a_name + ".ini"));
+			std::ifstream in(std::filesystem::path("Data") / kAssetDir / a_folder / (a_name + ".ini"));
 			std::string line;
 			while (std::getline(in, line))
 			{
@@ -142,10 +145,12 @@ namespace skin
 					else if (key == "udrawcorner") { cut.drawCorner = static_cast<std::uint32_t>(std::stoul(value)); }
 					else if (key == "btileedges") { cut.tile = value == "1" || Lower(value) == "true"; }
 					else if (key == "shighlight") { cut.highlightCorners = Lower(value) == "corners"; }
+					else if (key == "uhotx") { cut.hotX = std::stof(value); }
+					else if (key == "uhoty") { cut.hotY = std::stof(value); }
 				}
 				catch (...)
 				{
-					logger::warn("skin: frame \"{}\" .ini has a bad line \"{}\"", a_name, line);
+					logger::warn("skin: {} \"{}\" .ini has a bad line \"{}\"", a_folder, a_name, line);
 				}
 			}
 			return cut;
@@ -154,13 +159,69 @@ namespace skin
 		// The theme's own part of a kind.
 		const std::string& PaletteArt(const theme::Palette& a_t, ArtKind a_kind)
 		{
-			switch (a_kind)
-			{
-			case ArtKind::kFrame:      return a_t.frameArt;
-			case ArtKind::kBackground: return a_t.backgroundArt;
-			default:                   return a_t.toggleArt;
-			}
+			return a_t.art[static_cast<std::size_t>(a_kind)];
 		}
+
+		// One texture per file, loaded once and kept for the session (render thread only): Reload and the Art page's
+		// pictures ask for the same few small PNGs again and again, and a fresh texture each time would never be freed.
+		ArtImage CachedTexture(const std::string& a_resolved)
+		{
+			static std::map<std::string, ArtImage> cache;
+			auto it = cache.find(a_resolved);
+			if (it == cache.end())
+			{
+				ArtImage img;
+				std::error_code ec;
+				if (std::filesystem::exists(a_resolved, ec))
+				{
+					ImVec2 size{ 0.0f, 0.0f };
+					img.srv = consumer::LoadTexture(a_resolved.c_str(), &size);
+					if (img.srv) { img.w = size.x; img.h = size.y; }
+					else { logger::warn("skin: \"{}\" could not be decoded - is it a real 32-bit RGBA PNG?", a_resolved); }
+				}
+				it = cache.emplace(a_resolved, img).first;
+			}
+			return it->second;
+		}
+
+		// A control kind's part (Box .. Cursor) and its extra layers. Missing extras are not errors.
+		bool LoadPart(ArtKind a_kind, const std::string& a_name)
+		{
+			const std::size_t k = static_cast<std::size_t>(a_kind);
+			const char* folder = kArtFolders[k];
+			auto file = [&](const char* a_suffix) {
+				return CachedTexture(Resolve(std::format("{}/{}/{}{}.png", kAssetDir, folder, a_name, a_suffix)));
+			};
+			ArtPart part;
+			part.main = file("");
+			if (!part.main.srv)
+			{
+				logger::warn("skin: {} part \"{}\" is not in assets/{}", kArtKeys[k] + 1, a_name, folder);
+				return false;
+			}
+			part.edge = file("-edge");
+			if (a_kind == ArtKind::kTickBox) { part.extra = file("-mark"); }
+			if (a_kind == ArtKind::kScrollbar) { part.extra = file("-track"); part.extraEdge = file("-track-edge"); }
+			const FrameCut cut = ReadCut(folder, a_name);
+			part.corner = static_cast<float>(cut.corner);
+			if (part.corner <= 0.0f) { part.corner = std::floor(std::min(part.main.w, part.main.h) * 0.25f); }
+			part.corner = std::min(part.corner, std::min(part.main.w, part.main.h) * 0.5f - 1.0f);
+			part.drawCorner = static_cast<float>(cut.drawCorner);
+			part.tile = cut.tile;
+			part.hotX = cut.hotX;
+			part.hotY = cut.hotY;
+			part.cornersOnly = cut.highlightCorners;
+			g_parts[k] = part;
+			logger::info("skin: {} part \"{}\" loaded ({:.0f}x{:.0f}{}{})", kArtKeys[k] + 1, a_name, part.main.w, part.main.h,
+						 part.edge.srv ? ", edge" : "", part.extra.srv ? ", extra" : "");
+			return true;
+		}
+	}
+
+	const ArtPart* Part(ArtKind a_kind)
+	{
+		const std::size_t k = static_cast<std::size_t>(a_kind);
+		return k < kArtKindCount && g_partLoaded[k] ? &g_parts[k] : nullptr;
 	}
 
 	std::vector<std::string> ListArt(ArtKind a_kind)
@@ -172,7 +233,15 @@ namespace skin
 		{
 			if (it->is_regular_file(ec) && Lower(it->path().extension().string()) == ".png")
 			{
-				out.push_back(it->path().stem().string());
+				// a part's extra layers are not parts of their own
+				const std::string stem = it->path().stem().string();
+				const std::string low = Lower(stem);
+				auto ends = [&low](const char* a_suf) {
+					const std::size_t n = std::char_traits<char>::length(a_suf);
+					return low.size() > n && low.compare(low.size() - n, n, a_suf) == 0;
+				};
+				if (ends("-edge") || ends("-mark") || ends("-track")) { continue; }
+				out.push_back(stem);
 			}
 		}
 		std::sort(out.begin(), out.end());
@@ -192,18 +261,9 @@ namespace skin
 
 	void* ArtThumb(ArtKind a_kind, const std::string& a_name, ImVec2* a_size)
 	{
-		static std::map<std::string, std::pair<void*, ImVec2>> cache;   // render thread only; a few small PNGs, kept
-		const std::string path = Resolve(ArtPath(a_kind, a_name));
-		auto it = cache.find(path);
-		if (it == cache.end())
-		{
-			ImVec2 size{ 0.0f, 0.0f };
-			std::error_code ec;
-			void* srv = std::filesystem::exists(path, ec) ? consumer::LoadTexture(path.c_str(), &size) : nullptr;
-			it = cache.emplace(path, std::make_pair(srv, size)).first;
-		}
-		if (a_size) { *a_size = it->second.second; }
-		return it->second.first;
+		const ArtImage img = CachedTexture(Resolve(ArtPath(a_kind, a_name)));
+		if (a_size) { *a_size = ImVec2(img.w, img.h); }
+		return img.srv;
 	}
 
 	void Reload()
@@ -226,6 +286,26 @@ namespace skin
 		g_frameTiles = false;
 		g_frameHighlightCorners = false;
 		g_activeArt = {};
+		g_partLoaded = {};
+
+		// 2.1.6: THE CONTROL KINDS (Box .. Cursor) - the player's pick for this theme, else the theme's own part, else the
+		// built-in look. A UI author's [Skin] art covers only the frame, background and plates, so these load either way.
+		if (!theme::ListThemes().empty())
+		{
+			const theme::Palette& t = theme::GetActiveTheme();
+			const auto picks = v.themeArt.find(t.id);
+			for (std::size_t k = static_cast<std::size_t>(ArtKind::kBox); k < kArtKindCount; ++k)
+			{
+				std::string name = PaletteArt(t, static_cast<ArtKind>(k));
+				if (picks != v.themeArt.end() && !picks->second[k].empty()) { name = picks->second[k]; }
+				if (name.empty() || Lower(name) == kArtNone) { continue; }
+				if (LoadPart(static_cast<ArtKind>(k), name))
+				{
+					g_partLoaded[k] = true;
+					g_activeArt[k] = name;
+				}
+			}
+		}
 		// 2.1.5: the switch on with NO [Skin] paths set used to leave every art theme bare - Oathvein, Vel'dun and Norden lost
 		// their frame and background while Skyrim's built-in knotwork stayed (the owner, 2026-10-07, after a stray press had
 		// switched it on). The switch only means something when a UI author's art is actually named; otherwise the theme's own.
@@ -249,7 +329,7 @@ namespace skin
 			// 2.1.6: THE ART PARTS, BY NAME - the player's pick for this theme (Appearance > Art) wins, then the theme's
 			// own part; either wins over the old path keys above. "none" = no art of that kind, not even the theme's.
 			const auto picks = v.themeArt.find(t.id);
-			for (std::size_t k = 0; k < static_cast<std::size_t>(ArtKind::kCount); ++k)
+			for (std::size_t k = 0; k <= static_cast<std::size_t>(ArtKind::kToggle); ++k)
 			{
 				const auto kind = static_cast<ArtKind>(k);
 				std::string name = PaletteArt(t, kind);
@@ -272,7 +352,6 @@ namespace skin
 		for (std::size_t i = 0; i < g_plates.size(); ++i) { g_plates[i] = Entry{}; }
 		if (frame.empty() && background.empty() && plates.empty() && toggle.empty())
 		{
-			g_activeArt = {};
 			return;
 		}
 		logger::info("skin: loading art from {}", source);
@@ -285,7 +364,7 @@ namespace skin
 		// A library frame says how it is cut in the .ini beside it (2.1.6).
 		if (g_frame.srv && !frameName.empty())
 		{
-			const FrameCut cut = ReadFrameCut(frameName);
+			const FrameCut cut = ReadCut("frames", frameName);
 			if (cut.corner > 0) { corner = cut.corner; }
 			g_frameDrawCorner = static_cast<float>(cut.drawCorner);
 			g_frameTiles = cut.tile;
@@ -395,12 +474,16 @@ namespace skin
 			if (!plates.empty()) { plates += ","; }
 			plates += one(kPlateName[i], g_plates[i]);
 		}
-		// 2.1.6: the library parts drawing now (by name) and the frame's cut from its .ini
+		// 2.1.6: the library parts drawing now, every kind by its [Art] key ("" = the built-in look), and the frame's cut
+		std::string art;
+		for (std::size_t k = 0; k < kArtKindCount; ++k)
+		{
+			art += std::format(R"({}"{}":"{}")", k ? "," : "", kArtKeys[k] + 1, esc(g_activeArt[k]));
+		}
 		return std::format(R"({{"frame":{},"frameCorner":{:.0f},"frameDrawCorner":{:.0f},"frameTiles":{},"frameHighlight":"{}",)"
-						   R"("frameNone":{},"art":{{"frame":"{}","background":"{}","toggle":"{}"}},"background":{},"backgroundTiles":{},"plates":[{}]}})",
+						   R"("frameNone":{},"art":{{{}}},"background":{},"backgroundTiles":{},"plates":[{}]}})",
 						   one("frame", g_frame), g_frameCorner, g_frameDrawCorner, FrameTiles() ? "true" : "false",
-						   FrameHighlightCorners() ? "corners" : "whole", g_frameNone ? "true" : "false", esc(g_activeArt[0]),
-						   esc(g_activeArt[1]), esc(g_activeArt[2]), one("background", g_background),
-						   BackgroundTiles() ? "true" : "false", plates);
+						   FrameHighlightCorners() ? "corners" : "whole", g_frameNone ? "true" : "false", art,
+						   one("background", g_background), BackgroundTiles() ? "true" : "false", plates);
 	}
 }

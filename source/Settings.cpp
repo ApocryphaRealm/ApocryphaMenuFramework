@@ -708,7 +708,7 @@ namespace settings
 					}
 				}
 				// 2.1.6: the player's own art per theme: "Art.<theme id>.<key>"
-				static_assert(std::tuple_size_v<decltype(Values{}.themeArt)::mapped_type> == static_cast<std::size_t>(skin::ArtKind::kCount),
+				static_assert(std::tuple_size_v<decltype(Values{}.themeArt)::mapped_type> == skin::kArtKindCount,
 							  "Values::themeArt must hold one entry per skin::ArtKind");
 				for (const auto& [key, value] : entries)
 				{

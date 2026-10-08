@@ -1,6 +1,8 @@
 # OVERLAY PORT (Apocrypha Menu Framework, 2026-09-05): the vcpkg imgui port from commit 11dbcbb234
 # (1.90.7, port-version 1) re-pointed at Dear ImGui 1.90.8 - the version SKSE Menu Framework 3 vendors
 # (docking branch) - so the consumer ABI matches SMF exactly. vcpkg's registry never carried 1.90.8.
+# 2.1.6: plus amf-art-hooks.patch (docking source only - the build uses docking-experimental). It adds one
+# global function pointer and calls to it; no struct changes, so the consumer ABI is untouched.
 vcpkg_check_linkage(ONLY_STATIC_LIBRARY)
 
 if ("docking-experimental" IN_LIST FEATURES)
@@ -9,6 +11,9 @@ if ("docking-experimental" IN_LIST FEATURES)
         REPO ocornut/imgui
         REF "v${VERSION}-docking"
         SHA512 2f296c189b82007990e016e248bb4a3ade9e51669a0e8c632be35defb8a3a834118b78468be4a2615c63f5a1398dfdea28a2028d420e2537a54b5bf531a5430b
+        # AMF 2.1.6 - the art hooks (imgui_internal.h GImGuiArtHook): Appearance > Art draws its parts in place of
+        # ImGui's boxes, buttons, tick boxes, slider grabs, scroll bars, section lines, tabs, arrows and popups.
+        PATCHES amf-art-hooks.patch
         HEAD_REF docking
     )
 else()

@@ -9,6 +9,7 @@
 #include "Compat.h"
 #include "Curtain.h"
 #include "AmfIcons.h"
+#include "ArtHooks.h"
 #include "HelpBar.h"
 #include "McmStyle.h"
 #include "Input.h"
@@ -156,6 +157,9 @@ namespace renderer
 		// its profile's geometry. Separate from g_justOpened, which is consumed elsewhere for the
 		// focus grab - two consumers of one exchange() flag would race to see it.
 		std::atomic<bool> g_applyGeometry{ false };
+		// 2.1.6: a DevBench art pick (listener thread) asks the render thread to reload the art at its next frame - the
+		// textures and their cache belong to the render thread.
+		std::atomic<bool> g_artReloadPending{ false };
 
 		// Knotwork frame texture (the embedded MO2-Skyrim border-image.png). Created once at
 		// D3DInit on the game's own device; used by DrawKnotworkFrame as an ImGui texture id.
@@ -367,16 +371,18 @@ namespace renderer
 			const float pad = std::max(2.0f, std::round(2.0f * unit));
 			p0 = ImVec2(p0.x - pad, p0.y - pad);
 			p1 = ImVec2(p1.x + pad, p1.y + pad);
-			const bool art = skin::DrawsFrame();
+			// 2.1.6: a frame picked for the Highlight kind (Appearance > Art) draws here instead of the window's frame.
+			const skin::ArtPart* hl = skin::Part(skin::ArtKind::kHighlight);
+			const bool art = hl || skin::DrawsFrame();
 			if (!art)
 			{
 				const ImVec4 b = ImGui::GetStyleColorVec4(ImGuiCol_Border);
 				dl->AddRect(p0, p1, ImGui::GetColorU32(ImVec4(b.x, b.y, b.z, b.w * a_alpha)), 0.0f, 0, std::max(1.0f, std::round(unit)));
 				return;
 			}
-			void* srv = skin::HasFrame() ? skin::FrameTexture() : g_knotSRV;
-			const ImVec2 size = skin::HasFrame() ? skin::FrameSize() : ImVec2(static_cast<float>(knotwork::kWidth), static_cast<float>(knotwork::kHeight));
-			const float csSrc = skin::HasFrame() ? skin::FrameCorner() : static_cast<float>(knotwork::kCorner);
+			void* srv = hl ? hl->main.srv : skin::HasFrame() ? skin::FrameTexture() : g_knotSRV;
+			const ImVec2 size = hl ? ImVec2(hl->main.w, hl->main.h) : skin::HasFrame() ? skin::FrameSize() : ImVec2(static_cast<float>(knotwork::kWidth), static_cast<float>(knotwork::kHeight));
+			const float csSrc = hl ? hl->corner : skin::HasFrame() ? skin::FrameCorner() : static_cast<float>(knotwork::kCorner);
 			if (!srv || size.x <= 0.0f || size.y <= 0.0f || csSrc <= 0.0f) { return; }
 			// NOTHING OVER THE TEXT (the owner's screenshot, 2026-10-07: the full nine-slice on one row "blocks out part of the
 			// text and text box, so you can't see the inside" - the art's edge bands are solid). So: a thin line round the
@@ -388,7 +394,7 @@ namespace renderer
 			const float h = p1.y - p0.y, w = p1.x - p0.x;
 			// 2.1.6: which form is now the frame's own say (sHighlight in its .ini): the knotwork and the map edge are
 			// "corners", the themes' thin-line frames "whole". A frame from a path, with no .ini, keeps the whole frame.
-			const bool wholeFrame = skin::HasFrame() && !skin::FrameHighlightCorners();
+			const bool wholeFrame = hl ? !hl->cornersOnly : skin::HasFrame() && !skin::FrameHighlightCorners();
 			const float cs = std::clamp(std::min(h, w) * (wholeFrame ? 0.42f : 0.4f), std::min(4.0f * unit, csSrc), csSrc);
 			const float u1 = csSrc / size.x, u2 = (size.x - csSrc) / size.x, v1 = csSrc / size.y, v2 = (size.y - csSrc) / size.y;
 			if (w <= cs || h <= cs * 0.5f) { return; }
@@ -1023,6 +1029,7 @@ namespace renderer
 
 				ImGui_ImplWin32_Init(hwnd);
 				ImGui_ImplDX11_Init(device, context);
+				arthooks::Install();   // 2.1.6: Appearance > Art's parts drawn in place of ImGui's own shapes
 				g_swapChain = reinterpret_cast<IDXGISwapChain*>(window.swapChain);
 				g_captureContext = context;
 
@@ -1256,15 +1263,16 @@ namespace renderer
 
 		void DrawArtPicks()
 		{
+			using skin::ArtKind;
 			auto& values = settings::Get();
 			const theme::Palette& active = theme::GetActiveTheme();
 			// The part lists are read from disk when the page opens and every few seconds after, not every frame.
-			static std::array<std::vector<std::string>, static_cast<std::size_t>(skin::ArtKind::kCount)> s_parts;
+			static std::array<std::vector<std::string>, skin::kArtKindCount> s_parts;
 			static double s_scannedAt = -1.0;
 			const double now = ImGui::GetTime();
 			if (s_scannedAt < 0.0 || now - s_scannedAt > 5.0)
 			{
-				for (std::size_t k = 0; k < s_parts.size(); ++k) { s_parts[k] = skin::ListArt(static_cast<skin::ArtKind>(k)); }
+				for (std::size_t k = 0; k < s_parts.size(); ++k) { s_parts[k] = skin::ListArt(static_cast<ArtKind>(k)); }
 				s_scannedAt = now;
 			}
 			if (values.skinEnabled && !(values.skinFrame.empty() && values.skinBackground.empty() && values.skinPlates.empty()))
@@ -1274,67 +1282,123 @@ namespace renderer
 				ImGui::PopStyleColor();
 				ImGui::Spacing();
 			}
-			const char* kindLabel[] = { TR("AMF_ArtFrame", "Frame"), TR("AMF_ArtBackground", "Background"), TR("AMF_ArtSwitch", "Switch") };
-			// FIVE SHAPES OF EACH KIND, THE DEFAULT ONE OF THEM (the owner, 2026-10-08). The default look of a kind is the
-			// Skyrim theme's: the knotwork frame (a part), and for a background or switch no picture at all - the plain
-			// colour, the built-in rounded switch - which is what the "no art" entry draws, so that entry is named for it.
-			const char* noArtLabel[] = { TR("AMF_ArtNone", "None"), TR("AMF_ArtPlainDefault", "Plain (default)"),
-				TR("AMF_ArtRoundedDefault", "Rounded (default)") };
-			const char* noArtWord[] = { TR("AMF_ArtNoneWord", "none"), TR("AMF_ArtPlainWord", "plain"), TR("AMF_ArtRoundedWord", "rounded") };
+			// EVERY KIND (ArtKinds.h; the owner, 2026-10-08: the scroll bar, boxes, sliders, switches, the section lines, the
+			// on-screen keyboard "and anything else that you can think of"). Five shapes of each, the default one of them: the
+			// Skyrim look's own. For the frame that is a part (the knotwork); for the rest it is the built-in shape - no
+			// picture - which is what each kind's "no art" entry draws, so that entry is named for it.
+			const char* kindLabel[skin::kArtKindCount] = { TR("AMF_ArtFrame", "Frame"), TR("AMF_ArtBackground", "Background"),
+				TR("AMF_ArtSwitch", "Switch"), TR("AMF_ArtBox", "Boxes"), TR("AMF_ArtButton", "Buttons"), TR("AMF_ArtTickBox", "Tick boxes"),
+				TR("AMF_ArtSlider", "Slider grabs"), TR("AMF_ArtScrollbar", "Scroll bars"), TR("AMF_ArtSection", "Section lines"),
+				TR("AMF_ArtTab", "Tabs"), TR("AMF_ArtArrow", "Arrows"), TR("AMF_ArtPopup", "Popups and lists"),
+				TR("AMF_ArtHighlight", "Highlight frame"), TR("AMF_ArtCursor", "Mouse pointer") };
+			const char* builtIn = TR("AMF_ArtBuiltInDefault", "Built-in (default)");
+			const char* noArtLabel[skin::kArtKindCount] = { TR("AMF_ArtNone", "None"), TR("AMF_ArtPlainDefault", "Plain (default)"),
+				TR("AMF_ArtRoundedDefault", "Rounded (default)"), builtIn, builtIn, builtIn, builtIn, builtIn, builtIn, builtIn, builtIn,
+				TR("AMF_ArtNoneDefault", "None (default)"), TR("AMF_ArtWindowFrameDefault", "Window frame (default)"), builtIn };
+			const char* builtInWord = TR("AMF_ArtBuiltInWord", "built-in");
+			const char* noArtWord[skin::kArtKindCount] = { TR("AMF_ArtNoneWord", "none"), TR("AMF_ArtPlainWord", "plain"),
+				TR("AMF_ArtRoundedWord", "rounded"), builtInWord, builtInWord, builtInWord, builtInWord, builtInWord, builtInWord,
+				builtInWord, builtInWord, TR("AMF_ArtNoneWord", "none"), TR("AMF_ArtWindowFrameWord", "window frame"), builtInWord };
 			constexpr const char* kDefaultFrame = "skyrim-knotwork";
-			const float thumb = ImGui::GetFontSize() * 4.0f;
+			// the page's groups, in the order a player thinks of them
+			struct Group { const char* title; std::vector<ArtKind> kinds; };
+			const Group groups[] = {
+				{ TR("AMF_ArtGroupWindow", "Window"), { ArtKind::kFrame, ArtKind::kBackground, ArtKind::kPopup, ArtKind::kHighlight } },
+				{ TR("AMF_ArtGroupControls", "Controls"), { ArtKind::kBox, ArtKind::kButton, ArtKind::kTickBox, ArtKind::kToggle,
+					ArtKind::kSlider, ArtKind::kScrollbar, ArtKind::kTab, ArtKind::kArrow } },
+				{ TR("AMF_ArtGroupLines", "Lines and pointer"), { ArtKind::kSection, ArtKind::kCursor } },
+			};
+			const float thumb = ImGui::GetFrameHeight() * 1.6f;
 			bool changed = false;
-			for (std::size_t k = 0; k < s_parts.size(); ++k)
+			for (const Group& group : groups)
 			{
-				const auto kind = static_cast<skin::ArtKind>(k);
-				const auto& parts = s_parts[k];
-				const std::string own = skin::ThemeArt(kind);
-				auto found = values.themeArt.find(active.id);
-				const std::string pick = found != values.themeArt.end() ? found->second[k] : std::string();
-				// entry 0: the theme's own (named when it has one), 1: none, then every part
-				std::vector<std::string> labels;
-				labels.push_back(std::format("{} ({})", TR("AMF_ArtThemeOwn", "Theme's own"), own.empty() ? std::string(noArtWord[k]) : ArtLabel(own)));
-				labels.push_back(noArtLabel[k]);
-				int current = 0;
-				for (std::size_t i = 0; i < parts.size(); ++i)
+				ImGui::SeparatorText(group.title);
+				if (!ImGui::BeginTable("##artkinds", 3, ImGuiTableFlags_SizingFixedFit))
 				{
-					labels.push_back(kind == skin::ArtKind::kFrame && parts[i] == kDefaultFrame
-					                     ? std::format("{} ({})", ArtLabel(parts[i]), TR("AMF_ArtDefaultWord", "default"))
-					                     : ArtLabel(parts[i]));
-					if (pick == parts[i]) { current = static_cast<int>(i) + 2; }
+					continue;
 				}
-				if (pick == skin::kArtNone) { current = 1; }
-				std::vector<const char*> cLabels;
-				for (const auto& l : labels) { cLabels.push_back(l.c_str()); }
+				ImGui::TableSetupColumn("##kind", ImGuiTableColumnFlags_WidthFixed);
+				ImGui::TableSetupColumn("##pick", ImGuiTableColumnFlags_WidthStretch);
+				ImGui::TableSetupColumn("##look", ImGuiTableColumnFlags_WidthFixed, thumb * 2.2f);
+				for (const ArtKind kind : group.kinds)
+				{
+					const std::size_t k = static_cast<std::size_t>(kind);
+					const auto& parts = s_parts[k];
+					const std::string own = skin::ThemeArt(kind);
+					auto found = values.themeArt.find(active.id);
+					const std::string pick = found != values.themeArt.end() ? found->second[k] : std::string();
+					// entry 0: the theme's own (named), 1: the kind's default / no art, then every part
+					std::vector<std::string> labels;
+					labels.push_back(std::format("{} ({})", TR("AMF_ArtThemeOwn", "Theme's own"), own.empty() ? std::string(noArtWord[k]) : ArtLabel(own)));
+					labels.push_back(noArtLabel[k]);
+					int current = 0;
+					for (std::size_t i = 0; i < parts.size(); ++i)
+					{
+						labels.push_back(kind == ArtKind::kFrame && parts[i] == kDefaultFrame
+						                     ? std::format("{} ({})", ArtLabel(parts[i]), TR("AMF_ArtDefaultWord", "default"))
+						                     : ArtLabel(parts[i]));
+						if (pick == parts[i]) { current = static_cast<int>(i) + 2; }
+					}
+					if (pick == skin::kArtNone) { current = 1; }
+					std::vector<const char*> cLabels;
+					for (const auto& l : labels) { cLabels.push_back(l.c_str()); }
 
-				ImGui::PushID(static_cast<int>(k));
-				ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.5f);
-				if (theme::ComboTight(kindLabel[k], &current, cLabels.data(), static_cast<int>(cLabels.size())))
-				{
-					auto& slot = values.themeArt[active.id][k];
-					slot = current == 0 ? std::string() : current == 1 ? std::string(skin::kArtNone) : parts[static_cast<std::size_t>(current - 2)];
-					logger::info("settings page: art {} for theme {} -> \"{}\"", skin::kArtFolders[k], active.id, slot.empty() ? "theme's own" : slot);
-					changed = true;
+					ImGui::PushID(static_cast<int>(k));
+					ImGui::TableNextRow();
+					ImGui::TableNextColumn();
+					ImGui::AlignTextToFramePadding();
+					ImGui::TextUnformatted(kindLabel[k]);
+					ImGui::TableNextColumn();
+					ImGui::SetNextItemWidth(-FLT_MIN);
+					if (theme::ComboTight("##pick", &current, cLabels.data(), static_cast<int>(cLabels.size())))
+					{
+						auto& slot = values.themeArt[active.id][k];
+						slot = current == 0 ? std::string() : current == 1 ? std::string(skin::kArtNone) : parts[static_cast<std::size_t>(current - 2)];
+						logger::info("settings page: art {} for theme {} -> \"{}\"", skin::kArtKeys[k] + 1, active.id, slot.empty() ? "theme's own" : slot);
+						changed = true;
+					}
+					// the part drawing now, small, in the colours it takes in the menu
+					ImGui::TableNextColumn();
+					const std::string shown = skin::ActiveArt(kind);
+					ImVec2 size{ 0.0f, 0.0f };
+					void* tex = shown.empty() ? nullptr : skin::ArtThumb(kind, shown, &size);
+					if (tex && size.x > 0.0f && size.y > 0.0f)
+					{
+						const float sc = std::min(thumb * 2.0f / size.x, thumb / size.y);
+						const ImVec2 at = ImGui::GetCursorScreenPos();
+						const ImVec2 to(at.x + size.x * sc, at.y + size.y * sc);
+						ImGui::Dummy(ImVec2(thumb * 2.0f, thumb));
+						ImDrawList* dl = ImGui::GetWindowDrawList();
+						const bool plate = kind == ArtKind::kBox || kind == ArtKind::kButton || kind == ArtKind::kTickBox ||
+						                   kind == ArtKind::kSlider || kind == ArtKind::kScrollbar || kind == ArtKind::kTab;
+						const bool ink = kind == ArtKind::kSection || kind == ArtKind::kArrow;
+						const std::uint32_t artTint = theme::RoleColor(theme::kRoleArt);
+						const ImU32 tint = plate ? ImGui::GetColorU32(ImGuiCol_Button) : ink ? ImGui::GetColorU32(ImGuiCol_Text)
+						                 : (artTint ? static_cast<ImU32>(artTint) : IM_COL32_WHITE);
+						dl->AddImage(reinterpret_cast<ImTextureID>(tex), at, to, ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), tint);
+						if (plate)
+						{
+							ImVec2 esz{ 0.0f, 0.0f };
+							if (void* edge = skin::ArtThumb(kind, shown + "-edge", &esz))
+							{
+								dl->AddImage(reinterpret_cast<ImTextureID>(edge), at, to, ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImGui::GetColorU32(ImGuiCol_Border));
+							}
+						}
+					}
+					else
+					{
+						ImGui::AlignTextToFramePadding();
+						ImGui::TextDisabled("%s", noArtWord[k]);
+					}
+					ImGui::PopID();
 				}
-				// the part drawing now, as a small picture (the art tint applies, so the Frame art colour shows here too)
-				const std::string shown = skin::ActiveArt(kind);
-				ImVec2 size{ 0.0f, 0.0f };
-				void* tex = shown.empty() ? nullptr : skin::ArtThumb(kind, shown, &size);
-				if (tex && size.x > 0.0f && size.y > 0.0f)
-				{
-					const float s = std::min(thumb / size.x, thumb / size.y);
-					const std::uint32_t tint = theme::RoleColor(theme::kRoleArt);
-					ImGui::Image(reinterpret_cast<ImTextureID>(tex), ImVec2(size.x * s, size.y * s), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f),
-								 ImGui::ColorConvertU32ToFloat4(tint ? static_cast<ImU32>(tint) : IM_COL32_WHITE),
-								 ImGui::GetStyleColorVec4(ImGuiCol_Border));
-				}
-				else
-				{
-					ImGui::TextDisabled("%s", TR("AMF_ArtNoneShown", "No art of this kind is drawing."));
-				}
-				ImGui::PopID();
+				ImGui::EndTable();
 				ImGui::Spacing();
 			}
+			ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
+			ImGui::TextWrapped("%s", TR("AMF_ArtOskNote", "The on-screen keyboard follows Buttons for its keys and Frame and Background for its panel."));
+			ImGui::PopStyleColor();
+			ImGui::Spacing();
 			if (ImGui::Button(TR("AMF_ArtReset", "Theme's own art")))
 			{
 				values.themeArt.erase(active.id);
@@ -1920,8 +1984,8 @@ namespace renderer
 					// 2.1.6: the theme's art parts, swapped for any theme's, kept per theme (DrawArtPicks).
 					if (sub.Tab(TR("AMF_SubArt", "Art")))
 					{
-						ImGui::TextWrapped("%s", TR("AMF_ArtHelp", "Build your own look from every theme's art: pick a frame, background and "
-							"switch for this theme. Each theme keeps its own picks. Colours > Frame art tints them."));
+						ImGui::TextWrapped("%s", TR("AMF_ArtHelp", "Build your own look from every theme's art: pick each part of the menu for "
+							"this theme - five shapes of each, the default among them. Each theme keeps its own picks, and they take your Colours."));
 						ImGui::Spacing();
 						DrawArtPicks();
 						ImGui::EndTabItem();
@@ -2901,9 +2965,10 @@ namespace renderer
 						  "behind it. Settings -> Appearance -> Window."));
 				bullet(TR("AMF_ManLook6", "Colours: your own colour for each part of the menu - background, borders, text, selection, "
 						  "sliders, switches, headings and help - kept for each theme. Settings -> Appearance -> Colours."));
-				bullet(TR("AMF_ManLook7", "Art: build your own look from every theme's art - five frames, five backgrounds and five "
-						  "switches, each a different shape, the Skyrim look's default among them. Each theme keeps its own picks, and "
-						  "Colours -> Frame art tints them. Settings -> Appearance -> Art."));
+				bullet(TR("AMF_ManLook7", "Art: build your own look from every theme's art - five shapes of each part of the menu: "
+						  "frame, background, popups, highlight frame, boxes, buttons, tick boxes, switches, slider grabs, scroll bars, tabs, "
+						  "arrows, section lines and the mouse pointer, the default among them. Each theme keeps its own picks, and they "
+						  "take your Colours. Settings -> Appearance -> Art."));
 				ImGui::EndTabItem();
 			}
 
@@ -4317,6 +4382,8 @@ namespace renderer
 
 				ImGuiIO& io = ImGui::GetIO();
 
+				if (g_artReloadPending.exchange(false, std::memory_order_acq_rel)) { skin::Reload(); }   // 2.1.6, op=art
+
 				// Software cursor while the menu (or a mod's blocking window) has the input - the game
 				// hides and recentres the OS cursor at will, so ImGui draws its own at the position we
 				// integrate. RaceMenu Atelier hides the game's own cursor for exactly this reason.
@@ -4484,6 +4551,13 @@ namespace renderer
 				// LAST thing in the frame: the curtain covers the framework's own window and every
 				// consumer HUD element rather than being interleaved with them.
 				curtain::Draw();
+
+				// 2.1.6: the Cursor part, when one is picked, in place of ImGui's arrow. ImGui reads MouseDrawCursor in
+				// Render(), so it is switched off here for this frame only; the text-entry and resize pointers stay ImGui's.
+				if (ImGui::GetIO().MouseDrawCursor && ImGui::GetMouseCursor() == ImGuiMouseCursor_Arrow && arthooks::DrawCursor(true))
+				{
+					ImGui::GetIO().MouseDrawCursor = false;
+				}
 
 				ImGui::Render();
 				ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
@@ -4718,10 +4792,16 @@ namespace renderer
 		if (a_set)
 		{
 			std::size_t k = 0;
-			while (k < static_cast<std::size_t>(skin::ArtKind::kCount) && a_kind != skin::kArtFolders[k] && a_kind + "s" != skin::kArtFolders[k]) { ++k; }
-			if (k == static_cast<std::size_t>(skin::ArtKind::kCount))
+			auto lower = [](std::string a_s) {
+				for (char& c : a_s) { c = static_cast<char>(std::tolower(static_cast<unsigned char>(c))); }
+				return a_s;
+			};
+			while (k < skin::kArtKindCount && lower(a_kind) != lower(skin::kArtKeys[k] + 1)) { ++k; }   // Frame, Box, TickBox, ...
+			if (k == skin::kArtKindCount)
 			{
-				return "{\"ok\":false,\"op\":\"art\",\"error\":\"kind must be frame, background or toggle\"}";
+				std::string names;
+				for (std::size_t i = 0; i < skin::kArtKindCount; ++i) { names += std::string(i ? ", " : "") + (skin::kArtKeys[i] + 1); }
+				return "{\"ok\":false,\"op\":\"art\",\"error\":\"kind must be one of " + names + "\"}";
 			}
 			const auto parts = skin::ListArt(static_cast<skin::ArtKind>(k));
 			if (!a_name.empty() && a_name != skin::kArtNone && std::find(parts.begin(), parts.end(), a_name) == parts.end())
@@ -4731,12 +4811,18 @@ namespace renderer
 			auto& values = settings::Get();
 			values.themeArt[active.id][k] = a_name;
 			settings::Save();
-			skin::Reload();
-			logger::info("art {} for theme {} -> \"{}\" (DevBench)", skin::kArtFolders[k], active.id, a_name.empty() ? "theme's own" : a_name);
+			g_artReloadPending.store(true, std::memory_order_release);   // the render thread loads it at its next frame
+			logger::info("art {} for theme {} -> \"{}\" (DevBench)", skin::kArtKeys[k] + 1, active.id, a_name.empty() ? "theme's own" : a_name);
+			return std::string("{\"ok\":true,\"op\":\"art\",\"theme\":\"") + active.id + "\",\"kind\":\"" + (skin::kArtKeys[k] + 1) +
+				   "\",\"name\":\"" + a_name + "\",\"note\":\"loads at the next frame - ask op=art again to read it back\"}";
 		}
-		return std::string("{\"ok\":true,\"op\":\"art\",\"theme\":\"") + active.id + "\",\"parts\":{\"frames\":" + list(skin::ArtKind::kFrame) +
-			   ",\"backgrounds\":" + list(skin::ArtKind::kBackground) + ",\"toggles\":" + list(skin::ArtKind::kToggle) +
-			   "},\"skin\":" + skin::StatusJson() + "}";
+		std::string parts;
+		for (std::size_t k = 0; k < skin::kArtKindCount; ++k)
+		{
+			parts += std::string(k ? "," : "") + "\"" + (skin::kArtKeys[k] + 1) + "\":" + list(static_cast<skin::ArtKind>(k));
+		}
+		return std::string("{\"ok\":true,\"op\":\"art\",\"theme\":\"") + active.id + "\",\"parts\":{" + parts + "},\"skin\":" +
+			   skin::StatusJson() + "}";
 	}
 
 	bool SetModAlias(const std::string& a_modName, const std::string& a_alias)

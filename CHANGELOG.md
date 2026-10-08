@@ -27,7 +27,9 @@ The owner, 2026-10-08: "start working on the new file structure for amf, add an 
 customization section to choose from, and import the oblivion theme and break down the themes into their art parts and put
 them into the subfolders for the theme to draw from and fix the small things that need fixing from before", then "i want 5
 art options for each kind that all have different shapes, include the default as one of those 5" and "make sure the help
-pages are up to date too".
+pages are up to date too", and then: "I want more than just those three kinds ... the scroll bar ... the box shapes because
+the boxes are different from the frame ... sliders ... the toggles ... the lines that appear in a mod menu as a horizontal
+line under a section header ... the on-screen keyboard ... and anything else that you can think of".
 
 ### Added
 - **The art library** - `SKSE/Plugins/ApocryphaMenuFramework/assets/frames`, `assets/backgrounds`, `assets/toggles`: every
@@ -35,26 +37,37 @@ pages are up to date too".
   (uCorner, uDrawCorner, bTileEdges, sHighlight = whole / corners). A theme names its parts (sFrameArt, sBackgroundArt,
   sToggleArt) instead of file paths; the old sSkinFrame / sSkinBackground / sSkinPlates path keys still work for themes
   made before.
-- **Five shapes of each kind, the default among them.** Frames: Skyrim knotwork (default), Norden, Oathvein, Vel'dun,
-  Oblivion map edge. Backgrounds: plain (default), grain, parchment, weave, lattice. Switches: rounded (default), Norden,
-  Oathvein, Vel'dun, Oblivion scroll. The three themes' grain tiles were the same speckle three times, so they are one
-  part, grain; parchment, weave, lattice and the scroll switch are new (tools/make-art-parts.py, original art drawn from
-  shapes).
-- **Appearance > Art**: a dropdown per kind - the theme's own, the kind's default, or any part - with a picture of the part
-  drawing now; kept per theme ([Art.<theme id>] in User.ini, like the colours), Theme's own art puts them all back.
+- **Fourteen kinds, five shapes of each, the default among them.** Frame, Background, Popups and lists, Highlight frame,
+  Boxes, Buttons, Tick boxes, Switch, Slider grabs, Scroll bars, Tabs, Arrows, Section lines and the Mouse pointer
+  (include/ArtKinds.h). Frames: Skyrim knotwork (default), Norden, Oathvein, Vel'dun, Oblivion map edge. Backgrounds:
+  plain (default), grain, parchment, weave, lattice. Switches: rounded (default), Norden, Oathvein, Vel'dun, Oblivion
+  scroll. Popups and the highlight frame pick from the frames. Every other kind: the built-in shape (default) and one
+  part in each theme's shape language - Norden's rounded corners and bright ticks, Oathvein's slanted cut and scratch,
+  Vel'dun's cut corners and inner line, the Oblivion scroll's scooped corners and brass studs (tools/make-control-art.py,
+  original art drawn from shapes). The three themes' grain tiles were the same speckle three times, so they are one part.
+- **The on-screen keyboard follows the art**: its keys are buttons and its panel a framed window, so Buttons, Frame and
+  Background restyle it.
+- **The art reaches every page**: Dear ImGui is built with a small patch (cmake/ports*/imgui/amf-art-hooks.patch, one
+  function pointer called where ImGui draws a box, button, tick box, slider grab, scroll bar, section line, tab, arrow or
+  popup), and AMF draws the picked part there instead. The framework's pages, converted MCM pages, every mod's page and
+  the keyboard all change alike, with the text and behaviour untouched. A part is drawn white and tinted with the
+  control's colour at that moment, its edge layer in the line colour, so the Colours picks and hover / held states show.
+- **Appearance > Art**: grouped as Window, Controls, and Lines and pointer - a dropdown per kind (the theme's own, the
+  kind's default, or any part) with a picture of the part drawing now; kept per theme ([Art.<theme id>] in User.ini, like the colours), Theme's own art puts them all back.
   Colours > Frame art tints them. "None" for the frame takes even the Skyrim knotwork away.
 - **The Oblivion theme**, from the Oblivion Remastered port: brown ink on parchment with brass accents, the embroidered
   map-edge frame (its stitched edges repeat instead of stretching, scaled with the layout as on the port), a parchment
   ground and a scroll-shaped switch.
-- DevBench amf.menu op=art: lists the parts, or picks one for the active theme; op=skin reports the parts drawing and the
-  frame's cut.
+- DevBench amf.menu op=art: lists every kind's parts, or picks one for the active theme (kind=Frame, Box, TickBox, ...;
+  loaded at the next frame); op=skin reports the parts drawing for every kind and the frame's cut.
 
 ### Changed
 - The Skyrim knotwork is now a part too (frames/skyrim-knotwork.png); the copy built into the DLL stays as the fallback
   when the assets folder is missing.
 - The highlight frame round a selected item takes its form from the frame's .ini: line-and-corners for the knotwork and
   the map edge, the whole frame for the thin-line frames.
-- The in-game help (Help > How it looks) covers the Theme and text, Window, Colours and Art pages, in all 11 languages.
+- The in-game help (Help > How it looks) covers the Theme and text, Window, Colours and Art pages, every art kind
+  named, in all 11 languages.
 - tools/make-theme-art.py writes its art into the library; the theme INIs are edited by hand.
 
 ### Fixed

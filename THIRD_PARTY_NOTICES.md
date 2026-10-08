@@ -63,7 +63,7 @@ MIT - the notice is `include/DevBench/DevBenchAPI.LICENSE.txt`, kept with the fi
 
 Third-party components, each under its own permissive licence:
 
-* Dear ImGui (MIT) - https://github.com/ocornut/imgui
+* Dear ImGui (MIT) - https://github.com/ocornut/imgui - 1.90.8 (docking), built with one change of ours since 2.1.6: an art hook (cmake/ports/imgui/amf-art-hooks.patch) that lets the framework draw its art parts in place of ImGui's boxes, buttons and other shapes
 * CommonLibSSE-NG (MIT) - https://github.com/CharmedBaryon/CommonLibSSE-NG
 * DevBenchAPI header/source (MIT) - the consumer API of DevBench, vendored so the framework can
   register its DevBench driving tools; devbench.dll itself is a separate, optional, GPL program

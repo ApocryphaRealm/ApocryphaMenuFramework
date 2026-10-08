@@ -29,6 +29,8 @@
 #include <string>
 #include <vector>
 
+#include "ArtKinds.h"
+
 struct ImVec2;
 
 namespace skin
@@ -45,20 +47,17 @@ namespace skin
 	};
 
 	// THE ART LIBRARY (2.1.6, the owner, 2026-10-08: "add an assets folder with sub folders for the customization section
-	// to choose from ... break down the themes into their art parts"). Every theme's art is one PART per kind, a PNG named
-	// after the theme it came from, in Data/SKSE/Plugins/ApocryphaMenuFramework/assets/<folder>/<name>.png. A frame has a
-	// <name>.ini beside it saying how it is cut (uCorner, uDrawCorner, bTileEdges, sHighlight). A theme names its parts
-	// (sFrameArt / sBackgroundArt / sToggleArt); the player can pick any part for any theme on Appearance > Art.
-	enum class ArtKind : std::uint32_t
-	{
-		kFrame = 0,    // assets/frames      - the window frame, nine-sliced
-		kBackground,   // assets/backgrounds - the window background, tiled or stretched
-		kToggle,       // assets/toggles     - the on/off switch track plate
-		kCount
-	};
-	inline constexpr const char* kArtKeys[] = { "sFrame", "sBackground", "sToggle" };          // [Art.<theme id>] keys
-	inline constexpr const char* kArtFolders[] = { "frames", "backgrounds", "toggles" };      // under assets/
-	inline constexpr const char* kArtNone = "none";   // a player's pick meaning "no art of this kind"
+	// to choose from ... break down the themes into their art parts"). Every piece of art is one PART of a kind
+	// (ArtKinds.h), a PNG in Data/SKSE/Plugins/ApocryphaMenuFramework/assets/<folder>/<name>.png, named after the theme it
+	// came from. Beside it, all optional:
+	//   <name>.ini        how it is cut: [Frame] uCorner, uDrawCorner, bTileEdges, sHighlight (frames); uCorner for any
+	//                     nine-sliced part; uHotX / uHotY for a cursor
+	//   <name>-edge.png   a second layer drawn over the first in the theme's line colour (boxes, buttons, tabs, tick
+	//                     boxes, slider grabs, scroll bars): the first layer is tinted with the colour the control has
+	//                     right now (at rest, under the mouse, held), so a part keeps the theme's colours and states
+	//   <name>-mark.png   the tick, for a tick box
+	//   <name>-track.png  the track (and <name>-track-edge.png), for a scroll bar
+	// A theme names its parts (s<Kind>Art); the player can pick any part for any theme on Appearance > Art.
 
 	// The part names in assets/<folder>/ (file names without .png), sorted. Read from disk on each call - the Art page
 	// calls it when it opens, not every frame.
@@ -69,6 +68,28 @@ namespace skin
 	std::string ActiveArt(ArtKind a_kind);
 	// A part's texture for the Art page's previews, loaded once and kept (a few small PNGs). Null if it does not load.
 	void* ArtThumb(ArtKind a_kind, const std::string& a_name, ImVec2* a_size);
+
+	// A loaded part of one of the control kinds (Box .. Cursor) - what the ImGui art hook (ArtHooks.cpp) draws.
+	struct ArtImage
+	{
+		void*  srv = nullptr;
+		float  w = 0.0f, h = 0.0f;   // the texture's own size
+	};
+	struct ArtPart
+	{
+		ArtImage main;       // <name>.png
+		ArtImage edge;       // <name>-edge.png
+		ArtImage extra;      // <name>-mark.png (tick box) or <name>-track.png (scroll bar)
+		ArtImage extraEdge;  // <name>-track-edge.png
+		float corner = 0.0f;       // uCorner in the texture (0 = a quarter of its smaller side)
+		float drawCorner = 0.0f;   // uDrawCorner on a 1080p screen (0 = the same as corner); a cursor: its height there
+		bool  tile = false;        // bTileEdges
+		float hotX = 0.0f, hotY = 0.0f;   // a cursor's hot spot, in texture pixels
+		bool  cornersOnly = false; // sHighlight=corners (a frame picked for Highlight: the line and four corners)
+	};
+	// The part drawing now for a kind, or null for the built-in look. Frame, Background and Switch keep their own
+	// accessors below; Popup and Highlight are frames.
+	const ArtPart* Part(ArtKind a_kind);
 
 	// Loads (or reloads) every texture named by the current settings. Safe to call at any time
 	// from the render thread; safe to call before the D3D device exists, in which case nothing

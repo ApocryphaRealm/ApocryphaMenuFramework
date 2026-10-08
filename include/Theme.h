@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 
+#include "ArtKinds.h"
+
 // ============================================================================================
 // Theme REGISTRY (the author, 2026-08-27) - supersedes the original "no theme-customisation UI by
 // design" stance recorded below, the same way a rule gets amended rather than left standing
@@ -60,12 +62,10 @@ namespace theme
 		std::string   skinPlates;
 
 		// 2.1.6 - THE THEME'S ART PARTS, BY NAME (the owner, 2026-10-08: "break down the themes into their art parts and put
-		// them into the subfolders for the theme to draw from"): a name in assets/frames, assets/backgrounds or
-		// assets/toggles (sFrameArt / sBackgroundArt / sToggleArt). A name wins over the old path keys above; a player's
-		// own pick on Appearance > Art wins over both.
-		std::string   frameArt;
-		std::string   backgroundArt;
-		std::string   toggleArt;
+		// them into the subfolders for the theme to draw from"): one name per kind (ArtKinds.h) from assets/<folder>/,
+		// INI key s<Kind>Art (sFrameArt, sBoxArt, ...). Empty = the built-in look of that kind. A name wins over the old
+		// path keys above; a player's own pick on Appearance > Art wins over both.
+		std::array<std::string, skin::kArtKindCount> art;
 
 		// TEXT ROLES on the pages AMF builds from MCM menus (2.1.5, the owner, 2026-10-07: "regular text could be
 		// white, gray for other things, and then ... the non-selectable text that's like a heading of a section be

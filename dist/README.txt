@@ -25,10 +25,13 @@ WHAT YOU GET
     map-edge frame on parchment), and four made to sit beside other interfaces: Vel'dun,
     Oathvein, Norden and Norden - Black - plus a font picker (drop a .ttf into
     Data/SKSE/Plugins/ApocryphaMenuFramework/fonts) and a text-size slider.
-  * Build your own look: every theme's art is a part in an art library (assets folder) - five
-    frames, five backgrounds and five switches, each a different shape - and Appearance > Art
-    picks any of them for any theme, recoloured by Appearance > Colours. Each theme keeps its
-    own picks. A theme is one INI naming its parts, so you can add your own (CUSTOM-MENU-ART.md).
+  * Build your own look: every piece of the menu's art is a part in an art library (assets
+    folder) - the frame, background, popups, highlight frame, boxes, buttons, tick boxes,
+    switches, slider grabs, scroll bars, tabs, arrows, section lines and the mouse pointer, five
+    shapes of each - and Appearance > Art picks any of them for any theme, recoloured by
+    Appearance > Colours. It reaches every page, every mod's included, and the on-screen
+    keyboard. Each theme keeps its own picks. A theme is one INI naming its parts, so you can
+    add your own (CUSTOM-MENU-ART.md).
   * Full controller navigation. Keyboard or controller is detected from whatever you last
     used - there is nothing to configure and nothing to switch on.
   * Menu-key rebinding (default F1), per-save persistence of menu state, and a hang watchdog
@@ -51,7 +54,7 @@ WHAT CHANGED
 ------------
 
 Version 2.1.6
-Build your own look: Appearance > Art picks the frame, background and switch for each theme from every theme's art - five of each, each a different shape, the Skyrim look's default among them - and Colours tints them. New Oblivion theme: the Oblivion Remastered port's map-edge frame on parchment with a scroll-shaped switch. The slider in the Colours preview moves one step per press like every other slider, the Choose-menus help reads right again, and the in-game help covers the Window, Colours and Art pages.
+Build your own look: Appearance > Art picks each part of the menu for each theme from every theme's art - the frame, background, popups, highlight frame, boxes, buttons, tick boxes, switches, slider grabs, scroll bars, tabs, arrows, section lines and mouse pointer, five shapes of each with the default among them - on every page, every mod's included, and the on-screen keyboard; Colours tints them. New Oblivion theme: the Oblivion Remastered port's map-edge frame on parchment with a scroll-shaped switch. The slider in the Colours preview moves one step per press like every other slider, the Choose-menus help reads right again, and the in-game help covers the Window, Colours and Art pages.
 
 Version 2.1.5
 Converted MCM pages read more clearly: section headings in their own colour, help text in another, values in grey, and Font Awesome icons on key buttons, text fields, colours, buttons and notes. The highlighted option's help shows in a help bar under the right pane, inside the menu, like SkyUI's info line (Appearance > Help bar; off shows it as a popup kept inside the pane). Section headings no longer show "$KEY_Names": keys inside font tags are translated, and a key with no translation reads as words. "\n" in help is a line break, and values no longer run into the next column.

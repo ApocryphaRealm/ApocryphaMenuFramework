@@ -14,6 +14,8 @@
 #include <string>
 #include <vector>
 
+#include "ArtKinds.h"
+
 namespace settings
 {
 	// A REMEMBERED WINDOW GEOMETRY, held as FRACTIONS of the display so it survives a resolution
@@ -85,7 +87,7 @@ namespace settings
 		std::map<std::string, std::array<std::string, 13>> themeColors;   // 13 = theme::kRoleCount (Settings.cpp checks)
 		// 2.1.6: the player's own art per theme (Appearance > Art) - frame, background, switch, each a part name from
 		// assets/<kind>/; empty = that theme's own, "none" = no art of that kind. [Art.<theme id>] in the INI.
-		std::map<std::string, std::array<std::string, 3>> themeArt;      // 3 = skin::ArtKind::kCount (Settings.cpp checks)
+		std::map<std::string, std::array<std::string, skin::kArtKindCount>> themeArt;   // one per kind (ArtKinds.h)
 
 		// [Input]
 		std::int32_t toggleKey = 0x3B;   // DirectInput scan code; 0x3B = F1 (framework convention, the author 2026-08-27)

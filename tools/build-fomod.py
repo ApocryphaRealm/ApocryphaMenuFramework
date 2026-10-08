@@ -71,6 +71,15 @@ Corresponding source: https://github.com/ApocryphaRealm/ApocryphaMenuFramework (
 """
 
 
+# A theme INI's art keys and the library folder each one names a part in (include/ArtKinds.h, 2.1.6).
+ART_FOLDERS = {
+    "sFrameArt": "frames", "sBackgroundArt": "backgrounds", "sToggleArt": "toggles", "sBoxArt": "boxes",
+    "sButtonArt": "buttons", "sTickBoxArt": "tickboxes", "sSliderArt": "sliders", "sScrollbarArt": "scrollbars",
+    "sSectionArt": "sections", "sTabArt": "tabs", "sArrowArt": "arrows", "sPopupArt": "frames",
+    "sHighlightArt": "frames", "sCursorArt": "cursors",
+}
+
+
 def fail(msg):
     raise SystemExit("build-fomod: " + msg)
 
@@ -179,9 +188,9 @@ def main(out_root=None):
                 if not os.path.isfile(os.path.join(themes_dst, rel.replace("/", os.sep))):
                     fail("theme %s names %s, which is not in the package" % (name, val))
             # a part named by a theme must be in the library, or the theme shows in the picker and draws nothing
-            kind = {"sFrameArt": "frames", "sBackgroundArt": "backgrounds", "sToggleArt": "toggles"}.get(key)
-            if kind and val and not os.path.isfile(os.path.join(assets_dst, kind, val + ".png")):
-                fail("theme %s names the %s part %s, which is not in assets/%s" % (name, kind[:-1], val, kind))
+            kind = ART_FOLDERS.get(key)
+            if kind and val and val.lower() != "none" and not os.path.isfile(os.path.join(assets_dst, kind, val + ".png")):
+                fail("theme %s names the %s part %s, which is not in assets/%s" % (name, key, val, kind))
 
     # The Font Awesome icon faces (2.0.4) and their SIL OFL 1.1 licence text, which the OFL requires
     # to travel with the fonts. A missing face only costs icons in game, so the build stops instead.
