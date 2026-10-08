@@ -1101,6 +1101,42 @@ namespace renderer
 
 		void DrawMenuListSection();  // defined below, next to the other leaf panes
 
+		// SUB-TABS of a settings tab (2.1.5, the owner: Appearance and MCM menus get "sub tabs ... rather than a long page
+		// with collapsible sections"). A tab bar inside the tab, declared to the nav exactly like a mod page's own tabs
+		// (DeclareInnerTabs), so the bumpers walk it and a page change keeps the D-pad working. The bar is ended when the
+		// object goes, so it must go out of scope before the outer tab's EndTabItem. a_current is kept by the caller.
+		class SubTabs
+		{
+		public:
+			SubTabs(const char* a_id, int a_count, int& a_current) : _current(a_current)
+			{
+				_request = DeclareInnerTabs(a_count, a_current);
+				_open = ImGui::BeginTabBar(a_id, ImGuiTabBarFlags_FittingPolicyScroll);
+			}
+			~SubTabs()
+			{
+				if (_open) { ImGui::EndTabBar(); }
+			}
+			SubTabs(const SubTabs&) = delete;
+			SubTabs& operator=(const SubTabs&) = delete;
+
+			bool Tab(const char* a_label)
+			{
+				if (!_open) { return false; }
+				const ImGuiTabItemFlags flags = _index == _request ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
+				const bool open = ImGui::BeginTabItem(a_label, nullptr, flags);
+				if (open) { _current = _index; }
+				++_index;
+				return open;
+			}
+
+		private:
+			int& _current;
+			int _request = -1;
+			int _index = 0;
+			bool _open = false;
+		};
+
 		// COLOURS (2.1.5, the owner, 2026-10-07): the player's own colour for every part of the framework's look - "its frame,
 		// box, sliders, and other things", the background ("like how Oathvein is gray, but Norden and Skyrim themes are black"),
 		// switches, and the converted MCM pages' headings and help ("blue text or yellow text"). A picker per role for the
@@ -1324,26 +1360,9 @@ namespace renderer
 				ImGui::Spacing();
 				ImGui::Spacing();
 
-				// Persistence-channel test harness (decisions doc S10) - lets the per-save round
-				// trip be exercised end to end (write, save, quit, reload, confirm) with no Papyrus
-				// compiler involved. Debug-only surface; not a real setting - so players never see it (the owner,
-				// 2026-10-05: "we can hide the persistence test"). It shows only at [Log] uLogLevel=0 (trace).
-				if (values.logLevel == 0)
-				{
-					ImGui::TextUnformatted("Persistence test (S10)");
-					static char testBuffer[128] = "";
-					ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.7f);
-					ImGui::InputText("##persistValue", testBuffer, sizeof(testBuffer));
-					keyboard::NoteTextField(ImGui::GetItemID());
-					ImGui::SameLine();
-					if (ImGui::Button("Set"))
-					{
-						persistence::SetValue("test-value", testBuffer);
-					}
-					ImGui::Text("Currently stored: \"%s\"", persistence::GetValue("test-value", "<unset>").c_str());
-					ImGui::TextWrapped("Set a value, save the game, quit, reload the same save - the "
-									   "value should still be here. A DIFFERENT save should show <unset>.");
-				}
+				// The persistence-channel test harness (decisions doc S10) that sat here at trace level is gone (the owner,
+				// 2026-10-07: "get rid of the persistence test at the bottom of the settings page"); the channel itself
+				// (Persistence.h) is unchanged.
 
 				ImGui::EndTabItem();
 			}
@@ -1359,182 +1378,190 @@ namespace renderer
 				// theme. Hiding the controls left the one install that most needs them unable to reach
 				// them, and told the player something untrue about their own menu while doing it.
 
-				// Theme picker (design decision, 2026-08-27) - supersedes the original "no theme UI by design"
-				// stance; the registry is additive (theme::Theme.h), never overwriting an entry.
-				const std::vector<theme::Palette> themes = theme::ListThemes();
-				const theme::Palette& active = theme::GetActiveTheme();
-
-				int currentIndex = 0;
-				std::vector<const char*> names;
-				names.reserve(themes.size());
-				for (std::size_t i = 0; i < themes.size(); ++i)
+				// SUB-TABS (2.1.5, the owner: "sub tabs for it rather than a long page with collapsible sections").
 				{
-					names.push_back(themes[i].name.c_str());
-					if (themes[i].id == active.id)
+					static int s_appearanceSub = 0;
+					SubTabs sub("##appearancesub", 3, s_appearanceSub);
+					if (sub.Tab(TR("AMF_SubThemeText", "Theme and text")))
 					{
-						currentIndex = static_cast<int>(i);
-					}
-				}
+					// Theme picker (design decision, 2026-08-27) - supersedes the original "no theme UI by design"
+					// stance; the registry is additive (theme::Theme.h), never overwriting an entry.
+					const std::vector<theme::Palette> themes = theme::ListThemes();
+					const theme::Palette& active = theme::GetActiveTheme();
 
-				ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
-				if (theme::ComboTight(TR("AMF_Theme", "Theme"), &currentIndex, names.data(), static_cast<int>(names.size())))
-				{
-					theme::SetActiveTheme(themes[currentIndex].id);
-					theme::Apply();
-					skin::Reload();   // the new theme's own frame and background, if it has any
-					values.themeId = themes[currentIndex].id;
-					settings::Save();
-				}
-				ImGui::TextWrapped("%s", TR("AMF_ThemeHelp", "\"Skyrim\" is the knotwork look - the Nordic frame with silver and gold "
-								   "lines. \"Untarnished\" is the framework's original identity: the same "
-								   "layout with clean lines and no frame art."));
-		
-				ImGui::Spacing();
-
-				// FONT picker - separate from the theme on purpose (the author): the theme decides colours,
-				// this decides the letterforms, and the two combine freely.
-				{
-					int current = 0;
-					std::vector<const char*> labels;
-					labels.reserve(g_fontChoices.size());
-					for (std::size_t i = 0; i < g_fontChoices.size(); ++i)
+					int currentIndex = 0;
+					std::vector<const char*> names;
+					names.reserve(themes.size());
+					for (std::size_t i = 0; i < themes.size(); ++i)
 					{
-						labels.push_back(g_fontChoices[i].label.c_str());
-						if (g_fontChoices[i].path == values.fontPath) { current = static_cast<int>(i); }
+						names.push_back(themes[i].name.c_str());
+						if (themes[i].id == active.id)
+						{
+							currentIndex = static_cast<int>(i);
+						}
 					}
+
 					ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
-					if (!labels.empty() && theme::ComboTight(TR("AMF_Font", "Font"), &current, labels.data(), static_cast<int>(labels.size())))
+					if (theme::ComboTight(TR("AMF_Theme", "Theme"), &currentIndex, names.data(), static_cast<int>(names.size())))
 					{
-						values.fontPath = g_fontChoices[current].path;
+						theme::SetActiveTheme(themes[currentIndex].id);
+						theme::Apply();
+						skin::Reload();   // the new theme's own frame and background, if it has any
+						values.themeId = themes[currentIndex].id;
 						settings::Save();
-						g_fontRebuildPending = true;  // re-rasterise in the new face
-						logger::info("settings page: font -> \"{}\" ({})",
-									 g_fontChoices[current].label,
-									 values.fontPath.empty() ? "auto" : values.fontPath.c_str());
 					}
-					ImGui::TextWrapped("%s", TR("AMF_FontHelp", "Drop a .ttf into Data/SKSE/Plugins/ApocryphaMenuFramework/fonts "
-									   "to add it to this list."));
-				}
-				ImGui::Spacing();
-				ImGui::Spacing();
-
-				// LANGUAGE (1.6.4): which translation file the framework's own text comes from. "Game
-				// language" follows the game's sLanguage; a named entry forces that file (the INI's
-				// sLanguage). Changing it reloads the strings and rebuilds the atlas for the new glyphs.
-				{
-					static std::vector<std::string> s_langs;
-					static double s_scannedAt = -1.0;
-					const double now = ImGui::GetTime();
-					if (s_scannedAt < 0.0 || now - s_scannedAt > 5.0) { s_langs = strings::Available(); s_scannedAt = now; }
-					std::vector<std::string> labels;
-					labels.push_back(std::string(TR("AMF_LanguageAuto", "Game language")) + " (" + strings::Language() + ")");
-					for (const auto& l : s_langs) { std::string t = l; if (!t.empty()) { t[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(t[0]))); } labels.push_back(t); }
-					std::vector<const char*> cLabels;
-					for (const auto& l : labels) { cLabels.push_back(l.c_str()); }
-					int current = 0;
-					const std::string& forced = settings::Get().language;
-					for (std::size_t i = 0; i < s_langs.size(); ++i) { if (!forced.empty() && s_langs[i] == forced) { current = static_cast<int>(i) + 1; } }
-					ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
-					if (theme::ComboTight(TR("AMF_Language", "Language"), &current, cLabels.data(), static_cast<int>(cLabels.size())))
-					{
-						strings::SetLanguage(current == 0 ? "" : s_langs[static_cast<std::size_t>(current - 1)]);
-					}
-					ImGui::TextWrapped("%s", TR("AMF_LanguageHelp", "The framework's own text. Game language follows Skyrim's setting; pick one to force it. "
-									   "Each mod's own page is translated by that mod. Translation files: Data/Interface/Translations/ApocryphaMenuFramework_<language>.txt."));
-				}
-				ImGui::Spacing();
-				ImGui::Spacing();
-
-				ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
-				if (precise::SliderFloat(TR("AMF_TextSize", "Text size"), &values.textScale, 1.0f, 2.0f, "%.2f"))
-				{
-					// applied live via FontGlobalScale each frame
-				}
-				if (ImGui::IsItemDeactivatedAfterEdit())
-				{
-					logger::info("settings page: text scale -> {:.2f}", values.textScale);
-					settings::Save();
-					g_fontRebuildPending = true;  // re-rasterise at the new size rather than stretch
-				}
-				ImGui::TextWrapped("%s", TR("AMF_TextSizeHelp", "Extra text scaling on top of the automatic resolution scale."));
-				ImGui::Spacing();
-				ImGui::Spacing();
-
-				// THE WINDOW, THREE SWITCHES (2.1.1 - Barzing on Nexus, 2026-10-05: resize "also in height", "move the window",
-				// "the semi transparence of the window"; the owner: "seperate toggles" ... "in apperance teb"). Each ON by default
-				// (the owner: "have it default to on, along with the other settings we just added"); See-through starts at
-				// 100% opacity, so it looks solid until the slider is lowered.
-				if (widgets::Toggle(TR("AMF_MovableWindow", "Move the window"), &values.movableWindow))
-				{
-					logger::info("settings page: move the window -> {}", values.movableWindow);
-					settings::Save();
-					if (!values.movableWindow) { g_applyGeometry.store(true, std::memory_order_release); }   // back to the centre
-				}
-				ImGui::TextWrapped("%s", TR("AMF_MovableWindowHelp", "On: drag the top row - the name and version - to move the "
-					"menu, and it opens where you left it. Off: it sits in the middle of the screen."));
-				if (widgets::Toggle(TR("AMF_FreeResize", "Resize the window"), &values.freeResize))
-				{
-					logger::info("settings page: resize the window -> {}", values.freeResize);
-					settings::Save();
-				}
-				ImGui::TextWrapped("%s", TR("AMF_FreeResizeHelp", "On: drag any edge or corner to resize the menu - height "
-					"and width alike - and the size is kept. Off: the size is fixed."));
-				if (widgets::Toggle(TR("AMF_SeeThrough", "See-through window"), &values.seeThrough))
-				{
-					logger::info("settings page: see-through window -> {}", values.seeThrough);
-					settings::Save();
-					theme::Apply();
-				}
-				ImGui::TextWrapped("%s", TR("AMF_SeeThroughHelp", "On: the opacity below fades the menu's background so the game "
-					"shows through. Off: the background is solid."));
-				ImGui::BeginDisabled(!values.seeThrough);
-				ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
-				if (precise::SliderInt(TR("AMF_WindowOpacity", "Window opacity"), &values.windowOpacity, 5, 100, "%d%%"))
-				{
-					theme::Apply();   // live while dragging
-				}
-				if (ImGui::IsItemDeactivatedAfterEdit())
-				{
-					logger::info("settings page: window opacity -> {}%", values.windowOpacity);
-					settings::Save();
-				}
-				ImGui::TextWrapped("%s", TR("AMF_WindowOpacityHelp", "How solid the menu is: 100% is solid, lower lets the game show through. The black background fades the most, boxes and borders less, text least; right-click menus stay solid."));
-				ImGui::EndDisabled();
-				// 2.1.5 (the owner, 2026-10-07): the help bar, with "a toggle just in case anybody doesn't like" it.
-				if (widgets::Toggle(TR("AMF_HelpBar", "Help bar"), &values.helpBar))
-				{
-					logger::info("settings page: help bar -> {}", values.helpBar);
-					settings::Save();
-				}
-				ImGui::TextWrapped("%s", TR("AMF_HelpBarHelp", "On: the help for the highlighted option on a converted MCM page "
-					"shows in a bar under the right pane, inside the menu, like SkyUI's info line. Off: it shows as a popup beside "
-					"the option."));
-				// 2.1.5: the player's own colours over the theme's (DrawColorRoles).
-				if (ImGui::TreeNode("##colors", "%s", TR("AMF_Colors", "Colours")))
-				{
-					ImGui::TextWrapped("%s", TR("AMF_ColorsHelp", "Your own colour for each part of the menu, over the theme's. Each starts as "
-						"the theme's own; Theme puts one back. Frame art tints the theme's frame and background pictures."));
-					DrawColorRoles();
-					ImGui::TreePop();
-				}
-				ImGui::Spacing();
-				ImGui::Spacing();
+					ImGui::TextWrapped("%s", TR("AMF_ThemeHelp", "\"Skyrim\" is the knotwork look - the Nordic frame with silver and gold "
+									   "lines. \"Untarnished\" is the framework's original identity: the same "
+									   "layout with clean lines and no frame art."));
 		
+					ImGui::Spacing();
 
-				// CUSTOM MENU ART IS OFF UNLESS ASKED FOR (the owner, 2026-09-10: "i dont want the custom
-				// menu art to be visible ... there needs to be a way to not have it on at all times").
-				// The switch is here as well as in the INI so a player can turn it off without editing a
-				// file, and turning it off reloads at once rather than at the next launch.
-				if (widgets::Toggle(TR("AMF_SkinEnabled", "Custom menu art from a UI author"), &values.skinEnabled))
-				{
-					logger::info("settings page: custom menu art -> {}", values.skinEnabled);
-					settings::Save();
-					skin::Reload();
+					// FONT picker - separate from the theme on purpose (the author): the theme decides colours,
+					// this decides the letterforms, and the two combine freely.
+					{
+						int current = 0;
+						std::vector<const char*> labels;
+						labels.reserve(g_fontChoices.size());
+						for (std::size_t i = 0; i < g_fontChoices.size(); ++i)
+						{
+							labels.push_back(g_fontChoices[i].label.c_str());
+							if (g_fontChoices[i].path == values.fontPath) { current = static_cast<int>(i); }
+						}
+						ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
+						if (!labels.empty() && theme::ComboTight(TR("AMF_Font", "Font"), &current, labels.data(), static_cast<int>(labels.size())))
+						{
+							values.fontPath = g_fontChoices[current].path;
+							settings::Save();
+							g_fontRebuildPending = true;  // re-rasterise in the new face
+							logger::info("settings page: font -> \"{}\" ({})",
+										 g_fontChoices[current].label,
+										 values.fontPath.empty() ? "auto" : values.fontPath.c_str());
+						}
+						ImGui::TextWrapped("%s", TR("AMF_FontHelp", "Drop a .ttf into Data/SKSE/Plugins/ApocryphaMenuFramework/fonts "
+										   "to add it to this list."));
+					}
+					ImGui::Spacing();
+					ImGui::Spacing();
+
+					// LANGUAGE (1.6.4): which translation file the framework's own text comes from. "Game
+					// language" follows the game's sLanguage; a named entry forces that file (the INI's
+					// sLanguage). Changing it reloads the strings and rebuilds the atlas for the new glyphs.
+					{
+						static std::vector<std::string> s_langs;
+						static double s_scannedAt = -1.0;
+						const double now = ImGui::GetTime();
+						if (s_scannedAt < 0.0 || now - s_scannedAt > 5.0) { s_langs = strings::Available(); s_scannedAt = now; }
+						std::vector<std::string> labels;
+						labels.push_back(std::string(TR("AMF_LanguageAuto", "Game language")) + " (" + strings::Language() + ")");
+						for (const auto& l : s_langs) { std::string t = l; if (!t.empty()) { t[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(t[0]))); } labels.push_back(t); }
+						std::vector<const char*> cLabels;
+						for (const auto& l : labels) { cLabels.push_back(l.c_str()); }
+						int current = 0;
+						const std::string& forced = settings::Get().language;
+						for (std::size_t i = 0; i < s_langs.size(); ++i) { if (!forced.empty() && s_langs[i] == forced) { current = static_cast<int>(i) + 1; } }
+						ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
+						if (theme::ComboTight(TR("AMF_Language", "Language"), &current, cLabels.data(), static_cast<int>(cLabels.size())))
+						{
+							strings::SetLanguage(current == 0 ? "" : s_langs[static_cast<std::size_t>(current - 1)]);
+						}
+						ImGui::TextWrapped("%s", TR("AMF_LanguageHelp", "The framework's own text. Game language follows Skyrim's setting; pick one to force it. "
+										   "Each mod's own page is translated by that mod. Translation files: Data/Interface/Translations/ApocryphaMenuFramework_<language>.txt."));
+					}
+					ImGui::Spacing();
+					ImGui::Spacing();
+
+					ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
+					if (precise::SliderFloat(TR("AMF_TextSize", "Text size"), &values.textScale, 1.0f, 2.0f, "%.2f"))
+					{
+						// applied live via FontGlobalScale each frame
+					}
+					if (ImGui::IsItemDeactivatedAfterEdit())
+					{
+						logger::info("settings page: text scale -> {:.2f}", values.textScale);
+						settings::Save();
+						g_fontRebuildPending = true;  // re-rasterise at the new size rather than stretch
+					}
+					ImGui::TextWrapped("%s", TR("AMF_TextSizeHelp", "Extra text scaling on top of the automatic resolution scale."));
+					ImGui::Spacing();
+					ImGui::Spacing();
+					// CUSTOM MENU ART IS OFF UNLESS ASKED FOR (the owner, 2026-09-10: "i dont want the custom
+					// menu art to be visible ... there needs to be a way to not have it on at all times").
+					// The switch is here as well as in the INI so a player can turn it off without editing a
+					// file, and turning it off reloads at once rather than at the next launch.
+					if (widgets::Toggle(TR("AMF_SkinEnabled", "Custom menu art from a UI author"), &values.skinEnabled))
+					{
+						logger::info("settings page: custom menu art -> {}", values.skinEnabled);
+						settings::Save();
+						skin::Reload();
+					}
+					ImGui::TextWrapped("%s", TR("AMF_SkinEnabledHelp", "Off: the menu keeps its built-in look, whatever is set under [Skin] in the "
+									   "INI. On: the frame, background and toggle switch are replaced by the PNGs a UI "
+									   "author has pointed the framework at. Leave this off unless you have installed "
+									   "artwork made for it."));
+						ImGui::EndTabItem();
+					}
+					if (sub.Tab(TR("AMF_SubWindow", "Window")))
+					{
+					// THE WINDOW, THREE SWITCHES (2.1.1 - Barzing on Nexus, 2026-10-05: resize "also in height", "move the window",
+					// "the semi transparence of the window"; the owner: "seperate toggles" ... "in apperance teb"). Each ON by default
+					// (the owner: "have it default to on, along with the other settings we just added"); See-through starts at
+					// 100% opacity, so it looks solid until the slider is lowered.
+					if (widgets::Toggle(TR("AMF_MovableWindow", "Move the window"), &values.movableWindow))
+					{
+						logger::info("settings page: move the window -> {}", values.movableWindow);
+						settings::Save();
+						if (!values.movableWindow) { g_applyGeometry.store(true, std::memory_order_release); }   // back to the centre
+					}
+					ImGui::TextWrapped("%s", TR("AMF_MovableWindowHelp", "On: drag the top row - the name and version - to move the "
+						"menu, and it opens where you left it. Off: it sits in the middle of the screen."));
+					if (widgets::Toggle(TR("AMF_FreeResize", "Resize the window"), &values.freeResize))
+					{
+						logger::info("settings page: resize the window -> {}", values.freeResize);
+						settings::Save();
+					}
+					ImGui::TextWrapped("%s", TR("AMF_FreeResizeHelp", "On: drag any edge or corner to resize the menu - height "
+						"and width alike - and the size is kept. Off: the size is fixed."));
+					if (widgets::Toggle(TR("AMF_SeeThrough", "See-through window"), &values.seeThrough))
+					{
+						logger::info("settings page: see-through window -> {}", values.seeThrough);
+						settings::Save();
+						theme::Apply();
+					}
+					ImGui::TextWrapped("%s", TR("AMF_SeeThroughHelp", "On: the opacity below fades the menu's background so the game "
+						"shows through. Off: the background is solid."));
+					ImGui::BeginDisabled(!values.seeThrough);
+					ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
+					if (precise::SliderInt(TR("AMF_WindowOpacity", "Window opacity"), &values.windowOpacity, 5, 100, "%d%%"))
+					{
+						theme::Apply();   // live while dragging
+					}
+					if (ImGui::IsItemDeactivatedAfterEdit())
+					{
+						logger::info("settings page: window opacity -> {}%", values.windowOpacity);
+						settings::Save();
+					}
+					ImGui::TextWrapped("%s", TR("AMF_WindowOpacityHelp", "How solid the menu is: 100% is solid, lower lets the game show through. The black background fades the most, boxes and borders less, text least; right-click menus stay solid."));
+					ImGui::EndDisabled();
+					// 2.1.5 (the owner, 2026-10-07): the help bar, with "a toggle just in case anybody doesn't like" it.
+					if (widgets::Toggle(TR("AMF_HelpBar", "Help bar"), &values.helpBar))
+					{
+						logger::info("settings page: help bar -> {}", values.helpBar);
+						settings::Save();
+					}
+					ImGui::TextWrapped("%s", TR("AMF_HelpBarHelp", "On: the help for the highlighted option on a converted MCM page "
+						"shows in a bar under the right pane, inside the menu, like SkyUI's info line. Off: it shows as a popup beside "
+						"the option."));
+						ImGui::EndTabItem();
+					}
+					// 2.1.5: the player's own colours over the theme's, kept per theme (DrawColorRoles).
+					if (sub.Tab(TR("AMF_Colors", "Colours")))
+					{
+						ImGui::TextWrapped("%s", TR("AMF_ColorsHelp", "Your own colour for each part of the menu, over the theme's. Each starts as "
+							"the theme's own; Theme puts one back. Frame art tints the theme's frame and background pictures."));
+						DrawColorRoles();
+						ImGui::EndTabItem();
+					}
 				}
-				ImGui::TextWrapped("%s", TR("AMF_SkinEnabledHelp", "Off: the menu keeps its built-in look, whatever is set under [Skin] in the "
-								   "INI. On: the frame, background and toggle switch are replaced by the PNGs a UI "
-								   "author has pointed the framework at. Leave this off unless you have installed "
-								   "artwork made for it."));
 				ImGui::Spacing();
 				ImGui::EndTabItem();
 			}
@@ -1542,255 +1569,273 @@ namespace renderer
 			// MCM MENUS: which MCM menus come in, and SkyUI's own list
 			if (tab(TR("AMF_TabMcm", "MCM menus")))
 			{
-				// The MCM loader's switches (the owner, 2026-10-04): MCM Helper menus, SkyUI script menus, SkyUI's list.
-				if (widgets::Toggle(TR("AMF_McmLoad", "MCM Helper menus here"), &values.loadMcmHelperConfigs))
-				{
-					logger::info("settings page: MCM Helper menus -> {}", values.loadMcmHelperConfigs);
-					settings::Save();
-					mcmloader::SetEnabled(values.loadMcmHelperConfigs);
-				}
-				ImGui::TextWrapped("%s", TR("AMF_McmLoadHelp", "On: every mod that uses MCM Helper also gets its menu here, read from "
-								   "the mod's own files. A change goes through MCM Helper exactly as it does in SkyUI's menu."));
-				// phase 3: SkyUI menus written only in Papyrus (the owner, 2026-10-04: "do phase 3 for the SkyUI script menus")
-				if (widgets::Toggle(TR("AMF_McmScripts", "SkyUI script menus here"), &values.loadSkyUIScriptMenus))
-				{
-					logger::info("settings page: SkyUI script menus -> {}", values.loadSkyUIScriptMenus);
-					settings::Save();
-					mcmloader::SetScriptsEnabled(values.loadSkyUIScriptMenus);
-				}
-				ImGui::TextWrapped("%s", TR("AMF_McmScriptsHelp", "On: a mod whose SkyUI menu is written only in its own script also gets "
-								   "its menu here. This menu makes the same calls on that script as SkyUI's menu does."));
 				const bool anyMcm = values.loadMcmHelperConfigs || values.loadSkyUIScriptMenus;
-				if (!anyMcm) { ImGui::BeginDisabled(); }
-				if (widgets::Toggle(TR("AMF_McmHideSkyUI", "Take those mods out of SkyUI's MCM list"), &values.hideMcmInSkyUI))
+				// SUB-TABS (2.1.5, the owner: "I want the MCM menus tab to have sub tabs ... rather than a long page with collapsible
+				// sections"): where the menus come from, which ones, what is remembered, and how converted pages are spaced.
 				{
-					logger::info("settings page: hide MCM mods in SkyUI -> {}", values.hideMcmInSkyUI);
-					settings::Save();
-					mcmloader::SetHideInSkyUI(values.hideMcmInSkyUI);
-				}
-				ImGui::TextWrapped("%s", TR("AMF_McmHideSkyUIHelp", "On: a mod whose whole menu is drawn here is set in one place - "
-								   "here. A mod with anything this menu cannot draw stays in SkyUI's list. Off puts them all back."));
-				ImGui::TextDisabled(TR("AMF_McmHideSkyUICount", "%d of %d hidden from SkyUI's list now"),
-					mcmloader::HiddenInSkyUI(), mcmloader::HideableInSkyUI());
-				if (mcmloader::SkyUIListUnreadable())
-				{
-					ImGui::TextWrapped("%s", TR("AMF_McmHideUnreadable", "SkyUI's MCM list is run by another mod in a way this menu cannot read, "
-									   "so this switch takes nothing out of it here."));
-				}
-				if (!anyMcm) { ImGui::EndDisabled(); }
-
-				// Which MCM menus come into this menu (xLenax, 2026-10-04: "an option to choose which MCMs I'd like to import
-				// instead of importing all of them or None" - with about 200 of them). Folded by default; a filter for long lists.
-				if (anyMcm)
-				{
-					const std::vector<mcmloader::ImportRow> rows = mcmloader::ImportList();
-					const int imported = static_cast<int>(std::count_if(rows.begin(), rows.end(), [](const mcmloader::ImportRow& r) { return r.imported; }));
-					char header[192];
-					snprintf(header, sizeof(header), TR("AMF_McmImportHeader", "Choose which MCM menus appear here (%d of %d)"), imported, static_cast<int>(rows.size()));
-					// One menu at a time from SkyUI (the owner, 2026-10-05: "a drop down box next to import from Sky UI that shows any
-					// currently Sky UI owned menus that AMF doesn't already own"): the menus left to SkyUI only; picking one brings it
-					// in, the same as switching it on in the list below.
+					static int s_mcmSub = 0;
+					SubTabs sub("##mcmsub", 4, s_mcmSub);
+					if (sub.Tab(TR("AMF_SubMcmSources", "Menus")))
 					{
-						const bool anyLeft = imported < static_cast<int>(rows.size());
-						ImGui::SetNextItemWidth(ImGui::GetFontSize() * 18.0f);
-						if (!anyLeft) { ImGui::BeginDisabled(); }
-						if (theme::BeginComboTight(TR("AMF_McmBringIn", "Bring in from SkyUI"),
-								anyLeft ? TR("AMF_McmBringInPick", "Pick a menu...") : TR("AMF_McmBringInNone", "Every MCM menu is already here")))
+					// The MCM loader's switches (the owner, 2026-10-04): MCM Helper menus, SkyUI script menus, SkyUI's list.
+					if (widgets::Toggle(TR("AMF_McmLoad", "MCM Helper menus here"), &values.loadMcmHelperConfigs))
+					{
+						logger::info("settings page: MCM Helper menus -> {}", values.loadMcmHelperConfigs);
+						settings::Save();
+						mcmloader::SetEnabled(values.loadMcmHelperConfigs);
+					}
+					ImGui::TextWrapped("%s", TR("AMF_McmLoadHelp", "On: every mod that uses MCM Helper also gets its menu here, read from "
+									   "the mod's own files. A change goes through MCM Helper exactly as it does in SkyUI's menu."));
+					// phase 3: SkyUI menus written only in Papyrus (the owner, 2026-10-04: "do phase 3 for the SkyUI script menus")
+					if (widgets::Toggle(TR("AMF_McmScripts", "SkyUI script menus here"), &values.loadSkyUIScriptMenus))
+					{
+						logger::info("settings page: SkyUI script menus -> {}", values.loadSkyUIScriptMenus);
+						settings::Save();
+						mcmloader::SetScriptsEnabled(values.loadSkyUIScriptMenus);
+					}
+					ImGui::TextWrapped("%s", TR("AMF_McmScriptsHelp", "On: a mod whose SkyUI menu is written only in its own script also gets "
+									   "its menu here. This menu makes the same calls on that script as SkyUI's menu does."));
+					if (!anyMcm) { ImGui::BeginDisabled(); }
+					if (widgets::Toggle(TR("AMF_McmHideSkyUI", "Take those mods out of SkyUI's MCM list"), &values.hideMcmInSkyUI))
+					{
+						logger::info("settings page: hide MCM mods in SkyUI -> {}", values.hideMcmInSkyUI);
+						settings::Save();
+						mcmloader::SetHideInSkyUI(values.hideMcmInSkyUI);
+					}
+					ImGui::TextWrapped("%s", TR("AMF_McmHideSkyUIHelp", "On: a mod whose whole menu is drawn here is set in one place - "
+									   "here. A mod with anything this menu cannot draw stays in SkyUI's list. Off puts them all back."));
+					ImGui::TextDisabled(TR("AMF_McmHideSkyUICount", "%d of %d hidden from SkyUI's list now"),
+						mcmloader::HiddenInSkyUI(), mcmloader::HideableInSkyUI());
+					if (mcmloader::SkyUIListUnreadable())
+					{
+						ImGui::TextWrapped("%s", TR("AMF_McmHideUnreadable", "SkyUI's MCM list is run by another mod in a way this menu cannot read, "
+										   "so this switch takes nothing out of it here."));
+					}
+					if (!anyMcm) { ImGui::EndDisabled(); }
+						ImGui::EndTabItem();
+					}
+					if (sub.Tab(TR("AMF_SubMcmChoose", "Choose menus")))
+					{
+						if (!anyMcm) { ImGui::TextDisabled("%s", TR("AMF_McmNoneOn", "Switch on MCM Helper menus or SkyUI script menus on the Menus tab first.")); }
+					// Which MCM menus come into this menu (xLenax, 2026-10-04: "an option to choose which MCMs I'd like to import
+					// instead of importing all of them or None" - with about 200 of them). Folded by default; a filter for long lists.
+					if (anyMcm)
+					{
+						const std::vector<mcmloader::ImportRow> rows = mcmloader::ImportList();
+						const int imported = static_cast<int>(std::count_if(rows.begin(), rows.end(), [](const mcmloader::ImportRow& r) { return r.imported; }));
+						char header[192];
+						snprintf(header, sizeof(header), TR("AMF_McmImportHeader", "Choose which MCM menus appear here (%d of %d)"), imported, static_cast<int>(rows.size()));
+						// One menu at a time from SkyUI (the owner, 2026-10-05: "a drop down box next to import from Sky UI that shows any
+						// currently Sky UI owned menus that AMF doesn't already own"): the menus left to SkyUI only; picking one brings it
+						// in, the same as switching it on in the list below.
 						{
+							const bool anyLeft = imported < static_cast<int>(rows.size());
+							ImGui::SetNextItemWidth(ImGui::GetFontSize() * 18.0f);
+							if (!anyLeft) { ImGui::BeginDisabled(); }
+							if (theme::BeginComboTight(TR("AMF_McmBringIn", "Bring in from SkyUI"),
+									anyLeft ? TR("AMF_McmBringInPick", "Pick a menu...") : TR("AMF_McmBringInNone", "Every MCM menu is already here")))
+							{
+								for (const auto& r : rows)
+								{
+									if (r.imported) { continue; }
+									ImGui::PushID(r.key.c_str());
+									if (ImGui::Selectable(personalization::ShownEntryName(r.entry).c_str()))
+									{
+										logger::info("settings page: '{}' brought in from SkyUI", r.entry);
+										mcmloader::SetMenuImported(r.key, true);
+									}
+									ImGui::PopID();
+								}
+								ImGui::EndCombo();
+							}
+							if (!anyLeft) { ImGui::EndDisabled(); }
+						}
+						ImGui::TextUnformatted(header);
+						{
+							ImGui::TextWrapped("%s", TR("AMF_McmImportHelp", "Switch off a menu to keep it in SkyUI's menu only: it leaves this menu, "
+											   "and taking menus out of SkyUI's list leaves it alone."));
+							if (widgets::Toggle(TR("AMF_McmImportNew", "Bring in MCM menus not switched below"), &values.importNewMcmMenus))
+							{
+								logger::info("settings page: bring in MCM menus not chosen by hand -> {}", values.importNewMcmMenus);
+								settings::Save();
+								mcmloader::SetImportNew(values.importNewMcmMenus);
+							}
+							ImGui::TextWrapped("%s", TR("AMF_McmImportNewHelp", "Off: only the menus switched on below come in - with a long list, "
+											   "start from none and pick the few you use."));
+							if (ImGui::Button(TR("AMF_McmImportAllOn", "All on")))
+							{
+								for (const auto& r : rows) { if (!r.imported) { mcmloader::SetMenuImported(r.key, true); } }
+							}
+							ImGui::SameLine();
+							if (ImGui::Button(TR("AMF_McmImportAllOff", "All off")))
+							{
+								for (const auto& r : rows) { if (r.imported) { mcmloader::SetMenuImported(r.key, false); } }
+							}
+							ImGui::SameLine();
+							ImGui::SetNextItemWidth(ImGui::GetFontSize() * 14.0f);
+							ImGui::InputTextWithHint("##mcmimportfilter", TR("AMF_McmImportFilter", "Filter by name"), g_mcmImportFilter, sizeof(g_mcmImportFilter));
+							keyboard::NoteTextField(ImGui::GetItemID());
+							if (rows.empty())
+							{
+								ImGui::TextDisabled("%s", TR("AMF_McmImportNone", "No MCM menus found yet - menus written only in a script appear once a game is loaded."));
+							}
+							std::string needle = g_mcmImportFilter;
+							std::transform(needle.begin(), needle.end(), needle.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 							for (const auto& r : rows)
 							{
-								if (r.imported) { continue; }
+								std::string name = r.entry;
+								std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+								if (!needle.empty() && name.find(needle) == std::string::npos) { continue; }
 								ImGui::PushID(r.key.c_str());
-								if (ImGui::Selectable(personalization::ShownEntryName(r.entry).c_str()))
-								{
-									logger::info("settings page: '{}' brought in from SkyUI", r.entry);
-									mcmloader::SetMenuImported(r.key, true);
-								}
+								bool on = r.imported;
+								if (widgets::Toggle(personalization::ShownEntryName(r.entry).c_str(), &on)) { mcmloader::SetMenuImported(r.key, on); }
+								ImGui::SameLine();
+								ImGui::TextDisabled("%s", r.script ? TR("AMF_McmKindScript", "(script menu)") : TR("AMF_McmKindHelper", "(MCM Helper)"));
 								ImGui::PopID();
 							}
-							ImGui::EndCombo();
 						}
-						if (!anyLeft) { ImGui::EndDisabled(); }
 					}
-					if (ImGui::TreeNode("##mcmimport", "%s", header))
+						ImGui::EndTabItem();
+					}
+					if (sub.Tab(TR("AMF_McmMemTitle", "Remembered settings")))
 					{
-						ImGui::TextWrapped("%s", TR("AMF_McmImportHelp", "Switch off a menu to keep it in SkyUI's menu only: it leaves this menu, "
-										   "and taking menus out of SkyUI's list leaves it alone."));
-						if (widgets::Toggle(TR("AMF_McmImportNew", "Bring in MCM menus not switched below"), &values.importNewMcmMenus))
+						if (!anyMcm) { ImGui::TextDisabled("%s", TR("AMF_McmNoneOn", "Switch on MCM Helper menus or SkyUI script menus on the Menus tab first.")); }
+					if (anyMcm)
+					{
+						// REMEMBERED SETTINGS (the owner, 2026-10-06: "build it into AMF so that the settings you change for all these
+						// different MCMs are backed up and saved so that on a new game they still apply"). RememberedSettings.h.
+						ImGui::TextWrapped("%s", TR("AMF_McmMemHelp", "A new game forgets what menus written in a mod's script, and MCM Helper "
+										   "settings kept in your save, were set to. Those settings are remembered here and set again after a "
+										   "new game. MCM Helper's other settings are kept by MCM Helper itself."));
+						if (widgets::Toggle(TR("AMF_McmMemAuto", "Remember each change made here"), &values.mcmAutoBackup))
 						{
-							logger::info("settings page: bring in MCM menus not chosen by hand -> {}", values.importNewMcmMenus);
+							logger::info("settings page: remembered settings: automatic backup -> {}", values.mcmAutoBackup);
 							settings::Save();
-							mcmloader::SetImportNew(values.importNewMcmMenus);
 						}
-						ImGui::TextWrapped("%s", TR("AMF_McmImportNewHelp", "Off: only the menus switched on below come in - with a long list, "
-										   "start from none and pick the few you use."));
-						if (ImGui::Button(TR("AMF_McmImportAllOn", "All on")))
+						if (widgets::Toggle(TR("AMF_McmMemOnNewGame", "Set them again after a new game"), &values.mcmRestoreOnNewGame))
 						{
-							for (const auto& r : rows) { if (!r.imported) { mcmloader::SetMenuImported(r.key, true); } }
+							logger::info("settings page: remembered settings: restore on a new game -> {}", values.mcmRestoreOnNewGame);
+							settings::Save();
 						}
-						ImGui::SameLine();
-						if (ImGui::Button(TR("AMF_McmImportAllOff", "All off")))
-						{
-							for (const auto& r : rows) { if (r.imported) { mcmloader::SetMenuImported(r.key, false); } }
-						}
-						ImGui::SameLine();
-						ImGui::SetNextItemWidth(ImGui::GetFontSize() * 14.0f);
-						ImGui::InputTextWithHint("##mcmimportfilter", TR("AMF_McmImportFilter", "Filter by name"), g_mcmImportFilter, sizeof(g_mcmImportFilter));
-						keyboard::NoteTextField(ImGui::GetItemID());
-						if (rows.empty())
-						{
-							ImGui::TextDisabled("%s", TR("AMF_McmImportNone", "No MCM menus found yet - menus written only in a script appear once a game is loaded."));
-						}
-						std::string needle = g_mcmImportFilter;
-						std::transform(needle.begin(), needle.end(), needle.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-						for (const auto& r : rows)
-						{
-							std::string name = r.entry;
-							std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-							if (!needle.empty() && name.find(needle) == std::string::npos) { continue; }
-							ImGui::PushID(r.key.c_str());
-							bool on = r.imported;
-							if (widgets::Toggle(personalization::ShownEntryName(r.entry).c_str(), &on)) { mcmloader::SetMenuImported(r.key, on); }
-							ImGui::SameLine();
-							ImGui::TextDisabled("%s", r.script ? TR("AMF_McmKindScript", "(script menu)") : TR("AMF_McmKindHelper", "(MCM Helper)"));
-							ImGui::PopID();
-						}
-						ImGui::TreePop();
-					}
 
-					// REMEMBERED SETTINGS (the owner, 2026-10-06: "build it into AMF so that the settings you change for all these
-					// different MCMs are backed up and saved so that on a new game they still apply"). RememberedSettings.h.
-					ImGui::Spacing();
-					ImGui::Separator();
-					ImGui::TextUnformatted(TR("AMF_McmMemTitle", "Remembered settings"));
-					ImGui::TextWrapped("%s", TR("AMF_McmMemHelp", "A new game forgets what menus written in a mod's script, and MCM Helper "
-									   "settings kept in your save, were set to. Those settings are remembered here and set again after a "
-									   "new game. MCM Helper's other settings are kept by MCM Helper itself."));
-					if (widgets::Toggle(TR("AMF_McmMemAuto", "Remember each change made here"), &values.mcmAutoBackup))
-					{
-						logger::info("settings page: remembered settings: automatic backup -> {}", values.mcmAutoBackup);
-						settings::Save();
-					}
-					if (widgets::Toggle(TR("AMF_McmMemOnNewGame", "Set them again after a new game"), &values.mcmRestoreOnNewGame))
-					{
-						logger::info("settings page: remembered settings: restore on a new game -> {}", values.mcmRestoreOnNewGame);
-						settings::Save();
-					}
-
-					const bool memBusy = rememberedsettings::Busy();
-					if (memBusy) { ImGui::BeginDisabled(); }
-					// the profile in use, a new one (empty, or a copy of this one), and deleting another
-					const std::string memActive = rememberedsettings::ActiveProfile();
-					const auto memProfiles = rememberedsettings::Profiles();
-					ImGui::SetNextItemWidth(ImGui::GetFontSize() * 12.0f);
-					if (theme::BeginComboTight(TR("AMF_McmMemProfile", "Profile"), memActive.c_str()))
-					{
-						for (const auto& name : memProfiles)
-						{
-							if (ImGui::Selectable(name.c_str(), name == memActive) && name != memActive) { rememberedsettings::SwitchProfile(name); }
-						}
-						ImGui::EndCombo();
-					}
-					ImGui::SameLine();
-					ImGui::SetNextItemWidth(ImGui::GetFontSize() * 9.0f);
-					ImGui::InputTextWithHint("##memprofile", TR("AMF_McmMemNewName", "New profile name"), g_memProfileName, sizeof(g_memProfileName));
-					keyboard::NoteTextField(ImGui::GetItemID());
-					const bool memNamed = g_memProfileName[0] != '\0';
-					if (!memNamed) { ImGui::BeginDisabled(); }
-					ImGui::SameLine();
-					if (ImGui::Button(TR("AMF_McmMemNew", "New")))
-					{
-						g_memStatus = rememberedsettings::CreateProfile(g_memProfileName, false) ? "" : TR("AMF_McmMemExists", "A profile with that name exists already.");
-						g_memProfileName[0] = '\0';
-					}
-					ImGui::SameLine();
-					if (ImGui::Button(TR("AMF_McmMemCopy", "Copy this one")))
-					{
-						g_memStatus = rememberedsettings::CreateProfile(g_memProfileName, true) ? "" : TR("AMF_McmMemExists", "A profile with that name exists already.");
-						g_memProfileName[0] = '\0';
-					}
-					if (!memNamed) { ImGui::EndDisabled(); }
-					{
-						const bool others = memProfiles.size() > 1;
-						ImGui::SameLine();
-						ImGui::SetNextItemWidth(ImGui::GetFontSize() * 9.0f);
-						if (!others) { ImGui::BeginDisabled(); }
-						if (theme::BeginComboTight("##memdelete", TR("AMF_McmMemDelete", "Delete a profile...")))
+						const bool memBusy = rememberedsettings::Busy();
+						if (memBusy) { ImGui::BeginDisabled(); }
+						// the profile in use, a new one (empty, or a copy of this one), and deleting another
+						const std::string memActive = rememberedsettings::ActiveProfile();
+						const auto memProfiles = rememberedsettings::Profiles();
+						ImGui::SetNextItemWidth(ImGui::GetFontSize() * 12.0f);
+						if (theme::BeginComboTight(TR("AMF_McmMemProfile", "Profile"), memActive.c_str()))
 						{
 							for (const auto& name : memProfiles)
 							{
-								if (name != memActive && ImGui::Selectable(name.c_str())) { rememberedsettings::DeleteProfile(name); }
+								if (ImGui::Selectable(name.c_str(), name == memActive) && name != memActive) { rememberedsettings::SwitchProfile(name); }
 							}
 							ImGui::EndCombo();
 						}
-						if (!others) { ImGui::EndDisabled(); }
-					}
-
-					if (ImGui::Button(TR("AMF_McmMemBackUp", "Back up all now")))
-					{
-						g_memStatus = rememberedsettings::BackUpAll() ? "" : TR("AMF_McmMemWait", "Close the MCM page that is open, or wait for the backup or restore that is running.");
-					}
-					ImGui::SameLine();
-					if (ImGui::Button(TR("AMF_McmMemRestore", "Restore now")))
-					{
-						g_memStatus = rememberedsettings::RestoreNow() ? "" : TR("AMF_McmMemWait", "Close the MCM page that is open, or wait for the backup or restore that is running.");
-					}
-					if (memBusy) { ImGui::EndDisabled(); }
-					ImGui::TextWrapped("%s", TR("AMF_McmMemButtonsHelp", "Back up all now reads every menu this menu can read - also what you "
-									   "set in SkyUI's own menu. Restore now sets this game's menus to the profile."));
-					const std::string memLast = rememberedsettings::LastResult();
-					if (!g_memStatus.empty()) { ImGui::TextWrapped("%s", g_memStatus.c_str()); }
-					else if (!memLast.empty()) { ImGui::TextDisabled("%s", memLast.c_str()); }
-
-					const auto memRows = rememberedsettings::Menus();
-					char memHeader[160];
-					snprintf(memHeader, sizeof(memHeader), TR("AMF_McmMemMenus", "Menus in this profile (%d)"), static_cast<int>(memRows.size()));
-					if (ImGui::TreeNode("##remembered", "%s", memHeader))
-					{
-						ImGui::TextWrapped("%s", TR("AMF_McmMemMenusHelp", "Switch off a menu to leave it out of the automatic restore after a "
-										   "new game; Forget drops what this profile remembers of it."));
-						for (const auto& row : memRows)
+						ImGui::SameLine();
+						ImGui::SetNextItemWidth(ImGui::GetFontSize() * 9.0f);
+						ImGui::InputTextWithHint("##memprofile", TR("AMF_McmMemNewName", "New profile name"), g_memProfileName, sizeof(g_memProfileName));
+						keyboard::NoteTextField(ImGui::GetItemID());
+						const bool memNamed = g_memProfileName[0] != '\0';
+						if (!memNamed) { ImGui::BeginDisabled(); }
+						ImGui::SameLine();
+						if (ImGui::Button(TR("AMF_McmMemNew", "New")))
 						{
-							ImGui::PushID(row.key.c_str());
-							bool on = row.autoRestore;
-							if (widgets::Toggle(personalization::ShownEntryName(row.entry).c_str(), &on)) { rememberedsettings::SetAutoRestore(row.key, on); }
-							ImGui::SameLine();
-							if (row.present) { ImGui::TextDisabled(TR("AMF_McmMemSaved", "%d saved"), row.saved); }
-							else { ImGui::TextDisabled(TR("AMF_McmMemAbsent", "%d saved - not in this game"), row.saved); }
-							if (row.saved > 0)
-							{
-								ImGui::SameLine();
-								if (ImGui::SmallButton(TR("AMF_McmMemForget", "Forget"))) { rememberedsettings::Forget(row.key); }
-							}
-							ImGui::PopID();
+							g_memStatus = rememberedsettings::CreateProfile(g_memProfileName, false) ? "" : TR("AMF_McmMemExists", "A profile with that name exists already.");
+							g_memProfileName[0] = '\0';
 						}
-						ImGui::TreePop();
-					}
-				}
+						ImGui::SameLine();
+						if (ImGui::Button(TR("AMF_McmMemCopy", "Copy this one")))
+						{
+							g_memStatus = rememberedsettings::CreateProfile(g_memProfileName, true) ? "" : TR("AMF_McmMemExists", "A profile with that name exists already.");
+							g_memProfileName[0] = '\0';
+						}
+						if (!memNamed) { ImGui::EndDisabled(); }
+						{
+							const bool others = memProfiles.size() > 1;
+							ImGui::SameLine();
+							ImGui::SetNextItemWidth(ImGui::GetFontSize() * 9.0f);
+							if (!others) { ImGui::BeginDisabled(); }
+							if (theme::BeginComboTight("##memdelete", TR("AMF_McmMemDelete", "Delete a profile...")))
+							{
+								for (const auto& name : memProfiles)
+								{
+									if (name != memActive && ImGui::Selectable(name.c_str())) { rememberedsettings::DeleteProfile(name); }
+								}
+								ImGui::EndCombo();
+							}
+							if (!others) { ImGui::EndDisabled(); }
+						}
 
-				// SPACING OF CONVERTED PAGES (2.1.5, the owner, 2026-10-07: a player "didn't like the spacing of the generated menus
-				// for some of them like Atlas map markers which are very close together"). Their colours are framework-wide, on
-				// Appearance > Colours (the owner: "some of these features may be redundant ... if we just move them over").
-				if (anyMcm && ImGui::TreeNode("##mcmlook", "%s", TR("AMF_McmLook", "Spacing of converted pages")))
-				{
-					ImGui::TextWrapped("%s", TR("AMF_McmLookHelp", "The room between the columns and rows of the pages built from MCM "
-									   "menus. Their colours are on Appearance > Colours."));
-					ImGui::Spacing();
-					ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
-					precise::SliderInt(TR("AMF_McmColumnGap", "Gap between columns"), &values.mcmColumnGap, 0, 200, "%d%%");
-					if (ImGui::IsItemDeactivatedAfterEdit())
-					{
-						logger::info("settings page: converted pages' column gap -> {}%", values.mcmColumnGap);
-						settings::Save();
+						if (ImGui::Button(TR("AMF_McmMemBackUp", "Back up all now")))
+						{
+							g_memStatus = rememberedsettings::BackUpAll() ? "" : TR("AMF_McmMemWait", "Close the MCM page that is open, or wait for the backup or restore that is running.");
+						}
+						ImGui::SameLine();
+						if (ImGui::Button(TR("AMF_McmMemRestore", "Restore now")))
+						{
+							g_memStatus = rememberedsettings::RestoreNow() ? "" : TR("AMF_McmMemWait", "Close the MCM page that is open, or wait for the backup or restore that is running.");
+						}
+						if (memBusy) { ImGui::EndDisabled(); }
+						ImGui::TextWrapped("%s", TR("AMF_McmMemButtonsHelp", "Back up all now reads every menu this menu can read - also what you "
+										   "set in SkyUI's own menu. Restore now sets this game's menus to the profile."));
+						const std::string memLast = rememberedsettings::LastResult();
+						if (!g_memStatus.empty()) { ImGui::TextWrapped("%s", g_memStatus.c_str()); }
+						else if (!memLast.empty()) { ImGui::TextDisabled("%s", memLast.c_str()); }
+
+						const auto memRows = rememberedsettings::Menus();
+						char memHeader[160];
+						snprintf(memHeader, sizeof(memHeader), TR("AMF_McmMemMenus", "Menus in this profile (%d)"), static_cast<int>(memRows.size()));
+						ImGui::Spacing();
+						ImGui::TextUnformatted(memHeader);
+						{
+							ImGui::TextWrapped("%s", TR("AMF_McmMemMenusHelp", "Switch off a menu to leave it out of the automatic restore after a "
+											   "new game; Forget drops what this profile remembers of it."));
+							for (const auto& row : memRows)
+							{
+								ImGui::PushID(row.key.c_str());
+								bool on = row.autoRestore;
+								if (widgets::Toggle(personalization::ShownEntryName(row.entry).c_str(), &on)) { rememberedsettings::SetAutoRestore(row.key, on); }
+								ImGui::SameLine();
+								if (row.present) { ImGui::TextDisabled(TR("AMF_McmMemSaved", "%d saved"), row.saved); }
+								else { ImGui::TextDisabled(TR("AMF_McmMemAbsent", "%d saved - not in this game"), row.saved); }
+								if (row.saved > 0)
+								{
+									ImGui::SameLine();
+									if (ImGui::SmallButton(TR("AMF_McmMemForget", "Forget"))) { rememberedsettings::Forget(row.key); }
+								}
+								ImGui::PopID();
+							}
+						}
 					}
-					ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
-					precise::SliderInt(TR("AMF_McmRowSpacing", "Space between rows"), &values.mcmRowSpacing, 0, 100, "%d%%");
-					if (ImGui::IsItemDeactivatedAfterEdit())
-					{
-						logger::info("settings page: converted pages' row spacing -> {}%", values.mcmRowSpacing);
-						settings::Save();
+						ImGui::EndTabItem();
 					}
-					ImGui::TreePop();
+					if (sub.Tab(TR("AMF_SubMcmSpacing", "Spacing")))
+					{
+					// SPACING OF CONVERTED PAGES (2.1.5, the owner, 2026-10-07: a player "didn't like the spacing of the generated menus
+					// for some of them like Atlas map markers which are very close together"). Their colours are framework-wide, on
+					// Appearance > Colours (the owner: "some of these features may be redundant ... if we just move them over").
+					{
+						ImGui::TextWrapped("%s", TR("AMF_McmLookHelp", "The room between the columns and rows of the pages built from MCM "
+										   "menus. Their colours are on Appearance > Colours."));
+						ImGui::Spacing();
+						ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
+						precise::SliderInt(TR("AMF_McmColumnGap", "Gap between columns"), &values.mcmColumnGap, 0, 200, "%d%%");
+						if (ImGui::IsItemDeactivatedAfterEdit())
+						{
+							logger::info("settings page: converted pages' column gap -> {}%", values.mcmColumnGap);
+							settings::Save();
+						}
+						ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
+						precise::SliderInt(TR("AMF_McmRowSpacing", "Space between rows"), &values.mcmRowSpacing, 0, 100, "%d%%");
+						if (ImGui::IsItemDeactivatedAfterEdit())
+						{
+							logger::info("settings page: converted pages' row spacing -> {}%", values.mcmRowSpacing);
+							settings::Save();
+						}
+					}
+						ImGui::EndTabItem();
+					}
 				}
 				ImGui::Spacing();
 				ImGui::EndTabItem();
@@ -3476,9 +3521,13 @@ namespace renderer
 									 (bindings::TakeTriggered(bindings::Action::kTabPrev) ? 1 : 0);
 					if (step != 0)
 					{
-						if (g_innerFresh && g_innerCount > 1)
+						// 2.1.5: past the inner bar's first or last tab the press goes on to the page's own tabs (Appearance's
+						// sub-tabs lead on to MCM menus), instead of wrapping round inside - so the bumpers still reach every
+						// tab. A page with no outer bar to go to keeps the old wrap.
+						const int next = g_innerIndex + step;
+						if (g_innerFresh && g_innerCount > 1 && (next >= 0 && next < g_innerCount || g_tabCount <= 1))
 						{
-							g_innerRequest = (g_innerIndex + step + g_innerCount) % g_innerCount;
+							g_innerRequest = (next + g_innerCount) % g_innerCount;
 							logger::debug("nav: bumper -> inner tab {}", g_innerRequest);
 						}
 						else if (g_tabCount > 1)

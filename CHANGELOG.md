@@ -61,6 +61,14 @@ different things", the "$" and underscores in section headings, and the help tex
   colours (palette), buttons that run something (chevron), options the mod disabled (lock), help and notes (info),
   loading (hourglass), what cannot be drawn (warning). Ten solid glyphs merged into the text face (AmfIcons.h).
 
+### Changed
+- **Sub-tabs on Appearance and MCM menus** (the owner: "sub tabs ... rather than a long page with collapsible
+  sections"). Appearance: Theme and text / Window / Colours. MCM menus: Menus / Choose menus / Remembered settings /
+  Spacing. They are declared to the nav like a mod page's own tabs, so the bumpers walk them; past the first or last
+  sub-tab a bumper press moves on to the next main tab instead of wrapping round (the same for a mod page's inner tabs).
+- **The persistence test is gone** from the bottom of Settings > General (the owner: "get rid of the persistence test");
+  it showed only at log level 0. The per-save channel itself is unchanged.
+
 ### Fixed
 - **Section headings showed "$KEY_Names".** A heading wrapped in font tags (Atlas Map Markers:
   `<font color='#FF9900'>$ATLAS_GlobalMarkerSettings</font>`) was never looked up - only text starting with "$" was.
