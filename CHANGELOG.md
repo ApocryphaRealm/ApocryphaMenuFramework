@@ -31,7 +31,7 @@ different things", the "$" and underscores in section headings, and the help tex
 - **A live preview on Appearance > Colours** (the owner, 2026-10-07: "a column that displays an example for when you
   change a color"): beside the colour list, tabs, a section heading, an option with its value and help, a switch with
   the theme's highlight frame round it, a tick box, a slider, a button, a selected row and a row under the mouse - all
-  in the colours in use, so a pick shows at once. Off the D-pad's path; its slider is a precise slider (rule 68).
+  in the colours in use, so a pick shows at once. Off the D-pad's path.
 - **Preview first, then Apply** (Appearance > Colours, [Display] bColorsApplyNow; the owner, 2026-10-08): by default a
   colour you pick shows only in the preview column; **Apply**, right beside the switch, puts the picks on the current
   theme, and Discard drops them. Switched on, "Show changes everywhere straight away" changes the whole menu at once
