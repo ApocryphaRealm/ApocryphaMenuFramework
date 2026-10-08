@@ -3213,6 +3213,24 @@ namespace renderer
 					return;
 				}
 
+				// SKSE MENU FRAMEWORK'S EVENTS (2.1.4 - NPC Preset Applier, a Nexus report 2026-10-07: its portraits were
+				// queued and never made under AMF). SMF 3 sends its RegisterEvent / RegisterEventPriority listeners four
+				// events from its frame (QTR-Modding/SKSE-Menu-Framework-3, Hooks.cpp Render and WindowManager.cpp):
+				// 1 open and 2 close as its menu comes and goes, 3 before every frame's ImGui work and 4 after the frame
+				// is drawn. AMF kept the listeners and never sent one, so a mod that works on that per-frame tick (NPA
+				// renders its portraits there) waited forever. Sent here at the same points: open / close first, as the
+				// state is seen at the frame's start, then 3; 4 after the draw below.
+				{
+					static bool s_smfOpen = false;
+					const bool open = IsMainWindowVisible() || consumer::AnyBlockingWindowOpen();
+					if (open != s_smfOpen)
+					{
+						s_smfOpen = open;
+						compat::FireMenuEvent(open ? compat::MenuEvent::kOpenMenu : compat::MenuEvent::kCloseMenu);
+					}
+				}
+				compat::FireMenuEvent(compat::MenuEvent::kBeforeRender);
+
 				// A font or text-size change rebuilds the atlas. This MUST happen before
 				// ImGui_ImplDX11_NewFrame: that call is where the DX11 backend recreates its
 				// device objects (font texture included) when they are missing. The old order -
@@ -3491,6 +3509,7 @@ namespace renderer
 
 				ImGui::Render();
 				ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+				compat::FireMenuEvent(compat::MenuEvent::kAfterRender);   // SMF's event 4 (see the top of this frame)
 
 				// In-process capture: the backbuffer now holds the frame WITH the overlay.
 				{

@@ -35,6 +35,11 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
   segment is refused (AddSectionItem split at the first raw slash before).
 
 ### Fixed
+- **Mods waiting on SKSE Menu Framework's frame events now get them.** AMF never sent SMF's open, close,
+  before-render and after-render events, so a mod that does its work in them waited forever: NPC Preset Applier's
+  portrait batch started and never made a portrait. AMF now sends them where SMF 3 does: open and close when its
+  menu or a blocking mod window opens or closes, before-render ahead of each frame's draw, after-render once the
+  frame is drawn. Renderer.cpp: PresentHook.
 - **`LoadTexture` reads DDS files and paths with non-English letters.** A `.dds` went through Windows' WIC decoders,
   which cannot read DDS, and failed with "could not decode"; it now loads as DDS, as SMF does. The path was widened
   byte by byte, so any non-English letter in it (a Windows user name, a localised folder) broke the load; it is now
