@@ -21,7 +21,7 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
-## 2.1.6 - 2026-10-08 - untested - the art library: build your own look; the Oblivion theme
+## 2.1.6 - 2026-10-08 - working - the art library: build your own look; the Oblivion theme
 
 The owner, 2026-10-08: "start working on the new file structure for amf, add an assets folder with sub folders for the
 customization section to choose from, and import the oblivion theme and break down the themes into their art parts and put
