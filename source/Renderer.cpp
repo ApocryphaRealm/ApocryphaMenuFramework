@@ -11,6 +11,7 @@
 #include "AmfIcons.h"
 #include "ArtHooks.h"
 #include "FlickHost.h"
+#include "PrismaRedux.h"
 #include "HelpBar.h"
 #include "McmStyle.h"
 #include "Input.h"
@@ -2383,6 +2384,78 @@ namespace renderer
 						}
 						ImGui::EndTabItem();
 					}
+					// 2.1.6: Prisma - the Prisma MCM Redux menus AMF draws (PrismaRedux.h), with the three-way choice every converted
+					// menu system gets (the owner, 2026-10-08: "Same as sky ui, optional to host them only or make them held only by
+					// amf or move control back out of amf and into prisma")
+					if (sub.Tab(TR("AMF_SubPrisma", "Prisma")))
+					{
+						if (!prisma::ReduxLoaded())
+						{
+							ImGui::TextWrapped("%s", TR("AMF_PrismaNotLoaded", "Prisma MCM Redux is not installed. When it is, the menus of the mods "
+								"that use it show here, with (Prisma) after the name."));
+						}
+						else
+						{
+							const char* modes[] = { TR("AMF_PrismaBoth", "Here and in Prisma's own window"), TR("AMF_PrismaAmfOnly", "Here only"),
+								TR("AMF_PrismaOnly", "Prisma's own window only") };
+							int mode = std::clamp(values.prismaControl, 0, 2);
+							ImGui::SetNextItemWidth(ImGui::GetFontSize() * 18.0f);
+							if (theme::BeginComboTight(TR("AMF_PrismaControl", "Prisma MCM Redux menus"), modes[mode]))
+							{
+								for (int i = 0; i < 3; ++i)
+								{
+									if (ImGui::Selectable(modes[i], i == mode) && i != mode)
+									{
+										values.prismaControl = i;
+										settings::Save();
+										prisma::ApplyControl();
+										logger::info("settings page: Prisma MCM Redux menus -> {}", i);
+									}
+								}
+								ImGui::EndCombo();
+							}
+							ImGui::TextWrapped("%s", TR("AMF_PrismaControlHelp", "Here and in Prisma's own window: the menus are in this menu, and "
+								"Prisma MCM Redux's own window still opens with its key. Here only: its key is switched off from the next game start, "
+								"and put back when you choose another option. Prisma's own window only: nothing of Prisma's is listed here."));
+							if (prisma::HotkeyHeldByAmf())
+							{
+								ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
+								ImGui::TextWrapped("%s", TR("AMF_PrismaKeyOff", "Prisma MCM Redux's own key is switched off."));
+								ImGui::PopStyleColor();
+							}
+							ImGui::Spacing();
+							const auto rows = prisma::Configs();
+							if (rows.empty())
+							{
+								ImGui::TextDisabled("%s", TR("AMF_PrismaNone", "No mod has a Prisma MCM Redux menu."));
+							}
+							else
+							{
+								ImGui::SeparatorText(std::format("{} ({})", TR("AMF_PrismaMenus", "Prisma menus"), rows.size()).c_str());
+								if (values.prismaControl == 2) { ImGui::BeginDisabled(); }
+								for (const auto& r : rows)
+								{
+									bool on = r.imported;
+									ImGui::PushID(r.key.c_str());
+									if (widgets::Toggle(personalization::ShownEntryName(r.entry).c_str(), &on)) { prisma::SetImported(r.key, on); }
+									if (r.duplicate)
+									{
+										ImGui::Indent();
+										ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
+										ImGui::TextWrapped("%s", TR("AMF_PrismaDuplicate", "It also has its own or an MCM page here, so its Prisma copy is not listed."));
+										ImGui::PopStyleColor();
+										ImGui::Unindent();
+									}
+									ImGui::PopID();
+								}
+								if (values.prismaControl == 2) { ImGui::EndDisabled(); }
+							}
+						}
+						ImGui::Spacing();
+						ImGui::TextDisabled("%s", TR("AMF_PrismaPmcm", "PMCM menus (the other Prisma settings system) are web pages of their own and "
+							"stay in PMCM."));
+						ImGui::EndTabItem();
+					}
 				}
 				ImGui::Spacing();
 				ImGui::EndTabItem();
@@ -4576,6 +4649,7 @@ namespace renderer
 				watchdog::Tick();  // liveness signal for the hang watchdog
 				ImGui::NewFrame();
 				mcmloader::Frame();  // MCM loader: OnConfigClose when an MCM entry stops being drawn
+				prisma::Frame();     // 2.1.6: Prisma_OnSettingsApplied when a Prisma page is left
 
 				// The game's own HUD opacity, re-read every frame so the options slider is
 				// followed live (theme spec point 3), applied as the ONE global multiplier.

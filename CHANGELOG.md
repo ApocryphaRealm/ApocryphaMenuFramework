@@ -60,6 +60,16 @@ line under a section header ... the on-screen keyboard ... and anything else tha
   ground and a scroll-shaped switch.
 - DevBench amf.menu op=art: lists every kind's parts, or picks one for the active theme (kind=Frame, Box, TickBox, ...;
   loaded at the next frame); op=skin reports the parts drawing for every kind and the frame's cut.
+- **Prisma MCM Redux menus here** (the owner, 2026-10-08: "Settings wrappers + coexistence", suffix "(Prisma)"). A mod's
+  Redux config (`SKSE/Plugins/PrismaMCMRedux/Configs/<ModID>.json`) becomes an entry "<mod> (Prisma)": its pages as tabs,
+  an About tab, headers, precise sliders on the config's step, switches, dropdowns, key binds and action buttons, greyed
+  out while a setting's condition is not met. Values go to Redux's own INI (`PrismaMCMRedux/Settings/<ModID>.ini`) in the
+  text its own window writes; leaving the page sends Prisma_OnSettingsApplied, an action button Prisma_OnAction_<mod>.
+  A mod that also has its own or an MCM page here keeps that one entry. PMCM is left alone.
+- **Converted menus > Prisma**: the three-way choice every converted system gets (the owner: "Same as sky ui ... The
+  standard logic for these menu conversion projects") - here and in Prisma's own window / here only (Redux's key off in
+  PrismaCore.ini from the next game start, the player's key remembered and put back) / Prisma's own window only - and a
+  switch per Prisma menu. [Prisma] iControl in the INI. DevBench amf.menu op=prisma (list, get, set, action, apply).
 
 ### Changed
 - The Skyrim knotwork is now a part too (frames/skyrim-knotwork.png); the copy built into the DLL stays as the fallback

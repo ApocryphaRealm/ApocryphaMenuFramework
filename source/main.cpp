@@ -3,6 +3,7 @@
 #include "AMF/API.h"
 #include "DevBenchTool.h"
 #include "FlickHost.h"
+#include "PrismaRedux.h"
 #include "Input.h"
 #include "Persistence.h"
 #include "Registry.h"
@@ -133,6 +134,7 @@ namespace
 			// MCM loader: MCM Helper mods' menus as AMF entries. kDataLoaded is the first point
 			// at which every plugin's load state can be asked (a config whose plugin is not loaded is skipped).
 			mcmloader::Load();
+			prisma::Load();  // 2.1.6: Prisma MCM Redux menus as AMF entries
 			rememberedsettings::Init();  // the remembered MCM settings' active profile
 			if (g_staleOldCopy.load(std::memory_order_acquire)) {
 				constexpr auto kStale = "Apocrypha Menu Framework: delete the old ApocryphaMenuFramework.dll from SKSE/Plugins (this version is !ApocryphaMenuFramework.dll).";

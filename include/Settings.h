@@ -135,6 +135,9 @@ namespace settings
 		// page here, as " (FLICK)". Read at the framework's own load, before any FLICK mod loads; a change applies after a
 		// restart. Off: FLICK mods find nothing (or the real FLICK).
 		bool flickHost = true;
+		// 2.1.6 Prisma MCM Redux menus (PrismaRedux.h): [Prisma] iControl - 0 both (pages here and Redux's own window),
+		// 1 AMF only (Redux's own key switched off, from the next game start), 2 Prisma only (nothing listed here).
+		int prismaControl = 0;
 		// MCM loader: [MCM] bHideInSkyUI - take the mods AMF draws completely out of SkyUI's own MCM list.
 		bool hideMcmInSkyUI = false;
 		// 2.1.5 (the owner: a player "didn't like the spacing of the generated menus for some of them like Atlas map markers

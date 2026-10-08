@@ -42,6 +42,9 @@ namespace mcmloader::detail
 	// Whether a menu comes into AMF (the player's choice per menu; menus never set follow [MCM] bImportNewMenus). Keys
 	// are the ledger's: "mcmhelper|<mod>" and "script|<plugin>|<ModName>". Any thread.
 	bool IsImported(const std::string& a_key);
+	// 2.1.6: the same list for another converter's menus (Prisma: "prisma|<ModID>"). Writes McmImport.txt; the caller
+	// shows or hides its own pages.
+	void SetImported(const std::string& a_key, bool a_on);
 
 	// SkyUI's config manager script object (SkyUI_SE.esp), or empty. Main thread.
 	RE::BSTSmartPointer<RE::BSScript::Object> FindSkyUIManager();

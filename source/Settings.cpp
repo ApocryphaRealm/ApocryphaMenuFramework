@@ -286,6 +286,13 @@ namespace settings
 				"; the name, and are reached only through it. 0 = leave FLICK mods alone. Applies after a restart.\n"
 				"bHost=" << (a_v.flickHost ? 1 : 0) << "\n"
 				"\n"
+				"[Prisma]\n"
+				"; Mods with a Prisma MCM Redux menu show it in this menu, with \" (Prisma)\" after the name.\n"
+				"; 0 = both: here and in Prisma MCM Redux's own window. 1 = here only: Prisma MCM Redux's own key\n"
+				"; is switched off (from the next game start) and put back when this changes. 2 = Prisma only:\n"
+				"; nothing of Prisma's is listed here.\n"
+				"iControl=" << a_v.prismaControl << "\n"
+				"\n"
 				"[Menu]\n"
 				"; 1 = pause the game while this menu is open, the way the game's own menus do:\n"
 				"; world time, actors and weather stop until it closes. 0 (the default) leaves the\n"
@@ -639,6 +646,8 @@ namespace settings
 			ReadBool(entries, "MCM.bLoadSkyUIScriptMenus", g_values.loadSkyUIScriptMenus);
 			ReadBool(entries, "MCM.bImportNewMenus", g_values.importNewMcmMenus);
 			ReadBool(entries, "FLICK.bHost", g_values.flickHost);   // 2.1.6
+			ReadNumber(entries, "Prisma.iControl", g_values.prismaControl);   // 2.1.6
+			g_values.prismaControl = std::clamp(g_values.prismaControl, 0, 2);
 			ReadNumber(entries, "MCM.uColumnGap", g_values.mcmColumnGap);
 			ReadNumber(entries, "MCM.uRowSpacing", g_values.mcmRowSpacing);
 			g_values.mcmColumnGap = std::clamp(g_values.mcmColumnGap, 0, 200);

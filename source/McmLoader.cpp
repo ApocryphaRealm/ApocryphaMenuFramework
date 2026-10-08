@@ -2669,5 +2669,6 @@ namespace mcmloader::detail
 		const auto it = ::mcmloader::g_import.find(a_key);
 		return it != ::mcmloader::g_import.end() ? it->second : settings::Get().importNewMcmMenus;
 	}
+	void SetImported(const std::string& a_key, bool a_on) { ::mcmloader::SetImported(a_key, a_on); }
 	RE::BSTSmartPointer<RE::BSScript::Object> FindSkyUIManager() { return ::mcmloader::FindSkyUIManager(); }
 }

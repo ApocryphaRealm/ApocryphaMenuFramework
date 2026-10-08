@@ -1,5 +1,6 @@
 #include "DevBenchTool.h"
 #include "FlickHost.h"
+#include "PrismaRedux.h"
 #include "SystemRow.h"
 
 #include "DevBench/DevBenchAPI.h"
@@ -157,6 +158,11 @@ namespace devbenchtool
 			{
 				// 2.1.6: the FLICK host - the FLICK mods connected, their pages, the page open now, and the calls not answered yet
 				result = flick::StatusJson();
+			}
+			else if (op == "prisma")
+			{
+				// 2.1.6: the Prisma MCM Redux menus - {"op":"prisma","do":"list|get|set|action|apply","mod":"<ModID>",...}
+				result = prisma::ToolJson(args);
 			}
 			else if (op == "art")
 			{
