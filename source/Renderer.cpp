@@ -2989,7 +2989,11 @@ namespace renderer
 					if (bandH > 1.0f)
 					{
 						ImGui::SetCursorScreenPos(ImVec2(wp.x + border, wp.y + border));
+						// a mouse handle only: off the D-pad's path (the owner, 2026-10-07: D-pad up from the panes put the 2.1.5
+						// highlight frame round the top bar - the band was a nav stop)
+						ImGui::PushItemFlag(ImGuiItemFlags_NoNav, true);
 						ImGui::InvisibleButton("##amf-move", ImVec2(std::max(1.0f, ImGui::GetWindowWidth() - border * 2.0f), bandH));
+						ImGui::PopItemFlag();
 						if (ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 0.0f))
 						{
 							const ImVec2 d = ImGui::GetIO().MouseDelta;

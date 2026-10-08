@@ -108,8 +108,9 @@ different things", the "$" and underscores in section headings, and the help tex
 - **Custom menu art switched on with no art named** left Oathvein, Vel'dun, Norden and Norden - Black bare - no frame,
   no background, a plain line for the highlight - while Skyrim's built-in knotwork stayed (the owner's test, 2026-10-07).
   The switch now uses a UI author's art only when [Skin] names some; otherwise the theme's own art draws. Skin.cpp.
-- **A thin line under the title on D-pad up** from the top of the side list: the highlight frame was drawn round ImGui's
-  empty nav rect. No frame is drawn round a rect under half a line tall.
+- **The highlight frame round the top bar on D-pad up** from the panes (first seen as "a single straight horizontal
+  line" under the title): the invisible band that drags the window by the mouse was a D-pad stop, and the new frame
+  drew round it. The band is mouse-only now; no frame is drawn round a rect under half a line tall either.
 - **A separator would not open after Fold** until the highlight left it and came back: the "(n)" in a folded row's
   label made it a new item on every fold, so the highlight held an ID that no longer existed. One ID now, folded or open.
   The same fault, same fix: the Filter words' +/- buttons (A worked once, then not until the highlight moved off and
