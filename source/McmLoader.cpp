@@ -1709,7 +1709,7 @@ namespace mcmloader
 				const bool waiting = g_capturing && g_capturing->first == a_mod && g_capturing->second == a_c.id;
 				ImGui::TextUnformatted(label.c_str());
 				ImGui::SameLine();
-				const std::string button = std::string(icons::kKeyboard) + "  " + (waiting ? std::string(strings::TR("AMF_McmPressKey", "Press a key...")) : KeyName(static_cast<std::int32_t>(ParseInt(a_value)))) + "##key" + a_c.id;
+				const std::string button = std::string(icons::kKeyboard) + "  " + (waiting ? std::string(strings::TR("AMF_McmPressKey", "Press a key...")) : KeyName(static_cast<std::int32_t>(ParseInt(a_value)))) + "###key" + a_c.id;
 				if (ImGui::Button(button.c_str()) && !waiting)
 				{
 					g_capturing = std::make_pair(a_mod, a_c.id);

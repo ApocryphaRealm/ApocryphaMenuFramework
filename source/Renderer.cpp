@@ -3021,7 +3021,10 @@ namespace renderer
 					if (ImGui::IsItemHovered()) { ImGui::SetTooltip("%s", TR("AMF_SortAlphaTip", "Sort the list alphabetically. Off: the order you arranged by hand.")); }
 					ImGui::SameLine();
 					ImGui::BeginDisabled(!alphabetical);
-					if (widgets::Toggle(s_ascending ? TR("AMF_SortAsc", "A-Z") : TR("AMF_SortDesc", "Z-A"), &s_ascending)) { apply(); }
+					// "###sortdir": the label flips A-Z / Z-A, and a label-made ID would make every press a new item - the next A did
+					// nothing until the highlight left and came back (the owner, 2026-10-07, on the Filter +/- buttons; same cause)
+					const std::string sortDirLabel = std::string(s_ascending ? TR("AMF_SortAsc", "A-Z") : TR("AMF_SortDesc", "Z-A")) + "###sortdir";
+					if (widgets::Toggle(sortDirLabel.c_str(), &s_ascending)) { apply(); }
 					ImGui::EndDisabled();
 					if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) { ImGui::SetTooltip("%s", TR("AMF_SortDirTip", "On: A to Z. Off: Z to A.")); }
 					// FOLD ALL, next to A-Z with Sort kept at the far right (2.1.5, the owner, 2026-10-07: "next to the sort button ... a collapse and uncollapse toggle. When
@@ -3083,7 +3086,7 @@ namespace renderer
 									ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
 									colours = 4;
 								}
-								if (ImGui::Button(f.state > 0 ? "+##state" : f.state < 0 ? "-##state" : " ##state", ImVec2(side, side)))
+								if (ImGui::Button(f.state > 0 ? "+###state" : f.state < 0 ? "-###state" : " ###state", ImVec2(side, side)))
 								{
 									f.state = NextFilterState(f.state, 1);
 									dirty = true;

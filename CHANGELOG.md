@@ -108,6 +108,9 @@ different things", the "$" and underscores in section headings, and the help tex
   empty nav rect. No frame is drawn round a rect under half a line tall.
 - **A separator would not open after Fold** until the highlight left it and came back: the "(n)" in a folded row's
   label made it a new item on every fold, so the highlight held an ID that no longer existed. One ID now, folded or open.
+  The same fault, same fix: the Filter words' +/- buttons (A worked once, then not until the highlight moved off and
+  back - the owner, 2026-10-07), the A-Z / Z-A switch, and on converted MCM pages the key buttons ("..." while
+  waiting) and text rows that show their own value.
 - **Section headings showed "$KEY_Names".** A heading wrapped in font tags (Atlas Map Markers:
   `<font color='#FF9900'>$ATLAS_GlobalMarkerSettings</font>`) was never looked up - only text starting with "$" was.
   The key inside the tags is now translated ("GLOBAL MARKER SETTINGS"). A key no translation file carries now reads as

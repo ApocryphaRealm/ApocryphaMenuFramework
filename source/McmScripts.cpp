@@ -1001,7 +1001,7 @@ namespace mcmloader::scripts
 				const std::string value = Tr(o.str);
 				std::string row = label.empty() ? value : label;
 				if (row.empty()) { row = " "; }
-				if (ImGui::Selectable((row + "##text").c_str())) { QueueSelect(a_mod, a_slot); }
+				if (ImGui::Selectable((row + "###text").c_str())) { QueueSelect(a_mod, a_slot); }
 				if (!label.empty() && !value.empty())
 				{
 					const ImVec2 max = ImGui::GetItemRectMax();
@@ -1109,7 +1109,7 @@ namespace mcmloader::scripts
 			{
 				const int code = static_cast<int>(o.num);
 				const bool waiting = g_capturing && *g_capturing == a_slot;
-				const std::string button = std::string(icons::kKeyboard) + "  " + (waiting ? std::string("...") : KeyName(code)) + "##key";
+				const std::string button = std::string(icons::kKeyboard) + "  " + (waiting ? std::string("...") : KeyName(code)) + "###key";
 				if (ImGui::Button(button.c_str()) && !waiting)
 				{
 					g_capturing = a_slot;
