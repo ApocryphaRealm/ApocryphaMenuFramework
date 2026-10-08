@@ -285,12 +285,18 @@ namespace mcmloader
 		}
 		const bool g_separatorFilterRegistered = (personalization::SetSeparatorNameFilter(&ShownSeparatorName), true);
 
-		// A converted menu's " (MCM)" ending in the language picked (2.1.2) - the entry keeps its stored name.
+		// A converted menu's " (MCM)" ending in the language picked (2.1.2) - the entry keeps its stored name. 2.1.6: and a FLICK
+		// mod's page's " (FLICK)" (FlickHost.cpp) the same way.
 		std::string ShownMcmEntryName(const std::string& a_entry)
 		{
+			auto ends = [&a_entry](std::string_view a_suffix) {
+				return a_entry.size() > a_suffix.size() && a_entry.compare(a_entry.size() - a_suffix.size(), a_suffix.size(), a_suffix) == 0;
+			};
 			constexpr std::string_view kSuffix = " (MCM)";
-			if (a_entry.size() <= kSuffix.size() || a_entry.compare(a_entry.size() - kSuffix.size(), kSuffix.size(), kSuffix) != 0) { return a_entry; }
-			return a_entry.substr(0, a_entry.size() - kSuffix.size()) + " " + TR("AMF_McmSuffix", "(MCM)");
+			constexpr std::string_view kFlick = " (FLICK)";
+			if (ends(kSuffix)) { return a_entry.substr(0, a_entry.size() - kSuffix.size()) + " " + TR("AMF_McmSuffix", "(MCM)"); }
+			if (ends(kFlick)) { return a_entry.substr(0, a_entry.size() - kFlick.size()) + " " + TR("AMF_FlickSuffix", "(FLICK)"); }
+			return a_entry;
 		}
 		const bool g_entryFilterRegistered = (personalization::SetEntryNameFilter(&ShownMcmEntryName), true);
 

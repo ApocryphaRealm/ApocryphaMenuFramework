@@ -1,4 +1,5 @@
 #include "DevBenchTool.h"
+#include "FlickHost.h"
 #include "SystemRow.h"
 
 #include "DevBench/DevBenchAPI.h"
@@ -151,6 +152,11 @@ namespace devbenchtool
 				const std::string id = JsonStr(args, "id");
 				const bool ok = renderer::SetTheme(id);
 				result = std::string("{\"ok\":") + (ok ? "true" : "false") + ",\"op\":\"theme\",\"id\":\"" + id + "\"}";
+			}
+			else if (op == "flick")
+			{
+				// 2.1.6: the FLICK host - the FLICK mods connected, their pages, the page open now, and the calls not answered yet
+				result = flick::StatusJson();
 			}
 			else if (op == "art")
 			{

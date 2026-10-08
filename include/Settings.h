@@ -131,6 +131,10 @@ namespace settings
 		// MCM loader: [MCM] bImportNewMenus - a menu the player never switched on or off comes into AMF (1) or stays in SkyUI
 		// only (0). Long lists start from none with 0 and switch on the few they use (xLenax, 2026-10-04).
 		bool importNewMcmMenus = true;
+		// 2.1.6 FLICK host: [FLICK] bHost - answer FLICK's API (FUCK.dll) so a mod written for FLICK draws its settings
+		// page here, as " (FLICK)". Read at the framework's own load, before any FLICK mod loads; a change applies after a
+		// restart. Off: FLICK mods find nothing (or the real FLICK).
+		bool flickHost = true;
 		// MCM loader: [MCM] bHideInSkyUI - take the mods AMF draws completely out of SkyUI's own MCM list.
 		bool hideMcmInSkyUI = false;
 		// 2.1.5 (the owner: a player "didn't like the spacing of the generated menus for some of them like Atlas map markers

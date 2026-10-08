@@ -10,6 +10,7 @@
 #include "Curtain.h"
 #include "AmfIcons.h"
 #include "ArtHooks.h"
+#include "FlickHost.h"
 #include "HelpBar.h"
 #include "McmStyle.h"
 #include "Input.h"
@@ -1996,14 +1997,16 @@ namespace renderer
 			}
 
 			// MCM MENUS: which MCM menus come in, and SkyUI's own list
-			if (tab(TR("AMF_TabMcm", "MCM menus")))
+			// 2.1.6: "Converted menus" (the owner, 2026-10-08, the FLICK plan's Q1) - the pages AMF brings in from other menu
+			// systems: MCM menus, and FLICK mods' pages. A new key, so no language keeps the old "MCM menus".
+			if (tab(TR("AMF_TabConverted", "Converted menus")))
 			{
 				const bool anyMcm = values.loadMcmHelperConfigs || values.loadSkyUIScriptMenus;
 				// SUB-TABS (2.1.5, the owner: "I want the MCM menus tab to have sub tabs ... rather than a long page with collapsible
 				// sections"): where the menus come from, which ones, what is remembered, and how converted pages are spaced.
 				{
 					static int s_mcmSub = 0;
-					SubTabs sub("##mcmsub", 4, s_mcmSub);
+					SubTabs sub("##mcmsub", 5, s_mcmSub);
 					if (sub.Tab(TR("AMF_SubMcmSources", "Menus")))
 					{
 					// The MCM loader's switches (the owner, 2026-10-04): MCM Helper menus, SkyUI script menus, SkyUI's list.
@@ -2311,6 +2314,73 @@ namespace renderer
 							settings::Save();
 						}
 					}
+						ImGui::EndTabItem();
+					}
+					// 2.1.6: FLICK - the mods written for FLICK whose pages AMF draws (FlickHost.h)
+					if (sub.Tab(TR("AMF_SubFlick", "FLICK")))
+					{
+						if (widgets::Toggle(TR("AMF_FlickHost", "FLICK mods' pages here"), &values.flickHost))
+						{
+							logger::info("settings page: FLICK host -> {} (applies after a restart)", values.flickHost);
+							settings::Save();
+						}
+						ImGui::TextWrapped("%s", TR("AMF_FlickHostHelp", "On: mods written for FLICK show their settings page in this menu, "
+							"with (FLICK) after the name, and are reached only through it - there is no separate FLICK window, key or "
+							"pause-menu row. Off: FLICK mods are left alone. A change applies after you restart the game."));
+						if (values.flickHost != flick::Enabled())
+						{
+							ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
+							ImGui::TextWrapped("%s", TR("AMF_FlickRestart", "Restart the game for this to take effect."));
+							ImGui::PopStyleColor();
+						}
+						ImGui::Spacing();
+						if (flick::RealFlickInstalled())
+						{
+							ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
+							ImGui::TextWrapped("%s", TR("AMF_FlickRealInstalled", "FLICK itself (FUCK.dll) is installed beside this menu. This menu "
+								"holds the FLICK mods, so FLICK's own menu stays empty; disable FLICK in your mod manager to remove its row from the pause menu."));
+							ImGui::PopStyleColor();
+							ImGui::Spacing();
+						}
+						// one line per FLICK mod (its plugin), its pages after it; a mod whose FLICK copy is hidden because it has its
+						// own page here says so
+						std::vector<std::pair<std::string, std::vector<flick::ToolInfo>>> mods;
+						for (std::size_t i = 0, n = flick::ToolCount(); i < n; ++i)
+						{
+							flick::ToolInfo t = flick::ToolAt(i);
+							auto it = std::find_if(mods.begin(), mods.end(), [&t](const auto& m) { return m.first == t.plugin; });
+							if (it == mods.end()) { mods.emplace_back(t.plugin, std::vector<flick::ToolInfo>{}); it = std::prev(mods.end()); }
+							it->second.push_back(std::move(t));
+						}
+						if (mods.empty())
+						{
+							ImGui::TextDisabled("%s", TR("AMF_FlickNone", "No FLICK mods have connected."));
+						}
+						else
+						{
+							ImGui::SeparatorText(std::format("{} ({})", TR("AMF_FlickConnected", "FLICK mods here"), mods.size()).c_str());
+							for (const auto& [plugin, pages] : mods)
+							{
+								const std::string& shown = pages.front().group.empty() ? pages.front().name : pages.front().group;
+								ImGui::BulletText("%s", shown.c_str());
+								ImGui::SameLine();
+								ImGui::TextDisabled("(%s)", plugin.c_str());
+								if (pages.size() > 1 || pages.front().name != shown)
+								{
+									ImGui::Indent();
+									for (const auto& p : pages) { ImGui::TextDisabled("%s", p.name.c_str()); }
+									ImGui::Unindent();
+								}
+								if (!pages.front().listed)
+								{
+									ImGui::Indent();
+									ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
+									ImGui::TextWrapped("%s", TR("AMF_FlickDuplicate", "It also has its own page here, so its FLICK copy is not listed."));
+									ImGui::PopStyleColor();
+									ImGui::Unindent();
+								}
+							}
+						}
 						ImGui::EndTabItem();
 					}
 				}
@@ -4558,6 +4628,8 @@ namespace renderer
 				{
 					ImGui::GetIO().MouseDrawCursor = false;
 				}
+
+				flick::EndFrame();   // 2.1.6: a FLICK page left (or the menu closed) gets its OnClose
 
 				ImGui::Render();
 				ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());

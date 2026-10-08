@@ -281,6 +281,11 @@ namespace settings
 				"; not a setting: press a key or move the mouse for keyboard navigation, touch the\n"
 				"; pad for controller navigation. The menu shows which one it is reading.\n"
 				"\n"
+				"[FLICK]\n"
+				"; 1 = mods written for FLICK (FUCK.dll) show their settings page in this menu, with \" (FLICK)\" after\n"
+				"; the name, and are reached only through it. 0 = leave FLICK mods alone. Applies after a restart.\n"
+				"bHost=" << (a_v.flickHost ? 1 : 0) << "\n"
+				"\n"
 				"[Menu]\n"
 				"; 1 = pause the game while this menu is open, the way the game's own menus do:\n"
 				"; world time, actors and weather stop until it closes. 0 (the default) leaves the\n"
@@ -633,6 +638,7 @@ namespace settings
 			ReadBool(entries, "MCM.bLoadMcmHelperConfigs", g_values.loadMcmHelperConfigs);
 			ReadBool(entries, "MCM.bLoadSkyUIScriptMenus", g_values.loadSkyUIScriptMenus);
 			ReadBool(entries, "MCM.bImportNewMenus", g_values.importNewMcmMenus);
+			ReadBool(entries, "FLICK.bHost", g_values.flickHost);   // 2.1.6
 			ReadNumber(entries, "MCM.uColumnGap", g_values.mcmColumnGap);
 			ReadNumber(entries, "MCM.uRowSpacing", g_values.mcmRowSpacing);
 			g_values.mcmColumnGap = std::clamp(g_values.mcmColumnGap, 0, 200);

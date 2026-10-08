@@ -1,5 +1,6 @@
 #include "SmfAlias.h"
 #include "ExportStubs.h"
+#include "FlickHost.h"
 
 #include "utils/Logger.h"
 
@@ -85,6 +86,9 @@ namespace
 
 	constexpr std::wstring_view kAmfOld = L"apocryphamenuframework";
 	constexpr std::wstring_view kSmfDll = L"sksemenuframework.dll";
+	// 2.1.6 FLICK host: FLICK's file is FUCK.dll, and a FLICK mod finds it with GetModuleHandleW(L"FUCK.dll") - answered with
+	// this module while [FLICK] bHost is on (FlickHost.h), so the mod's GetProcAddress("RequestFUCK") reaches AMF's table.
+	constexpr std::wstring_view kFlick = L"fuck";
 
 	std::wstring Lowered(std::wstring_view a_text)
 	{
@@ -144,7 +148,7 @@ namespace
 			lowered.resize(lowered.size() - 4);
 		}
 
-		return lowered == kSmf || lowered == kAmfOld;
+		return lowered == kSmf || lowered == kAmfOld || (lowered == kFlick && flick::Enabled());
 	}
 
 	// The FILE the stock consumer header looks for: exactly "SKSEMenuFramework.dll" as the last
@@ -630,6 +634,10 @@ namespace
 	{
 		static const char kSmfA[] = "sksemenuframework";
 		static const char kAmfA[] = "apocryphamenuframework";
+		// 2.1.6: a FLICK mod - its header spells L"FUCK.dll" (UTF-16) and "RequestFUCK" (ASCII)
+		static const char kFlickDllA[] = "fuck.dll";
+		static const char kFlickReqA[] = "requestfuck";
+		const bool flickOn = flick::Enabled();
 		__try {
 			auto* const base = reinterpret_cast<const unsigned char*>(a_module);
 			const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
@@ -649,12 +657,16 @@ namespace
 				const std::size_t size = sec->Misc.VirtualSize;
 				for (std::size_t i = 0; i < size; ++i) {
 					const unsigned char c = p[i] | 0x20;
-					if (c != 's' && c != 'a') {
+					if (c != 's' && c != 'a' && !(flickOn && (c == 'f' || c == 'r'))) {
 						continue;
 					}
 					const std::size_t left = size - i;
 					if (MatchCaseless(p + i, left, kSmfA, sizeof(kSmfA) - 1, 1) || MatchCaseless(p + i, left, kAmfA, sizeof(kAmfA) - 1, 1) ||
 						MatchCaseless(p + i, left, kSmfA, sizeof(kSmfA) - 1, 2) || MatchCaseless(p + i, left, kAmfA, sizeof(kAmfA) - 1, 2)) {
+						return true;
+					}
+					if (flickOn && (MatchCaseless(p + i, left, kFlickDllA, sizeof(kFlickDllA) - 1, 2) ||
+									MatchCaseless(p + i, left, kFlickReqA, sizeof(kFlickReqA) - 1, 1))) {
 						return true;
 					}
 				}
@@ -668,12 +680,25 @@ namespace
 	std::atomic<std::size_t> g_notConsumers{ 0 };      // SKSE plugins left untouched: they never name the framework
 	std::atomic<std::size_t> g_foreignHooks{ 0 };      // import entries left untouched: another plugin redirected them first
 
+	bool IsFlickFile(const wchar_t* a_path, std::size_t a_len)
+	{
+		std::wstring_view path(a_path, a_len);
+		if (const auto slash = path.find_last_of(L"\\/"); slash != std::wstring_view::npos) {
+			path.remove_prefix(slash + 1);
+		}
+		return Lowered(path) == L"fuck.dll";
+	}
+
 	bool IsPatchTarget(const wchar_t* a_path, std::size_t a_len, HMODULE a_module)
 	{
 		switch (PatchTargetKind(a_path, a_len)) {
 		case Target::kRuntime:
 			return true;   // msvcp140: the runtime a /MD consumer's std::filesystem::exists runs in
 		case Target::kPlugin:
+			// 2.1.6: never the real FLICK itself (installed beside AMF) - its own lookups must find itself
+			if (IsFlickFile(a_path, a_len)) {
+				return false;
+			}
 			if (NamesFramework(a_module)) {
 				return true;
 			}

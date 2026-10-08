@@ -2,6 +2,7 @@
 #include <fstream>
 #include "AMF/API.h"
 #include "DevBenchTool.h"
+#include "FlickHost.h"
 #include "Input.h"
 #include "Persistence.h"
 #include "Registry.h"
@@ -476,6 +477,10 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 			g_staleOldCopy.store(true, std::memory_order_release);
 		}
 	}
+	// 2.1.6: the settings are read BEFORE the alias goes in - [FLICK] bHost decides whether the alias answers FLICK's
+	// name (FUCK.dll) too, and a FLICK mod asks for it inside its own load, right after ours.
+	settings::Load();
+	flick::Configure(settings::Get().flickHost);
 	smf_alias::Install();
 
 	if (!SKSE::GetMessagingInterface()->RegisterListener("SKSE", SKSEMessageListener))
@@ -490,8 +495,8 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 	// there is no later moment that still catches init. The tension with the DEM early-
 	// relocation lesson is real and deliberate - the mitigation is the byte-pattern guard on
 	// every site: nothing is written over bytes that are not the expected call instruction,
-	// and a refused guard leaves the plugin loaded-but-inert with the reason in the log.
-	settings::Load();
+	// and a refused guard leaves the plugin loaded-but-inert with the reason in the log. (The settings were read above,
+	// before the alias - 2.1.6.)
 
 
 	if (renderer::Install())
