@@ -1252,7 +1252,7 @@ namespace renderer
 				widgets::Toggle(TR("AMF_PreviewOff", "Switched off"), &off);
 				ImGui::Checkbox(TR("AMF_PreviewTick", "Tick box"), &tick);
 				ImGui::SetNextItemWidth(-FLT_MIN);
-				ImGui::SliderFloat("##previewslider", &slider, 0.0f, 1.0f, "%.2f");
+				precise::SliderFloat("##previewslider", &slider, 0.0f, 1.0f, "%.2f");
 				ImGui::Button(TR("AMF_PreviewButton", "Button"));
 				ImGui::Spacing();
 				// a selected row, and a row as it looks under the mouse (Selection, Hover highlight)
