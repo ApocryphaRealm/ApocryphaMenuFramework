@@ -130,8 +130,8 @@ namespace settings
 		// 2.1.5 (the owner: a player "didn't like the spacing of the generated menus for some of them like Atlas map markers
 		// which are very close together"): the gap between a converted page's two columns and the extra space between its
 		// rows, in percent of the text size - [MCM] uColumnGap (0-200, 50 = the 2.1.5 look) / uRowSpacing (0-100, 0 = none).
-		std::int32_t mcmColumnGap = 50;
-		std::int32_t mcmRowSpacing = 0;
+		std::int32_t mcmColumnGap = 75;
+		std::int32_t mcmRowSpacing = 20;
 		// remembered MCM settings (RememberedSettings.h): [RememberedSettings] bAutoBackup - remember each MCM change made here;
 		// bRestoreOnNewGame - apply the profile again after a new game; sProfile - the active profile's name.
 		bool mcmAutoBackup = true;

@@ -10,6 +10,7 @@
 #include "Curtain.h"
 #include "AmfIcons.h"
 #include "HelpBar.h"
+#include "McmStyle.h"
 #include "Input.h"
 #include "Offsets.h"
 #include "Persistence.h"
@@ -1118,6 +1119,12 @@ namespace renderer
 		}
 		bool g_contentNavLastFrame = false;
 		bool g_focusMainTabs = false;
+		// 2.1.5 - THE HIGHLIGHT FOLLOWS A BUMPER (the owner, 2026-10-07: switching tabs with the shoulder buttons "you can see a
+		// slight change in color, but the focus doesn't actually change like it should, where the frame should follow the current
+		// selected tab"). The tab a bumper opens takes the highlight as it is submitted - the main bar's (FocusMainTabIfAsked) or
+		// a settings sub-tab bar's (SubTabs::Tab). A mod's own tab bar is drawn by the mod, so its tab cannot be focused from here.
+		bool g_bumperFocusMain = false;
+		bool g_bumperFocusInner = false;
 		int g_prevTabIndex = 0;     // the main bar's open tab last frame (g_tabIndex is re-measured from 0 every frame)
 
 		// Right before the main bar's tab number a_index is submitted: the highlight goes onto it when Y asked for that.
@@ -1128,6 +1135,11 @@ namespace renderer
 				ImGui::SetKeyboardFocusHere();
 				g_focusMainTabs = false;
 				logger::debug("nav: Y -> main tab {}", a_index);
+			}
+			else if (g_bumperFocusMain && a_index == g_tabRequest)
+			{
+				ImGui::SetKeyboardFocusHere();
+				g_bumperFocusMain = false;
 			}
 		}
 
@@ -1161,6 +1173,11 @@ namespace renderer
 			{
 				if (!_open) { return false; }
 				const ImGuiTabItemFlags flags = _index == _request ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
+				if (_index == _request && g_bumperFocusInner)   // the highlight goes with the bumper (see g_bumperFocusMain)
+				{
+					ImGui::SetKeyboardFocusHere();
+					g_bumperFocusInner = false;
+				}
 				const bool open = ImGui::BeginTabItem(a_label, nullptr, flags);
 				if (open) { _current = _index; }
 				++_index;
@@ -1178,6 +1195,72 @@ namespace renderer
 		// box, sliders, and other things", the background ("like how Oathvein is gray, but Norden and Skyrim themes are black"),
 		// switches, and the converted MCM pages' headings and help ("blue text or yellow text"). A picker per role for the
 		// mouse, a row of preset swatches the D-pad walks, and Theme to go back to the active theme's own colour.
+		// THE COLOURS PREVIEW (2.1.5, the owner, 2026-10-07: "the right side of the menu to have a column that displays an example
+		// for when you change a color. It has like a toggle and some frame around it and a section heading with some help text
+		// below"). Every part a colour role paints, drawn with the colours in use this frame, so a pick shows at once. Its
+		// widgets are samples: off the D-pad's path (NoNav) and their state is the preview's own.
+		void DrawColorPreview()
+		{
+			static bool on = true, off = false, tick = true;
+			static float slider = 0.6f;
+			static int tab = 0;
+			ImGui::TextDisabled("%s", TR("AMF_ColorPreview", "Preview"));
+			ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::GetStyleColorVec4(ImGuiCol_WindowBg));   // the Background colour
+			const float pad = ImGui::GetFontSize() * 0.9f;
+			ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(pad, pad));
+			const bool shown = ImGui::BeginChild("##colourpreview", ImVec2(0.0f, 0.0f), ImGuiChildFlags_Border | ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysUseWindowPadding);
+			ImGui::PopStyleVar();
+			if (shown)
+			{
+				ImGui::PushItemFlag(ImGuiItemFlags_NoNav, true);
+				// tabs (Selection and tabs, Boxes)
+				if (ImGui::BeginTabBar("##previewtabs"))
+				{
+					if (ImGui::BeginTabItem(TR("AMF_PreviewTab", "Tab"))) { tab = 0; ImGui::EndTabItem(); }
+					if (ImGui::BeginTabItem(TR("AMF_PreviewOtherTab", "Other tab"))) { tab = 1; ImGui::EndTabItem(); }
+					ImGui::EndTabBar();
+				}
+				mcmstyle::Heading(TR("AMF_PreviewHeading", "Section heading"));
+				// an option with its value (Text, Secondary text), then its help (Help text)
+				ImGui::TextUnformatted(TR("AMF_PreviewOption", "An option"));
+				ImGui::SameLine();
+				ImGui::TextDisabled("%s", TR("AMF_PreviewValue", "its value"));
+				ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
+				ImGui::PushTextWrapPos(0.0f);
+				ImGui::TextUnformatted(TR("AMF_PreviewHelp", "Help text tells you what the highlighted option does."));
+				ImGui::PopTextWrapPos();
+				ImGui::PopStyleColor();
+				ImGui::Spacing();
+				// a switch with the highlight frame round it, as the D-pad's highlight looks (Switch on, Frame art)
+				{
+					const ImVec2 start = ImGui::GetCursorScreenPos();
+					widgets::Toggle(TR("AMF_PreviewOn", "Switched on"), &on);
+					// round the switch, as the D-pad's highlight is
+					const float h = ImGui::GetFrameHeight();
+					DrawHighlightFrame(ImGui::GetWindowDrawList(), start, ImVec2(start.x + h * 2.0f, start.y + h), 1.0f);
+				}
+				widgets::Toggle(TR("AMF_PreviewOff", "Switched off"), &off);
+				ImGui::Checkbox(TR("AMF_PreviewTick", "Tick box"), &tick);
+				ImGui::SetNextItemWidth(-FLT_MIN);
+				ImGui::SliderFloat("##previewslider", &slider, 0.0f, 1.0f, "%.2f");
+				ImGui::Button(TR("AMF_PreviewButton", "Button"));
+				ImGui::Spacing();
+				// a selected row, and a row as it looks under the mouse (Selection, Hover highlight)
+				ImGui::Selectable(TR("AMF_PreviewSelected", "Selected"), true);
+				{
+					const ImVec2 at = ImGui::GetCursorScreenPos();
+					const ImVec2 size(ImGui::GetContentRegionAvail().x, ImGui::GetTextLineHeight());
+					ImGui::GetWindowDrawList()->AddRectFilled(at, ImVec2(at.x + size.x, at.y + size.y), ImGui::GetColorU32(ImGuiCol_HeaderHovered));
+					ImGui::TextUnformatted(TR("AMF_PreviewHover", "Under the mouse"));
+					DrawHighlightFrame(ImGui::GetWindowDrawList(), at, ImVec2(at.x + size.x, at.y + size.y), 0.6f);
+				}
+				ImGui::PopItemFlag();
+			}
+			ImGui::EndChild();
+			ImGui::PopStyleColor();
+			(void)tab;
+		}
+
 		void DrawColorRoles()
 		{
 			// the ACTIVE theme's own picks: each theme keeps its changes, like a preset (the owner, 2026-10-07)
@@ -1209,6 +1292,15 @@ namespace renderer
 				theme::Apply();
 			};
 			const float swatch = ImGui::GetFrameHeight() * 0.8f;
+			// the role list on the left, a live sample of every part on the right (DrawColorPreview)
+			const bool table = ImGui::BeginTable("##colourpage", 2, ImGuiTableFlags_None);
+			if (table)
+			{
+				ImGui::TableSetupColumn("##roles", ImGuiTableColumnFlags_WidthStretch, 1.35f);
+				ImGui::TableSetupColumn("##preview", ImGuiTableColumnFlags_WidthStretch, 1.0f);
+				ImGui::TableNextRow();
+				ImGui::TableSetColumnIndex(0);
+			}
 			for (const Role& r : kRoles)
 			{
 				ImGui::PushID(r.role);
@@ -1253,6 +1345,12 @@ namespace renderer
 				theme::Apply();
 			}
 			if (!any) { ImGui::EndDisabled(); }
+			if (table)
+			{
+				ImGui::TableSetColumnIndex(1);
+				DrawColorPreview();
+				ImGui::EndTable();
+			}
 		}
 
 		void DrawFrameworkSettingsPane()
@@ -1964,7 +2062,7 @@ namespace renderer
 				ImGui::EndTabItem();
 			}
 			g_tabCount = index;     // the bumpers walk these tabs, as on Controls and Help
-			g_tabRequest = -1;      // a requested tab is taken once, not every frame
+			g_tabRequest = -1; g_bumperFocusMain = false;   // a requested tab (and its highlight) is taken once, not every frame
 			ImGui::EndTabBar();
 		}
 
@@ -2451,7 +2549,7 @@ namespace renderer
 			}
 
 			g_tabCount = index;
-			g_tabRequest = -1;
+			g_tabRequest = -1; g_bumperFocusMain = false;
 			ImGui::EndTabBar();
 
 			ImGui::Spacing();
@@ -2608,7 +2706,7 @@ namespace renderer
 			}
 
 			g_tabCount = index;
-			g_tabRequest = -1;
+			g_tabRequest = -1; g_bumperFocusMain = false;
 			ImGui::EndTabBar();
 		}
 
@@ -3626,7 +3724,7 @@ namespace renderer
 							++index;
 						}
 						g_tabCount = index;
-						g_tabRequest = -1;
+						g_tabRequest = -1; g_bumperFocusMain = false;
 						ImGui::EndTabBar();
 					}
 				}
@@ -3790,11 +3888,13 @@ namespace renderer
 						if (g_innerFresh && g_innerCount > 1)
 						{
 							g_innerRequest = (g_innerIndex + step + g_innerCount) % g_innerCount;
+							g_bumperFocusInner = true;
 							logger::debug("nav: bumper -> inner tab {}", g_innerRequest);
 						}
 						else if (g_tabCount > 1)
 						{
 							g_tabRequest = (g_tabIndex + step + g_tabCount) % g_tabCount;
+							g_bumperFocusMain = true;
 							logger::debug("nav: bumper -> tab {}", g_tabRequest);
 						}
 					}

@@ -28,6 +28,10 @@ comparison. If anything, I just want AMF to include Font Awesome for the generat
 different things", the "$" and underscores in section headings, and the help text kept inside AMF's window.
 
 ### Added
+- **A live preview on Appearance > Colours** (the owner, 2026-10-07: "a column that displays an example for when you
+  change a color"): beside the colour list, tabs, a section heading, an option with its value and help, a switch with
+  the theme's highlight frame round it, a tick box, a slider, a button, a selected row and a row under the mouse - all
+  in the colours in use, so a pick shows at once. Off the D-pad's path.
 - **Help bar** (Appearance, on by default; [Display] bHelpBar): on a converted MCM page the highlighted option's help
   shows in a bar under the right pane, inside the menu, like SkyUI's info line - with the mouse or the controller. It
   wraps to the pane and keeps the last help shown. Off: the help shows as a popup, now wrapped to the right pane's width
@@ -56,7 +60,7 @@ different things", the "$" and underscores in section headings, and the help tex
   ornaments. Untarnished, which has no art, gets a plain line. The blue nav box stays. The Hover highlight colour
   (Appearance > Colours) sets the hover wash and the hover frame's tint; unset, it follows the selection colour.
 - **Spacing of converted pages** (Settings > MCM menus; a player found Atlas Map Markers' rows "very close together"):
-  the gap between the two columns and extra space between rows, precise sliders ([MCM] uColumnGap, uRowSpacing).
+  the gap between the two columns and extra space between rows, precise sliders ([MCM] uColumnGap, uRowSpacing; 75% and 20% by default - the owner, 2026-10-07).
 - **Font Awesome icons** on converted pages: key buttons (keyboard), clear (x), reset to default, text fields (pen),
   colours (palette), buttons that run something (chevron), options the mod disabled (lock), help and notes (info),
   loading (hourglass), what cannot be drawn (warning). Ten solid glyphs merged into the text face (AmfIcons.h).
@@ -115,6 +119,8 @@ different things", the "$" and underscores in section headings, and the help tex
   opened them. The button now reads "Filter (n)" while words are in use, and a separator's "(n)" counts only the rows
   the Filter lets through. The Fold press also logs its frame and input, to catch a double fire seen once (fold, then
   open, 0.3 s apart).
+- **The highlight follows the bumpers**: switching a tab with LB/RB changed the tab but left the highlight where it
+  was (the owner, 2026-10-07). The opened tab now takes it - the main tabs and the settings sub-tabs.
 - **Section headings showed "$KEY_Names".** A heading wrapped in font tags (Atlas Map Markers:
   `<font color='#FF9900'>$ATLAS_GlobalMarkerSettings</font>`) was never looked up - only text starting with "$" was.
   The key inside the tags is now translated ("GLOBAL MARKER SETTINGS"). A key no translation file carries now reads as
