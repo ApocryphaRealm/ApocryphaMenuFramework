@@ -101,6 +101,13 @@ different things", the "$" and underscores in section headings, and the help tex
   it showed only at log level 0. The per-save channel itself is unchanged.
 
 ### Fixed
+- **Custom menu art switched on with no art named** left Oathvein, Vel'dun, Norden and Norden - Black bare - no frame,
+  no background, a plain line for the highlight - while Skyrim's built-in knotwork stayed (the owner's test, 2026-10-07).
+  The switch now uses a UI author's art only when [Skin] names some; otherwise the theme's own art draws. Skin.cpp.
+- **A thin line under the title on D-pad up** from the top of the side list: the highlight frame was drawn round ImGui's
+  empty nav rect. No frame is drawn round a rect under half a line tall.
+- **A separator would not open after Fold** until the highlight left it and came back: the "(n)" in a folded row's
+  label made it a new item on every fold, so the highlight held an ID that no longer existed. One ID now, folded or open.
 - **Section headings showed "$KEY_Names".** A heading wrapped in font tags (Atlas Map Markers:
   `<font color='#FF9900'>$ATLAS_GlobalMarkerSettings</font>`) was never looked up - only text starting with "$" was.
   The key inside the tags is now translated ("GLOBAL MARKER SETTINGS"). A key no translation file carries now reads as

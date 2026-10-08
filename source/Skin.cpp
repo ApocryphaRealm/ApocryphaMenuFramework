@@ -111,7 +111,10 @@ namespace skin
 		std::string   frame, background, plates;
 		std::uint32_t corner = 64;
 		const char*   source = "none";
-		if (v.skinEnabled)
+		// 2.1.5: the switch on with NO [Skin] paths set used to leave every art theme bare - Oathvein, Vel'dun and Norden lost
+		// their frame and background while Skyrim's built-in knotwork stayed (the owner, 2026-10-07, after a stray press had
+		// switched it on). The switch only means something when a UI author's art is actually named; otherwise the theme's own.
+		if (v.skinEnabled && !(v.skinFrame.empty() && v.skinBackground.empty() && v.skinPlates.empty()))
 		{
 			frame = v.skinFrame;
 			background = v.skinBackground;

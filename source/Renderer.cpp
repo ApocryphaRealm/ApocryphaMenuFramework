@@ -313,6 +313,10 @@ namespace renderer
 		void DrawHighlightFrame(ImDrawList* dl, ImVec2 p0, ImVec2 p1, float a_alpha)
 		{
 			const float unit = ImGui::GetFontSize() / 16.0f;   // the resolution scale, read from the text size it set
+			// No frame round a rect with no height or width (the owner, 2026-10-07: D-pad up from the top of the list drew
+			// "a single straight horizontal line" under the title - ImGui's nav rect with nothing in it, which the plain-line
+			// form drew as a flat box). A real row is at least half a line tall.
+			if (p1.y - p0.y < ImGui::GetFontSize() * 0.5f || p1.x - p0.x < ImGui::GetFontSize() * 0.5f) { return; }
 			const float pad = std::max(2.0f, std::round(2.0f * unit));
 			p0 = ImVec2(p0.x - pad, p0.y - pad);
 			p1 = ImVec2(p1.x + pad, p1.y + pad);
@@ -2031,6 +2035,10 @@ namespace renderer
 			const ImVec2 arrowAt(rowTopLeft.x + gutter, rowTopLeft.y);
 			ImGui::Indent(gutter + arrowRoom);
 			ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+			// "###sep": one ID whether folded or open. The "(n)" in the label made it a different item on every fold, so the
+			// highlight held an ID that no longer existed and the next A did nothing until the player moved off and back (the
+			// owner, 2026-10-07: after Fold, a separator "will not let me unfold it until I select a different separator").
+			std::strncat(label, "###sep", sizeof(label) - std::strlen(label) - 1);
 			const bool picked = ImGui::Selectable(label, false);
 			ImGui::PopStyleColor();
 			ImGui::Unindent(gutter + arrowRoom);
@@ -2040,7 +2048,7 @@ namespace renderer
 			{
 				const ImVec2 mn = ImGui::GetItemRectMin(), mx = ImGui::GetItemRectMax();
 				const float y = (mn.y + mx.y) * 0.5f;
-				const float x0 = mn.x + ImGui::CalcTextSize(label).x + ImGui::GetStyle().ItemSpacing.x;
+				const float x0 = mn.x + ImGui::CalcTextSize(label, nullptr, true).x + ImGui::GetStyle().ItemSpacing.x;
 				if (x0 < mx.x) { ImGui::GetWindowDrawList()->AddLine(ImVec2(x0, y), ImVec2(mx.x, y), ImGui::GetColorU32(ImGuiCol_Separator), 1.0f); }
 			}
 			if (favourite)
