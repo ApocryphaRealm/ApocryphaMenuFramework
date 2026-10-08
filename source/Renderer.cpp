@@ -393,7 +393,10 @@ namespace renderer
 		void FlushHighlightFrames()
 		{
 			ImGuiContext& g = *GImGui;
-			if (g.NavWindow && g.NavId != 0 && !g.NavDisableHighlight && g.NavWindow->DrawList)
+			// NavIdIsAlive: the highlighted item was drawn THIS frame. Without it the frame went round the last place a vanished
+			// item stood - a box round nothing beside the General tab after a tab change (the owner's screenshot, 2026-10-08).
+			// ImGui's own highlight is drawn by the item itself, so it never had this.
+			if (g.NavWindow && g.NavId != 0 && g.NavIdIsAlive && !g.NavDisableHighlight && g.NavWindow->DrawList)
 			{
 				const ImRect r = ImGui::WindowRectRelToAbs(g.NavWindow, g.NavWindow->NavRectRel[g.NavLayer]);
 				const ImRect clip = g.NavWindow->InnerClipRect;
