@@ -99,35 +99,50 @@ namespace renderer
 		// g_pauseHeld says whether this framework is holding one - so a close, a toggle flip or a save/load between
 		// them can never leave the game paused, or take a count some other menu holds.
 		bool g_pauseHeld = false;   // main thread only
+		// 2.1.5 - PAUSES BORROWED FOR A PAGE'S SCRIPTS (the owner, 2026-10-08: opened from the System row, Atlas Map Markers'
+		// pages never loaded - the journal holds its own pause, and a converted page's scripts wait while the game is paused).
+		// While a page's script call waits, every pause count is taken off - our own and the journal's - and given back the
+		// moment the queue is empty. Unsigned arithmetic gives back the right count even if a menu closed in between.
+		std::uint32_t g_pausesBorrowed = 0;   // main thread only
 
-		void SyncGamePause(bool a_want)
+		// a_wantOwn: our own pause (the setting, our window open on its own - never on top of the journal's, which already
+		// pauses). a_lift: a page's scripts are waiting, so no pause at all for now.
+		void SyncGamePause(bool a_wantOwn, bool a_lift)
 		{
-			static bool lastWanted = false;   // render thread only
-			if (a_want == lastWanted)
+			static bool lastOwn = false, lastLift = false;   // render thread only
+			if (a_wantOwn == lastOwn && a_lift == lastLift)
 			{
 				return;
 			}
-			lastWanted = a_want;
+			lastOwn = a_wantOwn;
+			lastLift = a_lift;
 			auto* tasks = SKSE::GetTaskInterface();
 			if (!tasks)
 			{
-				logger::warn("pause: no SKSE task interface - the game is not {} with the menu", a_want ? "paused" : "unpaused");
+				logger::warn("pause: no SKSE task interface - the game is not {} with the menu", a_wantOwn ? "paused" : "unpaused");
 				return;
 			}
-			tasks->AddTask([a_want]() {
+			tasks->AddTask([a_wantOwn, a_lift]() {
 				auto* ui = RE::UI::GetSingleton();
 				if (!ui)
 				{
-					logger::warn("pause: UI singleton not ready - pause {} skipped", a_want ? "on" : "off");
+					logger::warn("pause: UI singleton not ready - pause {} skipped", a_wantOwn ? "on" : "off");
 					return;
 				}
-				if (a_want && !g_pauseHeld)
+				if (!a_lift && g_pausesBorrowed > 0)
+				{
+					ui->numPausesGame += g_pausesBorrowed;
+					logger::info("pause: {} borrowed pause(s) given back after a menu's scripts (pause count now {})", g_pausesBorrowed, ui->numPausesGame);
+					g_pausesBorrowed = 0;
+				}
+				const bool own = a_wantOwn && !a_lift;
+				if (own && !g_pauseHeld)
 				{
 					++ui->numPausesGame;
 					g_pauseHeld = true;
 					logger::info("pause: game paused while the menu is open (pause count now {})", ui->numPausesGame);
 				}
-				else if (!a_want && g_pauseHeld)
+				else if (!own && g_pauseHeld)
 				{
 					if (ui->numPausesGame > 0)
 					{
@@ -135,6 +150,12 @@ namespace renderer
 					}
 					g_pauseHeld = false;
 					logger::info("pause: released (menu closed, setting off, or a menu's scripts running) - game resumed (pause count now {})", ui->numPausesGame);
+				}
+				if (a_lift && g_pausesBorrowed == 0 && ui->numPausesGame > 0)
+				{
+					g_pausesBorrowed = ui->numPausesGame;
+					ui->numPausesGame = 0;
+					logger::info("pause: {} other pause(s) borrowed (the journal's) while a menu's scripts run", g_pausesBorrowed);
 				}
 			});
 		}
@@ -4099,16 +4120,20 @@ namespace renderer
 				{
 					static bool s_lifted = false;   // render thread only
 					const auto waiting = mcmloader::scripts::WaitingFor();
-					const bool lift = waiting >= std::chrono::milliseconds(120) || (s_lifted && waiting.count() > 0);
+					// at most 3 s for any one call: a call stuck for some other reason must not leave the world running behind the menu
+					const bool lift = waiting < std::chrono::milliseconds(3000) &&
+						(waiting >= std::chrono::milliseconds(120) || (s_lifted && waiting.count() > 0));
 					if (lift != s_lifted)
 					{
 						s_lifted = lift;
-						if (visible && settings::Get().pauseGameWhileOpen)
+						if (visible)
 						{
 							logger::debug("pause: {} for a menu's scripts", lift ? "let go" : "held again");
 						}
 					}
-					SyncGamePause(visible && settings::Get().pauseGameWhileOpen && !s_lifted);
+					// not on top of the journal's own pause (the System row): ours there only added a count to take off again
+					const bool nestedNow = g_nested.load(std::memory_order_acquire);
+					SyncGamePause(visible && settings::Get().pauseGameWhileOpen && !nestedNow, visible && s_lifted);
 				}
 
 				// Open-transition work happens HERE, not in ToggleMainWindow - the toggle is
