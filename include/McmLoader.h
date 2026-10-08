@@ -18,6 +18,8 @@
 // GlobalValue / PropertyValue* sources and CallFunction actions are shown read-only (phase 2).
 // ============================================================================================
 
+#include "RememberedSettings.h"
+
 #include <functional>
 #include <string>
 #include <utility>
@@ -109,6 +111,20 @@ namespace mcmloader
 	// Queued to the main thread: OnConfigOpen, each value that differs written through the page's own path (store,
 	// OnSettingChange, action), then OnConfigClose. a_done(applied, missing).
 	void MemoryRestore(const std::string& a_key, std::vector<std::pair<std::string, std::string>> a_values, std::function<void(int, int)> a_done);
+
+	// Import from MCM Memory (2.1.5, RememberedSettings.cpp): the MCM Helper menu whose display name (MCM's ModName) is
+	// a_modName, and the settings another mod saved for it turned into this menu's live control values. ModSetting* ones are
+	// counted as kept by MCM Helper (its own INI already holds them); a row matching no control of a compatible kind is
+	// counted as not found. Any thread. Empty key = no such MCM Helper menu here.
+	struct HelperImport
+	{
+		std::string key;     // "mcmhelper|<mod>"
+		std::string entry;
+		std::vector<std::pair<std::string, std::string>> values;   // control key -> value as MCM Helper writes it
+		int keptByHelper = 0;
+		int notFound = 0;
+	};
+	HelperImport ImportHelperSettings(const std::string& a_modName, const std::vector<rememberedsettings::ForeignSetting>& a_settings);
 
 	// DevBench amf.mcm (rules 31 and 64). ops: list (default), get {mod,id}, set {mod,id,value},
 	// script {mod}. Thread-safe - runs on devbench's listener thread; a set is applied through the

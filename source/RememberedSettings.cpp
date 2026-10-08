@@ -596,6 +596,292 @@ namespace rememberedsettings
 		return g_lastResult;
 	}
 
+	// ------------------------------------------------------------------------------ import from MCM Memory (2.1.5)
+	// File format read from MCM Memory 1.5.6's own source (github.com/legendman89/MCMMemory @ ceca293, GPL-3.0; only its
+	// format is read here, no code taken): Profiles\<name>.json, formatVersion 2 - "settings" (modID "<Script>::<ModName>",
+	// pageName, pageIndex, optionIndex, controlType, optionLabel, value, valueText, command, ...), "activations" (an enable
+	// switch that must come back first), "pageExclusions"; Settings.json - activeProfile, autoRestore,
+	// autoRestoreExcludedMCMs. Text that is not UTF-8 is stored as "\0MCMMemoryBytes:" + hex. Plan and mapping:
+	// 4. plans\amf-2.1.5\mcm-memory-move-over-research.md.
+	namespace
+	{
+		constexpr const char* kMcmMemoryDir = "Data/SKSE/Plugins/MCMMemory";
+
+		std::string DecodeMcmMemoryText(const std::string& a_s)
+		{
+			static const std::string kPrefix = std::string("\0MCMMemoryBytes:", 16);
+			if (a_s.rfind(kPrefix, 0) != 0) { return a_s; }
+			std::string out;
+			for (std::size_t i = kPrefix.size(); i + 1 < a_s.size(); i += 2)
+			{
+				out += static_cast<char>(std::stoi(a_s.substr(i, 2), nullptr, 16));
+			}
+			return out;
+		}
+
+		json ReadJsonFile(const fs::path& a_path)
+		{
+			try
+			{
+				std::ifstream in(a_path, std::ios::binary);
+				if (!in) { return json(); }
+				return json::parse(in, nullptr, true, true);
+			}
+			catch (const std::exception& e)
+			{
+				logger::warn("Remembered settings: import - {} could not be read ({})", a_path.string(), e.what());
+				return json();
+			}
+		}
+
+		std::string JStr(const json& a_j, const char* a_k)
+		{
+			const auto it = a_j.find(a_k);
+			if (it == a_j.end()) { return {}; }
+			if (it->is_string()) { return DecodeMcmMemoryText(it->get<std::string>()); }
+			if (it->is_boolean()) { return it->get<bool>() ? "true" : "false"; }
+			if (it->is_number_integer()) { return std::to_string(it->get<long long>()); }
+			if (it->is_number()) { char b[32]; std::snprintf(b, sizeof(b), "%.6g", it->get<double>()); return b; }
+			return {};
+		}
+		int JInt(const json& a_j, const char* a_k, int a_default)
+		{
+			const auto it = a_j.find(a_k);
+			return it != a_j.end() && it->is_number() ? it->get<int>() : a_default;
+		}
+		bool JBool(const json& a_j, const char* a_k)
+		{
+			const auto it = a_j.find(a_k);
+			return it != a_j.end() && it->is_boolean() && it->get<bool>();
+		}
+	}
+
+	std::vector<std::string> McmMemoryProfiles()
+	{
+		std::vector<std::string> out;
+		std::error_code ec;
+		const fs::path dir = fs::path(kMcmMemoryDir) / "Profiles";
+		if (!fs::is_directory(dir, ec)) { return out; }
+		for (const auto& f : fs::directory_iterator(dir, ec))
+		{
+			if (f.path().extension() == ".json") { out.push_back(f.path().stem().string()); }
+		}
+		const json s = ReadJsonFile(fs::path(kMcmMemoryDir) / "Settings.json");
+		const std::string active = s.is_object() ? JStr(s, "activeProfile") : std::string();
+		std::sort(out.begin(), out.end(), [&](const std::string& a, const std::string& b) {
+			if ((a == active) != (b == active)) { return a == active; }
+			return a < b;
+		});
+		return out;
+	}
+
+	bool McmMemoryAutoRestoreOn()
+	{
+		if (!::GetModuleHandleW(L"MCMMemory.dll")) { return false; }
+		const json s = ReadJsonFile(fs::path(kMcmMemoryDir) / "Settings.json");
+		const auto it = s.is_object() ? s.find("autoRestore") : s.end();
+		return !s.is_object() || it == s.end() || !it->is_boolean() || it->get<bool>();   // missing = its default, on
+	}
+
+	std::string ImportFromMcmMemory(const std::string& a_profile)
+	{
+		const fs::path file = fs::path(kMcmMemoryDir) / "Profiles" / (a_profile + ".json");
+		const json profile = ReadJsonFile(file);
+		const auto settingsIt = profile.is_object() ? profile.find("settings") : profile.end();
+		if (!profile.is_object() || settingsIt == profile.end() || !settingsIt->is_array())
+		{
+			const std::string msg = TR("AMF_McmImportUnreadable", "That profile could not be read.");
+			std::scoped_lock lock(g_mutex);
+			g_lastResult = msg;
+			return msg;
+		}
+		const json other = ReadJsonFile(fs::path(kMcmMemoryDir) / "Settings.json");
+
+		// pages the other mod was told not to restore stay out
+		std::set<std::string> excludedPages;   // "<modID>\x1f<pageName>"
+		if (const auto ex = profile.find("pageExclusions"); ex != profile.end() && ex->is_object())
+		{
+			for (const auto& [modId, list] : ex->items())
+			{
+				if (!list.is_array()) { continue; }
+				for (const auto& e : list)
+				{
+					const std::string mode = JStr(e, "mode");
+					if (mode == "restore" || mode == "all") { excludedPages.insert(DecodeMcmMemoryText(modId) + "\x1f" + JStr(e, "pageName")); }
+				}
+			}
+		}
+
+		// every saved setting, grouped by menu (modID), in the order the other mod keeps them; activations first
+		struct Menu
+		{
+			std::string modName;
+			std::vector<ForeignSetting> settings;
+		};
+		std::map<std::string, Menu> menus;
+		std::vector<std::string> leftOut;   // "<menu>: <row>" for what AMF has no record for
+		int leftOutCount = 0;
+		const auto take = [&](const json& a_s, bool a_activation) {
+			const std::string modId = JStr(a_s, "modID");
+			const auto sep = modId.find("::");
+			const std::string modName = sep == std::string::npos ? JStr(a_s, "modName") : modId.substr(sep + 2);
+			ForeignSetting f;
+			f.page = JStr(a_s, "pageName");
+			f.label = JStr(a_s, "optionLabel");
+			f.kind = a_activation ? std::string("option") : JStr(a_s, "controlType");
+			f.value = a_activation ? std::string("true") : JStr(a_s, "value");
+			f.valueText = JStr(a_s, "valueText");
+			f.optionIndex = JInt(a_s, "optionIndex", -1);
+			if (f.kind == "menu") { f.index = JInt(a_s, "value", -1); }
+			if (excludedPages.contains(modId + "\x1f" + f.page)) { return; }
+			const bool usable = !f.label.empty() && !JBool(a_s, "command") && !JBool(a_s, "textControl") && !JBool(a_s, "startCommand") &&
+								(f.kind == "option" || f.kind == "slider" || f.kind == "menu" || f.kind == "color" || f.kind == "keymap" || f.kind == "input");
+			if (!usable)
+			{
+				++leftOutCount;
+				const std::string row = !f.label.empty() ? f.label : JStr(a_s, "rowLabel");
+				if (leftOut.size() < 40) { leftOut.push_back(modName + ": " + (row.empty() ? f.kind : row)); }
+				return;
+			}
+			Menu& m = menus[modId];
+			m.modName = modName;
+			m.settings.push_back(f);
+		};
+		if (const auto act = profile.find("activations"); act != profile.end() && act->is_array())
+		{
+			for (const auto& a : *act) { take(a, true); }
+		}
+		for (const auto& s : *settingsIt) { take(s, false); }
+
+		// the other mod's "leave this menu out of the automatic restore"
+		std::set<std::string> excludedMenus;
+		if (other.is_object())
+		{
+			if (const auto ex = other.find("autoRestoreExcludedMCMs"); ex != other.end() && ex->is_array())
+			{
+				for (const auto& e : *ex) { if (e.is_string()) { excludedMenus.insert(DecodeMcmMemoryText(e.get<std::string>())); } }
+			}
+		}
+
+		// this game's script menus by ModName (the other mod keys a menu by "<Script>::<ModName>"; AMF by plugin + ModName)
+		std::map<std::string, std::pair<std::string, std::string>> scriptByName;   // ModName -> (key, entry)
+		for (const auto& m : scripts::Menus())
+		{
+			const auto bar = m.key.rfind('|');
+			if (bar != std::string::npos && m.present) { scriptByName.emplace(m.key.substr(bar + 1), std::make_pair(m.key, m.entry)); }
+		}
+
+		int imported = 0, importedMenus = 0, keptByHelper = 0, notFound = 0;
+		std::vector<std::string> missingMenus;
+		{
+			std::scoped_lock lock(g_mutex);
+			EnsureLoadedLocked();
+			for (auto& [modId, menu] : menus)
+			{
+				std::string key, entry;
+				std::vector<Record> records;
+				if (const auto it = scriptByName.find(menu.modName); it != scriptByName.end())
+				{
+					key = it->second.first;
+					entry = it->second.second;
+					// a script option: page + raw label + type + nth - the n-th row with that label and type on its page, counted
+					// in SLOT order; the same slot seen twice (an activation and its setting) keeps one number
+					std::vector<const ForeignSetting*> bySlot;
+					for (const auto& s : menu.settings) { bySlot.push_back(&s); }
+					std::stable_sort(bySlot.begin(), bySlot.end(), [](const auto* a, const auto* b) { return a->optionIndex < b->optionIndex; });
+					std::map<const ForeignSetting*, int> nthOf;
+					std::map<std::string, std::map<int, int>> slotsSeen;   // page+label+kind -> slot -> nth
+					for (const auto* s : bySlot)
+					{
+						auto& slots = slotsSeen[s->page + "\x1f" + s->label + "\x1f" + s->kind];
+						const auto known = slots.find(s->optionIndex);
+						if (known != slots.end()) { nthOf[s] = known->second; continue; }
+						const int next = static_cast<int>(slots.size());
+						slots[s->optionIndex] = next;
+						nthOf[s] = next;
+					}
+					// emitted in the other mod's order: its activations - the switches that turn a menu's rows on - first
+					for (const auto& s : menu.settings)
+					{
+						Record r;
+						r.type = s.kind == "option" ? Type::kToggle : s.kind == "slider" ? Type::kSlider : s.kind == "menu" ? Type::kMenu
+							   : s.kind == "color" ? Type::kColor : s.kind == "keymap" ? Type::kKeymap : Type::kInput;
+						r.page = s.page;
+						r.text = s.label;
+						r.nth = nthOf[&s];
+						if (r.type == Type::kToggle) { r.value = (s.value == "true" || (s.value != "false" && s.value != "0")) ? "1" : "0"; }
+						else if (r.type == Type::kMenu) { r.value = s.valueText; r.menuIndex = s.index; }
+						else { r.value = s.value; }
+						records.push_back(r);
+					}
+				}
+				else
+				{
+					const mcmloader::HelperImport h = mcmloader::ImportHelperSettings(menu.modName, menu.settings);
+					if (h.key.empty())
+					{
+						missingMenus.push_back(menu.modName);
+						continue;
+					}
+					key = h.key;
+					entry = h.entry;
+					keptByHelper += h.keptByHelper;
+					notFound += h.notFound;
+					for (const auto& [id, value] : h.values)
+					{
+						Record r;
+						r.type = Type::kHelper;
+						r.id = id;
+						r.value = value;
+						records.push_back(r);
+					}
+				}
+				if (!records.empty())
+				{
+					imported += static_cast<int>(records.size());
+					++importedMenus;
+					MergeLocked(key, entry, records);
+				}
+				if (excludedMenus.contains(modId) && g_menus.contains(key)) { g_menus[key].autoRestore = false; }
+			}
+			SaveLocked();
+		}
+
+		// the result, one line per part
+		char line[512];
+		std::snprintf(line, sizeof(line), TR("AMF_McmImportDone", "Imported %d settings from %d menus into the profile \"%s\". Once you are happy, switch MCM Memory off: AMF sets them after a new game."),
+					  imported, importedMenus, ActiveProfile().c_str());
+		std::string msg = line;
+		if (keptByHelper > 0)
+		{
+			std::snprintf(line, sizeof(line), TR("AMF_McmImportHelperKeeps", "%d settings are kept by MCM Helper itself and need nothing."), keptByHelper);
+			msg += std::string("\n") + line;
+		}
+		if (!missingMenus.empty())
+		{
+			std::string names;
+			for (std::size_t i = 0; i < missingMenus.size() && i < 20; ++i) { names += (i ? ", " : "") + missingMenus[i]; }
+			std::snprintf(line, sizeof(line), TR("AMF_McmImportMissing", "%d menus are not in this game, or not switched on here - import again once they are: %s"),
+						  static_cast<int>(missingMenus.size()), names.c_str());
+			msg += std::string("\n") + line;
+		}
+		if (leftOutCount + notFound > 0)
+		{
+			std::string rows;
+			for (std::size_t i = 0; i < leftOut.size() && i < 12; ++i) { rows += (i ? "; " : "") + leftOut[i]; }
+			std::snprintf(line, sizeof(line), TR("AMF_McmImportLeftOut", "%d settings could not come over (buttons it replays, rows with no name, cycling text, rows no longer there): %s"),
+						  leftOutCount + notFound, rows.c_str());
+			msg += std::string("\n") + line;
+		}
+		logger::info("Remembered settings: imported profile \"{}\" - {} setting(s) from {} menu(s), {} kept by MCM Helper, {} menu(s) not here, {} left out, {} not found",
+					 a_profile, imported, importedMenus, keptByHelper, missingMenus.size(), leftOutCount, notFound);
+		{
+			std::scoped_lock lock(g_mutex);
+			g_lastResult = msg;
+		}
+		return msg;
+	}
+
 	std::string ToolJson(const std::string& a_argsJson)
 	{
 		json args;
@@ -652,6 +938,15 @@ namespace rememberedsettings
 			return json{ { "ok", made }, { "profile", ActiveProfile() } }.dump();
 		}
 		if (action == "delete") { return json{ { "ok", DeleteProfile(str("name")) } }.dump(); }
+		// 2.1.5: import from MCM Memory - mcmmemory (its profiles, whether its automatic restore is on) | import {name}
+		if (action == "mcmmemory") { return json{ { "ok", true }, { "profiles", McmMemoryProfiles() }, { "autoRestoreOn", McmMemoryAutoRestoreOn() } }.dump(); }
+		if (action == "import")
+		{
+			const auto names = McmMemoryProfiles();
+			const std::string name = !str("name").empty() ? str("name") : (names.empty() ? std::string() : names.front());
+			if (name.empty()) { return R"({"ok":false,"error":"no MCM Memory profile found"})"; }
+			return json{ { "ok", true }, { "profile", name }, { "result", ImportFromMcmMemory(name) } }.dump();
+		}
 		if (action == "newgame")  // the automatic restore, as after kNewGame (a test drive without starting a new game)
 		{
 			OnNewGame();

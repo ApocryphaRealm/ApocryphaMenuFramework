@@ -2476,6 +2476,75 @@ namespace mcmloader
 		return out;
 	}
 
+	HelperImport ImportHelperSettings(const std::string& a_modName, const std::vector<rememberedsettings::ForeignSetting>& a_settings)
+	{
+		HelperImport out;
+		std::scoped_lock lock(g_mutex);
+		const Mod* mod = nullptr;
+		for (const auto& m : g_mods)
+		{
+			if (m->displayName == a_modName || m->modName == a_modName) { mod = m.get(); break; }
+		}
+		if (!mod) { return out; }
+		out.key = "mcmhelper|" + mod->modName;
+		out.entry = mod->entryName;
+
+		// the other mod's kinds against MCM Helper's: a toggle row is "option" there; menus come as enum, stepper or menu
+		const auto compatible = [](const std::string& a_kind, Kind a_k) {
+			if (a_kind == "option") { return a_k == Kind::kToggle; }
+			if (a_kind == "slider") { return a_k == Kind::kSlider; }
+			if (a_kind == "menu") { return a_k == Kind::kMenu || a_k == Kind::kEnum || a_k == Kind::kStepper; }
+			if (a_kind == "color") { return a_k == Kind::kColor; }
+			if (a_kind == "keymap") { return a_k == Kind::kKeymap; }
+			if (a_kind == "input") { return a_k == Kind::kInput; }
+			return false;
+		};
+		// the n-th row with the same label and kind on its page, in slot order: n-th control with that label and kind
+		std::map<std::string, int> seen;
+		std::vector<const rememberedsettings::ForeignSetting*> ordered;
+		for (const auto& s : a_settings) { ordered.push_back(&s); }
+		std::stable_sort(ordered.begin(), ordered.end(), [](const auto* a, const auto* b) { return a->optionIndex < b->optionIndex; });
+		for (const auto* s : ordered)
+		{
+			const Page* page = nullptr;
+			for (const Page& p : mod->pages)
+			{
+				if (p.name == s->page || (mod->pages.size() == 1 && s->page.empty())) { page = &p; break; }
+			}
+			const int nth = seen[s->page + "\x1f" + s->label + "\x1f" + s->kind]++;
+			const Control* control = nullptr;
+			if (page)
+			{
+				int found = 0;
+				for (const Control& c : page->controls)
+				{
+					if (c.text == s->label && compatible(s->kind, c.kind) && found++ == nth) { control = &c; break; }
+				}
+			}
+			if (!control) { ++out.notFound; continue; }
+			if (!IsLive(control->source)) { ++out.keptByHelper; continue; }   // in MCM Helper's own INI already
+
+			// the value as MCM Helper writes it for this control
+			std::string value = s->value;
+			if (s->kind == "option") { value = (value == "true" || (value != "false" && value != "0" && !value.empty())) ? "1" : "0"; }
+			else if (s->kind == "slider") { value = FormatFloat(std::clamp(ParseFloat(value), control->min, control->max)); }
+			else if (s->kind == "menu")
+			{
+				if (control->kind == Kind::kMenu)
+				{
+					// a string menu stores the option's text
+					value = !s->valueText.empty() ? s->valueText
+						: (s->index >= 0 && s->index < static_cast<int>(control->options.size()) ? control->options[static_cast<std::size_t>(s->index)] : value);
+				}
+				else { value = std::to_string(s->index >= 0 ? s->index : static_cast<int>(ParseInt(value))); }
+			}
+			out.values.emplace_back(control->key, value);
+		}
+		logger::info("Remembered settings: import for MCM Helper menu {} - {} live, {} kept by MCM Helper, {} not found",
+					 mod->modName, out.values.size(), out.keptByHelper, out.notFound);
+		return out;
+	}
+
 	namespace
 	{
 		std::optional<std::size_t> MemoryModIndex(const std::string& a_key)

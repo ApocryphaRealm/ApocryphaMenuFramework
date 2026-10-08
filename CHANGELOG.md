@@ -61,6 +61,18 @@ different things", the "$" and underscores in section headings, and the help tex
   colours (palette), buttons that run something (chevron), options the mod disabled (lock), help and notes (info),
   loading (hourglass), what cannot be drawn (warning). Ten solid glyphs merged into the text face (AmfIcons.h).
 
+- **Import from MCM Memory** (Settings > MCM menus > Remembered settings; the owner: "the whole point of having the import
+  from MCM memory feature is so that they can import their settings and then deactivate MCM memory"). Shown when MCM
+  Memory has a saved profile: pick it and import. Every setting it saved that AMF can keep is merged into the ACTIVE
+  profile (his choice) - script menus as page + name + type + which-of-that-name (counted in slot order), MCM Helper
+  menus' live Global / Property controls as their values (ModSetting values are in MCM Helper's own INI already and are
+  counted, not copied); its enable switches come first, its excluded pages stay out, and a menu it leaves out of its
+  automatic restore is left out of AMF's. The result says what came over, what MCM Helper keeps, which menus are not in
+  this game (import again later) and which rows could not come (replayed buttons, rows with no name, cycling text) -
+  by name. Its files are only read. While MCM Memory's own automatic restore is on, the tab says both will set the same
+  menus after a new game (his choice: AMF restores anyway). Matched by the menu's ModName (MCM Memory keys a menu
+  "<script>::<ModName>"). DevBench: amf.mcm op=remembered action=mcmmemory | import {name}.
+
 ### Changed
 - **Sub-tabs on Appearance and MCM menus** (the owner: "sub tabs ... rather than a long page with collapsible
   sections"). Appearance: Theme and text / Window / Colours. MCM menus: Menus / Choose menus / Remembered settings /

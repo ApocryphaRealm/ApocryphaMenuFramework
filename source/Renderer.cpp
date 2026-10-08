@@ -1813,9 +1813,57 @@ namespace renderer
 						if (memBusy) { ImGui::EndDisabled(); }
 						ImGui::TextWrapped("%s", TR("AMF_McmMemButtonsHelp", "Back up all now reads every menu this menu can read - also what you "
 										   "set in SkyUI's own menu. Restore now sets this game's menus to the profile."));
+
+						// IMPORT FROM MCM MEMORY (2.1.5, the owner: "the whole point ... is so that they can import their settings and
+						// then deactivate MCM memory"). Shown when that mod has a saved profile; merged into the active profile (his
+						// choice). Named on this button by his choice; the feature itself stays "Remembered settings".
+						{
+							static std::vector<std::string> s_mmProfiles;
+							static double s_mmScannedAt = -10.0;
+							if (ImGui::GetTime() - s_mmScannedAt > 5.0) { s_mmProfiles = rememberedsettings::McmMemoryProfiles(); s_mmScannedAt = ImGui::GetTime(); }
+							static int s_mmPick = 0;
+							if (!s_mmProfiles.empty())
+							{
+								ImGui::Spacing();
+								s_mmPick = std::clamp(s_mmPick, 0, static_cast<int>(s_mmProfiles.size()) - 1);
+								if (memBusy) { ImGui::BeginDisabled(); }
+								ImGui::SetNextItemWidth(ImGui::GetFontSize() * 12.0f);
+								if (theme::BeginComboTight(TR("AMF_McmImportProfile", "MCM Memory profile"), s_mmProfiles[static_cast<std::size_t>(s_mmPick)].c_str()))
+								{
+									for (int i = 0; i < static_cast<int>(s_mmProfiles.size()); ++i)
+									{
+										if (ImGui::Selectable(s_mmProfiles[static_cast<std::size_t>(i)].c_str(), i == s_mmPick)) { s_mmPick = i; }
+									}
+									ImGui::EndCombo();
+								}
+								ImGui::SameLine();
+								if (ImGui::Button(TR("AMF_McmImport", "Import from MCM Memory")))
+								{
+									g_memStatus.clear();
+									rememberedsettings::ImportFromMcmMemory(s_mmProfiles[static_cast<std::size_t>(s_mmPick)]);
+								}
+								if (memBusy) { ImGui::EndDisabled(); }
+								ImGui::TextWrapped("%s", TR("AMF_McmImportHelp", "Brings every setting MCM Memory saved in that profile into this "
+									"profile, so you can switch MCM Memory off afterwards: AMF sets them again after each new game. Its files "
+									"are only read, never changed."));
+							}
+							if (rememberedsettings::McmMemoryAutoRestoreOn())
+							{
+								ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
+								ImGui::TextWrapped("%s %s", icons::kWarning, TR("AMF_McmMemBothOn", "MCM Memory's automatic restore is on as well, so after a new "
+									"game both set the same menus. Once your settings are imported, switch MCM Memory off."));
+								ImGui::PopStyleColor();
+							}
+						}
+
 						const std::string memLast = rememberedsettings::LastResult();
 						if (!g_memStatus.empty()) { ImGui::TextWrapped("%s", g_memStatus.c_str()); }
-						else if (!memLast.empty()) { ImGui::TextDisabled("%s", memLast.c_str()); }
+						else if (!memLast.empty())
+						{
+							ImGui::PushTextWrapPos(0.0f);
+							ImGui::TextDisabled("%s", memLast.c_str());
+							ImGui::PopTextWrapPos();
+						}
 
 						const auto memRows = rememberedsettings::Menus();
 						char memHeader[160];

@@ -80,6 +80,25 @@ namespace rememberedsettings
 	// The last backup / restore, one line, in the active language ("" before the first).
 	std::string LastResult();
 
+	// IMPORT FROM MCM MEMORY (2.1.5, the owner, 2026-10-07: "the whole point of having the import from MCM memory feature
+	// is so that they can import their settings and then deactivate MCM memory"). Reads the other mod's saved profile
+	// (Data\SKSE\Plugins\MCMMemory\Profiles\<name>.json - read only, never written) and merges every setting AMF can keep
+	// into the ACTIVE profile (the owner's choice), so the next new game sets them without the other mod. What AMF has no
+	// record for (button clicks, rows with no name, cycling text rows) and menus not in this game are listed by name.
+	struct ForeignSetting   // one saved setting, as the other mod keeps it (raw text, value as text)
+	{
+		std::string page;
+		std::string label;
+		std::string kind;        // option (toggle) | slider | menu | color | keymap | input
+		std::string value;
+		std::string valueText;   // a menu's shown text
+		int index = -1;          // a menu's index
+		int optionIndex = -1;    // its slot on the page (orders same-named rows)
+	};
+	std::vector<std::string> McmMemoryProfiles();   // the profiles found, its active one first; empty = none saved
+	bool McmMemoryAutoRestoreOn();                  // its DLL is loaded and its own automatic restore is on
+	std::string ImportFromMcmMemory(const std::string& a_profile);   // the result, one line per part, in the active language
+
 	// DevBench amf.mcm op=remembered: action status | backup {keys} | restore {keys} | records {key} | forget {key} |
 	// auto {key,on} | profile {name} | create {name,copy} | delete {name}. Thread-safe.
 	std::string ToolJson(const std::string& a_argsJson);
