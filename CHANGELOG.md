@@ -77,6 +77,11 @@ different things", the "$" and underscores in section headings, and the help tex
   collapses all [separators], and when it's off, it uncollapses them. And if the user goes and uncollapses one
   individually, then the toggle doesn't auto-reassert itself until it's toggled again"; "the sort button ... on the
   farthest right"). It acts once, when switched; [Display] bFoldAllSeparators keeps where it was left.
+- **Filter, on the Mods row** just before Sort (the owner: "a filter button ... a small context menu where you can type
+  in a word ... whether you want to filter for that item or filter out that item"): a word, or several split by
+  commas, matched against the names shown; Show only these lists just the matches (flat, as the search does), Hide
+  these hides them and keeps the separators, Clear ends it. The button is coloured while a filter is on and its tooltip
+  says which. For the session.
 - **The persistence test is gone** from the bottom of Settings > General (the owner: "get rid of the persistence test");
   it showed only at log level 0. The per-save channel itself is unchanged.
 

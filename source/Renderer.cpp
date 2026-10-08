@@ -1096,6 +1096,31 @@ namespace renderer
 		// 2.1.5 - Y IN A PAGE GOES UP TO THE MAIN TABS (the owner, 2026-10-07: "when pressing Y, instead of zooming all the way
 		// out to the main [left] pane ... it should just send you to the main tabs"). The page had the highlight last frame
 		// (the list then leaves Y alone); the focus request is answered by the main tab bar's open tab as it is submitted.
+		// 2.1.5 - THE LIST FILTER (the owner, 2026-10-07: "a filter button that when you press it next to sort, it will open
+		// up a small context menu where you can type in a word ... whether you want to filter for that item or filter out
+		// that item"). Words split by commas, matched against the names the player reads; "only" shows just the matches
+		// (flat, as the search box does), "out" hides them and keeps the separators. For the session.
+		char g_listFilterEdit[128] = {};   // the popup's text box
+		std::string g_listFilter;          // the words in force ("" = no filter)
+		bool g_listFilterOut = false;      // true: hide the matches; false: show only them
+
+		std::vector<std::string> ListFilterWords()
+		{
+			std::vector<std::string> words;
+			std::string word;
+			for (const char c : g_listFilter + ",")
+			{
+				if (c == ',')
+				{
+					while (!word.empty() && word.front() == ' ') { word.erase(0, 1); }
+					while (!word.empty() && word.back() == ' ') { word.pop_back(); }
+					if (!word.empty()) { words.push_back(word); }
+					word.clear();
+				}
+				else { word += static_cast<char>(std::tolower(static_cast<unsigned char>(c))); }
+			}
+			return words;
+		}
 		bool g_contentNavLastFrame = false;
 		bool g_focusMainTabs = false;
 		int g_prevTabIndex = 0;     // the main bar's open tab last frame (g_tabIndex is re-measured from 0 every frame)
@@ -2980,6 +3005,55 @@ namespace renderer
 						{
 							ImGui::SetTooltip("%s", TR("AMF_FoldAllTip", "On: every separator folded. Off: every one open. Folding or opening one by hand afterwards leaves this switch as it is."));
 						}
+					// FILTER, just before Sort (Sort stays at the far right): a small popup with a word box and the two ways to use it.
+					{
+						const bool filtering = !g_listFilter.empty();
+						ImGui::SameLine();
+						if (filtering) { ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_SliderGrab)); }
+						if (ImGui::SmallButton(TR("AMF_FilterButton", "Filter")))
+						{
+							std::snprintf(g_listFilterEdit, sizeof(g_listFilterEdit), "%s", g_listFilter.c_str());
+							ImGui::OpenPopup("##listfilter");
+						}
+						if (filtering) { ImGui::PopStyleColor(); }
+						if (ImGui::IsItemHovered())
+						{
+							if (filtering)
+							{
+								ImGui::SetTooltip(g_listFilterOut ? TR("AMF_FilterActiveOut", "Hiding: %s") : TR("AMF_FilterActiveOnly", "Showing only: %s"),
+												  g_listFilter.c_str());
+							}
+							else { ImGui::SetTooltip("%s", TR("AMF_FilterTip", "Show only the menus with a word in their name, or hide them.")); }
+						}
+						if (ImGui::BeginPopup("##listfilter"))
+						{
+							if (ImGui::IsWindowAppearing()) { ImGui::SetKeyboardFocusHere(); }
+							ImGui::SetNextItemWidth(ImGui::GetFontSize() * 14.0f);
+							const bool entered = ImGui::InputTextWithHint("##filterwords", TR("AMF_FilterHint", "A word, or several split by commas"),
+																		  g_listFilterEdit, sizeof(g_listFilterEdit), ImGuiInputTextFlags_EnterReturnsTrue);
+							keyboard::NoteTextField(ImGui::GetItemID());
+							const bool only = ImGui::Button(TR("AMF_FilterOnly", "Show only these")) || entered;
+							ImGui::SameLine();
+							const bool out = ImGui::Button(TR("AMF_FilterOut", "Hide these"));
+							ImGui::SameLine();
+							const bool clear = ImGui::Button(TR("AMF_FilterClear", "Clear"));
+							if (only || out)
+							{
+								g_listFilter = g_listFilterEdit;
+								g_listFilterOut = out;
+								logger::info("side list: filter {} \"{}\"", out ? "out" : "only", g_listFilter);
+								ImGui::CloseCurrentPopup();
+							}
+							else if (clear)
+							{
+								g_listFilter.clear();
+								g_listFilterEdit[0] = '\0';
+								logger::info("side list: filter cleared");
+								ImGui::CloseCurrentPopup();
+							}
+							ImGui::EndPopup();
+						}
+					}
 					const auto& sortValues = settings::Get();
 					if (sortValues.loadMcmHelperConfigs || sortValues.loadSkyUIScriptMenus)
 					{
@@ -3034,6 +3108,15 @@ namespace renderer
 					return a_in;
 				};
 				const std::string needle = lower(s_modFilter);
+				// 2.1.5: the Filter button's words (see g_listFilter): "only" lists the matches flat, as the search does
+				const std::vector<std::string> filterWords = ListFilterWords();
+				const bool filterOnly = !filterWords.empty() && !g_listFilterOut;
+				const bool filterOut = !filterWords.empty() && g_listFilterOut;
+				const auto filterMatch = [&](const std::string& a_name) {
+					const std::string name = lower(a_name);
+					return std::any_of(filterWords.begin(), filterWords.end(), [&](const std::string& w) { return name.find(w) != std::string::npos; });
+				};
+				const bool flatList = !needle.empty() || filterOnly;
 
 				// Player-facing order and names (menu-shell personalization). The rows carry the
 				// REGISTRY index, so selection, the C API and DevBench addressing are unaffected.
@@ -3085,8 +3168,11 @@ namespace renderer
 					{
 						continue;
 					}
+					// 2.1.5: the Filter button - only the matches (flat), or everything but them (separators kept)
+					if (filterOnly && (row.separator || !filterMatch(row.displayName))) { continue; }
+					if (filterOut && !row.separator && filterMatch(row.displayName)) { continue; }
 					// a folded separator hides its mods (MO2's collapse - the owner, 2026-10-02)
-					if (needle.empty() && row.hidden) { continue; }
+					if (!flatList && row.hidden) { continue; }
 
 					// MCM loader: an entry whose every page is hidden has nothing to show, so it has no
 					// row - the MCM loader's off switch hides all of its entries' pages. (Before this an all-hidden entry
@@ -3118,7 +3204,7 @@ namespace renderer
 					const ImVec2 rowTopLeft = ImGui::GetCursorScreenPos();
 
 					// a mod under a separator sits one step in, so the group reads as a group
-					const float rowIndent = gutter + (needle.empty() && row.depth > 0 ? ImGui::GetFontSize() * 0.9f : 0.0f);
+					const float rowIndent = gutter + (!flatList && row.depth > 0 ? ImGui::GetFontSize() * 0.9f : 0.0f);
 					ImGui::Indent(rowIndent);
 					const bool picked = ImGui::Selectable(row.displayName.c_str(), isOpen);
 					NoteHoverFrame();   // 2.1.5: the theme's frame round the menu name under the mouse
