@@ -20,6 +20,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include <imgui.h>
 
@@ -88,12 +89,35 @@ namespace flick
 	{
 		std::string plugin, name, group, entry;
 		bool listed = true;
+		std::string dll;   // the mod's DLL file name, lower case - the key of the per-mod choice below
 	};
 	std::size_t ToolCount();
 	ToolInfo ToolAt(std::size_t a_index);
 	// Whether the real FLICK (FUCK.dll) is installed beside AMF - it then loads with no mods in it (the owner: AMF keeps
 	// the FLICK mods and warns).
 	bool RealFlickInstalled();
+
+	// THE PER-MOD CHOICE (the owner, 2026-10-08: the three-way choice every converted menu system gets - "The standard logic
+	// for these menu conversion projects including flick"). A FLICK mod is held here, or left to the real FLICK (FUCK.dll):
+	// the name alias answers FUCK.dll per calling DLL (SmfAlias.cpp), so a mod left to FLICK gets the real one. "Both at
+	// once" is not possible - a FLICK mod hands its pages to the one table it got. Keyed by the DLL's file name, lower
+	// case; kept in FlickLeftToFlick.txt and read with Configure, so a change applies from the next game start.
+	bool LeftToFlick(const std::string& a_dllLower);
+	// a_shownName: the mod's name as this menu shows it - kept with the choice, because a mod left to FLICK never tells
+	// this menu its name again.
+	void SetLeftToFlick(const std::string& a_dllLower, bool a_on, const std::string& a_shownName = {});
+	bool LeftToFlickChanged();   // a choice differs from what this session started with (restart to apply)
+	// SmfAlias: a DLL asked for FUCK.dll and was answered (a_toAmf: AMF's table; false: the real FLICK, or nothing).
+	void NoteConsumer(const std::string& a_dllLower, bool a_toAmf);
+	struct Consumer
+	{
+		std::string dll;
+		std::string name;    // shown name: its page group/name, or the one kept with the choice; empty when never seen
+		bool toAmf = true;   // where it went this session
+		bool leftToFlick = false;   // the choice saved now (may differ until a restart)
+	};
+	// Every FLICK mod seen this session or left to FLICK, by DLL name.
+	std::vector<Consumer> Consumers();
 }
 
 // The export a FLICK mod asks for. Returns AMF's table (version 5).

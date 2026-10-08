@@ -151,6 +151,37 @@ namespace
 		return lowered == kSmf || lowered == kAmfOld || (lowered == kFlick && flick::Enabled());
 	}
 
+	bool IsFlickName(std::wstring_view a_name)
+	{
+		if (const auto slash = a_name.find_last_of(L"\\/"); slash != std::wstring_view::npos) {
+			a_name.remove_prefix(slash + 1);
+		}
+		auto lowered = Lowered(a_name);
+		if (lowered.ends_with(L".dll")) {
+			lowered.resize(lowered.size() - 4);
+		}
+		return lowered == kFlick;
+	}
+
+	std::string CallerName(void* a_returnAddress);
+
+	// 2.1.6 THE PER-MOD FLICK CHOICE (FlickHost.h): a FLICK lookup is answered with AMF only for a DLL the player has not
+	// left to the real FLICK - that one gets the real API's answer (the real FUCK.dll, or nothing when it is not installed).
+	bool Aliased(std::wstring_view a_name, void* a_caller)
+	{
+		if (!IsSmfName(a_name)) {
+			return false;
+		}
+		if (!IsFlickName(a_name)) {
+			return true;
+		}
+		std::string dll = CallerName(a_caller);
+		std::transform(dll.begin(), dll.end(), dll.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+		const bool toAmf = !flick::LeftToFlick(dll);
+		flick::NoteConsumer(dll, toAmf);
+		return toAmf;
+	}
+
 	// The FILE the stock consumer header looks for: exactly "SKSEMenuFramework.dll" as the last
 	// path component, any directory in front, case-insensitively. Deliberately narrower than
 	// IsSmfName - a query for SKSEMenuFramework.ini or .pdb must get the honest answer, because
@@ -230,7 +261,7 @@ namespace
 
 	HMODULE WINAPI GetModuleHandleW_Alias(LPCWSTR a_name)
 	{
-		if (a_name && IsSmfName(a_name)) {
+		if (a_name && Aliased(a_name, _ReturnAddress())) {
 			NoteHit(a_name, _ReturnAddress());
 			return g_self;
 		}
@@ -241,7 +272,7 @@ namespace
 	{
 		if (a_name) {
 			const auto wide = Widen(a_name);
-			if (IsSmfName(wide)) {
+			if (Aliased(wide, _ReturnAddress())) {
 				NoteHit(wide, _ReturnAddress());
 				return g_self;
 			}
@@ -257,7 +288,7 @@ namespace
 		if (!g_realExW) {
 			return FALSE;
 		}
-		if (a_name && !(a_flags & GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS) && IsSmfName(a_name)) {
+		if (a_name && !(a_flags & GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS) && Aliased(a_name, _ReturnAddress())) {
 			NoteHit(a_name, _ReturnAddress());
 			return g_realExW(a_flags, g_selfPathW.c_str(), a_out);
 		}
@@ -271,7 +302,7 @@ namespace
 		}
 		if (a_name && !(a_flags & GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS)) {
 			const auto wide = Widen(a_name);
-			if (IsSmfName(wide)) {
+			if (Aliased(wide, _ReturnAddress())) {
 				NoteHit(wide, _ReturnAddress());
 				return g_realExA(a_flags, g_selfPathA.c_str(), a_out);
 			}
@@ -287,7 +318,7 @@ namespace
 		if (!g_realLoadW) {
 			return nullptr;
 		}
-		if (a_name && IsSmfName(a_name)) {
+		if (a_name && Aliased(a_name, _ReturnAddress())) {
 			NoteHit(a_name, _ReturnAddress());
 			return g_realLoadW(g_selfPathW.c_str());
 		}
@@ -301,7 +332,7 @@ namespace
 		}
 		if (a_name) {
 			const auto wide = Widen(a_name);
-			if (IsSmfName(wide)) {
+			if (Aliased(wide, _ReturnAddress())) {
 				NoteHit(wide, _ReturnAddress());
 				return g_realLoadA(g_selfPathA.c_str());
 			}
@@ -314,7 +345,7 @@ namespace
 		if (!g_realLoadExW) {
 			return nullptr;
 		}
-		if (a_name && IsSmfName(a_name)) {
+		if (a_name && Aliased(a_name, _ReturnAddress())) {
 			NoteHit(a_name, _ReturnAddress());
 			return g_realLoadExW(g_selfPathW.c_str(), a_file, a_flags);
 		}
@@ -328,7 +359,7 @@ namespace
 		}
 		if (a_name) {
 			const auto wide = Widen(a_name);
-			if (IsSmfName(wide)) {
+			if (Aliased(wide, _ReturnAddress())) {
 				NoteHit(wide, _ReturnAddress());
 				return g_realLoadExA(g_selfPathA.c_str(), a_file, a_flags);
 			}

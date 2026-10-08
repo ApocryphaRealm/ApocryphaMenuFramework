@@ -2326,8 +2326,8 @@ namespace renderer
 							settings::Save();
 						}
 						ImGui::TextWrapped("%s", TR("AMF_FlickHostHelp", "On: mods written for FLICK show their settings page in this menu, "
-							"with (FLICK) after the name, and are reached only through it - there is no separate FLICK window, key or "
-							"pause-menu row. Off: FLICK mods are left alone. A change applies after you restart the game."));
+							"with (FLICK) after the name - each one here or in FLICK's own window, as you choose below. Off: FLICK mods are "
+							"left alone. A change applies after you restart the game."));
 						if (values.flickHost != flick::Enabled())
 						{
 							ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
@@ -2338,48 +2338,73 @@ namespace renderer
 						if (flick::RealFlickInstalled())
 						{
 							ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
-							ImGui::TextWrapped("%s", TR("AMF_FlickRealInstalled", "FLICK itself (FUCK.dll) is installed beside this menu. This menu "
-								"holds the FLICK mods, so FLICK's own menu stays empty; disable FLICK in your mod manager to remove its row from the pause menu."));
+							ImGui::TextWrapped("%s", TR("AMF_FlickRealInstalled", "FLICK itself (FUCK.dll) is installed beside this menu. The FLICK "
+								"mods kept here are not in FLICK's own window; choose FLICK's own window below for any you want there."));
 							ImGui::PopStyleColor();
 							ImGui::Spacing();
 						}
-						// one line per FLICK mod (its plugin), its pages after it; a mod whose FLICK copy is hidden because it has its
-						// own page here says so
-						std::vector<std::pair<std::string, std::vector<flick::ToolInfo>>> mods;
-						for (std::size_t i = 0, n = flick::ToolCount(); i < n; ++i)
-						{
-							flick::ToolInfo t = flick::ToolAt(i);
-							auto it = std::find_if(mods.begin(), mods.end(), [&t](const auto& m) { return m.first == t.plugin; });
-							if (it == mods.end()) { mods.emplace_back(t.plugin, std::vector<flick::ToolInfo>{}); it = std::prev(mods.end()); }
-							it->second.push_back(std::move(t));
-						}
-						if (mods.empty())
+						// one line per FLICK mod (its DLL), where its page goes, and its pages after it (2.1.6, the per-mod choice: the
+						// owner's three-way logic for every converted system - a FLICK page can be in one place at a time, so the
+						// choice is this menu or FLICK's own window; FlickHost.h)
+						const auto consumers = flick::Consumers();
+						std::vector<flick::ToolInfo> tools;
+						for (std::size_t i = 0, n = flick::ToolCount(); i < n; ++i) { tools.push_back(flick::ToolAt(i)); }
+						if (consumers.empty())
 						{
 							ImGui::TextDisabled("%s", TR("AMF_FlickNone", "No FLICK mods have connected."));
 						}
 						else
 						{
-							ImGui::SeparatorText(std::format("{} ({})", TR("AMF_FlickConnected", "FLICK mods here"), mods.size()).c_str());
-							for (const auto& [plugin, pages] : mods)
+							ImGui::SeparatorText(std::format("{} ({})", TR("AMF_FlickConnected", "FLICK mods here"), consumers.size()).c_str());
+							ImGui::TextWrapped("%s", TR("AMF_FlickWhereHelp", "Each FLICK mod's page is in one place at a time: in this menu, "
+								"or in FLICK's own window (FLICK itself must be installed for that). A change applies from the next game start."));
+							const char* places[] = { TR("AMF_FlickInAmf", "This menu"), TR("AMF_FlickInFlick", "FLICK's own window") };
+							for (const auto& c : consumers)
 							{
-								const std::string& shown = pages.front().group.empty() ? pages.front().name : pages.front().group;
-								ImGui::BulletText("%s", shown.c_str());
-								ImGui::SameLine();
-								ImGui::TextDisabled("(%s)", plugin.c_str());
-								if (pages.size() > 1 || pages.front().name != shown)
+								std::vector<const flick::ToolInfo*> pages;
+								for (const auto& t : tools) { if (t.dll == c.dll) { pages.push_back(&t); } }
+								const std::string shown = !c.name.empty() ? c.name : c.dll;
+								ImGui::PushID(c.dll.c_str());
+								int place = c.leftToFlick ? 1 : 0;
+								ImGui::SetNextItemWidth(ImGui::GetFontSize() * 12.0f);
+								if (theme::BeginComboTight(shown.c_str(), places[place]))
 								{
-									ImGui::Indent();
-									for (const auto& p : pages) { ImGui::TextDisabled("%s", p.name.c_str()); }
-									ImGui::Unindent();
+									for (int i = 0; i < 2; ++i)
+									{
+										if (ImGui::Selectable(places[i], i == place) && i != place) { flick::SetLeftToFlick(c.dll, i == 1, shown); }
+									}
+									ImGui::EndCombo();
 								}
-								if (!pages.front().listed)
+								if (shown != c.dll)
 								{
-									ImGui::Indent();
+									ImGui::SameLine();
+									ImGui::TextDisabled("(%s)", c.dll.c_str());
+								}
+								ImGui::Indent();
+								if (c.leftToFlick == c.toAmf)
+								{
+									ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
+									ImGui::TextWrapped("%s", TR("AMF_FlickRestart", "Restart the game for this to take effect."));
+									ImGui::PopStyleColor();
+								}
+								if (c.leftToFlick && !flick::RealFlickInstalled())
+								{
+									ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
+									ImGui::TextWrapped("%s", TR("AMF_FlickNotInstalled", "FLICK itself is not installed, so this mod's page is shown nowhere."));
+									ImGui::PopStyleColor();
+								}
+								if (pages.size() > 1 || (!pages.empty() && pages.front()->name != shown))
+								{
+									for (const auto* p : pages) { ImGui::TextDisabled("%s", p->name.c_str()); }
+								}
+								if (!pages.empty() && !pages.front()->listed)
+								{
 									ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
 									ImGui::TextWrapped("%s", TR("AMF_FlickDuplicate", "It also has its own page here, so its FLICK copy is not listed."));
 									ImGui::PopStyleColor();
-									ImGui::Unindent();
 								}
+								ImGui::Unindent();
+								ImGui::PopID();
 							}
 						}
 						ImGui::EndTabItem();

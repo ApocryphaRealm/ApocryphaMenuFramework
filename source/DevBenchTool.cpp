@@ -156,8 +156,26 @@ namespace devbenchtool
 			}
 			else if (op == "flick")
 			{
-				// 2.1.6: the FLICK host - the FLICK mods connected, their pages, the page open now, and the calls not answered yet
-				result = flick::StatusJson();
+				// 2.1.6: the FLICK host - the FLICK mods connected, their pages, the page open now, and the calls not answered yet.
+				// {"op":"flick","dll":"<mod>.dll","place":"amf"|"flick"} sets the per-mod choice (applies from the next start).
+				const std::string dll = JsonStr(args, "dll");
+				const std::string place = JsonStr(args, "place");
+				if (!dll.empty() && (place == "amf" || place == "flick"))
+				{
+					std::string shown;
+					for (const auto& c : flick::Consumers()) { if (c.dll == dll) { shown = c.name; } }
+					flick::SetLeftToFlick(dll, place == "flick", shown);
+				}
+				std::string consumers = "[";
+				for (const auto& c : flick::Consumers())
+				{
+					if (consumers.size() > 1) { consumers += ","; }
+					consumers += "{\"dll\":\"" + c.dll + "\",\"name\":\"" + c.name + "\",\"toAmf\":" + (c.toAmf ? "true" : "false") +
+								 ",\"leftToFlick\":" + (c.leftToFlick ? "true" : "false") + "}";
+				}
+				consumers += "]";
+				const std::string status = flick::StatusJson();
+				result = status.substr(0, status.rfind('}')) + ",\"consumers\":" + consumers + "}";
 			}
 			else if (op == "prisma")
 			{

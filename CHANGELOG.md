@@ -70,6 +70,11 @@ line under a section header ... the on-screen keyboard ... and anything else tha
   standard logic for these menu conversion projects") - here and in Prisma's own window / here only (Redux's key off in
   PrismaCore.ini from the next game start, the player's key remembered and put back) / Prisma's own window only - and a
   switch per Prisma menu. [Prisma] iControl in the INI. DevBench amf.menu op=prisma (list, get, set, action, apply).
+- **FLICK: each mod here or in FLICK's own window** (the owner's three-way logic, 2026-10-08). Converted menus > FLICK lists
+  every FLICK mod with a choice: this menu, or FLICK's own window when FLICK itself (FUCK.dll) is installed. AMF answers
+  FLICK per calling mod, so a mod sent to FLICK gets the real FLICK and the rest stay here. "Both at once" is not
+  possible - a FLICK mod hands its page to one framework. Kept in FlickLeftToFlick.txt with the mod's name; applies from
+  the next game start. DevBench amf.menu op=flick dll=... place=amf|flick.
 
 ### Changed
 - The Skyrim knotwork is now a part too (frames/skyrim-knotwork.png); the copy built into the DLL stays as the fallback

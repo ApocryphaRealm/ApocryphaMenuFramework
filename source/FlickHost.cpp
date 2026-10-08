@@ -52,7 +52,47 @@ namespace flick
 			Tool*       tool = nullptr;
 			std::string plugin, name, group, entry;
 			bool        listed = true;
+			std::string dll;
 		};
+
+		// The DLL a mod's object lives in: the module holding its vtable.
+		std::string DllOf(const void* a_object)
+		{
+			HMODULE mod = nullptr;
+			const void* vtable = a_object ? *reinterpret_cast<void* const*>(a_object) : nullptr;
+			if (!vtable || !::GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+							   reinterpret_cast<LPCWSTR>(vtable), &mod) || !mod)
+			{
+				return {};
+			}
+			wchar_t path[MAX_PATH]{};
+			const auto len = ::GetModuleFileNameW(mod, path, MAX_PATH);
+			std::string name = std::filesystem::path(std::wstring(path, len)).filename().string();
+			std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+			return name;
+		}
+
+		// the per-mod choice (FlickHost.h)
+		constexpr const char* kLeftToFlickPath = "Data/SKSE/Plugins/ApocryphaMenuFramework/FlickLeftToFlick.txt";
+		std::mutex g_choiceLock;
+		std::set<std::string> g_leftAtStart;   // as read with Configure: what the alias answers by this session
+		std::set<std::string> g_leftNow;       // as saved now
+		std::map<std::string, bool> g_consumers;   // dll -> answered with AMF's table
+		std::map<std::string, std::string> g_names;   // dll -> shown name, kept with the choice
+
+		void SaveLeftLocked()
+		{
+			std::error_code ec;
+			std::filesystem::create_directories(std::filesystem::path(kLeftToFlickPath).parent_path(), ec);
+			std::ofstream out(kLeftToFlickPath, std::ios::binary | std::ios::trunc);
+			out << "# FLICK mods left to the real FLICK (FUCK.dll) - one DLL file name per line. Set in the menu: Settings >\r\n"
+				   "# Converted menus > FLICK. Applies from the next game start.\r\n";
+			for (const auto& dll : g_leftNow)
+			{
+				const auto it = g_names.find(dll);
+				out << dll << (it != g_names.end() && !it->second.empty() ? " = " + it->second : std::string{}) << "\r\n";
+			}
+		}
 		std::mutex g_lock;
 		std::vector<ToolRec> g_tools;     // registration order; never shrinks (a mod's object lives as long as the game)
 		std::vector<Window*> g_windows;   // registered, not drawn yet (free windows are the plan's phase 4)
@@ -217,11 +257,12 @@ namespace flick
 			rec.name = name ? name : "";
 			rec.group = group ? group : "";
 			rec.listed = a_tool->ShowInSidebar();
+			rec.dll = DllOf(a_tool);
 			// entry = the group when the mod gave one, else the tool's name; " (FLICK)" on the end, as converted MCM menus
 			// carry " (MCM)" - the source shown in the list (the owner, 2026-10-08: "(FLICK)")
 			rec.entry = (rec.group.empty() ? rec.name : rec.group) + " (FLICK)";
-			logger::info("flick: RegisterTool plugin={} name=\"{}\" group=\"{}\" sidebar={} -> entry \"{}\"", rec.plugin, rec.name, rec.group,
-						 rec.listed, rec.entry);
+			logger::info("flick: RegisterTool plugin={} ({}) name=\"{}\" group=\"{}\" sidebar={} -> entry \"{}\"", rec.plugin, rec.dll, rec.name,
+						 rec.group, rec.listed, rec.entry);
 			{
 				std::lock_guard lock(g_lock);
 				for (const auto& t : g_tools)
@@ -878,8 +919,95 @@ namespace flick
 		std::error_code ec;
 		g_realFlick = std::filesystem::exists("Data/SKSE/Plugins/FUCK.dll", ec);
 		logger::info("flick: host {} ({} slots, API version {}){}", a_host ? "ON" : "off", FLICK_SLOT_COUNT, FLICK_API_VERSION_ANSWERED,
-					 g_realFlick ? " - the real FLICK (FUCK.dll) is installed too: AMF keeps the FLICK mods and its own menu stays empty" : "");
+					 g_realFlick ? " - the real FLICK (FUCK.dll) is installed too: AMF holds every FLICK mod not left to it (Settings > Converted menus > FLICK)" : "");
 		(void)Table();   // build the table now (it is also built on first request)
+		{
+			std::scoped_lock lock(g_choiceLock);
+			std::ifstream in(kLeftToFlickPath, std::ios::binary);
+			std::string line;
+			while (std::getline(in, line))
+			{
+				while (!line.empty() && (line.back() == '\r' || line.back() == ' ' || line.back() == '\t')) { line.pop_back(); }
+				const auto start = line.find_first_not_of(" \t");
+				if (start == std::string::npos || line[start] == '#') { continue; }
+				std::string dll = line.substr(start);
+				std::string name;
+				if (const auto eq = dll.find('='); eq != std::string::npos)
+				{
+					name = dll.substr(eq + 1);
+					dll.resize(eq);
+					while (!dll.empty() && (dll.back() == ' ' || dll.back() == '\t')) { dll.pop_back(); }
+					const auto n = name.find_first_not_of(" \t");
+					name = n == std::string::npos ? std::string{} : name.substr(n);
+				}
+				std::transform(dll.begin(), dll.end(), dll.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+				g_leftAtStart.insert(dll);
+				if (!name.empty()) { g_names[dll] = name; }
+			}
+			g_leftNow = g_leftAtStart;
+			for (const auto& dll : g_leftAtStart) { logger::info("flick: {} is left to the real FLICK (the player's choice){}", dll, g_realFlick ? "" : " - FLICK is not installed, so its page is shown nowhere"); }
+		}
+	}
+
+	bool LeftToFlick(const std::string& a_dllLower)
+	{
+		std::scoped_lock lock(g_choiceLock);
+		return g_leftAtStart.contains(a_dllLower);
+	}
+
+	void SetLeftToFlick(const std::string& a_dllLower, bool a_on, const std::string& a_shownName)
+	{
+		std::scoped_lock lock(g_choiceLock);
+		if (!a_shownName.empty() && a_shownName != a_dllLower) { g_names[a_dllLower] = a_shownName; }
+		if (a_on) { g_leftNow.insert(a_dllLower); }
+		else { g_leftNow.erase(a_dllLower); }
+		SaveLeftLocked();
+		logger::info("flick: {} -> {} (applies from the next game start)", a_dllLower, a_on ? "the real FLICK's own window" : "this menu");
+	}
+
+	bool LeftToFlickChanged()
+	{
+		std::scoped_lock lock(g_choiceLock);
+		return g_leftNow != g_leftAtStart;
+	}
+
+	void NoteConsumer(const std::string& a_dllLower, bool a_toAmf)
+	{
+		std::scoped_lock lock(g_choiceLock);
+		const auto [it, added] = g_consumers.emplace(a_dllLower, a_toAmf);
+		if (added)
+		{
+			logger::info("flick: {} asked for FLICK - {}", a_dllLower, a_toAmf ? "answered with this menu's table" :
+				g_realFlick ? "left to the real FLICK" : "left to FLICK, which is not installed: it gets nothing");
+		}
+	}
+
+	std::vector<Consumer> Consumers()
+	{
+		std::set<std::string> dlls;
+		std::map<std::string, std::string> shown;
+		{
+			std::lock_guard lock(g_lock);
+			for (const auto& t : g_tools)
+			{
+				if (t.dll.empty()) { continue; }
+				dlls.insert(t.dll);
+				if (!shown.contains(t.dll)) { shown[t.dll] = t.group.empty() ? t.name : t.group; }
+			}
+		}
+		std::scoped_lock lock(g_choiceLock);
+		for (const auto& [dll, toAmf] : g_consumers) { dlls.insert(dll); }
+		for (const auto& dll : g_leftNow) { dlls.insert(dll); }
+		for (const auto& dll : g_leftAtStart) { dlls.insert(dll); }
+		std::vector<Consumer> out;
+		for (const auto& dll : dlls)
+		{
+			const auto it = g_consumers.find(dll);
+			std::string name = shown.contains(dll) ? shown[dll] : std::string{};
+			if (name.empty()) { if (const auto n = g_names.find(dll); n != g_names.end()) { name = n->second; } }
+			out.push_back({ dll, name, it != g_consumers.end() ? it->second : !g_leftAtStart.contains(dll), g_leftNow.contains(dll) });
+		}
+		return out;
 	}
 	bool Enabled() { return g_host.load(std::memory_order_acquire); }
 	bool RealFlickInstalled() { return g_realFlick; }
@@ -944,7 +1072,7 @@ namespace flick
 		std::lock_guard lock(g_lock);
 		if (a_index >= g_tools.size()) { return {}; }
 		const auto& t = g_tools[a_index];
-		return { t.plugin, t.name, t.group, t.entry, t.listed };
+		return { t.plugin, t.name, t.group, t.entry, t.listed, t.dll };
 	}
 
 	std::string StatusJson()
