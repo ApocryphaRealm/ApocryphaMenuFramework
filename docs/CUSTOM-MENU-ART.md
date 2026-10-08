@@ -124,6 +124,8 @@ sBorder=#D1C7AE           ; lines and separators
 sText=#E4DDCC             ; text
 sTextDim=#A39C8A          ; secondary and disabled text
 sAccent=#AAA07A           ; selection, tabs, slider grabs, tick marks
+sTextHeader=#CDBF8E       ; (2.1.5) section headings on converted MCM pages - default: sAccent
+sTextHelp=#A8B9B5         ; (2.1.5) help text and page notes on converted MCM pages - default: sTextDim toward sText
 fBorderThickness=1.0
 bKnotwork=0               ; 1 = the built-in Nordic knotwork frame (ignored when you ship a frame)
 sSkinFrame=SKSE/Plugins/ApocryphaMenuFramework/themes/yourui/frame.png

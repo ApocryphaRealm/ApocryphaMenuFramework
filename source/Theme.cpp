@@ -21,6 +21,13 @@ namespace theme
 	{
 		std::vector<Palette> g_themes;
 		std::string g_activeId;
+		// 2.1.5: the text-role colours Apply() resolved for the active theme (ImU32, ABGR). White until the first Apply().
+		std::uint32_t g_headerTextU32 = 0xFFFFFFFF;
+		std::uint32_t g_helpTextU32 = 0xFFFFFFFF;
+		// Every colour role as drawn (the player's [Colors] choice, else the theme's) and the theme's own, for the settings
+		// page's swatches and "Theme". Full alpha; ImU32 (ABGR).
+		std::uint32_t g_roleU32[kRoleCount] = {};
+		std::uint32_t g_themeRoleU32[kRoleCount] = {};
 
 		std::string_view Trim(std::string_view a_text)
 		{
@@ -211,6 +218,8 @@ namespace theme
 				else if (key == "sText") { ParseColor(value, palette.text); }
 				else if (key == "sTextDim") { ParseColor(value, palette.textDim); }
 				else if (key == "sAccent") { ParseColor(value, palette.accent); }
+				else if (key == "sTextHeader") { ParseColor(value, palette.textHeader); }   // 2.1.5 text roles
+				else if (key == "sTextHelp") { ParseColor(value, palette.textHelp); }
 				else if (key == "bKnotwork") { palette.knotwork = (value == "1" || value == "true"); }
 				else if (key == "sSkinFrame") { palette.skinFrame = std::string(value); }
 				else if (key == "sSkinBackground") { palette.skinBackground = std::string(value); }
@@ -336,7 +345,12 @@ namespace theme
 			//
 			// "Untarnished" - the ORIGINAL identity (solid black, #F5F2E9 warm off-white),
 			// shipped as a selectable theme per the author's instruction, no longer the only option.
-			RegisterTheme({ "untarnished", "Untarnished", 0xFF000000, 0xFFE9F2F5, 1.0f });
+			// 2.1.5 text roles (ABGR): section headings warm gold #D8C27A, help text a cool steel blue #9FB8CC - the
+			// same pair on both built-ins, apart from the white labels and grey values either way.
+			Palette untarnished{ "untarnished", "Untarnished", 0xFF000000, 0xFFE9F2F5, 1.0f };
+			untarnished.textHeader = 0xFF7AC2D8;
+			untarnished.textHelp = 0xFFCCB89F;
+			RegisterTheme(std::move(untarnished));
 
 			// "Skyrim" - the knotwork look: the Nordic frame art and silver/gold lines rebuilt from
 			// the real Trosski Skyrim style (its border-image.png and stylesheet), with the crisper
@@ -346,10 +360,13 @@ namespace theme
 			// Silver frame lines #b0b0b0, dim secondary #717171, GOLD accent #a1912b for selection,
 			// text #F5F2E9. ABGR packing (0xAABBGGRR). Background stays solid black: the project's
 			// full-opacity rule holds over live gameplay, unlike MO2's near-transparent desktop look.
-			RegisterTheme({ "skyrim", "Skyrim",
+			Palette skyrim{ "skyrim", "Skyrim",
 				/*background*/ 0xFF000000, /*frame*/ 0xFFB0B0B0, /*borderThickness*/ 1.0f,
 				/*border*/ 0xFFB0B0B0, /*text*/ 0xFFE9F2F5, /*textDim*/ 0xFF717171,
-				/*accent*/ 0xFF2B91A1, /*knotwork*/ true });
+				/*accent*/ 0xFF2B91A1, /*knotwork*/ true };
+			skyrim.textHeader = 0xFF7AC2D8;
+			skyrim.textHelp = 0xFFCCB89F;
+			RegisterTheme(std::move(skyrim));
 
 			g_activeId = "skyrim";
 
@@ -410,14 +427,61 @@ namespace theme
 		const std::uint32_t textDimId = active.textDim ? active.textDim : active.frame;
 		const std::uint32_t accentId = active.accent ? active.accent : active.frame;
 
-		const ImVec4 black = unpack(active.background);
-		const ImVec4 border = unpack(borderId);
-		const ImVec4 text = unpack(textId);
-		const ImVec4 accent = unpack(accentId);
+		// THE COLOUR ROLES (2.1.5, Appearance > Colours): the theme's own colour for each, then the player's [Colors] choice
+		// over it. Every derived shade below (hover washes, separators, the see-through fade) is worked out from the result,
+		// so a picked colour carries through the whole look the way the theme's own would.
+		auto tint = [](const ImVec4& v, float a) { return ImVec4{ v.x, v.y, v.z, a }; };
+		ImVec4 themeRole[kRoleCount];
+		themeRole[kRoleBackground] = unpack(active.background);
+		themeRole[kRoleBorder] = unpack(borderId);
+		themeRole[kRoleArt] = ImVec4{ 1.0f, 1.0f, 1.0f, 1.0f };   // the art as drawn
+		themeRole[kRoleBoxes] = themeRole[kRoleBackground];        // fields and buttons sit on the background at rest
+		themeRole[kRoleText] = unpack(textId);
+		themeRole[kRoleTextDim] = tint(unpack(textDimId), 1.0f);
+		themeRole[kRoleAccent] = unpack(accentId);
+		themeRole[kRoleSlider] = themeRole[kRoleAccent];
+		themeRole[kRoleSwitchOn] = ImVec4{ 76 / 255.0f, 175 / 255.0f, 80 / 255.0f, 1.0f };    // the switch's own green / red
+		themeRole[kRoleSwitchOff] = ImVec4{ 191 / 255.0f, 68 / 255.0f, 68 / 255.0f, 1.0f };
+		// Text roles: a theme without them takes its accent for headings (the colour it already uses to mark what matters)
+		// and, for help, its dim tone a third of the way toward the main text - apart from values, quieter than labels.
+		themeRole[kRoleHeading] = active.textHeader ? unpack(active.textHeader) : themeRole[kRoleAccent];
+		{
+			const ImVec4& d = themeRole[kRoleTextDim];
+			const ImVec4& t = themeRole[kRoleText];
+			themeRole[kRoleHelp] = active.textHelp ? unpack(active.textHelp)
+				: ImVec4{ d.x + (t.x - d.x) / 3.0f, d.y + (t.y - d.y) / 3.0f, d.z + (t.z - d.z) / 3.0f, 1.0f };
+		}
+		ImVec4 role[kRoleCount];
+		{
+			const auto& sv = settings::Get();
+			std::string picked;
+			for (int r = 0; r < kRoleCount; ++r)
+			{
+				role[r] = themeRole[r];
+				std::uint32_t abgr = 0;
+				if (!sv.colors[r].empty() && ParseColor(sv.colors[r], abgr))
+				{
+					role[r] = unpack(abgr);
+					picked += std::string(picked.empty() ? "" : ", ") + kColorRoleKeys[r] + "=" + sv.colors[r];
+				}
+			}
+			for (int r = 0; r < kRoleCount; ++r)
+			{
+				g_themeRoleU32[r] = ImGui::ColorConvertFloat4ToU32(themeRole[r]);
+				g_roleU32[r] = ImGui::ColorConvertFloat4ToU32(role[r]);
+			}
+			logger::debug("theme colours: {}", picked.empty() ? std::string("all the theme's own") : "the player's " + picked);
+		}
+
+		const ImVec4 black = role[kRoleBackground];
+		const ImVec4 border = role[kRoleBorder];
+		const ImVec4 text = role[kRoleText];
+		const ImVec4 accent = role[kRoleAccent];
+		const ImVec4 boxes = role[kRoleBoxes];
+		const ImVec4 slider = role[kRoleSlider];
 
 		// Alpha variants of a base colour, for the graded hover/active/fill states.
-		auto tint = [](const ImVec4& v, float a) { return ImVec4{ v.x, v.y, v.z, a }; };
-		const ImVec4 textDimC = tint(unpack(textDimId), 1.0f);           // secondary text (its own hue)
+		const ImVec4 textDimC = role[kRoleTextDim];                      // secondary text (its own hue)
 		const ImVec4 borderDim = tint(border, 0.55f);                    // separators
 		const ImVec4 borderFaint = tint(border, 0.14f);                  // subtle fills
 		const ImVec4 borderSoft = tint(border, 0.28f);                   // hover fills
@@ -442,10 +506,10 @@ namespace theme
 		c[ImGuiCol_SeparatorHovered] = borderSoft;
 		c[ImGuiCol_SeparatorActive] = border;
 
-		c[ImGuiCol_FrameBg] = black;
+		c[ImGuiCol_FrameBg] = boxes;
 		c[ImGuiCol_FrameBgHovered] = borderFaint;
 		c[ImGuiCol_FrameBgActive] = borderSoft;
-		c[ImGuiCol_Button] = black;
+		c[ImGuiCol_Button] = boxes;
 		c[ImGuiCol_ButtonHovered] = borderFaint;
 		c[ImGuiCol_ButtonActive] = borderSoft;
 
@@ -455,10 +519,10 @@ namespace theme
 		c[ImGuiCol_HeaderActive] = accentSoft;
 
 		// Tabs: quiet by default, gold when active/selected.
-		c[ImGuiCol_Tab] = black;
+		c[ImGuiCol_Tab] = boxes;
 		c[ImGuiCol_TabHovered] = accentSoft;
 		c[ImGuiCol_TabActive] = accentFaint;
-		c[ImGuiCol_TabUnfocused] = black;
+		c[ImGuiCol_TabUnfocused] = boxes;
 		c[ImGuiCol_TabUnfocusedActive] = borderFaint;
 
 		// Scrollbar: dark trough, silver grab.
@@ -468,9 +532,9 @@ namespace theme
 		c[ImGuiCol_ScrollbarGrabActive] = border;
 
 		// Interactive accents in gold.
-		c[ImGuiCol_SliderGrab] = accent;
-		c[ImGuiCol_SliderGrabActive] = accent;
-		c[ImGuiCol_CheckMark] = accent;
+		c[ImGuiCol_SliderGrab] = slider;
+		c[ImGuiCol_SliderGrabActive] = slider;
+		c[ImGuiCol_CheckMark] = slider;
 		// The controller navigation box is bright blue in every theme (the owner, 2026-09-15: "the next amf version should have
 		// a bright blue controller nav box instead of the old yellow one"), so the focused item stands out from the gold
 		// selection wash instead of blending into it.
@@ -527,7 +591,19 @@ namespace theme
 			c[ImGuiCol_TextDisabled].w *= words;
 		}
 
+		// The heading and help colours as drawn: with the see-through window's text alpha, so they fade with the text.
+		{
+			const float words = c[ImGuiCol_Text].w;
+			g_headerTextU32 = ImGui::ColorConvertFloat4ToU32(tint(role[kRoleHeading], words));
+			g_helpTextU32 = ImGui::ColorConvertFloat4ToU32(tint(role[kRoleHelp], words));
+		}
+
 		logger::info("Theme applied: \"{}\" ({}); knotwork={}; game HUD opacity {:.2f}; window opacity {}%",
 					 active.name, active.id, active.knotwork, GetGameHUDOpacity(), settings::Get().windowOpacity);
 	}
+
+	std::uint32_t HeaderTextColor() { return g_headerTextU32; }
+	std::uint32_t HelpTextColor() { return g_helpTextU32; }
+	std::uint32_t RoleColor(int a_role) { return a_role >= 0 && a_role < kRoleCount ? g_roleU32[a_role] : 0xFFFFFFFF; }
+	std::uint32_t ThemeRoleColor(int a_role) { return a_role >= 0 && a_role < kRoleCount ? g_themeRoleU32[a_role] : 0xFFFFFFFF; }
 }

@@ -7,6 +7,7 @@
 #include "RememberedSettings.h"
 #include "McmScripts.h"
 #include "McmShared.h"
+#include "McmStyle.h"
 #include "PreciseSlider.h"
 #include "Registry.h"
 #include "Settings.h"
@@ -205,6 +206,55 @@ namespace mcmloader
 			return out;
 		}
 
+		// See McmShared.h (2.1.5). Atlas Map Markers' headings are "<font color='#FF9900'>$ATLAS_GlobalMarkerSettings</font>":
+		// the translators now take the key out of the tags first, so this is reached only for a key no file carries.
+		std::string ReadableKey(const std::string& a_key)
+		{
+			std::string s = Trim(a_key);
+			if (!s.empty() && s[0] == '$') { s.erase(0, 1); }
+			if (const auto us = s.find('_'); us != std::string::npos && us > 0 && us + 1 < s.size())
+			{
+				const std::string head = s.substr(0, us);
+				const bool prefix = head.size() <= 8 && std::all_of(head.begin(), head.end(),
+					[](unsigned char c) { return std::isupper(c) || std::isdigit(c); });
+				if (prefix) { s.erase(0, us + 1); }   // "ATLAS_" / "AC_": the mod's own namespace, not words
+			}
+			std::string out;
+			for (std::size_t i = 0; i < s.size(); ++i)
+			{
+				const unsigned char c = static_cast<unsigned char>(s[i]);
+				if (c == '_') { out += ' '; continue; }
+				if (c == '&') { out += " & "; continue; }
+				if (std::isupper(c) && i > 0)
+				{
+					const unsigned char p = static_cast<unsigned char>(s[i - 1]);
+					const bool nextLower = i + 1 < s.size() && std::islower(static_cast<unsigned char>(s[i + 1]));
+					if (std::islower(p) || std::isdigit(p) || (std::isupper(p) && nextLower)) { out += ' '; }
+				}
+				out += static_cast<char>(c);
+			}
+			std::string tidy;   // one space between words
+			for (const char c : out)
+			{
+				if (c == ' ' && (tidy.empty() || tidy.back() == ' ')) { continue; }
+				tidy += c;
+			}
+			while (!tidy.empty() && tidy.back() == ' ') { tidy.pop_back(); }
+			return tidy;
+		}
+
+		std::string Unescape(const std::string& a_s)
+		{
+			std::string out;
+			out.reserve(a_s.size());
+			for (std::size_t i = 0; i < a_s.size(); ++i)
+			{
+				if (a_s[i] == '\\' && i + 1 < a_s.size() && a_s[i + 1] == 'n') { out += '\n'; ++i; continue; }
+				out += a_s[i];
+			}
+			return out;
+		}
+
 		// Any non-zero number is on: a hiddenToggle can drive its group from an INT setting (TrueHUD's
 		// uInfoBarDisplayDamageCounter: 0 off, 1 and 2 two ways of on), so "1 only" would grey out live rows.
 		bool ParseBool(const std::string& a_v)
@@ -330,12 +380,18 @@ namespace mcmloader
 
 		std::string Translate(const std::string& a_raw)
 		{
-			if (a_raw.empty() || a_raw[0] != '$') { return StripTags(a_raw); }
+			if (a_raw.empty() || a_raw[0] != '$')
+			{
+				// 2.1.5: a key inside tags ("<font ...>$KEY</font>") is still a key - translate what the tags hold.
+				const std::string inner = Trim(StripTags(a_raw));
+				if (!inner.empty() && inner[0] == '$' && inner != a_raw) { return Translate(inner); }
+				return Unescape(StripTags(a_raw));
+			}
 			if (g_table)
 			{
-				if (const auto it = g_table->find(a_raw); it != g_table->end()) { return StripTags(it->second); }
+				if (const auto it = g_table->find(a_raw); it != g_table->end()) { return Unescape(StripTags(it->second)); }
 			}
-			return a_raw.substr(1);
+			return ReadableKey(a_raw);
 		}
 
 		// MCM's formatString uses "{N}" for the value with N decimals ("{0}", "{1}%", "{2} sec"); printf wants "%.Nf".
@@ -1506,12 +1562,14 @@ namespace mcmloader
 
 		std::optional<std::pair<std::size_t, std::string>> g_capturing;  // render thread: (mod, id) awaiting a key
 
+		// The control's help, to the help bar under the pane (2.1.5) - or a popup kept inside it with the bar switched off.
+		// Hover and controller highlight alike.
 		void Tooltip(const Control& a_c, const std::string& a_value)
 		{
-			if (a_c.help.empty() || !ImGui::IsItemHovered()) { return; }
+			if (a_c.help.empty() || (!ImGui::IsItemHovered() && !ImGui::IsItemFocused())) { return; }
 			std::string help = Translate(a_c.help);
 			if (const auto at = help.find("{value}"); at != std::string::npos) { help.replace(at, 7, a_value); }
-			ImGui::SetTooltip("%s", help.c_str());
+			helpbar::OfferForLastItem(help);
 		}
 
 		void DrawControl(std::size_t a_mod, const Control& a_c, const std::string& a_value)
@@ -1525,7 +1583,7 @@ namespace mcmloader
 			if (a_c.source == Source::kPhase2 || (a_c.hasAction && !a_c.action) || (holdsValue && a_c.source == Source::kNone))
 			{
 				ImGui::BeginDisabled();
-				ImGui::TextUnformatted(label.c_str());
+				ImGui::TextUnformatted((std::string(icons::kWarning) + "  " + label).c_str());
 				ImGui::SameLine();
 				ImGui::TextDisabled(strings::TR("AMF_McmSetInSkyUI", "(%s - set it in SkyUI's MCM)"),
 					(a_c.hasAction && !a_c.action) ? strings::TR("AMF_McmActionNotRun", "an action type AMF does not run") :
@@ -1537,7 +1595,7 @@ namespace mcmloader
 			if (a_c.kind == Kind::kText && a_c.action)
 			{
 				const std::string value = a_c.source == Source::kString || a_c.source == Source::kPropString ? a_value : Translate(a_c.staticValue);
-				const std::string button = (label.empty() ? a_c.action->function : label) + "##btn" + a_c.key;
+				const std::string button = std::string(icons::kAction) + "  " + (label.empty() ? a_c.action->function : label) + "##btn" + a_c.key;
 				if (ImGui::Button(button.c_str())) { Apply(a_mod, a_c, value); }
 				if (!value.empty())
 				{
@@ -1555,7 +1613,7 @@ namespace mcmloader
 				break;
 			case Kind::kHeader:
 				ImGui::Spacing();
-				ImGui::SeparatorText(label.empty() ? " " : label.c_str());
+				mcmstyle::Heading(label);   // 2.1.5: the theme's heading colour
 				break;
 			case Kind::kText:
 				ImGui::TextUnformatted(label.c_str());
@@ -1628,7 +1686,7 @@ namespace mcmloader
 			{
 				char buffer[512]{};
 				strncpy_s(buffer, a_value.c_str(), _TRUNCATE);
-				ImGui::InputText(imguiId.c_str(), buffer, sizeof(buffer));
+				ImGui::InputText((std::string(icons::kPen) + "  " + imguiId).c_str(), buffer, sizeof(buffer));
 				keyboard::NoteTextField(ImGui::GetItemID());
 				if (ImGui::IsItemDeactivatedAfterEdit() && a_value != buffer) { Apply(a_mod, a_c, buffer); }
 				Tooltip(a_c, a_value);
@@ -1638,7 +1696,7 @@ namespace mcmloader
 			{
 				const auto rgb = static_cast<std::uint32_t>(ParseInt(a_value));
 				float col[3]{ ((rgb >> 16) & 0xFF) / 255.0f, ((rgb >> 8) & 0xFF) / 255.0f, (rgb & 0xFF) / 255.0f };
-				if (ImGui::ColorEdit3(imguiId.c_str(), col))
+				if (ImGui::ColorEdit3((std::string(icons::kPalette) + "  " + imguiId).c_str(), col))
 				{
 					const auto c = [](float f) { return static_cast<std::uint32_t>(std::lround(std::clamp(f, 0.0f, 1.0f) * 255.0f)); };
 					Apply(a_mod, a_c, std::to_string((c(col[0]) << 16) | (c(col[1]) << 8) | c(col[2])));
@@ -1651,14 +1709,14 @@ namespace mcmloader
 				const bool waiting = g_capturing && g_capturing->first == a_mod && g_capturing->second == a_c.id;
 				ImGui::TextUnformatted(label.c_str());
 				ImGui::SameLine();
-				const std::string button = (waiting ? std::string(strings::TR("AMF_McmPressKey", "Press a key...")) : KeyName(static_cast<std::int32_t>(ParseInt(a_value)))) + "##key" + a_c.id;
+				const std::string button = std::string(icons::kKeyboard) + "  " + (waiting ? std::string(strings::TR("AMF_McmPressKey", "Press a key...")) : KeyName(static_cast<std::int32_t>(ParseInt(a_value)))) + "##key" + a_c.id;
 				if (ImGui::Button(button.c_str()) && !waiting)
 				{
 					g_capturing = std::make_pair(a_mod, a_c.id);
 					input::ArmKeyCapture();
 				}
 				ImGui::SameLine();
-				if (ImGui::Button((std::string(strings::TR("AMF_McmClear", "Clear")) + "##clr" + a_c.id).c_str())) { Apply(a_mod, a_c, "-1"); }
+				if (ImGui::Button((std::string(icons::kClear) + "  " + strings::TR("AMF_McmClear", "Clear") + "##clr" + a_c.id).c_str())) { Apply(a_mod, a_c, "-1"); }
 				if (waiting && !input::IsKeyCaptureArmed())
 				{
 					// LastCapturedKey: (device << 32) | code - 0 keyboard (DirectInput scan code), 1 mouse, 2 gamepad
@@ -1680,6 +1738,8 @@ namespace mcmloader
 				break;  // never drawn; it still drives its group
 			case Kind::kUnknown:
 			default:
+				ImGui::TextDisabled("%s", icons::kWarning);
+				ImGui::SameLine();
 				ImGui::TextDisabled(strings::TR("AMF_McmNotDrawn", "%s (MCM type \"%s\" is not drawn yet)"), label.c_str(), a_c.typeName.c_str());
 				break;
 			}
@@ -1735,11 +1795,12 @@ namespace mcmloader
 			const Page& page = mod->pages[a_page];
 			g_table = &mod->translations;
 
-			ImGui::TextDisabled(strings::TR("AMF_McmHelperNote", "Read from %s's MCM Helper files. Changes go through MCM Helper, as in its own menu."),
-				mod->modName.c_str());
+			helpbar::Want(mod->modName + "|" + std::to_string(a_page));   // 2.1.5: the controls' help goes to the bar
+			mcmstyle::PageNote(icons::kInfo, mcmstyle::Fmt(strings::TR("AMF_McmHelperNote",
+				"Read from %s's MCM Helper files. Changes go through MCM Helper, as in its own menu."), mod->modName.c_str()));
 			if (page.customContent)
 			{
-				ImGui::TextDisabled("%s", strings::TR("AMF_McmCustomPage", "This MCM page is a custom picture or SWF - not drawable here."));
+				mcmstyle::PageNote(icons::kWarning, strings::TR("AMF_McmCustomPage", "This MCM page is a custom picture or SWF - not drawable here."));
 				return;
 			}
 
@@ -1754,6 +1815,7 @@ namespace mcmloader
 				}
 			}
 
+			const mcmstyle::PageScope look;   // 2.1.5: the player's row spacing and label / value colours for the body
 			for (const Control& c : page.controls)
 			{
 				const bool active = !c.cond || Eval(*c.cond, groups);
@@ -1921,7 +1983,7 @@ namespace mcmloader
 					if (name.empty()) { name = strings::TR("AMF_McmSettingsTab", "Settings"); }
 					for (int n = 2; used.contains(name); ++n) { name = name + " (" + std::to_string(n) + ")"; }
 					used.insert(name);
-					if (registry::RegisterFn(mod.entryName.c_str(), name.c_str(), [m, p]() { DrawPage(m, p); }))
+					if (registry::RegisterFn(mod.entryName.c_str(), name.c_str(), [m, p]() { DrawPage(m, p); }, true))
 					{
 						++pageCount;
 						mod.pageNames.push_back(name);
@@ -2525,6 +2587,8 @@ namespace mcmloader::detail
 	std::string Trim(const std::string& a_s) { return ::mcmloader::Trim(a_s); }
 	std::string Narrow(std::wstring_view a_w) { return ::mcmloader::Narrow(a_w); }
 	std::string StripTags(const std::string& a_s) { return ::mcmloader::StripTags(a_s); }
+	std::string ReadableKey(const std::string& a_key) { return ::mcmloader::ReadableKey(a_key); }
+	std::string Unescape(const std::string& a_s) { return ::mcmloader::Unescape(a_s); }
 	std::string KeyName(std::int32_t a_code) { return ::mcmloader::KeyName(a_code); }
 	Table LoadTranslations(const std::string& a_plugin) { return ::mcmloader::LoadTranslations(a_plugin); }
 	std::string TextLanguage() { return ::mcmloader::TextLanguage(); }

@@ -7,9 +7,11 @@
 // because this framework owns its ImGui.
 
 #include "Skin.h"
+#include "Theme.h"
 
 #include <imgui.h>
 
+#include <algorithm>
 #include <string_view>
 
 namespace widgets
@@ -35,8 +37,13 @@ namespace widgets
 
 		const bool isOn = a_value && *a_value;
 
-		const ImU32 trackColor = isOn ? (hovered ? IM_COL32(92, 191, 96, 255) : IM_COL32(76, 175, 80, 255))
-		                              : (hovered ? IM_COL32(207, 84, 84, 255) : IM_COL32(191, 68, 68, 255));
+		// 2.1.5: the track takes the player's Switch on / Switch off colours (Appearance > Colours; the theme's green and
+		// red by default), a little lighter while hovered.
+		const std::uint32_t pickedU32 = theme::RoleColor(isOn ? theme::kRoleSwitchOn : theme::kRoleSwitchOff);
+		const ImU32 baseColor = pickedU32 ? static_cast<ImU32>(pickedU32) : (isOn ? IM_COL32(76, 175, 80, 255) : IM_COL32(191, 68, 68, 255));
+		ImVec4 track = ImGui::ColorConvertU32ToFloat4(baseColor);
+		if (hovered) { track = ImVec4(std::min(track.x + 0.06f, 1.0f), std::min(track.y + 0.06f, 1.0f), std::min(track.z + 0.06f, 1.0f), track.w); }
+		const ImU32 trackColor = ImGui::ColorConvertFloat4ToU32(track);
 
 		const float knobX = pos.x + radius + (isOn ? (width - height) : 0.0f);
 

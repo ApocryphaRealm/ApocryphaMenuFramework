@@ -54,6 +54,17 @@ namespace settings
 		bool movableWindow = true;    // [Window] bMovable - drag the top row; it reopens where it was left
 		bool freeResize = true;       // [Window] bFreeResize - Resize the window: on, any edge or corner resizes freely; off, NoResize
 		bool seeThrough = true;       // [Display] bSeeThrough - uWindowOpacity applies (100 = solid, the default)
+		// 2.1.5 (the owner, 2026-10-07): the help of the highlighted option on a converted MCM page shows in a bar under
+		// the right pane, inside the menu, like SkyUI's info line - "a toggle just in case anybody doesn't like" it: off
+		// shows it as a popup instead, wrapped to the right pane and kept inside the window. ON by default, as shipped.
+		bool helpBar = true;          // [Display] bHelpBar
+		// THE PLAYER'S OWN COLOURS (2.1.5, the owner, 2026-10-07: "choose what color ... your headers to be blue text or
+		// yellow text ... the subtext or the help text", "tab color and slider color", then "add to the framework's own
+		// appearance page ... changing the different things that make up the framework's art, like its frame, box, sliders,
+		// and other things to different colors" - one place, Appearance > Colours, not a second list on the MCM tab).
+		// [Colors] "#RRGGBB" per role; empty (the default) = the active theme's own colour, so a theme switch still shows.
+		// Indexed by theme::ColorRole.
+		std::string colors[12];
 
 		// [Input]
 		std::int32_t toggleKey = 0x3B;   // DirectInput scan code; 0x3B = F1 (framework convention, the author 2026-08-27)
@@ -99,6 +110,11 @@ namespace settings
 		bool importNewMcmMenus = true;
 		// MCM loader: [MCM] bHideInSkyUI - take the mods AMF draws completely out of SkyUI's own MCM list.
 		bool hideMcmInSkyUI = false;
+		// 2.1.5 (the owner: a player "didn't like the spacing of the generated menus for some of them like Atlas map markers
+		// which are very close together"): the gap between a converted page's two columns and the extra space between its
+		// rows, in percent of the text size - [MCM] uColumnGap (0-200, 50 = the 2.1.5 look) / uRowSpacing (0-100, 0 = none).
+		std::int32_t mcmColumnGap = 50;
+		std::int32_t mcmRowSpacing = 0;
 		// remembered MCM settings (RememberedSettings.h): [RememberedSettings] bAutoBackup - remember each MCM change made here;
 		// bRestoreOnNewGame - apply the profile again after a new game; sProfile - the active profile's name.
 		bool mcmAutoBackup = true;

@@ -209,6 +209,16 @@ namespace settings
 				"; SkyUI's list as it is. The list is kept in your save: to get every menu back in SkyUI without\n"
 				"; this mod, type  setstage SKI_ConfigManagerInstance 1  in the console.\n"
 				"bHideInSkyUI=" << (a_v.hideMcmInSkyUI ? 1 : 0) << "\n"
+				"; Spacing on converted MCM pages, in percent of the text size: the gap between the two columns (0-200) and the\n"
+				"; extra space between rows (0-100).\n"
+				"uColumnGap=" << a_v.mcmColumnGap << "\n"
+				"uRowSpacing=" << a_v.mcmRowSpacing << "\n"
+				"\n"
+				"[Colors]\n"
+				"; Your own colours over the theme's (Appearance > Colours), #RRGGBB. Empty = the theme's own colour, so\n"
+				"; switching theme still shows. sArt tints the theme's frame and background art (white = as drawn).\n";
+			for (int r = 0; r < theme::kRoleCount; ++r) { file << theme::kColorRoleKeys[r] << "=" << a_v.colors[r] << "\n"; }
+			file <<
 				"\n"
 				"[RememberedSettings]\n"
 				"; Remembered MCM settings: AMF remembers MCM settings and sets them again on a new game. A new game forgets what SkyUI menus written in a mod's script, and MCM Helper\n"
@@ -247,6 +257,9 @@ namespace settings
 				"bSeeThrough=" << (a_v.seeThrough ? 1 : 0) << "\n"
 				"; How solid the menu's background is, in percent (5-100). The background fades most, text least.\n"
 				"uWindowOpacity=" << a_v.windowOpacity << "\n"
+				"; Help bar (0/1): on, the highlighted option's help on a converted MCM page shows in a bar under the\n"
+				"; right pane, inside the menu. Off: it shows as a popup beside the option. On is the default.\n"
+				"bHelpBar=" << (a_v.helpBar ? 1 : 0) << "\n"
 				"; Optional .ttf to rasterise the menu text from. Empty = a clean system font.\n"
 				"sFontPath=" << a_v.fontPath << "\n"
 				"; Language of the framework's own text: empty = the game's language; or a translation\n"
@@ -576,6 +589,10 @@ namespace settings
 			ReadBool(entries, "MCM.bLoadMcmHelperConfigs", g_values.loadMcmHelperConfigs);
 			ReadBool(entries, "MCM.bLoadSkyUIScriptMenus", g_values.loadSkyUIScriptMenus);
 			ReadBool(entries, "MCM.bImportNewMenus", g_values.importNewMcmMenus);
+			ReadNumber(entries, "MCM.uColumnGap", g_values.mcmColumnGap);
+			ReadNumber(entries, "MCM.uRowSpacing", g_values.mcmRowSpacing);
+			g_values.mcmColumnGap = std::clamp(g_values.mcmColumnGap, 0, 200);
+			g_values.mcmRowSpacing = std::clamp(g_values.mcmRowSpacing, 0, 100);
 			ReadBool(entries, "MCM.bHideInSkyUI", g_values.hideMcmInSkyUI);
 			ReadBool(entries, "RememberedSettings.bAutoBackup", g_values.mcmAutoBackup);
 			ReadBool(entries, "RememberedSettings.bRestoreOnNewGame", g_values.mcmRestoreOnNewGame);
@@ -598,10 +615,16 @@ namespace settings
 			ReadBool(entries, "Window.bMovable", g_values.movableWindow);
 			ReadBool(entries, "Window.bFreeResize", g_values.freeResize);
 			ReadBool(entries, "Display.bSeeThrough", g_values.seeThrough);
+			ReadBool(entries, "Display.bHelpBar", g_values.helpBar);
 			{
 				auto it = entries.find("Display.sFontPath");
 				if (it != entries.end()) { g_values.fontPath = it->second; }
 				if (const auto lt = entries.find("Display.sLanguage"); lt != entries.end()) { g_values.language = lt->second; }
+				// 2.1.5: the player's own colours (empty = the theme's)
+				for (int r = 0; r < theme::kRoleCount; ++r)
+				{
+					if (const auto ct = entries.find(std::string("Colors.") + theme::kColorRoleKeys[r]); ct != entries.end()) { g_values.colors[r] = ct->second; }
+				}
 			}
 			ReadBool(entries, "Watchdog.bEnabled", g_values.watchdogEnabled);
 			ReadBool(entries, "FastExit.bEnabled", g_values.fastExit);

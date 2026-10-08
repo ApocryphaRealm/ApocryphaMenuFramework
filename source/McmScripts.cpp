@@ -4,6 +4,7 @@
 #include "Keyboard.h"
 #include "RememberedSettings.h"
 #include "McmShared.h"
+#include "McmStyle.h"
 #include "PreciseSlider.h"
 #include "Registry.h"
 #include "Settings.h"
@@ -40,6 +41,8 @@ namespace mcmloader::scripts
 	namespace
 	{
 		using namespace mcmloader::detail;
+		using mcmstyle::Fmt;
+		using mcmstyle::PageNote;
 		using json = nlohmann::json;
 		using ObjectPtr = RE::BSTSmartPointer<RE::BSScript::Object>;
 		using Clock = std::chrono::steady_clock;
@@ -132,8 +135,18 @@ namespace mcmloader::scripts
 		// order (Translator.translateNested); an unknown key loses its "$" (as phases 1-2 show it).
 		std::string Tr(const Table* a_table, const std::string& a_raw, int a_depth = 0)
 		{
-			if (a_raw.empty() || a_raw[0] != '$' || a_depth > 4) { return StripTags(a_raw); }
-			if (const auto* text = Find(a_table, a_raw)) { return StripTags(*text); }
+			if (a_raw.empty() || a_raw[0] != '$' || a_depth > 4)
+			{
+				// 2.1.5: a key inside tags is still a key - Atlas Map Markers' headings are
+				// "<font color='#FF9900'>$ATLAS_GlobalMarkerSettings</font>", shown raw until now (the owner, 2026-10-07).
+				if (a_depth <= 4 && !a_raw.empty() && a_raw[0] != '$')
+				{
+					const std::string inner = Trim(StripTags(a_raw));
+					if (!inner.empty() && inner[0] == '$') { return Tr(a_table, inner, a_depth + 1); }
+				}
+				return Unescape(StripTags(a_raw));
+			}
+			if (const auto* text = Find(a_table, a_raw)) { return Unescape(StripTags(*text)); }
 			const auto brace = a_raw.find('{');
 			if (brace != std::string::npos)
 			{
@@ -160,10 +173,10 @@ namespace mcmloader::scripts
 						out.replace(at, 2, Tr(a_table, a_raw.substr(pos + 1, close - pos - 1), a_depth + 1));
 						pos = close + 1;
 					}
-					return StripTags(out);
+					return Unescape(StripTags(out));
 				}
 			}
-			return StripTags(a_raw.substr(1));
+			return ReadableKey(StripTags(a_raw));   // 2.1.5: no "$", no underscores - see McmShared.h
 		}
 
 		std::string Tr(const std::string& a_raw) { return Tr(g_drawTable, a_raw); }
@@ -943,12 +956,14 @@ namespace mcmloader::scripts
 		std::pair<unsigned, int> g_infoAsked{ ~0u, -1 };
 		std::optional<int> g_capturing;  // render thread: the keymap slot waiting for a key
 
+		// The highlighted option's help (SkyUI's SetInfoText, asked of the script on first highlight) goes to the help bar
+		// (2.1.5) - or, with the bar switched off, a popup kept inside the right pane. Hover and controller highlight alike.
 		void HelpTooltip(int a_mod, const Session& a_s, int a_slot)
 		{
-			if (!ImGui::IsItemHovered()) { return; }
+			if (!ImGui::IsItemHovered() && !ImGui::IsItemFocused()) { return; }
 			if (const auto it = a_s.info.find(a_slot); it != a_s.info.end())
 			{
-				if (!it->second.empty()) { ImGui::SetTooltip("%s", Tr(it->second).c_str()); }
+				if (!it->second.empty()) { helpbar::OfferForLastItem(Tr(it->second)); }
 				return;
 			}
 			if (g_infoAsked != std::make_pair(a_s.generation, a_slot))
@@ -962,7 +977,7 @@ namespace mcmloader::scripts
 		{
 			if (ImGui::BeginPopupContextItem("##default"))
 			{
-				if (ImGui::MenuItem(TR("AMF_McmScriptDefault", "Reset to default"))) { QueueDefault(a_mod, a_slot); }
+				if (ImGui::MenuItem((std::string(icons::kReset) + "  " + TR("AMF_McmScriptDefault", "Reset to default")).c_str())) { QueueDefault(a_mod, a_slot); }
 				ImGui::EndPopup();
 			}
 		}
@@ -972,13 +987,14 @@ namespace mcmloader::scripts
 			const Option& o = a_s.options[a_slot];
 			if (o.type == kEmpty || (o.flags & kFlagHidden)) { return; }
 			const bool disabled = (o.flags & kFlagDisabled) != 0;
-			const std::string label = Tr(o.text);
+			// 2.1.5: an option the mod has switched off carries a lock (the row is greyed as before).
+			const std::string label = disabled && o.type != kHeader && !Tr(o.text).empty() ? std::string(icons::kLock) + "  " + Tr(o.text) : Tr(o.text);
 			ImGui::PushID(a_slot);
 			if (disabled) { ImGui::BeginDisabled(); }
 			switch (o.type)
 			{
 			case kHeader:
-				ImGui::SeparatorText(label.empty() ? " " : label.c_str());
+				mcmstyle::Heading(label);   // 2.1.5: the theme's heading colour, set apart from the option labels
 				break;
 			case kText:
 			{
@@ -991,7 +1007,10 @@ namespace mcmloader::scripts
 					const ImVec2 max = ImGui::GetItemRectMax();
 					const ImVec2 min = ImGui::GetItemRectMin();
 					const float w = ImGui::CalcTextSize(value.c_str()).x;
-					ImGui::GetWindowDrawList()->AddText(ImVec2(max.x - w, min.y), ImGui::GetColorU32(ImGuiCol_TextDisabled), value.c_str());
+					// 2.1.5: kept off the column's right edge, so a value never runs into the next column's label (the
+					// owner's Atlas screenshot: "DefaultGem Geodes") nor under the pane's edge ("Defaul").
+					const float gutter = ImGui::GetStyle().ItemSpacing.x;
+					ImGui::GetWindowDrawList()->AddText(ImVec2(max.x - w - gutter, min.y), ImGui::GetColorU32(ImGuiCol_TextDisabled), value.c_str());
 				}
 				HelpTooltip(a_mod, a_s, a_slot);
 				DefaultMenu(a_mod, a_slot);
@@ -1077,7 +1096,7 @@ namespace mcmloader::scripts
 			{
 				const auto rgb = static_cast<std::uint32_t>(static_cast<std::int64_t>(o.num)) & 0xFFFFFF;
 				float col[3]{ ((rgb >> 16) & 0xFF) / 255.0f, ((rgb >> 8) & 0xFF) / 255.0f, (rgb & 0xFF) / 255.0f };
-				if (ImGui::ColorEdit3(label.empty() ? "##color" : label.c_str(), col, ImGuiColorEditFlags_NoInputs))
+				if (ImGui::ColorEdit3(label.empty() ? "##color" : (std::string(icons::kPalette) + "  " + label).c_str(), col, ImGuiColorEditFlags_NoInputs))
 				{
 					const auto c = [](float f) { return static_cast<std::uint32_t>(std::lround(std::clamp(f, 0.0f, 1.0f) * 255.0f)); };
 					QueueColor(a_mod, a_slot, static_cast<int>((c(col[0]) << 16) | (c(col[1]) << 8) | c(col[2])));
@@ -1090,7 +1109,7 @@ namespace mcmloader::scripts
 			{
 				const int code = static_cast<int>(o.num);
 				const bool waiting = g_capturing && *g_capturing == a_slot;
-				const std::string button = (waiting ? std::string("...") : KeyName(code)) + "##key";
+				const std::string button = std::string(icons::kKeyboard) + "  " + (waiting ? std::string("...") : KeyName(code)) + "##key";
 				if (ImGui::Button(button.c_str()) && !waiting)
 				{
 					g_capturing = a_slot;
@@ -1101,7 +1120,7 @@ namespace mcmloader::scripts
 				if (o.flags & kFlagWithUnmap)
 				{
 					ImGui::SameLine();
-					if (ImGui::SmallButton("x##unmap")) { QueueKey(a_mod, a_slot, -1); }  // SkyUI's unmap sends -1
+					if (ImGui::SmallButton((std::string(icons::kClear) + "##unmap").c_str())) { QueueKey(a_mod, a_slot, -1); }  // SkyUI's unmap sends -1
 				}
 				ImGui::SameLine();
 				ImGui::TextUnformatted(label.c_str());
@@ -1132,10 +1151,12 @@ namespace mcmloader::scripts
 				HelpTooltip(a_mod, a_s, a_slot);
 				DefaultMenu(a_mod, a_slot);
 				ImGui::SameLine();
-				ImGui::TextUnformatted(label.c_str());
+				ImGui::TextUnformatted((std::string(icons::kPen) + "  " + label).c_str());
 				break;
 			}
 			default:
+				ImGui::TextDisabled("%s", icons::kWarning);
+				ImGui::SameLine();
 				ImGui::TextDisabled(TR("AMF_McmUnknownOption", "%s (SkyUI option type %d)"), label.c_str(), o.type);
 				break;
 			}
@@ -1206,11 +1227,12 @@ namespace mcmloader::scripts
 					if (mod.pages[i] == a_rawPage) { page = static_cast<int>(i); }
 				}
 			}
-			ImGui::TextDisabled(TR("AMF_McmScriptNote", "Drawn from %s's own SkyUI script. Changes go to that script, as in SkyUI's menu."),
-				plugin.c_str());
+			helpbar::Want(plugin + "|" + a_rawPage);   // 2.1.5: this page's option help goes to the bar under the pane
+			PageNote(icons::kInfo, Fmt(TR("AMF_McmScriptNote", "Drawn from %s's own SkyUI script. Changes go to that script, as in SkyUI's menu."),
+				plugin.c_str()));
 			if (page == -3)
 			{
-				ImGui::TextDisabled("%s", TR("AMF_McmScriptEmpty", "Nothing on this page."));
+				PageNote(icons::kInfo, TR("AMF_McmScriptEmpty", "Nothing on this page."));
 				return;
 			}
 
@@ -1227,7 +1249,7 @@ namespace mcmloader::scripts
 			}
 			if (s.page != page)
 			{
-				ImGui::TextDisabled("%s", TR("AMF_McmScriptLoading", "Loading..."));
+				PageNote(icons::kLoading, TR("AMF_McmScriptLoading", "Loading..."));
 				DrawQuestion();
 				return;
 			}
@@ -1238,7 +1260,7 @@ namespace mcmloader::scripts
 					std::scoped_lock lock(g_queueMutex);
 					busy = g_busy && Clock::now() - g_busySince > std::chrono::milliseconds(1500);
 				}
-				if (busy) { ImGui::TextDisabled("%s", TR("AMF_McmScriptWaiting", "Waiting for the mod's script...")); }
+				if (busy) { PageNote(icons::kLoading, TR("AMF_McmScriptWaiting", "Waiting for the mod's script...")); }
 			}
 
 			int last = -1;
@@ -1248,20 +1270,27 @@ namespace mcmloader::scripts
 			}
 			if (last < 0)
 			{
-				ImGui::TextDisabled("%s", TR("AMF_McmScriptEmpty", "Nothing on this page."));
+				PageNote(icons::kInfo, TR("AMF_McmScriptEmpty", "Nothing on this page."));
 			}
-			else if (ImGui::BeginTable("##skyuipage", 2, ImGuiTableFlags_SizingStretchSame))
+			else
 			{
-				for (int row = 0; row <= last / 2; ++row)
+				// 2.1.5: a real gutter between the two columns (the player's [MCM] uColumnGap, half a line by default), so
+				// the left column's right-aligned values no longer touch the right column's labels; the player's row
+				// spacing and label / value colours for the body (PageScope).
+				const mcmstyle::PageScope look;
+				if (ImGui::BeginTable("##skyuipage", 2, ImGuiTableFlags_SizingStretchSame))
 				{
-					ImGui::TableNextRow();
-					for (int col = 0; col < 2; ++col)
+					for (int row = 0; row <= last / 2; ++row)
 					{
-						ImGui::TableNextColumn();
-						DrawOption(a_mod, s, row * 2 + col);
+						ImGui::TableNextRow();
+						for (int col = 0; col < 2; ++col)
+						{
+							ImGui::TableNextColumn();
+							DrawOption(a_mod, s, row * 2 + col);
+						}
 					}
+					ImGui::EndTable();
 				}
-				ImGui::EndTable();
 			}
 			DrawQuestion();
 		}
@@ -1292,7 +1321,7 @@ namespace mcmloader::scripts
 				for (int n = 2; used.contains(name); ++n) { name = base + " (" + std::to_string(n) + ")"; }
 				used.insert(name);
 				const int index = static_cast<int>(a_index);
-				if (registry::RegisterFn(mod.entryName.c_str(), name.c_str(), [index, raw]() { DrawTab(index, raw); }))
+				if (registry::RegisterFn(mod.entryName.c_str(), name.c_str(), [index, raw]() { DrawTab(index, raw); }, true))
 				{
 					mod.tabs.emplace(raw, name);
 				}

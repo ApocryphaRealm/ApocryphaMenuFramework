@@ -24,7 +24,7 @@ namespace registry
 		return RegisterFn(a_modName, a_pageName, std::function<void()>(a_render));
 	}
 
-	bool RegisterFn(const char* a_modName, const char* a_pageName, std::function<void()> a_render)
+	bool RegisterFn(const char* a_modName, const char* a_pageName, std::function<void()> a_render, bool a_converted)
 	{
 		if (!a_modName || !*a_modName || !a_pageName || !*a_pageName || !a_render)
 		{
@@ -49,14 +49,14 @@ namespace registry
 					}
 				}
 
-				entry.pages.push_back({ a_pageName, std::move(a_render) });
+				entry.pages.push_back({ a_pageName, std::move(a_render), false, a_converted });
 				logger::info("page registered: \"{}\" -> \"{}\" (mod now has {} page(s), rendered as tabs - one menu per mod)",
 							 a_modName, a_pageName, entry.pages.size());
 				return true;
 			}
 		}
 
-		g_entries.push_back({ a_modName, { { a_pageName, std::move(a_render) } } });
+		g_entries.push_back({ a_modName, { { a_pageName, std::move(a_render), false, a_converted } } });
 		logger::info("first page registered for \"{}\": \"{}\" ({} mod(s) in the registry)",
 					 a_modName, a_pageName, g_entries.size());
 		return true;

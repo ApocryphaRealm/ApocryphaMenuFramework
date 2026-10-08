@@ -8,6 +8,8 @@
 
 #include "Compat.h"
 #include "Curtain.h"
+#include "AmfIcons.h"
+#include "HelpBar.h"
 #include "Input.h"
 #include "Offsets.h"
 #include "Persistence.h"
@@ -202,7 +204,9 @@ namespace renderer
 			}
 
 			const auto tex = reinterpret_cast<ImTextureID>(a_srv);
-			const ImU32 white = IM_COL32_WHITE;
+			// 2.1.5: the player's Frame art tint (Appearance > Colours); white, the art as drawn, by default.
+			const std::uint32_t artTint = theme::RoleColor(theme::kRoleArt);
+			const ImU32 white = artTint ? static_cast<ImU32>(artTint) : IM_COL32_WHITE;
 			auto slice = [&](float ax, float ay, float bx, float by, float au, float av, float bu, float bv) {
 				dl->AddImage(tex, ImVec2(ax, ay), ImVec2(bx, by), ImVec2(au, av), ImVec2(bu, bv), white);
 			};
@@ -249,7 +253,10 @@ namespace renderer
 			// A UI author's background fades with the window when See-through window is on (2.1.1).
 			const auto& sv = settings::Get();
 			const int fade = sv.seeThrough ? std::clamp(sv.windowOpacity, 5, 100) : 100;
-			const ImU32 white = IM_COL32(255, 255, 255, fade * 255 / 100);
+			// 2.1.5: tinted by the player's Frame art colour, as the frame is; white = as drawn.
+			const std::uint32_t artTint = theme::RoleColor(theme::kRoleArt);
+			const ImU32 white = artTint ? ((static_cast<ImU32>(artTint) & 0x00FFFFFFu) | (static_cast<ImU32>(fade * 255 / 100) << 24))
+			                            : IM_COL32(255, 255, 255, fade * 255 / 100);
 
 			if (!skin::BackgroundTiles())
 			{
@@ -623,6 +630,39 @@ namespace renderer
 					}
 				}
 
+				// AMF'S OWN ICONS (2.1.5, the owner: "include Font Awesome for the generated menus"). The ten solid glyphs in
+				// AmfIcons.h, merged into the TEXT face itself (MergeMode adds to the last font added, which is still the
+				// text face - the CJK merge above adds no font), so a label carries an icon inline with no font push. Only
+				// those codepoints are rasterised, so the atlas grows by ten glyphs. Same size and cell rules as the icon
+				// faces below. A missing file is logged once; the icons then draw as "?" and the text still reads.
+				{
+					static const ImWchar kOwnIcons[] = {   // AmfIcons.h's codepoints, in pairs
+						0xF00D, 0xF00D, 0xF023, 0xF023, 0xF054, 0xF054, 0xF05A, 0xF05A, 0xF071, 0xF071,
+						0xF11C, 0xF11C, 0xF252, 0xF252, 0xF2EA, 0xF2EA, 0xF304, 0xF304, 0xF53F, 0xF53F, 0 };
+					static bool s_ownIconsMissingLogged = false;
+					const char* const solid = "Data/SKSE/Plugins/ApocryphaMenuFramework/icons/fa-solid-900.ttf";
+					std::error_code ec;
+					if (std::filesystem::exists(solid, ec))
+					{
+						const float iconPx = std::round(px * 0.8f);
+						ImFontConfig own;
+						own.MergeMode = true;
+						own.PixelSnapH = true;
+						own.OversampleH = 1;
+						own.GlyphMinAdvanceX = iconPx;
+						if (io.Fonts->AddFontFromFileTTF(solid, iconPx, &own, kOwnIcons))
+						{
+							logger::debug("font: AMF's own icons merged into the text face at {:.1f}px", iconPx);
+						}
+						else { logger::warn("font: \"{}\" could not be read - AMF's own icons draw as \"?\"", solid); }
+					}
+					else if (!s_ownIconsMissingLogged)
+					{
+						s_ownIconsMissingLogged = true;
+						logger::warn("font: \"{}\" is missing - AMF's own icons draw as \"?\" (reinstall Apocrypha Menu Framework)", solid);
+					}
+				}
+
 				// FONT AWESOME ICON FACES (2.0.4). SKSE Menu Framework consumers push a Font Awesome face by
 				// name and draw its icons (U+E000-U+F8FF); RaceMenu Atelier's buttons drew as "?" because only
 				// the text face existed (mmmizuhara, 2026-10-03). Each face is a font of its own - solid and
@@ -942,6 +982,85 @@ namespace renderer
 
 		void DrawMenuListSection();  // defined below, next to the other leaf panes
 
+		// COLOURS (2.1.5, the owner, 2026-10-07): the player's own colour for every part of the framework's look - "its frame,
+		// box, sliders, and other things", the background ("like how Oathvein is gray, but Norden and Skyrim themes are black"),
+		// switches, and the converted MCM pages' headings and help ("blue text or yellow text"). A picker per role for the
+		// mouse, a row of preset swatches the D-pad walks, and Theme to go back to the active theme's own colour.
+		void DrawColorRoles()
+		{
+			auto& values = settings::Get();
+			struct Role { const char* key; const char* fallback; int role; };
+			static constexpr Role kRoles[] = {
+				{ "AMF_ColorBackground", "Background", theme::kRoleBackground },
+				{ "AMF_ColorBorder", "Frame lines and borders", theme::kRoleBorder },
+				{ "AMF_ColorArt", "Frame art", theme::kRoleArt },
+				{ "AMF_ColorBoxes", "Boxes and buttons", theme::kRoleBoxes },
+				{ "AMF_ColorText", "Text", theme::kRoleText },
+				{ "AMF_ColorTextDim", "Secondary text", theme::kRoleTextDim },
+				{ "AMF_ColorAccent", "Selection and tabs", theme::kRoleAccent },
+				{ "AMF_ColorSlider", "Sliders and tick marks", theme::kRoleSlider },
+				{ "AMF_ColorSwitchOn", "Switch on", theme::kRoleSwitchOn },
+				{ "AMF_ColorSwitchOff", "Switch off", theme::kRoleSwitchOff },
+				{ "AMF_ColorHeading", "Section headings", theme::kRoleHeading },
+				{ "AMF_ColorHelp", "Help text", theme::kRoleHelp } };
+			// Presets: black, dark grey, grey, off-white, gold, yellow, orange, red, green, light blue, blue, purple.
+			static constexpr std::uint32_t kSwatches[] = { 0x000000, 0x333333, 0x9A9A9A, 0xF5F2E9, 0xD8C27A, 0xF0E070,
+														   0xE8A050, 0xD86A6A, 0x8CC88C, 0x9FC8E8, 0x6A9FE0, 0xB89AE0 };
+			auto setColor = [&values](int a_role, std::uint32_t a_rgb, const char* a_name) {
+				char hex[8];
+				snprintf(hex, sizeof(hex), "#%06X", a_rgb & 0xFFFFFF);
+				values.colors[a_role] = hex;
+				logger::info("settings page: {} colour -> {}", a_name, values.colors[a_role]);
+				settings::Save();
+				theme::Apply();
+			};
+			const float swatch = ImGui::GetFrameHeight() * 0.8f;
+			for (const Role& r : kRoles)
+			{
+				ImGui::PushID(r.role);
+				const std::uint32_t abgr = theme::RoleColor(r.role);   // what draws now: the player's, else the theme's
+				float col[3] = { (abgr & 0xFF) / 255.0f, ((abgr >> 8) & 0xFF) / 255.0f, ((abgr >> 16) & 0xFF) / 255.0f };
+				if (ImGui::ColorEdit3(TR(r.key, r.fallback), col, ImGuiColorEditFlags_NoInputs))
+				{
+					const auto c8 = [](float f) { return static_cast<std::uint32_t>(std::lround(std::clamp(f, 0.0f, 1.0f) * 255.0f)); };
+					setColor(r.role, (c8(col[0]) << 16) | (c8(col[1]) << 8) | c8(col[2]), r.fallback);
+				}
+				ImGui::SameLine();
+				if (!values.colors[r.role].empty())
+				{
+					if (ImGui::SmallButton(TR("AMF_ColorTheme", "Theme")))
+					{
+						values.colors[r.role].clear();
+						logger::info("settings page: {} colour -> the theme's", r.fallback);
+						settings::Save();
+						theme::Apply();
+					}
+				}
+				else { ImGui::TextDisabled("%s", TR("AMF_ColorFromTheme", "(the theme's)")); }
+				for (int i = 0; i < static_cast<int>(std::size(kSwatches)); ++i)
+				{
+					if (i > 0) { ImGui::SameLine(); }
+					ImGui::PushID(100 + i);
+					const std::uint32_t s = kSwatches[i];
+					const ImVec4 sv{ ((s >> 16) & 0xFF) / 255.0f, ((s >> 8) & 0xFF) / 255.0f, (s & 0xFF) / 255.0f, 1.0f };
+					if (ImGui::ColorButton("##swatch", sv, ImGuiColorEditFlags_NoTooltip, ImVec2(swatch, swatch))) { setColor(r.role, s, r.fallback); }
+					ImGui::PopID();
+				}
+				ImGui::PopID();
+			}
+			bool any = false;
+			for (const auto& c : values.colors) { any = any || !c.empty(); }
+			if (!any) { ImGui::BeginDisabled(); }
+			if (ImGui::Button(TR("AMF_ColorAllTheme", "All back to the theme")))
+			{
+				for (auto& c : values.colors) { c.clear(); }
+				logger::info("settings page: every colour -> the theme's");
+				settings::Save();
+				theme::Apply();
+			}
+			if (!any) { ImGui::EndDisabled(); }
+		}
+
 		void DrawFrameworkSettingsPane()
 		{
 			auto& values = settings::Get();
@@ -1260,6 +1379,23 @@ namespace renderer
 				}
 				ImGui::TextWrapped("%s", TR("AMF_WindowOpacityHelp", "How solid the menu is: 100% is solid, lower lets the game show through. The black background fades the most, boxes and borders less, text least; right-click menus stay solid."));
 				ImGui::EndDisabled();
+				// 2.1.5 (the owner, 2026-10-07): the help bar, with "a toggle just in case anybody doesn't like" it.
+				if (widgets::Toggle(TR("AMF_HelpBar", "Help bar"), &values.helpBar))
+				{
+					logger::info("settings page: help bar -> {}", values.helpBar);
+					settings::Save();
+				}
+				ImGui::TextWrapped("%s", TR("AMF_HelpBarHelp", "On: the help for the highlighted option on a converted MCM page "
+					"shows in a bar under the right pane, inside the menu, like SkyUI's info line. Off: it shows as a popup beside "
+					"the option."));
+				// 2.1.5: the player's own colours over the theme's (DrawColorRoles).
+				if (ImGui::TreeNode("##colors", "%s", TR("AMF_Colors", "Colours")))
+				{
+					ImGui::TextWrapped("%s", TR("AMF_ColorsHelp", "Your own colour for each part of the menu, over the theme's. Each starts as "
+						"the theme's own; Theme puts one back. Frame art tints the theme's frame and background pictures."));
+					DrawColorRoles();
+					ImGui::TreePop();
+				}
 				ImGui::Spacing();
 				ImGui::Spacing();
 		
@@ -1509,6 +1645,31 @@ namespace renderer
 						}
 						ImGui::TreePop();
 					}
+				}
+
+				// SPACING OF CONVERTED PAGES (2.1.5, the owner, 2026-10-07: a player "didn't like the spacing of the generated menus
+				// for some of them like Atlas map markers which are very close together"). Their colours are framework-wide, on
+				// Appearance > Colours (the owner: "some of these features may be redundant ... if we just move them over").
+				if (anyMcm && ImGui::TreeNode("##mcmlook", "%s", TR("AMF_McmLook", "Spacing of converted pages")))
+				{
+					ImGui::TextWrapped("%s", TR("AMF_McmLookHelp", "The room between the columns and rows of the pages built from MCM "
+									   "menus. Their colours are on Appearance > Colours."));
+					ImGui::Spacing();
+					ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
+					precise::SliderInt(TR("AMF_McmColumnGap", "Gap between columns"), &values.mcmColumnGap, 0, 200, "%d%%");
+					if (ImGui::IsItemDeactivatedAfterEdit())
+					{
+						logger::info("settings page: converted pages' column gap -> {}%", values.mcmColumnGap);
+						settings::Save();
+					}
+					ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
+					precise::SliderInt(TR("AMF_McmRowSpacing", "Space between rows"), &values.mcmRowSpacing, 0, 100, "%d%%");
+					if (ImGui::IsItemDeactivatedAfterEdit())
+					{
+						logger::info("settings page: converted pages' row spacing -> {}%", values.mcmRowSpacing);
+						settings::Save();
+					}
+					ImGui::TreePop();
 				}
 				ImGui::Spacing();
 				ImGui::EndTabItem();
@@ -2986,7 +3147,11 @@ namespace renderer
 
 				// ---- CONTENT PANE -------------------------------------------------------------
 				if (g_focusPane == 2) { ImGui::SetNextWindowFocus(); g_focusPane = 0; g_frameWindowFocus = ImGui::GetFrameCount(); }
-				ImGui::BeginChild("##content", ImVec2(0.0f, 0.0f), true);
+				// 2.1.5: the help bar sits under this pane while a converted MCM page asks for it - the pane gives up its
+				// height plus the same gap the knotwork frames keep between the panes.
+				const bool helpBarOn = helpbar::Active();
+				const float helpBarGap = knot ? kKnotOutset * 4.0f : ImGui::GetStyle().ItemSpacing.y;
+				ImGui::BeginChild("##content", ImVec2(0.0f, helpBarOn ? -(helpbar::Height() + helpBarGap) : 0.0f), true);
 				// Re-measured every frame. A pane with no tab bar leaves these at zero, so left
 				// falls straight back to the mod list exactly as it always did.
 				g_tabCount = 0;
@@ -3016,7 +3181,7 @@ namespace renderer
 					{
 						visiblePages[0]->render();
 					}
-					else if (visiblePages.size() > 1 && ImGui::BeginTabBar("##pages", ImGuiTabBarFlags_FittingPolicyScroll | ImGuiTabBarFlags_TabListPopupButton))   // a mod with many sections keeps whole labels: the bar scrolls, and the list button on the left opens every section by name (Character Progression Control reached twelve tabs and the default policy squeezed them to "Level... Expe... Skills")
+					else if (visiblePages.size() > 1 && ImGui::BeginTabBar("##pages",ImGuiTabBarFlags_FittingPolicyScroll | ImGuiTabBarFlags_TabListPopupButton))   // a mod with many sections keeps whole labels: the bar scrolls, and the list button on the left opens every section by name (Character Progression Control reached twelve tabs and the default policy squeezed them to "Level... Expe... Skills")
 					{
 						int index = 0;
 						for (const registry::Page* pagePtr : visiblePages)
@@ -3049,9 +3214,21 @@ namespace renderer
 				if (!g_innerFresh) { g_innerCount = 0; g_innerIndex = 0; }
 				const bool contentHasNav = ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows);
 				ImGui::EndChild();
+				const ImVec2 contentMin = ImGui::GetItemRectMin();
+				const ImVec2 contentMax = ImGui::GetItemRectMax();
+				helpbar::NotePane(contentMin.x, contentMin.y, contentMax.x, contentMax.y);
 				if (knot)
 				{
-					DrawKnotworkAround(ImGui::GetWindowDrawList(), ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
+					DrawKnotworkAround(ImGui::GetWindowDrawList(), contentMin, contentMax);
+				}
+				if (helpBarOn)
+				{
+					ImGui::SetCursorScreenPos(ImVec2(contentMin.x, contentMax.y + helpBarGap));
+					helpbar::Draw(contentMax.x - contentMin.x);
+					if (knot)
+					{
+						DrawKnotworkAround(ImGui::GetWindowDrawList(), ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
+					}
 				}
 
 				// Draw the OUTER window's knotwork frame LAST, on the window's own draw list so it

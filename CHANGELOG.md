@@ -21,6 +21,45 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## 2.1.5 - 2026-10-07 - untested - converted MCM pages: help bar, heading colours, icons, translated headings
+
+The owner, 2026-10-07, after comparing AMF's converted MCM pages with MCM Bridge's: "it's really not that bad in
+comparison. If anything, I just want AMF to include Font Awesome for the generated menus ... different colors to
+different things", the "$" and underscores in section headings, and the help text kept inside AMF's window.
+
+### Added
+- **Help bar** (Appearance, on by default; [Display] bHelpBar): on a converted MCM page the highlighted option's help
+  shows in a bar under the right pane, inside the menu, like SkyUI's info line - with the mouse or the controller. It
+  wraps to the pane and keeps the last help shown. Off: the help shows as a popup, now wrapped to the right pane's width
+  and placed inside it (it used to follow the mouse off the window). HelpBar.cpp.
+- **Text colours by role** on converted pages: labels in the theme's text colour, values grey, section headings in a
+  heading colour, help and page notes in a help colour. Every theme carries both (new theme keys `sTextHeader`,
+  `sTextHelp`; a theme without them takes its accent for headings and its dim tone toward the text for help). Skyrim and
+  Untarnished: gold headings, steel-blue help.
+- **Colours** (Appearance, the owner: "changing the different things that make up the framework's art, like its frame,
+  box, sliders, and other things to different colors", "change the background color, like how Oathvein is gray"): the
+  player's own colour for twelve parts of the menu over the theme's - background, frame lines and borders, frame art (a
+  tint over the theme's frame and background pictures), boxes and buttons, text, secondary text, selection and tabs,
+  sliders and tick marks, switch on, switch off, section headings, help text. A picker each, a row of twelve preset
+  swatches the D-pad walks, Theme to go back, and All back to the theme. Every shade the theme works out (hover washes,
+  separators, the see-through fade) follows the picked colour. [Colors] in the INI; empty = the theme's own, so a theme
+  switch still shows.
+- **Spacing of converted pages** (Settings > MCM menus; a player found Atlas Map Markers' rows "very close together"):
+  the gap between the two columns and extra space between rows, precise sliders ([MCM] uColumnGap, uRowSpacing).
+- **Font Awesome icons** on converted pages: key buttons (keyboard), clear (x), reset to default, text fields (pen),
+  colours (palette), buttons that run something (chevron), options the mod disabled (lock), help and notes (info),
+  loading (hourglass), what cannot be drawn (warning). Ten solid glyphs merged into the text face (AmfIcons.h).
+
+### Fixed
+- **Section headings showed "$KEY_Names".** A heading wrapped in font tags (Atlas Map Markers:
+  `<font color='#FF9900'>$ATLAS_GlobalMarkerSettings</font>`) was never looked up - only text starting with "$" was.
+  The key inside the tags is now translated ("GLOBAL MARKER SETTINGS"). A key no translation file carries now reads as
+  words - its "$", its capitals prefix and underscores dropped, camelCase spaced ("Global Marker Settings") - where it
+  used to lose only the "$" (a menu whose own name is such a key gets the readable name).
+- **"\n" in help text** showed as the two characters; it is now a line break, as in SkyUI.
+- **Values ran into the next column** on two-column pages ("DefaultGem Geodes") and under the pane's right edge: the
+  columns now have a gutter and right-aligned values stay clear of the edge.
+
 ## 2.1.4 - 2026-10-07 - working - SKSE Menu Framework 3.18's interface; D-pad right stays on the Mods row's controls
 
 ### Added

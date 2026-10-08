@@ -57,6 +57,14 @@ namespace theme
 		std::uint32_t skinFrameCorner = 64;
 		std::string   skinBackground;
 		std::string   skinPlates;
+
+		// TEXT ROLES on the pages AMF builds from MCM menus (2.1.5, the owner, 2026-10-07: "regular text could be
+		// white, gray for other things, and then ... the non-selectable text that's like a heading of a section be
+		// one color, and help text a different color"). Labels keep `text`, values keep `textDim`. Kept at the END
+		// of the struct so the brace-initialised built-ins above keep their positions. 0 = the fallback in Apply():
+		// headings take `accent`, help takes a blend of `textDim` toward `text`. INI keys sTextHeader / sTextHelp.
+		std::uint32_t textHeader = 0;   // section headings
+		std::uint32_t textHelp = 0;     // help and info text, page notes
 	};
 
 	// Registers a theme additively. Re-registering an existing id REPLACES that entry only
@@ -101,5 +109,35 @@ namespace theme
 	// reshoot). These open a dropdown with the same small padding the right-click menus use; everything else is
 	// ImGui::BeginCombo / ImGui::Combo unchanged.
 	bool BeginComboTight(const char* a_label, const char* a_preview);
+
+	// THE COLOUR ROLES a player can set on Appearance > Colours (2.1.5), [Colors] keys in this order. Each falls back to
+	// the active theme's own colour when the player has not set it.
+	enum ColorRole : int
+	{
+		kRoleBackground = 0,   // sBackground - window and pane backgrounds
+		kRoleBorder,           // sBorder     - frame lines, borders, separators
+		kRoleArt,              // sArt        - a tint over the theme's frame / background / plate art (white = as drawn)
+		kRoleBoxes,            // sBoxes      - the fill of fields, buttons and tabs at rest
+		kRoleText,             // sText       - text
+		kRoleTextDim,          // sTextDim    - secondary text: values, hints, disabled rows
+		kRoleAccent,           // sAccent     - selection and tabs
+		kRoleSlider,           // sSlider     - slider grabs and tick marks
+		kRoleSwitchOn,         // sSwitchOn   - an on/off switch's track when on
+		kRoleSwitchOff,        // sSwitchOff  - ... and when off
+		kRoleHeading,          // sHeading    - section headings on converted MCM pages
+		kRoleHelp,             // sHelp       - help text and page notes
+		kRoleCount
+	};
+	inline constexpr const char* kColorRoleKeys[kRoleCount] = { "sBackground", "sBorder", "sArt", "sBoxes", "sText", "sTextDim",
+		"sAccent", "sSlider", "sSwitchOn", "sSwitchOff", "sHeading", "sHelp" };
+
+	// The colour a role draws in now (the player's when set, else the theme's), and the theme's own one (what "Theme" on
+	// the settings page puts back). ImU32 (ABGR). Computed by Apply(), so both follow a theme switch.
+	std::uint32_t RoleColor(int a_role);
+	std::uint32_t ThemeRoleColor(int a_role);
+
+	// The text-role colours (2.1.5) for ImGui::PushStyleColor - RoleColor(kRoleHeading / kRoleHelp).
+	std::uint32_t HeaderTextColor();
+	std::uint32_t HelpTextColor();
 	bool ComboTight(const char* a_label, int* a_current, const char* const a_items[], int a_count);
 }

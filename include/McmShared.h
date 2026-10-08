@@ -17,6 +17,12 @@ namespace mcmloader::detail
 	std::string Trim(const std::string& a_s);
 	std::string Narrow(std::wstring_view a_w);
 	std::string StripTags(const std::string& a_s);
+	// 2.1.5 (the owner, 2026-10-07: the "$" in section headings and "underscores instead of spaces"). A $KEY no
+	// translation file knows, made readable: the "$", a mod's own capitals prefix ("ATLAS_") and the underscores go and
+	// camelCase words are spaced - "$ATLAS_GlobalMarkerSettings" -> "Global Marker Settings". The last resort only.
+	std::string ReadableKey(const std::string& a_key);
+	// 2.1.5: a translation's "\n" - two characters, as the files write it - is a line break, as SkyUI shows it.
+	std::string Unescape(const std::string& a_s);
 	std::string KeyName(std::int32_t a_code);
 
 	// Interface\Translations\<plugin>_<language>.txt (game language first, English as the fallback), read through the

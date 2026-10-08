@@ -23,6 +23,7 @@ namespace registry
 		// page it draws in its closure. A consumer's plain AMF_RenderCallback is wrapped unchanged.
 		std::function<void()> render;
 		bool hidden = false;  // 1.8.3: AMF_SetPageVisible(false) leaves the page out of the menu until shown again
+		bool converted = false;  // 2.1.5: a page AMF builds itself from an MCM menu (McmLoader / McmScripts), not a mod's own
 	};
 
 	struct Entry
@@ -37,7 +38,7 @@ namespace registry
 	bool Register(const char* a_modName, const char* a_pageName, AMF_RenderCallback a_render);
 
 	// MCM loader: the same registration for a page AMF draws itself, with no consumer DLL behind it.
-	bool RegisterFn(const char* a_modName, const char* a_pageName, std::function<void()> a_render);
+	bool RegisterFn(const char* a_modName, const char* a_pageName, std::function<void()> a_render, bool a_converted = false);
 
 	// 1.8.3: hide or show one registered page (AMF_SetPageVisible). False when the (mod, page) pair is not
 	// registered. The page stays registered - hiding only leaves it out of the menu's tabs.

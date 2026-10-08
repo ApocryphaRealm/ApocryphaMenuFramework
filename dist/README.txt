@@ -1,6 +1,6 @@
 ﻿ApocryphaRealm Menu Framework
 =============================
-Version 2.1.4
+Version 2.1.5
 
 An original, GPL-3.0-or-later in-game menu framework (embedding Dear ImGui) - a one-for-one
 replacement for SKSE Menu Framework's consumer surface, plus user-friendly features that do
@@ -46,6 +46,9 @@ reading.
 
 WHAT CHANGED
 ------------
+
+Version 2.1.5
+Converted MCM pages read more clearly: section headings in their own colour, help text in another, values in grey, and Font Awesome icons on key buttons, text fields, colours, buttons and notes. The highlighted option's help shows in a help bar under the right pane, inside the menu, like SkyUI's info line (Appearance > Help bar; off shows it as a popup kept inside the pane). Section headings no longer show "$KEY_Names": keys inside font tags are translated, and a key with no translation reads as words. "\n" in help is a line break, and values no longer run into the next column.
 
 Version 2.1.4
 NPC Preset Applier and other mods made for SKSE Menu Framework 3.18 work under AMF: their preset portraits are made and shown. AMF now sends SMF's menu and frame events (NPA's portrait maker waits on them), has SMF 3.18's three new functions (API version, rename and delete a menu section), loads .dds images, and reads image paths with non-English letters. D-pad right on the Mods row now steps through the tick box, the A-Z switch and Sort before crossing to the settings. Thanks to ladydias for the report.
