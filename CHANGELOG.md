@@ -100,7 +100,9 @@ line under a section header ... the on-screen keyboard ... and anything else tha
   selected and hovered over ... when selected and hovered over they have a frame that goes around them. They don't
   need a frame of their own"). In every art set, boxes (the search box, dropdowns), buttons, tick boxes, tabs,
   switches and slider tracks are the set's shape only - the hover / selection frame goes round them. Scroll bars and
-  their tracks, which are never selected, keep their framed art.
+  their tracks, which are never selected, keep their framed art. A slider's track alone keeps a single hairline in the
+  theme's line colour, as minimal as Untarnished's (the owner: without "even a simple thin frame ... you can't see
+  where the sliders actually are on the page" - in Skyrim the track's fill is the window's own black).
 - **The Skyrim theme uses its knotwork set for every kind**, as every other theme uses its namesakes - so its
   "Theme's own (Skyrim)" on Appearance > Art is the Skyrim set. Its switch is square, so it fills the hover frame,
   and its scroll bar is a knotwork one - the twin strand with the frame's corner knot at each end, in a

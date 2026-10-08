@@ -35,6 +35,8 @@ What can be selected has no frame of its own (2.1.6, testing - the owner: "the t
 over ... when selected and hovered over they have a frame that goes around them. They don't need a frame of their own"):
 boxes, buttons, tick boxes, tabs, switches and slider tracks are the theme's SHAPE only, no -edge layer; the theme's
 hover / selection frame goes round them. Scroll bars and their tracks, which are never selected, keep their framed art.
+A slider's track alone keeps a single hairline in the theme's line colour, as minimal as Untarnished's, so a slider's
+length shows on the page.
 
 Original art drawn from shapes; no game or mod files. Run from the repo root:  python tools/make-control-art.py
 """
@@ -633,7 +635,13 @@ def main():
         ini("scrolltracks", t, ["uCorner=%d" % (10 * K), "uDrawCorner=5"], n)
 
         # a slider's track: the family's plate, long and low, behind the grab
-        save_shape("slidertracks", t, shape_only(t, 128, 32, 10))
+        # the one exception: a slider's track keeps a single hairline, drawn in the theme's line colour (testing, the owner:
+        # "the slider box doesn't have even a simple thin frame that's like what's in untarnished which is very minimal
+        # and because of it you can't see where the sliders actually are on the page" - in Skyrim the track's fill is the
+        # window's own black)
+        track_mask = shape_mask("skyrim" if t == "oblivion" else t, 128, 32, 10)   # Oblivion's track is a plain rectangle too
+        save(shape_only(t, 128, 32, 10), "slidertracks", t)
+        save(to_rgba(outline(track_mask, 1.2), 128, 32), "slidertracks", t + "-edge")
         ini("slidertracks", t, ["uCorner=%d" % (10 * K), "uDrawCorner=5"], n)
 
         save_shape("tabs", t, shape_only(t, 96, 48, 16, top_only=True))
