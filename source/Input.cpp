@@ -6,6 +6,7 @@
 
 #include "Bindings.h"
 #include "Compat.h"
+#include "ConsumerSurface.h"
 #include "Offsets.h"
 #include "Renderer.h"
 #include "Settings.h"
@@ -1048,7 +1049,14 @@ namespace input
 					// on-screen keyboard closed with it, because the D-pad is exactly what you press
 					// to walk that keyboard. Proven from the log: the frame the field died carried
 					// "GamepadDpadDown(d)" and a fresh navJustMovedTo id, and nothing else.
-					if (controllerMode && key != ImGuiKey_None && !TextFieldHasTheKeyboard(key))
+					// 2.1.5: Y IS THE FRAMEWORK'S, NOT IMGUI'S, in our own window. ImGui reads GamepadFaceUp as "activate / type
+					// into", so Y on a page switched a toggle like A and opened a slider as a text box (the owner, 2026-10-07: "on
+					// a toggle, it toggles it just like A would. But on a slider, it activates it as a text box"). In our window Y
+					// only does our jobs - a list row's options, a page's way up to its main tabs (renderer). A mod's OWN window
+					// (a blocking consumer window) still gets it, as before.
+					const bool yIsOurs = key == ImGuiKey_GamepadFaceUp && renderer::IsMainWindowVisible() &&
+										 !consumer::AnyBlockingWindowOpen();
+					if (controllerMode && key != ImGuiKey_None && !yIsOurs && !TextFieldHasTheKeyboard(key))
 					{
 						io.AddKeyEvent(key, record.down);
 					}

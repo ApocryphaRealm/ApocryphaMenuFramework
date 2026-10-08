@@ -64,8 +64,15 @@ different things", the "$" and underscores in section headings, and the help tex
 ### Changed
 - **Sub-tabs on Appearance and MCM menus** (the owner: "sub tabs ... rather than a long page with collapsible
   sections"). Appearance: Theme and text / Window / Colours. MCM menus: Menus / Choose menus / Remembered settings /
-  Spacing. They are declared to the nav like a mod page's own tabs, so the bumpers walk them; past the first or last
-  sub-tab a bumper press moves on to the next main tab instead of wrapping round (the same for a mod page's inner tabs).
+  Spacing. They are declared to the nav like a mod page's own tabs, so the bumpers walk only them, wrapping round.
+- **Y in a page goes up to the main tabs** (the owner: "when pressing Y, instead of zooming all the way out to the main
+  [left] pane ... it should just send you to the main tabs"). Y in the right pane puts the highlight on the open main
+  tab (Settings' General / Appearance / MCM menus / Menu list, Controls', Help's, a mod's pages). It used to open the
+  options of the list's highlighted row and pull the highlight out to the list - the list took Y every frame; it now
+  takes it only while it has the highlight.
+- **Y no longer acts like A in our window.** It reached ImGui as its "activate / type into" button, so on a page it
+  switched a toggle and opened a slider as a text box. In AMF's window Y does only the framework's jobs; a mod's own
+  window still gets it. The Controls page's text for that action says both jobs.
 - **The persistence test is gone** from the bottom of Settings > General (the owner: "get rid of the persistence test");
   it showed only at log level 0. The per-save channel itself is unchanged.
 

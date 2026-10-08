@@ -1093,6 +1093,23 @@ namespace renderer
 		// that moved nothing goes across to the options.
 		bool g_pendingSideRight = false;
 		bool g_innerFresh = false;  // the declaration was renewed this frame
+		// 2.1.5 - Y IN A PAGE GOES UP TO THE MAIN TABS (the owner, 2026-10-07: "when pressing Y, instead of zooming all the way
+		// out to the main [left] pane ... it should just send you to the main tabs"). The page had the highlight last frame
+		// (the list then leaves Y alone); the focus request is answered by the main tab bar's open tab as it is submitted.
+		bool g_contentNavLastFrame = false;
+		bool g_focusMainTabs = false;
+		int g_prevTabIndex = 0;     // the main bar's open tab last frame (g_tabIndex is re-measured from 0 every frame)
+
+		// Right before the main bar's tab number a_index is submitted: the highlight goes onto it when Y asked for that.
+		void FocusMainTabIfAsked(int a_index)
+		{
+			if (g_focusMainTabs && a_index == g_prevTabIndex)
+			{
+				ImGui::SetKeyboardFocusHere();
+				g_focusMainTabs = false;
+				logger::debug("nav: Y -> main tab {}", a_index);
+			}
+		}
 
 		// Where a driving tool's synthetic press lands (amf.menu op=nav). It is read in exactly the
 		// place a real D-pad press is read, so the tool exercises this logic rather than a shortcut
@@ -1232,6 +1249,7 @@ namespace renderer
 			int index = 0;
 			const auto tab = [&](const char* a_label) {
 				const ImGuiTabItemFlags flags = (index == g_tabRequest) ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
+				FocusMainTabIfAsked(index);   // 2.1.5: Y in a page lands here
 				const bool open = ImGui::BeginTabItem(a_label, nullptr, flags);
 				if (ImGui::IsItemFocused()) { g_tabBarHasNav = true; }
 				if (open) { g_tabIndex = index; }
@@ -2243,6 +2261,7 @@ namespace renderer
 			const auto tab = [&](const char* a_label) {
 				const ImGuiTabItemFlags flags =
 					(index == g_tabRequest) ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
+				FocusMainTabIfAsked(index);   // 2.1.5: Y in a page lands here
 				const bool open = ImGui::BeginTabItem(a_label, nullptr, flags);
 				if (ImGui::IsItemFocused()) { g_tabBarHasNav = true; }
 				if (open) { g_tabIndex = index; }
@@ -2408,6 +2427,7 @@ namespace renderer
 			const auto tab = [&](const char* a_label) {
 				const ImGuiTabItemFlags flags =
 					(index == g_tabRequest) ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
+				FocusMainTabIfAsked(index);   // 2.1.5: Y in a page lands here
 				const bool open = ImGui::BeginTabItem(a_label, nullptr, flags);
 				if (ImGui::IsItemFocused()) { g_tabBarHasNav = true; }
 				if (open) { g_tabIndex = index; }
@@ -2990,7 +3010,10 @@ namespace renderer
 				// REGISTRY index, so selection, the C API and DevBench addressing are unaffected.
 				// Consumed ONCE for the frame, then applied to whichever row has the highlight. Taken
 				// outside the loop so a single press cannot fire on several rows.
-				const bool rowContextMenu = bindings::TakeTriggered(bindings::Action::kContextMenu);
+				// 2.1.5: only while the list has the highlight. Taken every frame before, Y in a page opened the options of
+				// the list's row and pulled the highlight out to the list (the owner: "instead of zooming all the way out to
+				// the main left pane"); in a page Y now goes up to the main tabs (see the nav block).
+				const bool rowContextMenu = !g_contentNavLastFrame && bindings::TakeTriggered(bindings::Action::kContextMenu);
 				const bool rowFavourite = bindings::TakeTriggered(bindings::Action::kFavourite);
 				// GRAB AND MOVE (the owner, 2026-10-02: "pressing right stick will select the mod and then going and
 				// moving the stick up or down will move its position up or down. And this should be rebindable"). The
@@ -3322,6 +3345,7 @@ namespace renderer
 				ImGui::BeginChild("##content", ImVec2(0.0f, helpBarOn ? -(helpbar::Height() + helpBarGap) : 0.0f), true);
 				// Re-measured every frame. A pane with no tab bar leaves these at zero, so left
 				// falls straight back to the mod list exactly as it always did.
+				g_prevTabIndex = g_tabIndex;   // 2.1.5: where Y sends the highlight
 				g_tabCount = 0;
 				g_tabIndex = 0;
 				g_tabBarHasNav = false;
@@ -3360,6 +3384,7 @@ namespace renderer
 							// and the tab-list popup never fight over which tab is open.
 							const ImGuiTabItemFlags flags =
 								(index == g_tabRequest) ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
+							FocusMainTabIfAsked(index);   // 2.1.5: Y in a page lands here
 							const bool open = ImGui::BeginTabItem(page.pageName.c_str(), nullptr, flags);
 							// Asked of the tab itself rather than worked out from where nav "should"
 							// be (rule 30): the item just submitted is the tab button, selected or not.
@@ -3381,6 +3406,7 @@ namespace renderer
 				else { DrawFrameworkSettingsPane(); }
 				if (!g_innerFresh) { g_innerCount = 0; g_innerIndex = 0; }
 				const bool contentHasNav = ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows);
+				g_contentNavLastFrame = contentHasNav;
 				ImGui::EndChild();
 				const ImVec2 contentMin = ImGui::GetItemRectMin();
 				const ImVec2 contentMax = ImGui::GetItemRectMax();
@@ -3511,6 +3537,16 @@ namespace renderer
 					g_selTabName = curTabName; g_selTabIndex = g_tabIndex; g_selTabCount = g_tabCount;
 				}
 
+				// Y IN A PAGE GOES UP TO THE MAIN TABS (2.1.5, the owner, 2026-10-07): the open tab of the page's main bar takes
+				// the highlight next frame (FocusMainTabIfAsked). Not while a field is being edited or the on-screen keyboard
+				// is up (its backspace is Y); a page with no main bar leaves Y alone.
+				if (contentHasNav && g_tabCount > 1 && !ImGui::IsAnyItemActive() && !keyboard::Capturing() &&
+					bindings::TakeTriggered(bindings::Action::kContextMenu))
+				{
+					g_focusMainTabs = true;
+					logger::debug("nav: Y in the page -> the main tabs (tab {})", g_tabIndex);
+				}
+
 				// THE BUMPERS WALK THE TABS (the owner, 2026-09-19: "bumpers navigate tabs, dpad
 				// doesnt"). The D-pad deliberately never steps a tab - moving the highlight onto one
 				// and activating it is the other way, and the standing rule forbids stepping - so tab
@@ -3521,13 +3557,12 @@ namespace renderer
 									 (bindings::TakeTriggered(bindings::Action::kTabPrev) ? 1 : 0);
 					if (step != 0)
 					{
-						// 2.1.5: past the inner bar's first or last tab the press goes on to the page's own tabs (Appearance's
-						// sub-tabs lead on to MCM menus), instead of wrapping round inside - so the bumpers still reach every
-						// tab. A page with no outer bar to go to keeps the old wrap.
-						const int next = g_innerIndex + step;
-						if (g_innerFresh && g_innerCount > 1 && (next >= 0 && next < g_innerCount || g_tabCount <= 1))
+						// Inside a page with its own tabs (a mod's, or Appearance / MCM menus' sub-tabs) the bumpers walk ONLY
+						// those, wrapping round (the owner, 2026-10-07: "I actually want them to wrap around ... using the
+						// shoulder buttons in sub tabs only moves the sub tabs"); Y takes the highlight up to the main tabs.
+						if (g_innerFresh && g_innerCount > 1)
 						{
-							g_innerRequest = (next + g_innerCount) % g_innerCount;
+							g_innerRequest = (g_innerIndex + step + g_innerCount) % g_innerCount;
 							logger::debug("nav: bumper -> inner tab {}", g_innerRequest);
 						}
 						else if (g_tabCount > 1)
