@@ -72,6 +72,84 @@ namespace flick
 			return name;
 		}
 
+		// ---- mods built against an old FLICK header: refused, never called (2.1.7) ----------------------------------
+		// FLICK's header changed its ABI three times while still saying "version 1" (FLICK's own git history,
+		// 4. plans\amf-flick\flick): before 2026-05-28 ITool had no PluginName(), so every virtual sits one slot lower than
+		// AMF's flick::Tool, and before 2026-06-08 the C table was ordered differently from version 5's (from then on each
+		// version only appends). A mod built that way and answered by AMF calls the wrong functions and is called through
+		// the wrong slots: Simple Timed Block's Group() slot was its Draw(), run during RegisterTool with no ImGui window -
+		// a crash on load (Nexus report, 2026-10-08, AE 1.6.1170). FLICK itself does not check this.
+		// The header that added PluginName() also added `inline const char* g_pluginName = "UnknownPlugin";`, which every
+		// mod built with it carries in its read-only data. A DLL without that string predates the layout AMF speaks, so
+		// AMF refuses its tools and windows - a missing page instead of a crash - and says so in the log and the flick op.
+		std::mutex g_abiLock;
+		std::map<HMODULE, bool> g_abiCurrent;   // module -> carries FLICK's "UnknownPlugin" default
+		std::set<std::string> g_refused;        // dlls refused this session (StatusJson)
+
+		HMODULE ModuleOf(const void* a_object)
+		{
+			HMODULE mod = nullptr;
+			const void* vtable = a_object ? *reinterpret_cast<void* const*>(a_object) : nullptr;
+			if (!vtable || !::GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+							   reinterpret_cast<LPCWSTR>(vtable), &mod))
+			{
+				return nullptr;
+			}
+			return mod;
+		}
+
+		// true when one of the module's readable, non-code sections holds a_text (with its terminating NUL)
+		bool ModuleHasString(HMODULE a_mod, std::string_view a_text)
+		{
+			const auto* base = reinterpret_cast<const std::uint8_t*>(a_mod);
+			const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
+			if (dos->e_magic != IMAGE_DOS_SIGNATURE) { return false; }
+			const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(base + dos->e_lfanew);
+			if (nt->Signature != IMAGE_NT_SIGNATURE) { return false; }
+			const std::string needle(a_text.data(), a_text.size() + 1);   // include the NUL: the whole literal, not a prefix
+			const auto* sec = IMAGE_FIRST_SECTION(nt);
+			for (WORD i = 0; i < nt->FileHeader.NumberOfSections; ++i, ++sec)
+			{
+				const auto ch = sec->Characteristics;
+				if (!(ch & IMAGE_SCN_MEM_READ) || (ch & IMAGE_SCN_MEM_EXECUTE) || (ch & IMAGE_SCN_MEM_DISCARDABLE)) { continue; }
+				const auto* begin = base + sec->VirtualAddress;
+				const auto* end = begin + sec->Misc.VirtualSize;   // the section as mapped (bytes past the raw data read as zero)
+				if (std::search(begin, end, needle.begin(), needle.end()) != end) { return true; }
+			}
+			return false;
+		}
+
+		bool BuiltForCurrentFlick(const void* a_object)
+		{
+			const HMODULE mod = ModuleOf(a_object);
+			if (!mod) { return false; }
+			std::lock_guard lock(g_abiLock);
+			const auto it = g_abiCurrent.find(mod);
+			if (it != g_abiCurrent.end()) { return it->second; }
+			return g_abiCurrent[mod] = ModuleHasString(mod, "UnknownPlugin");
+		}
+
+		void Refuse(const std::string& a_dll, const char* a_what)
+		{
+			logger::warn("flick: {} registered a {} built against a FLICK header older than 2026-05-28 (no PluginName(); its "
+						 "table is ordered differently from FLICK API 5). Not hosted - calling it would run the wrong functions. "
+						 "The mod needs rebuilding against a current FLICK.", a_dll.empty() ? "a mod" : a_dll, a_what);
+			std::lock_guard lock(g_abiLock);
+			g_refused.insert(a_dll.empty() ? "?" : a_dll);
+		}
+
+		// a pointer a mod returned as a C string: committed, readable memory, NUL-terminated within 512 bytes
+		bool IsCString(const char* a_p)
+		{
+			if (!a_p) { return false; }
+			MEMORY_BASIC_INFORMATION mbi{};
+			if (!::VirtualQuery(a_p, &mbi, sizeof(mbi)) || mbi.State != MEM_COMMIT || (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD))) { return false; }
+			constexpr DWORD kReadable = PAGE_READONLY | PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY;
+			if (!(mbi.Protect & kReadable)) { return false; }
+			const auto* end = static_cast<const char*>(mbi.BaseAddress) + mbi.RegionSize;
+			return std::memchr(a_p, 0, std::min<std::size_t>(static_cast<std::size_t>(end - a_p), 512)) != nullptr;
+		}
+
 		// the per-mod choice (FlickHost.h)
 		constexpr const char* kLeftToFlickPath = "Data/SKSE/Plugins/ApocryphaMenuFramework/FlickLeftToFlick.txt";
 		std::mutex g_choiceLock;
@@ -132,6 +210,27 @@ namespace flick
 			if constexpr (std::is_void_v<R>) { return; }
 			else { return R{}; }
 		}
+
+		// A drawing slot called outside an ImGui frame (no current window) would crash inside ImGui - GetCurrentWindow()
+		// writes through a null window (the 2026-10-08 Simple Timed Block crash: ButtonEx, [null + 0x101]). The table's
+		// drawing slots are bound through this guard, which answers the safe default instead and logs it once. Registration,
+		// settings, translation and input slots are not guarded - mods call those at load time, outside any frame, by design.
+		template <auto Fn>
+		struct Guard;
+		template <class R, class... A, R (*Fn)(A...)>
+		struct Guard<Fn>
+		{
+			static R Call(A... a_args)
+			{
+				const ImGuiContext* c = ImGui::GetCurrentContext();
+				if (!c || !c->WithinFrameScope || !c->CurrentWindow)
+				{
+					NoteOnce("a drawing slot outside AMF's frame", "skipped (a default returned) - drawing needs an open AMF page");
+					return Zero<R>();
+				}
+				return Fn(a_args...);
+			}
+		};
 
 		// ---- the mods' own text: Interface/Translations/<plugin>_<language>.txt (UTF-16 LE, "$KEY<tab>text") ------------
 		std::mutex g_trLock;
@@ -250,14 +349,22 @@ namespace flick
 			if (!a_tool) { return; }
 			ToolRec rec;
 			rec.tool = a_tool;
-			const char* plugin = a_tool->PluginName();
-			const char* name = a_tool->Name();
-			const char* group = a_tool->Group();
-			rec.plugin = plugin ? plugin : "";
-			rec.name = name ? name : "";
-			rec.group = group ? group : "";
-			rec.listed = a_tool->ShowInSidebar();
 			rec.dll = DllOf(a_tool);
+			// an old-header mod is refused before ANY of its virtuals is called (see BuiltForCurrentFlick)
+			if (!BuiltForCurrentFlick(a_tool)) { Refuse(rec.dll, "tool"); return; }
+			// Name() and PluginName() first and checked, as FLICK does (FUCK-Man.cpp: a tool with either missing is refused)
+			const char* name = a_tool->Name();
+			const char* plugin = a_tool->PluginName();
+			if (!IsCString(name) || !IsCString(plugin))
+			{
+				logger::warn("flick: {} registered a tool whose Name() or PluginName() is not readable text - not hosted (FLICK refuses it too)", rec.dll);
+				return;
+			}
+			const char* group = a_tool->Group();
+			rec.plugin = plugin;
+			rec.name = name;
+			rec.group = IsCString(group) ? group : "";
+			rec.listed = a_tool->ShowInSidebar();
 			// entry = the group when the mod gave one, else the tool's name; " (FLICK)" on the end, as converted MCM menus
 			// carry " (MCM)" - the source shown in the list (the owner, 2026-10-08: "(FLICK)")
 			rec.entry = (rec.group.empty() ? rec.name : rec.group) + " (FLICK)";
@@ -294,10 +401,15 @@ namespace flick
 		void RegisterWindow(Window* a_window)
 		{
 			if (!a_window) { return; }
+			if (!BuiltForCurrentFlick(a_window)) { Refuse(DllOf(a_window), "window"); return; }
 			const char* id = a_window->Id();
 			const char* plugin = a_window->PluginName();
-			logger::info("flick: RegisterWindow plugin={} id={} - held, not drawn yet (free windows come in a later build)",
-						 plugin ? plugin : "?", id ? id : "?");
+			if (!IsCString(id) || !IsCString(plugin))
+			{
+				logger::warn("flick: {} registered a window whose Id() or PluginName() is not readable text - not held", DllOf(a_window));
+				return;
+			}
+			logger::info("flick: RegisterWindow plugin={} id={} - held, not drawn yet (free windows come in a later build)", plugin, id);
 			std::lock_guard lock(g_lock);
 			g_windows.push_back(a_window);
 		}
@@ -894,6 +1006,41 @@ namespace flick
 			FLICK_DO(PushGamepadTweakFastDisabled) FLICK_DO(PopGamepadTweakFastDisabled) FLICK_DO(PushGamepadTweakSlowDisabled)
 			FLICK_DO(PopGamepadTweakSlowDisabled)
 #undef FLICK_DO
+			// ...and the drawing ones re-bound through Guard (above): outside a frame they answer a default, never crash.
+			// The list: every answered slot in FLICK's Layout, Interaction, Drawing Primitives, Windows and Widgets groups.
+#define FLICK_GUARD(name) t.name = &Guard<&name>::Call;
+			FLICK_GUARD(SetCursorPosX) FLICK_GUARD(SetCursorPosY) FLICK_GUARD(GetCursorPos) FLICK_GUARD(SetCursorPos)
+			FLICK_GUARD(GetCursorScreenPos) FLICK_GUARD(SetCursorScreenPos) FLICK_GUARD(AlignTextToFramePadding)
+			FLICK_GUARD(GetContentRegionAvail) FLICK_GUARD(CalcItemWidth) FLICK_GUARD(CalcTextSize) FLICK_GUARD(GetItemRectMin)
+			FLICK_GUARD(GetItemRectMax) FLICK_GUARD(SetNextItemWidth) FLICK_GUARD(SetNextItemOpen) FLICK_GUARD(Dummy)
+			FLICK_GUARD(Spacing) FLICK_GUARD(Separator) FLICK_GUARD(SeparatorThick) FLICK_GUARD(SeparatorText)
+			FLICK_GUARD(GetColumnWidth) FLICK_GUARD(IsPopupOpen) FLICK_GUARD(IsItemHovered) FLICK_GUARD(IsItemClicked)
+			FLICK_GUARD(IsItemActive) FLICK_GUARD(IsItemFocused) FLICK_GUARD(IsItemDeactivated)
+			FLICK_GUARD(IsItemDeactivatedAfterEdit) FLICK_GUARD(IsAnyItemActive) FLICK_GUARD(IsAnyItemHovered)
+			FLICK_GUARD(IsWindowFocused) FLICK_GUARD(IsWindowHovered) FLICK_GUARD(IsMouseDown) FLICK_GUARD(IsMouseClicked)
+			FLICK_GUARD(IsMouseReleased) FLICK_GUARD(IsKeyDown) FLICK_GUARD(IsKeyPressed) FLICK_GUARD(SetKeyboardFocusHere)
+			FLICK_GUARD(SetItemDefaultFocus) FLICK_GUARD(BeginDragDropSource) FLICK_GUARD(SetDragDropPayload)
+			FLICK_GUARD(EndDragDropSource) FLICK_GUARD(BeginDragDropTarget) FLICK_GUARD(AcceptDragDropPayload)
+			FLICK_GUARD(EndDragDropTarget) FLICK_GUARD(DrawRect) FLICK_GUARD(DrawRectFilled) FLICK_GUARD(DrawLine)
+			FLICK_GUARD(DrawBackgroundLine) FLICK_GUARD(DrawBackgroundRect) FLICK_GUARD(SetNextWindowPos)
+			FLICK_GUARD(SetNextWindowSize) FLICK_GUARD(GetWindowPos) FLICK_GUARD(GetWindowSize) FLICK_GUARD(SetWindowPos)
+			FLICK_GUARD(SetWindowSize) FLICK_GUARD(BeginWindow) FLICK_GUARD(EndWindow) FLICK_GUARD(ExtendWindowPastBorder)
+			FLICK_GUARD(BeginChild) FLICK_GUARD(EndChild) FLICK_GUARD(TreeNode) FLICK_GUARD(TreePop)
+			FLICK_GUARD(BeginPopupContextItem) FLICK_GUARD(EndPopup) FLICK_GUARD(Button) FLICK_GUARD(InvisibleButton)
+			FLICK_GUARD(Checkbox) FLICK_GUARD(Hotkey) FLICK_GUARD(ToggleButton) FLICK_GUARD(InputText) FLICK_GUARD(ColorEdit3)
+			FLICK_GUARD(ColorEdit4) FLICK_GUARD(SliderFloat) FLICK_GUARD(SliderInt) FLICK_GUARD(DragInt) FLICK_GUARD(DragFloat)
+			FLICK_GUARD(DragFloat2) FLICK_GUARD(DragFloat3) FLICK_GUARD(DragFloat4) FLICK_GUARD(Combo)
+			FLICK_GUARD(ComboWithFilter) FLICK_GUARD(ComboForm) FLICK_GUARD(ComboFormStr) FLICK_GUARD(Selectable)
+			FLICK_GUARD(GetTableSortSpecs) FLICK_GUARD(Header) FLICK_GUARD(LeftLabel) FLICK_GUARD(TextColored)
+			FLICK_GUARD(TextColoredWrapped) FLICK_GUARD(TextDisabled) FLICK_GUARD(CenteredText)
+			FLICK_GUARD(CenteredTextWithArrows) FLICK_GUARD(ButtonIconWithLabel) FLICK_GUARD(Stepper) FLICK_GUARD(BeginTabBar)
+			FLICK_GUARD(EndTabBar) FLICK_GUARD(BeginTabItem) FLICK_GUARD(EndTabItem) FLICK_GUARD(BeginTable)
+			FLICK_GUARD(EndTable) FLICK_GUARD(TableSetupColumn) FLICK_GUARD(TableNextRow) FLICK_GUARD(TableNextColumn)
+			FLICK_GUARD(TableHeadersRow) FLICK_GUARD(TableSetBgColor) FLICK_GUARD(Columns) FLICK_GUARD(NextColumn)
+			FLICK_GUARD(SameLine) FLICK_GUARD(CollapsingHeader) FLICK_GUARD(BeginGroup) FLICK_GUARD(EndGroup)
+			FLICK_GUARD(BeginDisabled) FLICK_GUARD(EndDisabled) FLICK_GUARD(IsWidgetFocused) FLICK_GUARD(SetTooltip)
+			FLICK_GUARD(Indent) FLICK_GUARD(Unindent) FLICK_GUARD(Text) FLICK_GUARD(TextWrapped) FLICK_GUARD(TextUnformatted)
+#undef FLICK_GUARD
 			// the null-slot check (logic library 49): walked once at load; a null would be logged loudly
 			const auto* slots = reinterpret_cast<const unsigned char*>(&t) + 4;
 			for (int i = 0; i < FLICK_SLOT_COUNT; ++i)
@@ -1107,9 +1254,15 @@ namespace flick
 									 i.focused ? "true" : "false", i.hovered ? "true" : "false", i.value ? "true" : "false");
 			}
 		}
-		return std::format(R"({{"host":{},"version":{},"slots":{},"requests":{},"realFlick":{},"tools":[{}],"windows":{},"active":"{}","items":[{}],"notAnswered":[{}]}})",
+		std::string refused;
+		{
+			std::lock_guard lock(g_abiLock);
+			for (const auto& r : g_refused) { refused += std::format(R"({}"{}")", refused.empty() ? "" : ",", esc(r)); }
+		}
+		return std::format(R"({{"host":{},"version":{},"slots":{},"requests":{},"realFlick":{},"tools":[{}],"windows":{},"active":"{}","items":[{}],"notAnswered":[{}],"refusedOldHeader":[{}]}})",
 						   Enabled() ? "true" : "false", FLICK_API_VERSION_ANSWERED, FLICK_SLOT_COUNT, g_requests.load(),
-						   g_realFlick ? "true" : "false", tools, windows, g_active ? esc(g_active->Name() ? g_active->Name() : "") : "", items, notes);
+						   g_realFlick ? "true" : "false", tools, windows, g_active ? esc(g_active->Name() ? g_active->Name() : "") : "", items, notes,
+						   refused);
 	}
 }
 

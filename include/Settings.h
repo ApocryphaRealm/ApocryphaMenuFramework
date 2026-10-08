@@ -102,6 +102,16 @@ namespace settings
 		// it on. Opened from the System row the game is already paused by the journal; this adds nothing there.
 		bool pauseGameWhileOpen = false;
 
+		// [Menu] fPointerSpeed (2.1.7; Apparerus on Discord, 2026-10-08: "it is much slower than in skyrim native menus";
+		// the owner: "ill add it in an update" / "along with dpi settings"). AMF's pointer is its own, moved by the mouse's
+		// raw counts - 1:1 in pixels, so at 4K it crossed the screen at half the speed of 1080p. The movement is now scaled
+		// to the screen's height (1080p unchanged), and this multiplies it: 0.25-4.00, 1.00 = the default.
+		float pointerSpeed = 1.0f;
+		// [Menu] bWheelSwitchesTabs (2.1.7; HadToRegister on Nexus, 2026-10-08: "have the mouse scroll wheel move the mod
+		// tabs left and right"): the mouse wheel over a mod's tab bar steps to the previous / next tab. On by default -
+		// the wheel did nothing there before.
+		bool wheelSwitchesTabs = true;
+
 		// [Display]
 		float textScale = 1.30f;         // extra font multiplier on top of the resolution scale (the author, 1.0.2 feedback round)
 		// [Display] uWindowOpacity (2.1.1, Barzing on Nexus, 2026-10-05: "the semi transparence of the window"; the owner: "ill

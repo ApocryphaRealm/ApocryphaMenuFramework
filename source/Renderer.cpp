@@ -1752,6 +1752,25 @@ namespace renderer
 								   "menus - nothing moves, fights or ticks down behind it. Off: the game keeps running while you change settings."));
 				ImGui::Spacing();
 
+				// 2.1.7: Pointer speed (Apparerus) and the wheel over the tabs (HadToRegister) - the owner, 2026-10-08
+				ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
+				precise::SliderFloat(TR("AMF_PointerSpeed", "Pointer speed"), &values.pointerSpeed, 0.25f, 4.0f, "%.2f");   // applied live
+				if (ImGui::IsItemDeactivatedAfterEdit())
+				{
+					logger::info("settings page: pointer speed -> {:.2f}", values.pointerSpeed);
+					settings::Save();
+				}
+				ImGui::TextWrapped("%s", TR("AMF_PointerSpeedHelp", "How fast the mouse moves this menu's pointer. 1.00 is the default, and it "
+								   "already keeps pace with your screen size: the same hand movement crosses the screen at 1080p and at 4K."));
+				if (widgets::Toggle(TR("AMF_WheelTabs", "Mouse wheel switches a mod's tabs"), &values.wheelSwitchesTabs))
+				{
+					logger::info("settings page: mouse wheel switches tabs -> {}", values.wheelSwitchesTabs);
+					settings::Save();
+				}
+				ImGui::TextWrapped("%s", TR("AMF_WheelTabsHelp", "On: with the pointer over a mod's tabs, rolling the wheel down opens the next "
+								   "tab and rolling it up the previous one."));
+				ImGui::Spacing();
+
 				if (widgets::Toggle(TR("AMF_FastExit", "Fast exit - end the process the moment the game exits"), &values.fastExit))
 				{
 					logger::info("settings page: fast exit -> {}", values.fastExit);
@@ -4274,6 +4293,25 @@ namespace renderer
 					}
 					else if (visiblePages.size() > 1 && ImGui::BeginTabBar("##pages",ImGuiTabBarFlags_FittingPolicyScroll | ImGuiTabBarFlags_TabListPopupButton))   // a mod with many sections keeps whole labels: the bar scrolls, and the list button on the left opens every section by name (Character Progression Control reached twelve tabs and the default policy squeezed them to "Level... Expe... Skills")
 					{
+						// 2.1.7 (HadToRegister, 2026-10-08: "have the mouse scroll wheel move the mod tabs left and right"):
+						// the wheel over the tab bar asks for the previous / next tab through the same one-frame request
+						// the D-pad uses, so a click, the D-pad and the wheel never fight. Wheel down = the next tab.
+						if (settings::Get().wheelSwitchesTabs && g_tabRequest < 0)
+						{
+							const ImGuiIO& wio = ImGui::GetIO();
+							const float wheel = wio.MouseWheel != 0.0f ? wio.MouseWheel : -wio.MouseWheelH;
+							const ImGuiTabBar* bar = ImGui::GetCurrentTabBar();
+							if (wheel != 0.0f && bar && ImGui::IsMouseHoveringRect(bar->BarRect.Min, bar->BarRect.Max, false))
+							{
+								const int last = static_cast<int>(visiblePages.size()) - 1;
+								const int want = std::clamp(g_tabIndex + (wheel < 0.0f ? 1 : -1), 0, last);
+								if (want != g_tabIndex)
+								{
+									g_tabRequest = want;
+									logger::debug("tabs: mouse wheel -> tab {}", want);
+								}
+							}
+						}
 						int index = 0;
 						for (const registry::Page* pagePtr : visiblePages)
 						{

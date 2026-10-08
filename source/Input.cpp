@@ -959,8 +959,14 @@ namespace input
 				{
 					NoteDevice(Device::kKeyboardMouse);
 				}
-				g_cursorX += record.x;
-				g_cursorY += record.y;
+			{
+				// 2.1.7: the raw counts are scaled to the screen's height (1080p = 1:1, as before; 4K = 2x, so the pointer
+				// crosses the screen in the same hand movement) and by the player's Pointer speed (Apparerus, 2026-10-08:
+				// "much slower than in skyrim native menus").
+				const float scale = (display.y > 0.0f ? display.y / 1080.0f : 1.0f) * settings::Get().pointerSpeed;
+				g_cursorX += record.x * scale;
+				g_cursorY += record.y * scale;
+			}
 				g_cursorX = g_cursorX < 0.0f ? 0.0f : (g_cursorX > display.x - 1.0f ? display.x - 1.0f : g_cursorX);
 				g_cursorY = g_cursorY < 0.0f ? 0.0f : (g_cursorY > display.y - 1.0f ? display.y - 1.0f : g_cursorY);
 				break;

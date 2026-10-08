@@ -298,6 +298,11 @@ namespace settings
 				"; world time, actors and weather stop until it closes. 0 (the default) leaves the\n"
 				"; game running behind it.\n"
 				"bPauseGame=" << (a_v.pauseGameWhileOpen ? 1 : 0) << "\n"
+				"; How fast the mouse moves the menu's pointer (0.25-4.00). 1.00 is the default; the movement is\n"
+				"; already scaled to the screen's height, so it feels the same at 1080p and 4K.\n"
+				"fPointerSpeed=" << a_v.pointerSpeed << "\n"
+				"; 1 = the mouse wheel over a mod's tabs steps to the previous / next tab (the default). 0 = it does not.\n"
+				"bWheelSwitchesTabs=" << (a_v.wheelSwitchesTabs ? 1 : 0) << "\n"
 				"\n"
 				"[Display]\n"
 				"; Extra text scale on top of the automatic resolution scaling.\n"
@@ -641,6 +646,8 @@ namespace settings
 			ReadNumber(entries, "Input.uToggleKey", g_values.toggleKey);
 			ReadBool(entries, "Input.bOnScreenKeyboard", g_values.onScreenKeyboard);
 			ReadBool(entries, "Menu.bPauseGame", g_values.pauseGameWhileOpen);
+			ReadNumber(entries, "Menu.fPointerSpeed", g_values.pointerSpeed);
+			ReadBool(entries, "Menu.bWheelSwitchesTabs", g_values.wheelSwitchesTabs);
 			ReadBool(entries, "Menus.bSystemMenuRow", g_values.systemMenuRow);
 			ReadBool(entries, "MCM.bLoadMcmHelperConfigs", g_values.loadMcmHelperConfigs);
 			ReadBool(entries, "MCM.bLoadSkyUIScriptMenus", g_values.loadSkyUIScriptMenus);
@@ -809,6 +816,12 @@ namespace settings
 		{
 			logger::warn("settings: uWindowOpacity {} outside [5, 100]; clamped", g_values.windowOpacity);
 			g_values.windowOpacity = g_values.windowOpacity < 5 ? 5 : 100;
+		}
+		if (!(g_values.pointerSpeed >= 0.25f && g_values.pointerSpeed <= 4.0f))   // also catches NaN
+		{
+			logger::warn("settings: fPointerSpeed {:.2f} outside [0.25, 4.00]; clamped", g_values.pointerSpeed);
+			if (g_values.pointerSpeed != g_values.pointerSpeed) { g_values.pointerSpeed = 1.0f; }   // NaN -> the default
+			else { g_values.pointerSpeed = g_values.pointerSpeed < 0.25f ? 0.25f : 4.0f; }
 		}
 
 		const auto level = static_cast<spdlog::level::level_enum>(

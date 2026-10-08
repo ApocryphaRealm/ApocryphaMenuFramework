@@ -21,6 +21,15 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## 2.1.7 - 2026-10-08 - untested
+
+### Fixed
+- A crash on load with a FLICK mod built against an old FLICK (Simple Timed Block, a Nexus crash log of 2026-10-08, AE 1.6.1170). FLICK's header changed its layout twice while still calling itself version 1; AMF called such a mod's Group() and ran its page drawing at load instead. A FLICK mod built before FLICK's 2026-05-28 header is now recognised from its own DLL and not hosted - its page is missing and the log says why - instead of crashing the game. Every FLICK drawing call made outside AMF's open menu now does nothing instead of crashing.
+
+### Added
+- The mouse wheel over a mod's tabs steps to the next / previous tab (HadToRegister on Nexus). On by default; switch: Settings > General, [Menu] bWheelSwitchesTabs.
+- Pointer speed (Settings > General): how fast the mouse moves the menu's pointer, 0.25-4.00. The pointer now keeps pace with the screen size - at 4K it used to cross the screen at half the speed of 1080p (Apparerus on Discord: 'much slower than in skyrim native menus'). [Menu] fPointerSpeed, default 1.00.
+
 ## 2.1.6 - 2026-10-08 - working - the art library: build your own look; the Oblivion theme
 
 The owner, 2026-10-08: "start working on the new file structure for amf, add an assets folder with sub folders for the
