@@ -14,6 +14,7 @@
 // is closed - the original still runs every time.
 // ============================================================================================
 
+#include <chrono>
 #include <cstddef>
 #include <functional>
 #include <string>
@@ -33,6 +34,10 @@ namespace mcmloader::scripts
 	// Any thread: queue one Discover on the main thread (at most every 2 s) - the AMF menu opening calls it, so a config
 	// that set itself up after the last timed pass is in the list the moment the player looks.
 	void RequestDiscovery();
+
+	// Any thread: how long the call at the head of the queue has been running (0 = nothing running or queued). The menu's
+	// pause lets go while this grows, so a menu's scripts can run - see Renderer.cpp SyncGamePause.
+	std::chrono::milliseconds WaitingFor();
 
 	// Every frame, right after ImGui::NewFrame: CloseConfig for the config whose entry stopped being drawn.
 	void Frame();

@@ -1485,6 +1485,17 @@ namespace mcmloader::scripts
 		}
 	}
 
+	std::chrono::milliseconds WaitingFor()
+	{
+		{
+			std::scoped_lock lock(g_captureMutex);
+			if (g_message.pending) { return std::chrono::milliseconds(0); }   // a question on screen waits for the player, not the VM
+		}
+		std::scoped_lock lock(g_queueMutex);
+		if (!g_busy) { return g_queue.empty() ? std::chrono::milliseconds(0) : std::chrono::milliseconds(1); }
+		return std::max(std::chrono::milliseconds(1), std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - g_busySince));
+	}
+
 	void RequestDiscovery()
 	{
 		// any thread (the renderer, as the menu opens): at most one queued pass every 2 s

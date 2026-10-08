@@ -127,6 +127,10 @@ different things", the "$" and underscores in section headings, and the help tex
   open, 0.3 s apart).
 - **The highlight follows the bumpers**: switching a tab with LB/RB changed the tab but left the highlight where it
   was (the owner, 2026-10-07). The opened tab now takes it - the main tabs and the settings sub-tabs.
+- **A converted MCM page stuck on "Loading"** with "Pause the game" on (the owner, 2026-10-08, Atlas Map Markers: the
+  first page drew, the others only after closing and opening AMF). The game's script engine can stop while the game is
+  paused, so the page's SetPage waited out its 15 s. While a menu's script call has been waiting 0.12 s, the pause now
+  lets go, and holds again once the queue is empty - time moves only while a page loads.
 - **A-Z / Z-A did nothing in a list of separators**: it sorted only the mods above the first separator. It now sorts
   the mods inside every separator (and the loose ones), and never moves a separator (the owner, 2026-10-08). Moving a
   mod while sorted changes your own order underneath, so unticking alphabetical still gives back the order you made.

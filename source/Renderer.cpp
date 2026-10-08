@@ -134,7 +134,7 @@ namespace renderer
 						--ui->numPausesGame;
 					}
 					g_pauseHeld = false;
-					logger::info("pause: menu closed or setting off - game resumed (pause count now {})", ui->numPausesGame);
+					logger::info("pause: released (menu closed, setting off, or a menu's scripts running) - game resumed (pause count now {})", ui->numPausesGame);
 				}
 			});
 		}
@@ -4089,7 +4089,24 @@ namespace renderer
 					}
 				}
 
-				SyncGamePause(visible && settings::Get().pauseGameWhileOpen);
+				// THE PAUSE LETS A MENU'S SCRIPTS RUN (2.1.5, the owner, 2026-10-08: Atlas Map Markers' other pages "just says loading"
+				// until AMF is closed and opened again). In this list the game's script engine stops while the game is paused (logic
+				// library 9107), so a converted MCM page's SetPage waited out its 15 s and never drew. While a call has been waiting
+				// a moment, the pause lets go; once the queue is empty it holds again. Time moves only while a page is loading.
+				{
+					static bool s_lifted = false;   // render thread only
+					const auto waiting = mcmloader::scripts::WaitingFor();
+					const bool lift = waiting >= std::chrono::milliseconds(120) || (s_lifted && waiting.count() > 0);
+					if (lift != s_lifted)
+					{
+						s_lifted = lift;
+						if (visible && settings::Get().pauseGameWhileOpen)
+						{
+							logger::debug("pause: {} for a menu's scripts", lift ? "let go" : "held again");
+						}
+					}
+					SyncGamePause(visible && settings::Get().pauseGameWhileOpen && !s_lifted);
+				}
 
 				// Open-transition work happens HERE, not in ToggleMainWindow - the toggle is
 				// flipped on the input thread, and cursor centring touches ImGui state.
