@@ -1,0 +1,2 @@
+# The vcpkg overlay ports apply these to Dear ImGui's LF sources with git apply: a CRLF checkout would not apply.
+*.patch text eol=lf
