@@ -95,6 +95,9 @@ line under a section header ... the on-screen keyboard ... and anything else tha
   built-in knob.
 
 ### Changed
+- **Plain backgrounds** (testing, the owner): Norden, Norden - Black, Oathvein and Vel'dun no longer lay the grain
+  texture over their panels - like Skyrim, their own background is the plain panel colour. Oblivion keeps its
+  parchment. Grain stays in the Background list for anyone who wants it.
 - **The Skyrim theme's accent is white** (testing, the owner: "Everything that was originally yellow ... should be now
   white"): the highlight, and the tick marks and slider grabs that follow it, are the knotwork's white (#F5F2E9)
   instead of the old gold; its description on Appearance > Theme and text says so, in all eleven languages.
