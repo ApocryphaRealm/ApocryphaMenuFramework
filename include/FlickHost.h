@@ -117,8 +117,9 @@ namespace flick
 		std::string name;    // shown name: its page group/name, or the one kept with the choice; empty when never seen
 		bool toAmf = true;   // where it went this session
 		bool leftToFlick = false;   // the choice saved now (may differ until a restart)
-		// 2.1.8: the FLICK header the DLL was built with (FlickHost.cpp, AbiOfModule) - "current", "old-2026-02-27" (a known
-		// old build, hosted through the old-layout adapter), "old-unknown" (an old header this menu cannot place: not
+		// 2.1.8: the FLICK header the DLL was built with (FlickHost.cpp, AbiOfModule) - "current", "old-2026-02-27" /
+		// "old-2026-04-13" / "old-2026-05-30" (2.1.9: a known old build, answered with its own header's table order),
+		// "old-unknown" (an old header this menu cannot place: not
 		// connected), "no-marker" (its own FLICK client); empty until the DLL asks for FLICK's table
 		std::string era;
 	};

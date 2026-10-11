@@ -21,6 +21,17 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## 2.1.9 - 2026-10-11 - working - every proven old FLICK build hosted
+
+### Added
+- Every old FLICK mod build that could be proven now shows its page, not only Simple Timed Block. FLICK's interface changed order many times before its first release while still calling itself version 1, so AMF answers each proven build with the table in its own header's order: the 27 February 2026 order (Simple Timed Block 2.2.1-2.3.0, Stances NG 2.0.0, Critical Hit Tweaks 1.1.0-1.1.1, Inventory Limits 1.0.0 and 1.1.0), the 13 April 2026 order (Static Regeneration 1.0.0 and 1.0.1, Global Variable Framework 1.0.3, Lurking Menace 4.0.0 and 4.0.1, Navigation Restrictions NG 3.0.0-3.0.2) and the 30 May 2026 order (Exhausting Combat 1.0.0, SE and AE). Each build was identified from its own source and binary; any other old build is still left unconnected (no page, no crash).
+
+### Fixed
+- Kill Feed 1.1.0 is connected again: it is built for FLICK 1.0.0, but its DLL lacks the text AMF 2.1.8 looked for to recognise a current FLICK mod, so 2.1.8 read it as an old one and left it without a page. Exhausting Combat 1.0.0, which looks current but uses an older order, is no longer answered with the current table.
+
+### Changed
+- Settings > Converted menus > FLICK: a mod built for FLICK's 30 May 2026 header says 'Built for an older FLICK (before 8 June 2026)', in all eleven languages. DevBench amf.menu op=flick reports the eras old-2026-04-13 and old-2026-05-30.
+
 ## 2.1.8 - 2026-10-11 - working - Japanese and Chinese wrap between characters
 
 ### Fixed

@@ -1,6 +1,6 @@
 ﻿ApocryphaRealm Menu Framework
 =============================
-Version 2.1.8
+Version 2.1.9
 
 An original, GPL-3.0-or-later in-game menu framework (embedding Dear ImGui) - a one-for-one
 replacement for SKSE Menu Framework's consumer surface, plus user-friendly features that do
@@ -52,6 +52,9 @@ reading.
 
 WHAT CHANGED
 ------------
+
+Version 2.1.9
+Every old FLICK mod build that could be proven now shows its page, not only Simple Timed Block: Stances NG 2.0.0, Critical Hit Tweaks 1.1.0-1.1.1, Inventory Limits 1.0.0 and 1.1.0, Static Regeneration 1.0.0 and 1.0.1, Global Variable Framework 1.0.3, Lurking Menace 4.0.0 and 4.0.1, Navigation Restrictions NG 3.0.0-3.0.2 and Exhausting Combat 1.0.0. FLICK changed its interface's order several times before its first release, so each of these is answered in its own build's order. Kill Feed 1.1.0 has its page again. Any other old FLICK build is still left unconnected (no page, no crash).
 
 Version 2.1.8
 Japanese and Chinese text wraps properly: the menu broke lines only at spaces, so a run of kana or hanzi was pushed whole onto the next line or cut at any character. A line now breaks between characters, with the Japanese rules for punctuation (no line starts with 。、」 or ー, none ends with 「). The Help page's Controller line now reads like the Mouse and Keyboard lines, and the Japanese Mods filter says キーワード. English and Korean wrap as before. Thanks to the Japanese player who sent the report.
