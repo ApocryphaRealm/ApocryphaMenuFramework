@@ -13,6 +13,7 @@
 #include "Settings.h"
 #include "Skin.h"
 #include "Strings.h"
+#include <cmath>
 #include <ctime>
 #include <filesystem>
 #include "Watchdog.h"
@@ -325,6 +326,62 @@ namespace devbenchtool
 				input::QueueMouseClick(static_cast<std::uint32_t>(button));
 				result = "{\"ok\":true,\"op\":\"click\",\"button\":" + std::to_string(button) + "}";
 			}
+			else if (op == "mousemove")
+			{
+				// 2.1.7: a RELATIVE mouse movement in raw mouse counts (args dx, dy), through the same record and scaling a
+				// real mouse takes - read state's cursor before and after to measure the pointer speed (pointer.scale px per
+				// count; the game's own menus move 1/1280 of the screen width per count x fMouseCursorSpeed).
+				const double dx = JsonNum(args, "dx", 0), dy = JsonNum(args, "dy", 0);
+				float cx = 0.0f, cy = 0.0f;
+				input::GetCursor(cx, cy);
+				input::QueueMouseMove(static_cast<float>(dx), static_cast<float>(dy));
+				result = "{\"ok\":true,\"op\":\"mousemove\",\"dx\":" + std::to_string(dx) + ",\"dy\":" + std::to_string(dy) +
+						 ",\"cursorBefore\":[" + std::to_string(static_cast<int>(cx)) + "," + std::to_string(static_cast<int>(cy)) +
+						 "],\"scale\":" + std::to_string(input::PointerScale()) + "}";
+			}
+			else if (op == "setting")
+			{
+				// 2.1.7: set one of the Settings > General values the settings page sets, and save the INI, exactly as the
+				// page's control does. args name: pointerSpeed (value 0.25-4.00) | wheelSwitchesTabs (0/1) | pauseGame (0/1).
+				// No name (or no value) just reports them. The write runs on the game's main thread, where the frame reads them.
+				const std::string name = JsonStr(args, "name");
+				const double value = JsonNum(args, "value", -1000.0);
+				bool ok = true;
+				std::string error;
+				if (!name.empty() && value > -999.0)
+				{
+					if (name != "pointerSpeed" && name != "wheelSwitchesTabs" && name != "pauseGame")
+					{
+						ok = false; error = "unknown setting '" + name + "' (pointerSpeed|wheelSwitchesTabs|pauseGame)";
+					}
+					else if (name == "pointerSpeed" && !(value >= 0.25 && value <= 4.0))
+					{
+						ok = false; error = "pointerSpeed takes 0.25-4.00";
+					}
+					else if (auto* task = SKSE::GetTaskInterface())
+					{
+						task->AddTask([name, value]() {
+							auto& v = settings::Get();
+							if (name == "pointerSpeed")     { v.pointerSpeed = static_cast<float>(std::round(value * 100.0) / 100.0); }
+							else if (name == "wheelSwitchesTabs") { v.wheelSwitchesTabs = value != 0.0; }
+							else                             { v.pauseGameWhileOpen = value != 0.0; }
+							logger::info("devbench: setting {} -> {} (saved)", name, value);
+							settings::Save();
+						});
+					}
+					else
+					{
+						ok = false; error = "no SKSE task interface";
+					}
+				}
+				const auto& v = settings::Get();
+				result = std::string("{\"ok\":") + (ok ? "true" : "false") + ",\"op\":\"setting\"" +
+						 (error.empty() ? std::string() : ",\"error\":\"" + error + "\"") +
+						 ",\"pointerSpeed\":" + std::to_string(v.pointerSpeed) +
+						 ",\"wheelSwitchesTabs\":" + (v.wheelSwitchesTabs ? "true" : "false") +
+						 ",\"pauseGame\":" + (v.pauseGameWhileOpen ? "true" : "false") +
+						 ",\"note\":\"a change is applied on the next game frame; read op=state or op=setting again\"}";
+			}
 			else if (op == "mouse")
 			{
 				// 2.1.1: press OR release a mouse button (args button, down true/false), so a test can drag - press on a
@@ -617,11 +674,17 @@ namespace devbenchtool
 			"open/blocking flags and view name, so a window latched open names itself; since 2.0.4 each also "
 			"carries acceptsMouse and submitted (the top-level ImGui windows it drew last frame: name, flags, "
 			"noMouseInputs, noInputs, pos, size), and consumerInput says whether a mod's window holds the "
-			"input (open, blocking AND a submitted window that takes the mouse).\","
+			"input (open, blocking AND a submitted window that takes the mouse). "
+			"2.1.7: mousemove queues a relative mouse movement in raw counts (args dx, dy) through the real pointer scaling; "
+			"setting sets pointerSpeed (0.25-4.00), wheelSwitchesTabs or pauseGame (0/1) and saves the INI (args name, value; "
+			"no args reports them); state carries pointer {speed, gameCursorSpeed, scale}, wheelSwitchesTabs, pauseGame and "
+			"pauseHeld (the game is paused by this menu now). The wheel over a mod's tabs: op=cursor onto the tab bar, then "
+			"op=inject device=mouse code=9 (down, next tab) or code=8 (up).\","
 			"\"inputSchema\":{\"type\":\"object\",\"properties\":{"
 			"\"op\":{\"type\":\"string\"},\"node\":{\"type\":\"string\"},"
 			"\"mod\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"position\":{\"type\":\"string\"},"
-			"\"id\":{\"type\":\"string\"},\"dir\":{\"type\":\"string\"},\"pane\":{\"type\":\"string\"}}},"
+			"\"id\":{\"type\":\"string\"},\"dir\":{\"type\":\"string\"},\"pane\":{\"type\":\"string\"},"
+			"\"dx\":{\"type\":\"number\"},\"dy\":{\"type\":\"number\"},\"value\":{\"type\":\"number\"}}},"
 			"\"readOnly\":false"
 			"}";
 

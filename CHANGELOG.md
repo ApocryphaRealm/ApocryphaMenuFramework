@@ -21,14 +21,18 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
-## 2.1.7 - 2026-10-08 - untested
+## 2.1.7 - 2026-10-10 - untested
 
 ### Fixed
 - A crash on load with a FLICK mod built against an old FLICK (Simple Timed Block, a Nexus crash log of 2026-10-08, AE 1.6.1170). FLICK's header changed its layout twice while still calling itself version 1; AMF called such a mod's Group() and ran its page drawing at load instead. A FLICK mod built before FLICK's 2026-05-28 header is now recognised from its own DLL and not hosted - its page is missing and the log says why - instead of crashing the game. Every FLICK drawing call made outside AMF's open menu now does nothing instead of crashing.
+- The menu's pointer was slower than the game's own menu cursor (Apparerus on Discord: 'much slower than in skyrim native menus'). The game moves its cursor 1/1280 of the screen's width per mouse count, times its own fMouseCursorSpeed setting (read from the game's code: MenuCursor's bounds and mouse handler); AMF moved it one pixel per count - 1.5x slower at 1920x1080, 3x slower at 4K. At Pointer speed 1.00 the pointer now moves exactly as fast as the game's cursor at any screen size, and follows the game's fMouseCursorSpeed if it was changed.
 
 ### Added
-- The mouse wheel over a mod's tabs steps to the next / previous tab (HadToRegister on Nexus). On by default; switch: Settings > General, [Menu] bWheelSwitchesTabs.
-- Pointer speed (Settings > General): how fast the mouse moves the menu's pointer, 0.25-4.00. The pointer now keeps pace with the screen size - at 4K it used to cross the screen at half the speed of 1080p (Apparerus on Discord: 'much slower than in skyrim native menus'). [Menu] fPointerSpeed, default 1.00.
+- The mouse wheel over a mod's tabs steps to the next / previous tab (HadToRegister on Nexus): wheel down opens the next tab, wheel up the previous one. Only while the pointer is over the tab bar - the wheel is taken before the page sees it, so the page under the bar does not scroll, and everywhere else the wheel scrolls lists as before. On by default; switch: Settings > General, [Menu] bWheelSwitchesTabs.
+- Pointer speed (Settings > General): how fast the mouse moves the menu's pointer, 0.25-4.00 in steps of 0.01, [Menu] fPointerSpeed, default 1.00.
+
+### Changed
+- DevBench (amf.menu): op=mousemove (a relative mouse movement in raw counts, through the real pointer scaling), op=setting (pointerSpeed / wheelSwitchesTabs / pauseGame, saved as the page saves them); op=state carries pointer {speed, gameCursorSpeed, scale}, wheelSwitchesTabs, pauseGame and pauseHeld.
 
 ## 2.1.6 - 2026-10-08 - working - the art library: build your own look; the Oblivion theme
 

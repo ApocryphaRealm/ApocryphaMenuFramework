@@ -56,6 +56,14 @@ namespace renderer
 	// here pauses the game. Atomic: published on the render thread, read on the input thread.
 	bool ConsumerWindowOwnsInput();
 
+	// 2.1.7: a wheel click at (a_x, a_y) in display pixels, a_step +1 = down (next tab), -1 = up. TRUE when the pointer is
+	// over the open mod's tab bar as drawn last frame - the step is then taken by the bar and the wheel must not reach
+	// ImGui (so the page does not scroll). Render thread only (the input drain, before ImGui::NewFrame).
+	bool WheelStepsModTabs(float a_x, float a_y, int a_step);
+
+	// 2.1.7: whether the game is paused by this menu right now (our own pause count is held), for the DevBench state.
+	bool PauseHeld();
+
 	// TRUE while an ImGui text field has the keyboard (io.WantTextInput), sampled once per frame.
 	// The input hook reads it on the game thread to turn the engine's own text entry on and off -
 	// without that the engine makes no CharEvent at all and every text box in the framework is

@@ -102,6 +102,7 @@ namespace renderer
 		// g_pauseHeld says whether this framework is holding one - so a close, a toggle flip or a save/load between
 		// them can never leave the game paused, or take a count some other menu holds.
 		bool g_pauseHeld = false;   // main thread only
+		std::atomic<bool> g_pauseHeldMirror{ false };   // 2.1.7: g_pauseHeld for the DevBench state (listener thread)
 		// NEVER TAKE ANOTHER MENU'S PAUSE COUNT (2.1.5, tested 2026-10-08): setting numPausesGame to 0 under the open journal, so
 		// a converted page's scripts could run, froze the game on the spot - no frame after it, the owner's cursor gone, the
 		// process killed. Only our own count is ever let go (a_lift).
@@ -135,6 +136,7 @@ namespace renderer
 				{
 					++ui->numPausesGame;
 					g_pauseHeld = true;
+					g_pauseHeldMirror.store(true, std::memory_order_relaxed);
 					logger::info("pause: game paused while the menu is open (pause count now {})", ui->numPausesGame);
 				}
 				else if (!own && g_pauseHeld)
@@ -144,6 +146,7 @@ namespace renderer
 						--ui->numPausesGame;
 					}
 					g_pauseHeld = false;
+					g_pauseHeldMirror.store(false, std::memory_order_relaxed);
 					logger::info("pause: released (menu closed, setting off, or a menu's scripts running) - game resumed (pause count now {})", ui->numPausesGame);
 				}
 			});
@@ -1214,6 +1217,13 @@ namespace renderer
 		bool g_bumperFocusMain = false;
 		bool g_bumperFocusInner = false;
 		int g_prevTabIndex = 0;     // the main bar's open tab last frame (g_tabIndex is re-measured from 0 every frame)
+		// 2.1.7 - THE WHEEL OVER A MOD'S TABS (HadToRegister, 2026-10-08). The bar's rect as last drawn and the frame it was
+		// drawn on (render thread only): the input drain, which runs before ImGui::NewFrame, asks WheelStepsModTabs whether the
+		// pointer is over it and, if so, leaves the step here instead of handing ImGui the wheel - so the page under the bar
+		// never also scrolls. The bar takes the step as it is drawn next.
+		ImVec2 g_pagesBarMin{ 0.0f, 0.0f }, g_pagesBarMax{ 0.0f, 0.0f };
+		int g_pagesBarFrame = -100;
+		int g_wheelTabStep = 0;     // +1 next tab, -1 previous; summed over this frame's wheel clicks
 
 		// Right before the main bar's tab number a_index is submitted: the highlight goes onto it when Y asked for that.
 		void FocusMainTabIfAsked(int a_index)
@@ -1760,8 +1770,8 @@ namespace renderer
 					logger::info("settings page: pointer speed -> {:.2f}", values.pointerSpeed);
 					settings::Save();
 				}
-				ImGui::TextWrapped("%s", TR("AMF_PointerSpeedHelp", "How fast the mouse moves this menu's pointer. 1.00 is the default, and it "
-								   "already keeps pace with your screen size: the same hand movement crosses the screen at 1080p and at 4K."));
+				ImGui::TextWrapped("%s", TR("AMF_PointerSpeedHelp", "How fast the mouse moves this menu's pointer. At 1.00 it moves exactly as "
+								   "fast as the game's own menu cursor, at any screen size; higher is faster, lower is slower."));
 				if (widgets::Toggle(TR("AMF_WheelTabs", "Mouse wheel switches a mod's tabs"), &values.wheelSwitchesTabs))
 				{
 					logger::info("settings page: mouse wheel switches tabs -> {}", values.wheelSwitchesTabs);
@@ -4294,22 +4304,31 @@ namespace renderer
 					else if (visiblePages.size() > 1 && ImGui::BeginTabBar("##pages",ImGuiTabBarFlags_FittingPolicyScroll | ImGuiTabBarFlags_TabListPopupButton))   // a mod with many sections keeps whole labels: the bar scrolls, and the list button on the left opens every section by name (Character Progression Control reached twelve tabs and the default policy squeezed them to "Level... Expe... Skills")
 					{
 						// 2.1.7 (HadToRegister, 2026-10-08: "have the mouse scroll wheel move the mod tabs left and right"):
-						// the wheel over the tab bar asks for the previous / next tab through the same one-frame request
-						// the D-pad uses, so a click, the D-pad and the wheel never fight. Wheel down = the next tab.
-						if (settings::Get().wheelSwitchesTabs && g_tabRequest < 0)
+						// the bar publishes where it is (WheelStepsModTabs reads it before the next frame's input reaches
+						// ImGui), and a wheel step taken over it asks for the previous / next tab through the same one-frame
+						// request the D-pad uses, so a click, the D-pad and the wheel never fight. Wheel down = the next tab.
+						// The open tab is LAST frame's (g_prevTabIndex): g_tabIndex is re-measured from 0 as the tabs draw.
+						if (const ImGuiTabBar* bar = ImGui::GetCurrentTabBar())
 						{
-							const ImGuiIO& wio = ImGui::GetIO();
-							const float wheel = wio.MouseWheel != 0.0f ? wio.MouseWheel : -wio.MouseWheelH;
-							const ImGuiTabBar* bar = ImGui::GetCurrentTabBar();
-							if (wheel != 0.0f && bar && ImGui::IsMouseHoveringRect(bar->BarRect.Min, bar->BarRect.Max, false))
+							g_pagesBarMin = bar->BarRect.Min;
+							g_pagesBarMax = bar->BarRect.Max;
+							g_pagesBarFrame = ImGui::GetFrameCount();
+						}
+						if (g_wheelTabStep != 0)
+						{
+							const int step = g_wheelTabStep;
+							g_wheelTabStep = 0;
+							const int last = static_cast<int>(visiblePages.size()) - 1;
+							const int want = std::clamp(g_prevTabIndex + step, 0, last);
+							if (g_tabRequest < 0 && want != g_prevTabIndex)
 							{
-								const int last = static_cast<int>(visiblePages.size()) - 1;
-								const int want = std::clamp(g_tabIndex + (wheel < 0.0f ? 1 : -1), 0, last);
-								if (want != g_tabIndex)
-								{
-									g_tabRequest = want;
-									logger::debug("tabs: mouse wheel -> tab {}", want);
-								}
+								g_tabRequest = want;
+								logger::debug("tabs: mouse wheel {} -> tab {} of {}", step > 0 ? "down" : "up", want + 1, last + 1);
+							}
+							else
+							{
+								logger::debug("tabs: mouse wheel {} at tab {} of {} - nothing to step to", step > 0 ? "down" : "up",
+											  g_prevTabIndex + 1, last + 1);
 							}
 						}
 						int index = 0;
@@ -4999,6 +5018,28 @@ namespace renderer
 		return g_consumerInput.load(std::memory_order_acquire);
 	}
 
+	bool PauseHeld()
+	{
+		return g_pauseHeldMirror.load(std::memory_order_relaxed);
+	}
+
+	bool WheelStepsModTabs(float a_x, float a_y, int a_step)
+	{
+		// Render thread, from the input drain before ImGui::NewFrame - so GetFrameCount() is still the frame that drew the bar.
+		// Our own menu only, and only a bar drawn on the last frame: a page without one leaves the wheel to scroll.
+		if (!g_windowVisible.load(std::memory_order_acquire) || ImGui::GetFrameCount() - g_pagesBarFrame > 1)
+		{
+			return false;
+		}
+		if (a_x < g_pagesBarMin.x || a_x > g_pagesBarMax.x || a_y < g_pagesBarMin.y || a_y > g_pagesBarMax.y)
+		{
+			return false;
+		}
+		g_wheelTabStep += a_step;
+		logger::debug("tabs: mouse wheel over the tab bar at ({:.0f}, {:.0f}) - step {} (the page does not scroll)", a_x, a_y, a_step);
+		return true;
+	}
+
 	// A page declares its own tab bar, and takes back the tab the D-pad asked for (-1 = nothing asked).
 	// Called from the page's render function, so it is already on the render thread inside the frame.
 	int DeclareInnerTabs(int a_count, int a_current)
@@ -5359,6 +5400,13 @@ namespace renderer
 			   ",\"name\":\"" + esc(settings::Get().toggleKey > 0 ? bindings::KeyName(static_cast<std::uint32_t>(settings::Get().toggleKey)) : std::string("none")) + "\"" +
 			   ",\"source\":\"" + settings::ToggleKeySourceName(settings::GetToggleKeySource()) + "\"}" +
 			   ",\"controllerMode\":" + (input::UsingController() ? "true" : "false") +
+			   // 2.1.7: the pointer speed (Settings > General) and what it works out to, the wheel-over-tabs switch, and the pause
+			   ",\"pointer\":{\"speed\":" + std::to_string(settings::Get().pointerSpeed) +
+			   ",\"gameCursorSpeed\":" + std::to_string(input::VanillaCursorSpeedSetting()) +
+			   ",\"scale\":" + std::to_string(input::PointerScale()) + "}" +
+			   ",\"wheelSwitchesTabs\":" + (settings::Get().wheelSwitchesTabs ? "true" : "false") +
+			   ",\"pauseGame\":" + (settings::Get().pauseGameWhileOpen ? "true" : "false") +
+			   ",\"pauseHeld\":" + (PauseHeld() ? "true" : "false") +
 			   ",\"lastDevice\":\"" + (input::LastDevice() == input::Device::kGamepad ? "gamepad" :
 										   input::LastDevice() == input::Device::kKeyboardMouse ? "keyboard" : "none") + "\"" +
 			   ",\"customOrder\":" + (personalization::IsCustomOrder() ? "true" : "false") +

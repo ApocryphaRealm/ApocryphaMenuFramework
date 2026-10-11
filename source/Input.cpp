@@ -244,6 +244,80 @@ namespace input
 		std::atomic<float> g_cursorMirrorX{ 0.0f };   // read by DevBench off-thread
 		std::atomic<float> g_cursorMirrorY{ 0.0f };
 
+		// THE GAME'S OWN MENU-CURSOR SPEED (2.1.7; Apparerus on Discord, 2026-10-08: "much slower than in skyrim native
+		// menus"). Read from SkyrimSE.exe 1.5.97 (the decrypted code dump, .tools\dumps): MenuCursor::SetCursorBounds
+		// (ID 80426) sets defaultMouseSpeed = (right - left) * (1/1280) from the screen's pixel bounds, and the mouse
+		// handler (ID 80427) moves the cursor by mouseInputX * defaultMouseSpeed * cursorSensitivity *
+		// fMouseCursorSpeed:Interface (cursorSensitivity is 1.0 outside the map; fMouseCursorSpeed ships 1.0). So the
+		// game moves its cursor 1/1280 of the screen's width per mouse count - 1.5 px at 1920 wide, 3 px at 3840 - while
+		// AMF up to 2.1.6 moved 1 px per count at every size: 1.5x slower than the game at 1080p, 3x at 4K.
+		float g_vanillaCursorSpeed = 1.0f;                // fMouseCursorSpeed:Interface; render thread
+		std::atomic<float> g_vanillaCursorSpeedMirror{ 1.0f };
+		std::atomic<float> g_pointerScaleMirror{ 1.0f };
+
+		// Re-read at every opening, so a player who changes the game's own setting gets the same speed here.
+		void ReadVanillaCursorSpeed()
+		{
+			constexpr const char* kName = "fMouseCursorSpeed:Interface";
+			RE::Setting* setting = nullptr;
+			const char* where = "";
+			if (auto* prefs = RE::INIPrefSettingCollection::GetSingleton())
+			{
+				setting = prefs->GetSetting(kName);
+				where = "SkyrimPrefs.ini";
+			}
+			if (!setting)
+			{
+				if (auto* ini = RE::INISettingCollection::GetSingleton())
+				{
+					setting = ini->GetSetting(kName);
+					where = "Skyrim.ini";
+				}
+			}
+			float value = 1.0f;
+			if (setting)
+			{
+				value = setting->GetFloat();
+			}
+			else
+			{
+				static bool warned = false;
+				if (!warned)
+				{
+					warned = true;
+					logger::warn("pointer: the game's {} was not found; using 1.0 (its shipped value) for the menu pointer", kName);
+				}
+			}
+			// 1.0 is the game's own default, so it is the safe fallback for a missing or absurd value
+			if (!(value >= 0.05f && value <= 20.0f))
+			{
+				logger::warn("pointer: the game's {} is {} - outside 0.05-20, using 1.0", kName, value);
+				value = 1.0f;
+			}
+			if (value != g_vanillaCursorSpeed || !setting)
+			{
+				logger::debug("pointer: the game's {} = {:.3f} ({})", kName, value, setting ? where : "not found");
+			}
+			g_vanillaCursorSpeed = value;
+			g_vanillaCursorSpeedMirror.store(value, std::memory_order_relaxed);
+		}
+
+		// Pixels per raw mouse count: the game's own menu-cursor speed for this display width, times Pointer speed.
+		float ComputePointerScale(float a_displayWidth)
+		{
+			const float vanilla = (a_displayWidth > 0.0f ? a_displayWidth / 1280.0f : 1.0f) * g_vanillaCursorSpeed;
+			const float scale = vanilla * settings::Get().pointerSpeed;
+			static float lastLogged = -1.0f;   // transitions only (rule 14)
+			if (std::fabs(scale - lastLogged) > 0.0005f)
+			{
+				lastLogged = scale;
+				logger::debug("pointer: {:.3f} px per mouse count (width {:.0f} / 1280 x game cursor speed {:.2f} x Pointer speed {:.2f})",
+							  scale, a_displayWidth, g_vanillaCursorSpeed, settings::Get().pointerSpeed);
+			}
+			g_pointerScaleMirror.store(scale, std::memory_order_relaxed);
+			return scale;
+		}
+
 		void Enqueue(const Record& a_record)
 		{
 			std::scoped_lock lock(g_queueLock);
@@ -960,10 +1034,10 @@ namespace input
 					NoteDevice(Device::kKeyboardMouse);
 				}
 			{
-				// 2.1.7: the raw counts are scaled to the screen's height (1080p = 1:1, as before; 4K = 2x, so the pointer
-				// crosses the screen in the same hand movement) and by the player's Pointer speed (Apparerus, 2026-10-08:
-				// "much slower than in skyrim native menus").
-				const float scale = (display.y > 0.0f ? display.y / 1080.0f : 1.0f) * settings::Get().pointerSpeed;
+				// 2.1.7: the raw counts move the pointer as far as they move the game's own menu cursor (see
+				// ReadVanillaCursorSpeed: 1/1280 of the screen's width per count x fMouseCursorSpeed), times the player's
+				// Pointer speed (Apparerus, 2026-10-08: "much slower than in skyrim native menus").
+				const float scale = ComputePointerScale(display.x);
 				g_cursorX += record.x * scale;
 				g_cursorY += record.y * scale;
 			}
@@ -989,6 +1063,14 @@ namespace input
 				}
 				break;
 			case Record::Kind::kMouseWheel:
+				// 2.1.7 (HadToRegister, 2026-10-08): with the pointer over a mod's tab bar the wheel steps the tabs instead -
+				// taken here, before ImGui sees it, so it never also scrolls the page under the bar. Anywhere else the
+				// wheel scrolls exactly as before.
+				if (record.y != 0.0f && settings::Get().wheelSwitchesTabs &&
+					renderer::WheelStepsModTabs(g_cursorX, g_cursorY, record.y < 0.0f ? 1 : -1))
+				{
+					break;
+				}
 				io.AddMouseWheelEvent(record.x, record.y);
 				break;
 			case Record::Kind::kKeyboard:
@@ -1146,6 +1228,8 @@ namespace input
 		g_cursorX = display.x * 0.5f;
 		g_cursorY = display.y * 0.5f;
 		ImGui::GetIO().AddMousePosEvent(g_cursorX, g_cursorY);
+		ReadVanillaCursorSpeed();   // 2.1.7: follow the game's own menu-cursor speed setting
+		ComputePointerScale(display.x);
 
 		// Nothing is held when the menu opens: a release that arrived while it was hidden is gone for good.
 		ImGui::GetIO().ClearInputKeys();
@@ -1218,6 +1302,21 @@ namespace input
 	void SetCursorAbsolute(float a_x, float a_y)
 	{
 		Enqueue({ Record::Kind::kCursorSet, 0, false, a_x, a_y });
+	}
+
+	void QueueMouseMove(float a_dx, float a_dy)
+	{
+		Enqueue({ Record::Kind::kMouseMove, 0, false, a_dx, a_dy });
+	}
+
+	float PointerScale()
+	{
+		return g_pointerScaleMirror.load(std::memory_order_relaxed);
+	}
+
+	float VanillaCursorSpeedSetting()
+	{
+		return g_vanillaCursorSpeedMirror.load(std::memory_order_relaxed);
 	}
 
 	void QueueMouseButton(std::uint32_t a_button, bool a_down)

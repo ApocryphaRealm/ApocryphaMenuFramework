@@ -77,7 +77,16 @@ namespace input
 	void InjectPress(std::uint32_t a_device, std::uint32_t a_code, int a_holdFrames);   // REAL engine event, ahead of the hook (0 kb, 1 mouse, 2 pad)
 	void InjectText(const std::string& a_utf8);                                        // REAL CharEvents, ahead of the hook
 	void QueueText(const std::string& a_utf8);      // one character record per byte (ASCII)
+	// 2.1.7: a RELATIVE mouse movement in raw mouse counts, queued as the same record the game's MouseMoveEvent becomes,
+	// so a driver can measure the pointer speed (cursor before / after) through the real scaling.
+	void QueueMouseMove(float a_dx, float a_dy);
 	void GetCursor(float& a_x, float& a_y);
+
+	// POINTER SPEED (2.1.7). Screen pixels the pointer moves per raw mouse count: the game's own menu-cursor speed
+	// (display width / 1280 x fMouseCursorSpeed:Interface, read from SkyrimSE.exe - see Input.cpp) times the player's
+	// [Menu] fPointerSpeed. Mirrors for the DevBench state; safe from any thread.
+	float PointerScale();
+	float VanillaCursorSpeedSetting();   // the game's fMouseCursorSpeed:Interface as last read (1.0 if it could not be)
 
 	// TRUE once for each B press made while an ImGui text field held the keyboard. That key is
 	// deliberately kept from ImGui - ImGui reads a gamepad cancel on a text field as "revert what

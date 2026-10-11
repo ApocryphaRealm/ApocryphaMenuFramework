@@ -104,8 +104,9 @@ namespace settings
 
 		// [Menu] fPointerSpeed (2.1.7; Apparerus on Discord, 2026-10-08: "it is much slower than in skyrim native menus";
 		// the owner: "ill add it in an update" / "along with dpi settings"). AMF's pointer is its own, moved by the mouse's
-		// raw counts - 1:1 in pixels, so at 4K it crossed the screen at half the speed of 1080p. The movement is now scaled
-		// to the screen's height (1080p unchanged), and this multiplies it: 0.25-4.00, 1.00 = the default.
+		// raw counts - 1 px per count up to 2.1.6, while the game's own menus move 1/1280 of the screen's width per count x
+		// fMouseCursorSpeed:Interface (read from SkyrimSE.exe, see Input.cpp): 1.5x faster at 1920 wide, 3x at 3840. The
+		// pointer now moves exactly as the game's cursor does, and this multiplies it: 0.25-4.00, 1.00 = the game's speed.
 		float pointerSpeed = 1.0f;
 		// [Menu] bWheelSwitchesTabs (2.1.7; HadToRegister on Nexus, 2026-10-08: "have the mouse scroll wheel move the mod
 		// tabs left and right"): the mouse wheel over a mod's tab bar steps to the previous / next tab. On by default -

@@ -1,6 +1,6 @@
 ﻿ApocryphaRealm Menu Framework
 =============================
-Version 2.1.6
+Version 2.1.7
 
 An original, GPL-3.0-or-later in-game menu framework (embedding Dear ImGui) - a one-for-one
 replacement for SKSE Menu Framework's consumer surface, plus user-friendly features that do
@@ -52,6 +52,9 @@ reading.
 
 WHAT CHANGED
 ------------
+
+Version 2.1.7
+The mouse moves the menu's pointer as fast as the game's own menu cursor: the game moves its cursor 1/1280 of the screen's width per mouse count, times its own mouse cursor speed setting, while AMF moved it one pixel per count - 1.5x slower at 1080p and 3x slower at 4K. New on Settings > General: Pointer speed (0.25-4.00, 1.00 = the game's speed) and "Mouse wheel switches a mod's tabs" (on by default) - with the pointer over a mod's tabs, wheel down opens the next tab and wheel up the previous one, without scrolling the page. A FLICK mod built against an old FLICK header is no longer hosted, instead of crashing the game on load. Thanks to Apparerus and HadToRegister for the suggestions.
 
 Version 2.1.6
 Build your own look: Appearance > Art picks each part of the menu for each theme from every theme's art - the frame, background, popups, highlight frame, boxes, buttons, tick boxes, switches, slider grabs, scroll bars, tabs, arrows, section lines and mouse pointer, five shapes of each with the default among them - on every page, every mod's included, and the on-screen keyboard; Colours tints them. New Oblivion theme: the Oblivion Remastered port's map-edge frame on parchment with a scroll-shaped switch. The slider in the Colours preview moves one step per press like every other slider, the Choose-menus help reads right again, and the in-game help covers the Window, Colours and Art pages.
