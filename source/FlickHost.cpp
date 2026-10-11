@@ -31,6 +31,17 @@
 #include <unordered_map>
 #include <vector>
 
+#include <intrin.h>
+#pragma intrinsic(_ReturnAddress)
+
+// the slot lists' constants (FLICK_API_VERSION_ANSWERED, FLICK_SLOT_COUNT, FLICK_SLOT_0227_COUNT) before their first use
+#define FLICK_SLOT(ret, name, params)
+#include "FlickSlots.inc"
+#undef FLICK_SLOT
+#define FLICK_SLOT_0227(ret, name, params)
+#include "FlickSlots0227.inc"
+#undef FLICK_SLOT_0227
+
 // See FlickHost.h. Plan: 4. plans\amf-flick\PLAN.md (sections 3-6). This file is the first cut (the plan's phases 1-2):
 // every one of the 259 slots answers - none is ever null (logic library 49: a null slot is a jump to address zero) -
 // the registration, display, IO, styling, layout, text, ID, interaction and widget slots do what FLICK's do on AMF's
@@ -49,9 +60,11 @@ namespace flick
 		// ---- the mods' pages ----------------------------------------------------------------------------------------
 		struct ToolRec
 		{
-			Tool*       tool = nullptr;
+			Tool*       tool = nullptr;       // what AMF calls: the mod's object, or the old-layout adapter around it
+			const void* original = nullptr;   // the mod's own object (the duplicate check)
 			std::string plugin, name, group, entry;
 			bool        listed = true;
+			bool        shownForTest = false;   // DevBench op=flick show: listed despite the one-entry rule (ShowCopy)
 			std::string dll;
 		};
 
@@ -72,30 +85,98 @@ namespace flick
 			return name;
 		}
 
-		// ---- mods built against an old FLICK header: refused, never called (2.1.7) ----------------------------------
-		// FLICK's header changed its ABI three times while still saying "version 1" (FLICK's own git history,
-		// 4. plans\amf-flick\flick): before 2026-05-28 ITool had no PluginName(), so every virtual sits one slot lower than
-		// AMF's flick::Tool, and before 2026-06-08 the C table was ordered differently from version 5's (from then on each
-		// version only appends). A mod built that way and answered by AMF calls the wrong functions and is called through
-		// the wrong slots: Simple Timed Block's Group() slot was its Draw(), run during RegisterTool with no ImGui window -
-		// a crash on load (Nexus report, 2026-10-08, AE 1.6.1170). FLICK itself does not check this.
-		// The header that added PluginName() also added `inline const char* g_pluginName = "UnknownPlugin";`, which every
-		// mod built with it carries in its read-only data. A DLL without that string predates the layout AMF speaks, so
-		// AMF refuses its tools and windows - a missing page instead of a crash - and says so in the log and the flick op.
+		// ---- mods built against an old FLICK header (2.1.7 refused them all; 2.1.8 hosts the ones it can prove) ------
+		// FLICK's header changed its ABI many times while still saying "version 1". The whole history, read from FLICK's
+		// own git history (4. plans\amf-flick\flick) and written down in 4. plans\amf-flick\ABI-HISTORY.md:
+		//
+		//   ITool (the page object) - the virtual functions in vtable order:
+		//     2025-11-27 .. 2026-02-15  ~, Name, Draw, OnOpen, OnClose, OnAsyncInput, ShowInSidebar                 (7)
+		//     2026-02-15 .. 2026-02-25  ~, Name, Group, Draw, OnOpen, OnClose, OnAsyncInput, ShowInSidebar          (8)
+		//     2026-02-25 .. 2026-05-28  ~, Name, Group, Draw, RenderOverlay, OnOpen, OnClose, OnAsyncInput,
+		//                               ShowInSidebar                                                                (9)
+		//     2026-05-28 (5dab6f0) ..   ~, PluginName, Name, Group, Draw, RenderOverlay, OnOpen, OnClose,
+		//                               OnAsyncInput, ShowInSidebar - AMF's flick::Tool                              (10)
+		//   The C table: 31 different orders between 2025-11-27 and 2026-06-08 (149 to 206 slots, slots inserted in the
+		//   middle, all "version 1"); from 2026-06-08 (6c802e1, 207 slots) every released header is a prefix of version 5's
+		//   259, so AMF's one table answers them all. (Two unreleased stretches broke that too: 2026-07-01..07-07, where
+		//   SetWindowFocus sat at 214 before SetHotkeyEnabled was put in front of it, and 2026-09-06's VSliderButton with
+		//   one bool fewer - each fixed before the next FLICK release.)
+		//
+		// A mod built that way and given AMF's table calls the wrong functions and is called through the wrong slots:
+		// Simple Timed Block's Group() slot was its Draw(), run during RegisterTool with no ImGui window - a crash on load
+		// (Nexus report, 2026-10-08, AE 1.6.1170). FLICK itself does not check this.
+		//
+		// WHAT A DLL SAYS ABOUT ITS HEADER (proved on real DLLs - ABI-HISTORY.md):
+		//   - "UnknownPlugin" (g_pluginName's default, added WITH PluginName() on 2026-05-28) in its read-only data:
+		//     built 2026-05-28 or later - the current ITool. (A build from 05-28 .. 06-08 also carries it, with one of
+		//     nine older table orders; nothing in such a DLL tells it apart from FLICK 1.0.0's own week of headers
+		//     (06-08 .. 06-14, which AMF answers correctly), so it is answered as current, as in 2.1.6 and 2.1.7.)
+		//   - no "UnknownPlugin" but the header's own "Connected to FUCK API version {}" (added 2026-02-10): a FLICK header
+		//     from 2026-02-10 .. 05-28 - the old ITool and one of 23 table orders. Which one is not written anywhere in
+		//     the DLL, so it is NOT guessed: AMF answers RequestFUCK with nothing for it - the header's own "FLICK is not
+		//     installed" path, which every FLICK mod handles - unless the DLL is a build listed below.
+		//   - KNOWN BUILDS (kKnown): an old-header DLL whose header was identified from its source and its binary, matched
+		//     by its PE header (time stamp, image size, entry point). It gets the table in its own header's order (generated
+		//     from that header into FlickSlots0227.inc by tools/gen-flick-slots.py - every slot bound by NAME to AMF's own
+		//     function) and its tools are called through OldTool0225 below, with PluginName() supplied from the DLL's name.
+		//   - neither string: a mod with its own FLICK client (Risa's All In One Menu) - AMF's current table, as before; a
+		//     tool registered from it without "UnknownPlugin" is refused (the 2.1.7 rule, kept as the backstop).
 		std::mutex g_abiLock;
-		std::map<HMODULE, bool> g_abiCurrent;   // module -> carries FLICK's "UnknownPlugin" default
 		std::set<std::string> g_refused;        // dlls refused this session (StatusJson)
 
-		HMODULE ModuleOf(const void* a_object)
+		enum class Abi
+		{
+			kCurrent,      // "UnknownPlugin": the current ITool, AMF's table
+			kOld0227,      // a known build with FLICK's 2026-02-27 header: the 0227 table, OldTool0225
+			kOldUnknown,   // an old header, build not known: not connected (RequestFUCK -> nullptr)
+			kNoMarker      // no FLICK header markers: its own client; AMF's table, tools refused
+		};
+		struct ModuleAbi
+		{
+			Abi         abi = Abi::kNoMarker;
+			std::string dll;     // lower case file name
+			std::string known;   // which known build, when kOld0227
+		};
+		std::map<HMODULE, ModuleAbi> g_abi;   // decided once per module, logged once
+
+		// Builds identified one by one (ABI-HISTORY.md, "Simple Timed Block"): its 2.2.0 source pins StyyxUtils 8919775,
+		// whose vendored FLICK header is FLICK's of 2026-02-27..03-24 (27e3db1) exactly; the DLLs (built 2026-04-18) hold
+		// "Connected to FUCK API version {}" and no "UnknownPlugin"; their BlockTool vtable has 9 entries (RTTI); and every
+		// slot index their code calls reads as one coherent settings page in that header's order (RegisterTool, SetMenuOpen,
+		// PushStyleVar, Button, Checkbox, SliderFloat, CollapsingHeader, SetTooltip) and as nonsense in the orders either
+		// side of it. Simple Timed Block 2.2.1, 2.2.2 and 2.3.0 ship these same two DLLs for SE and AE (2.3.0's new DLL
+		// is for Skyrim 1.7 only and carries the current header).
+		struct KnownBuild { const char* dll; std::uint32_t stamp, imageSize, entry; Abi abi; const char* what; };
+		constexpr KnownBuild kKnown[] = {
+			{ "simple-timed-block.dll", 0x69E30E1B, 0xFA000, 0x986B8, Abi::kOld0227, "Simple Timed Block 2.2.1-2.3.0 (SE build, FLICK header of 2026-02-27)" },
+			{ "simple-timed-block.dll", 0x69E30E97, 0xFB000, 0x99918, Abi::kOld0227, "Simple Timed Block 2.2.1-2.3.0 (AE build, FLICK header of 2026-02-27)" },
+		};
+
+		const char* AbiName(Abi a_abi)
+		{
+			switch (a_abi)
+			{
+			case Abi::kCurrent: return "current";
+			case Abi::kOld0227: return "old-2026-02-27";
+			case Abi::kOldUnknown: return "old-unknown";
+			default: return "no-marker";
+			}
+		}
+
+		HMODULE ModuleAt(const void* a_address)
 		{
 			HMODULE mod = nullptr;
-			const void* vtable = a_object ? *reinterpret_cast<void* const*>(a_object) : nullptr;
-			if (!vtable || !::GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-							   reinterpret_cast<LPCWSTR>(vtable), &mod))
+			if (!a_address || !::GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+								reinterpret_cast<LPCWSTR>(a_address), &mod))
 			{
 				return nullptr;
 			}
 			return mod;
+		}
+
+		HMODULE ModuleOf(const void* a_object)
+		{
+			return ModuleAt(a_object ? *reinterpret_cast<void* const*>(a_object) : nullptr);
 		}
 
 		// true when one of the module's readable, non-code sections holds a_text (with its terminating NUL)
@@ -119,14 +200,67 @@ namespace flick
 			return false;
 		}
 
-		bool BuiltForCurrentFlick(const void* a_object)
+		std::string DllName(HMODULE a_mod)
 		{
-			const HMODULE mod = ModuleOf(a_object);
-			if (!mod) { return false; }
+			if (!a_mod) { return {}; }
+			wchar_t path[MAX_PATH]{};
+			const auto len = ::GetModuleFileNameW(a_mod, path, MAX_PATH);
+			std::string name = std::filesystem::path(std::wstring(path, len)).filename().string();
+			std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+			return name;
+		}
+
+		// The module's FLICK header era (see above) - decided once per module, logged once (rule 14).
+		ModuleAbi AbiOfModule(HMODULE a_mod)
+		{
+			if (!a_mod) { return {}; }
+			{
+				std::lock_guard lock(g_abiLock);
+				if (const auto it = g_abi.find(a_mod); it != g_abi.end()) { return it->second; }
+			}
+			ModuleAbi m;
+			m.dll = DllName(a_mod);
+			const auto* base = reinterpret_cast<const std::uint8_t*>(a_mod);
+			const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
+			const auto* nt = dos->e_magic == IMAGE_DOS_SIGNATURE ? reinterpret_cast<const IMAGE_NT_HEADERS*>(base + dos->e_lfanew) : nullptr;
+			const std::uint32_t stamp = nt && nt->Signature == IMAGE_NT_SIGNATURE ? nt->FileHeader.TimeDateStamp : 0;
+			const std::uint32_t image = nt && nt->Signature == IMAGE_NT_SIGNATURE ? nt->OptionalHeader.SizeOfImage : 0;
+			const std::uint32_t entry = nt && nt->Signature == IMAGE_NT_SIGNATURE ? nt->OptionalHeader.AddressOfEntryPoint : 0;
+			const KnownBuild* known = nullptr;
+			for (const auto& k : kKnown)
+			{
+				if (m.dll == k.dll && stamp == k.stamp && image == k.imageSize && entry == k.entry) { known = &k; break; }
+			}
+			if (known)
+			{
+				m.abi = known->abi;
+				m.known = known->what;
+			}
+			else if (ModuleHasString(a_mod, "UnknownPlugin")) { m.abi = Abi::kCurrent; }
+			else if (ModuleHasString(a_mod, "Connected to FUCK API version {}")) { m.abi = Abi::kOldUnknown; }
+			else { m.abi = Abi::kNoMarker; }
+			switch (m.abi)
+			{
+			case Abi::kCurrent:
+				logger::info("flick: {} - FLICK header era: current (2026-05-28 or later) - AMF's table, version {}", m.dll, FLICK_API_VERSION_ANSWERED);
+				break;
+			case Abi::kOld0227:
+				logger::info("flick: {} - FLICK header era: 2026-02-27 (a known build: {}) - hosted through the old-layout adapter: the table "
+							 "in that header's order ({} slots), its pages called through the old ITool (no PluginName - the DLL's name stands in)",
+							 m.dll, m.known, FLICK_SLOT_0227_COUNT);
+				break;
+			case Abi::kOldUnknown:
+				logger::warn("flick: {} - FLICK header era: older than 2026-05-28, and not a build this menu knows (time stamp {:08X}, image "
+							 "size {:X}, entry {:X}). Its table order cannot be told from the DLL, so it is NOT connected - it runs as if FLICK "
+							 "were not installed (no page) rather than call the wrong functions. A rebuild of the mod against a current FLICK "
+							 "fixes it.", m.dll, stamp, image, entry);
+				break;
+			default:
+				logger::info("flick: {} - no FLICK header markers (a FLICK client of its own) - AMF's table; a page it registers is refused", m.dll);
+				break;
+			}
 			std::lock_guard lock(g_abiLock);
-			const auto it = g_abiCurrent.find(mod);
-			if (it != g_abiCurrent.end()) { return it->second; }
-			return g_abiCurrent[mod] = ModuleHasString(mod, "UnknownPlugin");
+			return g_abi.emplace(a_mod, m).first->second;
 		}
 
 		void Refuse(const std::string& a_dll, const char* a_what)
@@ -137,6 +271,46 @@ namespace flick
 			std::lock_guard lock(g_abiLock);
 			g_refused.insert(a_dll.empty() ? "?" : a_dll);
 		}
+
+		// FLICK's ITool as it was from 2026-02-25 to 2026-05-28 (ABI-HISTORY.md): no PluginName(), so every function sits one
+		// vtable slot lower than flick::Tool. Declared fresh from the layout (interface fact); AMF never constructs one.
+		class OldTool0225
+		{
+		public:
+			virtual ~OldTool0225() = default;
+			virtual const char* Name() const = 0;
+			virtual const char* Group() const = 0;
+			virtual void        Draw() = 0;
+			virtual void        RenderOverlay() = 0;
+			virtual void        OnOpen() = 0;
+			virtual void        OnClose() = 0;
+			virtual bool        OnAsyncInput(const void* a_events) = 0;
+			virtual bool        ShowInSidebar() const = 0;
+		};
+
+		// The adapter AMF calls in its place: every flick::Tool call goes to the same-named function of the old object;
+		// PluginName() - which that header did not have - answers the DLL's file name without ".dll" (Simple Timed Block's
+		// later builds name themselves "simple-timed-block", which is its DLL's name). Lives as long as the game, like the
+		// mod's own object.
+		class OldToolAdapter final : public Tool
+		{
+		public:
+			OldToolAdapter(OldTool0225* a_old, std::string a_plugin) : _old(a_old), _plugin(std::move(a_plugin)) {}
+			const char* PluginName() const override { return _plugin.c_str(); }
+			const char* Name() const override { return _old->Name(); }
+			const char* Group() const override { return _old->Group(); }
+			void        Draw() override { _old->Draw(); }
+			void        RenderOverlay() override { _old->RenderOverlay(); }
+			void        OnOpen() override { _old->OnOpen(); }
+			void        OnClose() override { _old->OnClose(); }
+			bool        OnAsyncInput(const void* a_events) override { return _old->OnAsyncInput(a_events); }
+			bool        ShowInSidebar() const override { return _old->ShowInSidebar(); }
+			const void* Original() const { return _old; }
+
+		private:
+			OldTool0225* _old;
+			std::string  _plugin;
+		};
 
 		// a pointer a mod returned as a C string: committed, readable memory, NUL-terminated within 512 bytes
 		bool IsCString(const char* a_p)
@@ -348,10 +522,29 @@ namespace flick
 		{
 			if (!a_tool) { return; }
 			ToolRec rec;
-			rec.tool = a_tool;
 			rec.dll = DllOf(a_tool);
-			// an old-header mod is refused before ANY of its virtuals is called (see BuiltForCurrentFlick)
-			if (!BuiltForCurrentFlick(a_tool)) { Refuse(rec.dll, "tool"); return; }
+			const void* original = a_tool;
+			// the module's header era decides how its object is called - before ANY of its virtuals is (see AbiOfModule)
+			const ModuleAbi abi = AbiOfModule(ModuleOf(a_tool));
+			if (abi.abi == Abi::kOld0227)
+			{
+				// the old ITool, through the adapter: PluginName from the DLL's name ("simple-timed-block.dll" -> "simple-timed-block")
+				std::string plugin = abi.dll;
+				if (plugin.size() > 4 && plugin.ends_with(".dll")) { plugin.resize(plugin.size() - 4); }
+				{
+					std::lock_guard lock(g_lock);
+					for (const auto& t : g_tools)
+					{
+						if (t.original == original) { logger::warn("flick: the same tool registered twice - ignored"); return; }
+					}
+				}
+				a_tool = new OldToolAdapter(reinterpret_cast<OldTool0225*>(a_tool), plugin);
+				logger::info("flick: {} registered a page built with FLICK's 2026-02-27 header - called through the old-layout adapter "
+							 "(PluginName \"{}\" from the DLL's name)", rec.dll, plugin);
+			}
+			else if (abi.abi != Abi::kCurrent) { Refuse(rec.dll, "tool"); return; }
+			rec.tool = a_tool;
+			rec.original = original;
 			// Name() and PluginName() first and checked, as FLICK does (FUCK-Man.cpp: a tool with either missing is refused)
 			const char* name = a_tool->Name();
 			const char* plugin = a_tool->PluginName();
@@ -374,7 +567,7 @@ namespace flick
 				std::lock_guard lock(g_lock);
 				for (const auto& t : g_tools)
 				{
-					if (t.tool == a_tool) { logger::warn("flick: the same tool registered twice - ignored"); return; }
+					if (t.original == original) { logger::warn("flick: the same tool registered twice - ignored"); return; }
 				}
 				g_tools.push_back(rec);
 			}
@@ -401,7 +594,9 @@ namespace flick
 		void RegisterWindow(Window* a_window)
 		{
 			if (!a_window) { return; }
-			if (!BuiltForCurrentFlick(a_window)) { Refuse(DllOf(a_window), "window"); return; }
+			// a window is only held (free windows are not drawn yet), and an old header's IWindow had other functions in other
+			// slots (no Id(), no PluginName() - ABI-HISTORY.md): only a current-era window's Id() and PluginName() are read
+			if (AbiOfModule(ModuleOf(a_window)).abi != Abi::kCurrent) { Refuse(DllOf(a_window), "window"); return; }
 			const char* id = a_window->Id();
 			const char* plugin = a_window->PluginName();
 			if (!IsCString(id) || !IsCString(plugin))
@@ -854,7 +1049,14 @@ namespace flick
 		void BeginDisabled(bool a_d) { ImGui::BeginDisabled(a_d); }
 		void EndDisabled() { ImGui::EndDisabled(); }
 		bool IsWidgetFocused(const char* a_id) { return a_id && ImGui::GetFocusID() == ImGui::GetID(a_id); }
-		void SetTooltip(const char* a_t) { ImGui::SetTooltip("%s", Tr(a_t ? a_t : "")); }
+		// The tooltip of the item before it, while that item is hovered or highlighted - AMF's help bar (or its popup), as
+		// HelpMarker. 2.1.8: it was ImGui's SetTooltip, unconditional - and a FLICK mod calls it after each control
+		// without checking hover (Simple Timed Block: one call per switch, slider and button), so the LAST call's text
+		// stood over the page all the time ("Reset Default Settings" over the switches, 2026-10-11 test).
+		void SetTooltip(const char* a_t)
+		{
+			if (a_t && *a_t) { helpbar::OfferForLastItem(Tr(a_t)); }
+		}
 		void Indent(float a_w) { ImGui::Indent(a_w); }
 		void Unindent(float a_w) { ImGui::Unindent(a_w); }
 		void Text(const char* a_t) { ImGui::TextUnformatted(Tr(a_t ? a_t : "")); }
@@ -1057,6 +1259,60 @@ namespace flick
 			static Interface s_table = MakeTable();
 			return s_table;
 		}
+
+		// ---- the old table: FLICK's 2026-02-27 header order (FlickSlots0227.inc, 162 slots, "version 1") -----------------
+		// Handed only to a known build of that header (kKnown). Every slot is bound BY NAME to the function AMF's own table
+		// holds for that name - the same answers, the same drawing guard, the same logged defaults - so the old order is the
+		// only thing that differs. Every old name exists in version 5 (ABI-HISTORY.md); one signature differs:
+		// StartBinding gained a trailing bool later, and AMF answers it with a default that reads no argument.
+#pragma pack(push, 1)
+		struct Interface0227
+		{
+			unsigned int version;
+#define FLICK_SLOT_0227(ret, name, params) ret(*name) params;
+#include "FlickSlots0227.inc"
+#undef FLICK_SLOT_0227
+		};
+#pragma pack(pop)
+		static_assert(sizeof(Interface0227) == 4 + FLICK_SLOT_0227_COUNT * sizeof(void*), "the 2026-02-27 table: a 4-byte version, then one pointer per slot");
+
+		template <class Old, class New>
+		void BindByName(Old& a_old, New a_new, const char* a_name)
+		{
+			if constexpr (std::is_same_v<Old, New>) { a_old = a_new; }
+			else
+			{
+				a_old = reinterpret_cast<Old>(a_new);
+				logger::debug("flick: old-table slot {} differs in signature from version 5's - bound to AMF's answer anyway (it reads no "
+							  "differing argument)", a_name);
+			}
+		}
+
+		Interface0227 MakeTable0227()
+		{
+			const Interface& now = Table();
+			Interface0227 t{};
+			t.version = 1;   // what that header calls itself, and the least it accepts
+#define FLICK_SLOT_0227(ret, name, params) BindByName(t.name, now.name, #name);
+#include "FlickSlots0227.inc"
+#undef FLICK_SLOT_0227
+			const auto* slots = reinterpret_cast<const unsigned char*>(&t) + 4;
+			for (int i = 0; i < FLICK_SLOT_0227_COUNT; ++i)
+			{
+				void* p = nullptr;
+				std::memcpy(&p, slots + i * sizeof(void*), sizeof(void*));
+				if (!p) { logger::critical("flick: old-table (2026-02-27) slot {} is EMPTY - a mod calling it would crash", i); }
+			}
+			logger::info("flick: the 2026-02-27 table is built - {} slots in that header's order, each bound by name to AMF's answer",
+						 FLICK_SLOT_0227_COUNT);
+			return t;
+		}
+
+		Interface0227& Table0227()
+		{
+			static Interface0227 s_table = MakeTable0227();
+			return s_table;
+		}
 		std::atomic<std::size_t> g_requests{ 0 };
 	}
 
@@ -1146,13 +1402,20 @@ namespace flick
 		for (const auto& [dll, toAmf] : g_consumers) { dlls.insert(dll); }
 		for (const auto& dll : g_leftNow) { dlls.insert(dll); }
 		for (const auto& dll : g_leftAtStart) { dlls.insert(dll); }
+		std::map<std::string, std::string> eras;   // dll -> "current" / "old-2026-02-27" / "old-unknown" / "no-marker"
+		{
+			std::lock_guard abiLock(g_abiLock);
+			for (const auto& [mod, m] : g_abi) { eras[m.dll] = AbiName(m.abi); }
+		}
 		std::vector<Consumer> out;
 		for (const auto& dll : dlls)
 		{
 			const auto it = g_consumers.find(dll);
 			std::string name = shown.contains(dll) ? shown[dll] : std::string{};
 			if (name.empty()) { if (const auto n = g_names.find(dll); n != g_names.end()) { name = n->second; } }
-			out.push_back({ dll, name, it != g_consumers.end() ? it->second : !g_leftAtStart.contains(dll), g_leftNow.contains(dll) });
+			Consumer c{ dll, name, it != g_consumers.end() ? it->second : !g_leftAtStart.contains(dll), g_leftNow.contains(dll) };
+			if (const auto e = eras.find(dll); e != eras.end()) { c.era = e->second; }
+			out.push_back(std::move(c));
 		}
 		return out;
 	}
@@ -1176,7 +1439,7 @@ namespace flick
 			std::lock_guard lock(g_lock);
 			for (auto& t : g_tools)
 			{
-				if (!t.listed) { continue; }
+				if (!t.listed || t.shownForTest) { continue; }
 				const std::string base = t.entry.substr(0, t.entry.size() - std::string(" (FLICK)").size());
 				if (own.contains(base))
 				{
@@ -1187,6 +1450,26 @@ namespace flick
 			}
 		}
 		for (const auto& [entry, page] : hide) { registry::SetPageVisible(entry.c_str(), page.c_str(), false); }
+	}
+
+	// DevBench op=flick show (rule 64, 2.1.8): list a FLICK copy the one-entry rule hid, for this session only - so a test can
+	// draw and drive the FLICK page of a mod that also has its own page here (Simple Timed Block registers both). Not saved.
+	int ShowCopy(const std::string& a_entry)
+	{
+		std::vector<std::string> pages;
+		{
+			std::lock_guard lock(g_lock);
+			for (auto& t : g_tools)
+			{
+				if (t.entry != a_entry) { continue; }
+				t.listed = true;
+				t.shownForTest = true;
+				pages.push_back(t.name.empty() ? "Settings" : t.name);
+			}
+		}
+		for (const auto& p : pages) { registry::SetPageVisible(a_entry.c_str(), p.c_str(), true); }
+		logger::info("flick: DevBench show - \"{}\" listed for this session ({} page(s)) despite the one-entry rule", a_entry, pages.size());
+		return static_cast<int>(pages.size());
 	}
 
 	void EndFrame()
@@ -1254,15 +1537,20 @@ namespace flick
 									 i.focused ? "true" : "false", i.hovered ? "true" : "false", i.value ? "true" : "false");
 			}
 		}
-		std::string refused;
+		std::string refused, modules;
 		{
 			std::lock_guard lock(g_abiLock);
 			for (const auto& r : g_refused) { refused += std::format(R"({}"{}")", refused.empty() ? "" : ",", esc(r)); }
+			// 2.1.8: each module that asked for FLICK, and the header era it was answered by (rule 14 / rule 64)
+			for (const auto& [mod, m] : g_abi)
+			{
+				modules += std::format(R"({}{{"dll":"{}","era":"{}","known":"{}"}})", modules.empty() ? "" : ",", esc(m.dll), AbiName(m.abi), esc(m.known));
+			}
 		}
-		return std::format(R"({{"host":{},"version":{},"slots":{},"requests":{},"realFlick":{},"tools":[{}],"windows":{},"active":"{}","items":[{}],"notAnswered":[{}],"refusedOldHeader":[{}]}})",
+		return std::format(R"({{"host":{},"version":{},"slots":{},"requests":{},"realFlick":{},"tools":[{}],"windows":{},"active":"{}","items":[{}],"notAnswered":[{}],"refusedOldHeader":[{}],"modules":[{}]}})",
 						   Enabled() ? "true" : "false", FLICK_API_VERSION_ANSWERED, FLICK_SLOT_COUNT, g_requests.load(),
 						   g_realFlick ? "true" : "false", tools, windows, g_active ? esc(g_active->Name() ? g_active->Name() : "") : "", items, notes,
-						   refused);
+						   refused, modules);
 	}
 }
 
@@ -1270,6 +1558,24 @@ extern "C" __declspec(dllexport) void* RequestFUCK()
 {
 	if (!flick::Enabled()) { return nullptr; }
 	const auto n = flick::g_requests.fetch_add(1) + 1;
-	logger::info("flick: RequestFUCK -> AMF's table (version {}), request #{}", FLICK_API_VERSION_ANSWERED, n);
-	return &flick::Table();
+	// 2.1.8: the table the CALLER was built for - the header's Connect() calls this from inside the mod, so the return
+	// address is in the mod's own module, and its header era (AbiOfModule, logged once per module) picks the answer
+	const HMODULE caller = flick::ModuleAt(_ReturnAddress());
+	const auto abi = flick::AbiOfModule(caller);
+	switch (abi.abi)
+	{
+	case flick::Abi::kOld0227:
+		logger::info("flick: RequestFUCK from {} -> the 2026-02-27 table (old order, version 1), request #{}", abi.dll, n);
+		return &flick::Table0227();
+	case flick::Abi::kOldUnknown:
+		logger::info("flick: RequestFUCK from {} -> nothing (an old FLICK header this menu cannot place - see above), request #{}", abi.dll, n);
+		{
+			std::lock_guard lock(flick::g_abiLock);
+			flick::g_refused.insert(abi.dll.empty() ? "?" : abi.dll);
+		}
+		return nullptr;
+	default:
+		logger::info("flick: RequestFUCK from {} -> AMF's table (version {}), request #{}", abi.dll.empty() ? "?" : abi.dll, FLICK_API_VERSION_ANSWERED, n);
+		return &flick::Table();
+	}
 }

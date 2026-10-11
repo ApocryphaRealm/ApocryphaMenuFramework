@@ -85,6 +85,8 @@ namespace flick
 	// For the settings page and DevBench: the connected FLICK mods and their pages, and the calls AMF declined or does not
 	// do yet (each logged once per mod).
 	std::string StatusJson();
+	// DevBench op=flick show (2.1.8): list a FLICK copy the one-entry rule hid, for this session; returns its page count.
+	int ShowCopy(const std::string& a_entry);
 	struct ToolInfo
 	{
 		std::string plugin, name, group, entry;
@@ -115,10 +117,15 @@ namespace flick
 		std::string name;    // shown name: its page group/name, or the one kept with the choice; empty when never seen
 		bool toAmf = true;   // where it went this session
 		bool leftToFlick = false;   // the choice saved now (may differ until a restart)
+		// 2.1.8: the FLICK header the DLL was built with (FlickHost.cpp, AbiOfModule) - "current", "old-2026-02-27" (a known
+		// old build, hosted through the old-layout adapter), "old-unknown" (an old header this menu cannot place: not
+		// connected), "no-marker" (its own FLICK client); empty until the DLL asks for FLICK's table
+		std::string era;
 	};
 	// Every FLICK mod seen this session or left to FLICK, by DLL name.
 	std::vector<Consumer> Consumers();
 }
 
-// The export a FLICK mod asks for. Returns AMF's table (version 5).
+// The export a FLICK mod asks for. Returns AMF's table (version 5) - or, by the CALLING module's header era (2.1.8), the
+// table in a known old build's own order, or nothing for an old header this menu cannot place (FlickHost.cpp).
 extern "C" __declspec(dllexport) void* RequestFUCK();

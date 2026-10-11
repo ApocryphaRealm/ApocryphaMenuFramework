@@ -2451,6 +2451,17 @@ namespace renderer
 									ImGui::TextDisabled("(%s)", c.dll.c_str());
 								}
 								ImGui::Indent();
+								// 2.1.8: a mod built with an older FLICK - hosted through the old-layout adapter, or not connected
+								if (c.era == "old-2026-02-27" || c.era == "old-unknown")
+								{
+									ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
+									ImGui::TextWrapped("%s", c.era == "old-unknown" ?
+										TR("AMF_FlickOldRefused", "Built for an older FLICK that this menu cannot read safely, so it is not connected and has no "
+											"page. An update of the mod built for the current FLICK fixes it.") :
+										TR("AMF_FlickOldHosted", "Built for an older FLICK (before 28 May 2026). Its page is shown here through a "
+											"compatibility layer."));
+									ImGui::PopStyleColor();
+								}
 								if (c.leftToFlick == c.toAmf)
 								{
 									ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());

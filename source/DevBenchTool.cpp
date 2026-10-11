@@ -161,6 +161,8 @@ namespace devbenchtool
 				// {"op":"flick","dll":"<mod>.dll","place":"amf"|"flick"} sets the per-mod choice (applies from the next start).
 				const std::string dll = JsonStr(args, "dll");
 				const std::string place = JsonStr(args, "place");
+				// 2.1.8: {"op":"flick","show":"<entry> (FLICK)"} lists a FLICK copy the one-entry rule hid, for this session
+				if (const std::string show = JsonStr(args, "show"); !show.empty()) { flick::ShowCopy(show); }
 				if (!dll.empty() && (place == "amf" || place == "flick"))
 				{
 					std::string shown;
@@ -172,7 +174,7 @@ namespace devbenchtool
 				{
 					if (consumers.size() > 1) { consumers += ","; }
 					consumers += "{\"dll\":\"" + c.dll + "\",\"name\":\"" + c.name + "\",\"toAmf\":" + (c.toAmf ? "true" : "false") +
-								 ",\"leftToFlick\":" + (c.leftToFlick ? "true" : "false") + "}";
+								 ",\"leftToFlick\":" + (c.leftToFlick ? "true" : "false") + ",\"era\":\"" + c.era + "\"}";
 				}
 				consumers += "]";
 				const std::string status = flick::StatusJson();
