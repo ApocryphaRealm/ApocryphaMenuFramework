@@ -13,7 +13,9 @@ if ("docking-experimental" IN_LIST FEATURES)
         SHA512 2f296c189b82007990e016e248bb4a3ade9e51669a0e8c632be35defb8a3a834118b78468be4a2615c63f5a1398dfdea28a2028d420e2537a54b5bf531a5430b
         # AMF 2.1.6 - the art hooks (imgui_internal.h GImGuiArtHook): Appearance > Art draws its parts in place of
         # ImGui's boxes, buttons, tick boxes, slider grabs, scroll bars, section lines, tabs, arrows and popups.
-        PATCHES amf-art-hooks.patch
+        # AMF 2.1.8 - CJK line breaking (amf-cjk-wrap.patch, ImFont::CalcWordWrapPositionA): Japanese and Chinese break
+        # between characters with the kinsoku rules instead of only at spaces; text with no CJK wraps as before.
+        PATCHES amf-art-hooks.patch amf-cjk-wrap.patch
         HEAD_REF docking
     )
 else()

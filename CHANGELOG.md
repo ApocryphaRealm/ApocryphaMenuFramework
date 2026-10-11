@@ -21,6 +21,15 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## 2.1.8 - 2026-10-11 - working - Japanese and Chinese wrap between characters
+
+### Fixed
+- Help > Controls: in Japanese the Controller bullet broke right after its colon while the Mouse and Keyboard bullets ran on - it was the line breaker moving the whole unspaced sentence down. The three bullets now read the same way.
+- Japanese and Chinese text now wraps between characters (a Japanese player's report). The menu's line breaker - Dear ImGui's, used by every wrapped text in the framework and in the mods it hosts - broke a line only at a space, so a long run of kana or hanzi was pushed whole onto the next line, leaving the line before it half empty, and a run longer than a line was cut at any character, so a line could start with a comma or the long-vowel mark. A line may now break between any two characters when either is Japanese or Chinese, with the kinsoku rules: no line starts with closing punctuation, a small kana or the long-vowel mark, and none ends with an opening bracket. A number is never split either: "1.00" no longer breaks after its point ("1." / "00", seen in Japanese beside the new break points; ImGui allowed it in any language). Korean (which spaces its words) and English text wrap as before.
+
+### Changed
+- Japanese: the Mods filter calls its words keywords (the same player): the eight filter texts say キーワード where they said 語.
+
 ## 2.1.7 - 2026-10-10 - working - pointer at the game's own cursor speed; the wheel steps a mod's tabs
 
 ### Fixed
