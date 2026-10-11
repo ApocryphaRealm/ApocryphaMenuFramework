@@ -21,7 +21,7 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
-## 2.1.7 - 2026-10-10 - untested
+## 2.1.7 - 2026-10-10 - working - pointer at the game's own cursor speed; the wheel steps a mod's tabs
 
 ### Fixed
 - A crash on load with a FLICK mod built against an old FLICK (Simple Timed Block, a Nexus crash log of 2026-10-08, AE 1.6.1170). FLICK's header changed its layout twice while still calling itself version 1; AMF called such a mod's Group() and ran its page drawing at load instead. A FLICK mod built before FLICK's 2026-05-28 header is now recognised from its own DLL and not hosted - its page is missing and the log says why - instead of crashing the game. Every FLICK drawing call made outside AMF's open menu now does nothing instead of crashing.
