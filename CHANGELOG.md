@@ -21,6 +21,17 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## Draft (themes-draft branch, not released) - five themes matching the major UI overhauls, for review
+
+* **New themes under Appearance > Theme:** Dragonborn, Edge, Nordic, Dear Diary and Dear Diary - Dark. Each has its own
+  palette and its own part in every kind of the art library: frame, switch and knob, boxes, buttons, tick boxes,
+  slider grab and track, scroll bar and track, tabs, section line, arrows and pointer. Dear Diary and Dear Diary - Dark
+  also have a background.
+  Drawn by `tools/make-overhaul-themes.py`. Nordic's corner ornament and the Dear Diary frames and backgrounds are
+  their authors' own art, used with credit (NOTICE.md). Dragonborn and Edge are drawn from scratch.
+* Art page: every word of a part's name is capitalised ("Dear Diary Dark").
+* Help: the theme line lists the new themes, in all eleven languages.
+
 ## 2.1.9 - 2026-10-11 - working - every proven old FLICK build hosted
 
 ### Added
