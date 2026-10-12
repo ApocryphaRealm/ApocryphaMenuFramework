@@ -30,7 +30,7 @@ namespace inicore
 
 	// THE SHOWN NAME (the owner, 2026-10-12, on Back Pocket For Controller's page: "there are underscores in between words
 	// instead of spaces"). Only what is SHOWN: the file is read and written by its own key and section names, unchanged.
-	//   "toggle_item_scan_code" -> "toggle item scan code"     "UnpocketHoldTime" -> "Unpocket Hold Time"
+	//   "toggle_item_scan_code" -> "Toggle item scan code"     "UnpocketHoldTime" -> "Unpocket Hold Time"
 	//   "FPSLimit" -> "FPS Limit" (an acronym stays whole)      "EnableVSync" -> "Enable VSync" (a two-capital run stays whole)
 	//   a_key: a key's one-letter or two-letter type prefix before a capital is dropped - b, i, u, f, s, fl, sz
 	//   ("bRequireFavourite" -> "Require Favourite", "uLogLevel" -> "Log Level"). Not for sections or file names, where a
@@ -74,7 +74,18 @@ namespace inicore
 			out += c;
 		}
 		while (!out.empty() && out.back() == ' ') { out.pop_back(); }
-		return out.empty() ? a_name : out;
+		if (out.empty()) { return a_name; }
+		// THE FIRST WORD STARTS WITH A CAPITAL (the owner, 2026-10-12: "toggle item scan code" -> "Toggle item scan code").
+		// Only its first letter, and only when that word is all small letters: the rest stays as written, and a word with a
+		// capital of its own ("iEquip", "moreHUD") is a name, kept as it is.
+		{
+			const std::size_t end = std::min(out.find(' '), out.size());
+			if (lower(out[0]) && std::none_of(out.begin() + 1, out.begin() + static_cast<std::ptrdiff_t>(end), upper))
+			{
+				out[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(out[0])));
+			}
+		}
+		return out;
 	}
 
 	// A MOD'S OWN PAGE TAKES ITS INI PAGE AWAY (next after 2.1.9; the 2026-10-12 test: Lock Interaction Overhaul registers as

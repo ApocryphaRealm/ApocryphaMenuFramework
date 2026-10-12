@@ -1280,16 +1280,18 @@ namespace renderer
 					}
 				}
 
-				theme::Apply();
-				// Again now the theme registry exists: the first Reload above ran before theme::Apply
-				// had registered anything, so an active theme's own art is only found on this one.
-				skin::Reload();
-
+				// The display's scale first: theme::Apply builds the whole style at it (v4, ThemeStyle.h), so start-up and every
+				// later theme switch give the same sizes.
 				g_uiScale =window.windowHeight > 0 ? static_cast<float>(window.windowHeight) / 1080.0f : 1.0f;
 				if (g_uiScale < 1.0f)
 				{
 					g_uiScale = 1.0f;  // never shrink below the 1080p baseline
 				}
+
+				theme::Apply();
+				// Again now the theme registry exists: the first Reload above ran before theme::Apply
+				// had registered anything, so an active theme's own art is only found on this one.
+				skin::Reload();
 
 				// Text is rasterised at native size for this display (see BuildFonts) rather than
 				// magnifying the built-in bitmap font, which is what made it look pixelated.
@@ -1297,7 +1299,7 @@ namespace renderer
 				BuildFonts();
 				watchdog::Init();
 				{ std::string why; watchdog::InstallFastExit(why); }
-				ImGui::GetStyle().ScaleAllSizes(g_uiScale);
+				// (the style was scaled by theme::Apply above - ThemeStyle.h; scaling it here again would scale it twice)
 
 				ImGui::GetIO().IniFilename = "Data/SKSE/Plugins/ApocryphaMenuFramework_layout.ini";
 

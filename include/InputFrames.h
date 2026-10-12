@@ -47,4 +47,43 @@ namespace inputframes
 		}
 		a_drain.swap(kept);
 	}
+
+	// A GAME BUTTON EVENT AS AN EDGE (next after 2.1.9, v4; the v3 test: every 10 ms click lost its release, 0 of 5).
+	// The game's mouse device polls DirectInput's state once a frame (BSWin32MouseDevice keeps a previous and a next
+	// DIMOUSESTATE2) and makes a ButtonEvent from each change: the press with value 1 and heldDownSecs 0, the release with
+	// value 0 and the time the button was seen held. A button that goes up before the next poll after its press - a click
+	// shorter than about a frame - was never seen held, so its release carries heldDownSecs 0 as well. CommonLib's IsUp() is
+	// "value 0 AND held time above 0", so that release was neither IsDown() nor IsUp(), and the transitions-only filter
+	// dropped it: the press reached ImGui, the release never did, and the button stayed down.
+	// So a release is decided by the VALUE: value 0 for a button whose press this framework passed on (a_fedDown) is its
+	// release, whatever its held time. A press stays "value above 0 with no held time", and a held repeat is neither.
+	enum class Edge : std::uint8_t
+	{
+		kNone,
+		kPress,
+		kRelease
+	};
+
+	inline Edge ButtonEdge(float a_value, float a_heldSecs, bool a_fedDown)
+	{
+		if (a_value > 0.0f) { return a_heldSecs == 0.0f ? Edge::kPress : Edge::kNone; }
+		return (a_fedDown || a_heldSecs > 0.0f) ? Edge::kRelease : Edge::kNone;
+	}
+
+	// The buttons whose press was passed on and whose release has not been, by key (device and code). One thread only.
+	class FedButtons
+	{
+	public:
+		Edge Feed(std::uint64_t a_key, float a_value, float a_heldSecs)
+		{
+			const auto it = std::find(_down.begin(), _down.end(), a_key);
+			const Edge e = ButtonEdge(a_value, a_heldSecs, it != _down.end());
+			if (e == Edge::kPress && it == _down.end()) { _down.push_back(a_key); }
+			else if (e == Edge::kRelease && it != _down.end()) { _down.erase(it); }
+			return e;
+		}
+
+	private:
+		std::vector<std::uint64_t> _down;
+	};
 }

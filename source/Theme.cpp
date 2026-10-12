@@ -4,6 +4,7 @@
 
 #include "Renderer.h"
 #include "Settings.h"
+#include "ThemeStyle.h"
 #include "utils/Logger.h"
 
 #include <imgui.h>
@@ -31,11 +32,14 @@ namespace theme
 		std::uint32_t g_roleU32[kRoleCount] = {};
 		std::uint32_t g_themeRoleU32[kRoleCount] = {};
 
-		// Control outlines (next after 2.1.9, the owner 2026-10-12): never thinner than one pixel, and never closer to the panel
-		// or a control's face than this contrast ratio (WCAG's, 1 = identical, 21 = black on white). The package gate's
-		// theme-outline-gate.py holds the same figure and the same sum.
-		constexpr float kMinOutlineWidth = 1.0f;
-		constexpr float kMinOutlineContrast = 2.0f;
+		// Control outlines (next after 2.1.9, the owner 2026-10-12): never thinner than one pixel (themestyle::kMinOutlineWidth),
+		// and never closer to the panel or a control's face than this contrast ratio (WCAG's, 1 = identical, 21 = black on
+		// white). The package gate's theme-outline-gate.py holds the same figure and the same sum.
+		// v4 (the owner, 2026-10-12: outlines "faint" in Oblivion and Dear Diary, "at least visible"): 2.0 -> 4.5. WCAG's 3:1
+		// (non-text contrast, 1.4.11) is the floor for a component's boundary, but this outline is a one-pixel hairline that
+		// does not grow with the display (1 px at 1800p), and a stroke that thin reads like text, so it is held to text's 4.5:1
+		// (1.4.3). At 3:1 the two themes reported faint would still have passed (Dear Diary 3.4, Oblivion 3.6 on its parchment).
+		constexpr float kMinOutlineContrast = 4.5f;
 
 		float Luminance(const ImVec4& a_c)
 		{
@@ -685,10 +689,6 @@ namespace theme
 		const Palette& active = GetActiveTheme();
 
 		ImGuiStyle& style = ImGui::GetStyle();
-		style.WindowBorderSize = active.borderThickness;
-		style.FrameBorderSize = std::max(kMinOutlineWidth, active.borderThickness);   // every control keeps an outline (see below)
-		style.PopupBorderSize = active.borderThickness;
-		style.ChildBorderSize = active.borderThickness;
 
 		// MARGINS FOR THE KNOTWORK ART (author, 2026-09-01, comparing Vanilla against Untarnished:
 		// "the Skyrim theme doesn't let them fully see all the corners and lines of a box with a
@@ -705,11 +705,13 @@ namespace theme
 		// the figure - its corner ornament is a fixed 26px band inside whatever rect it frames - but
 		// applying it to the plain themes too keeps the layout identical whichever theme is picked,
 		// so switching theme changes the colours and the art, never the geometry.
+		//
+		// v4: THE WHOLE STYLE IS BUILT AGAIN ON EVERY APPLY (ThemeStyle.h) - ImGui's defaults, these sizes, the borders (every
+		// control keeps an outline of at least one pixel), then the display's scale once. Until v4 start-up scaled the style
+		// once after the first Apply, and every theme switch wrote the padding back unscaled over an otherwise scaled style:
+		// the window padding shrank on any display taller than 1080 until a relaunch (Norden - Black, the v3 test).
 		constexpr float kFramePadding = static_cast<float>(knotwork::kCorner) + 8.0f;
-		style.WindowPadding = ImVec2(kFramePadding, kFramePadding);
-		style.TabBorderSize = std::max(kMinOutlineWidth, active.borderThickness);
-		style.WindowRounding = 0.0f;
-		style.FrameRounding = 0.0f;
+		themestyle::Build(style, active.borderThickness, kFramePadding, renderer::UiScale());
 
 		{
 			static const std::array<std::string, kRoleCount> kNone{};

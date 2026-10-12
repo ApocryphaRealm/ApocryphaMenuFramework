@@ -100,7 +100,7 @@ int main(int argc, char** argv)
 
 	std::cout << "== labels: the asked-for cases\n";
 	Expect("UnpocketHoldTime", true, "Unpocket Hold Time");
-	Expect("toggle_item_scan_code", true, "toggle item scan code");
+	Expect("toggle_item_scan_code", true, "Toggle item scan code");   // the first word capitalised, the rest as written
 	Expect("bEnableX", true, "Enable X");
 	Expect("FPSLimit", true, "FPS Limit");
 	Expect("fHoldSeconds", true, "Hold Seconds");
@@ -110,11 +110,11 @@ int main(int argc, char** argv)
 	Expect("flSpeed", true, "Speed");
 	Expect("szPath", true, "Path");
 	Expect("fLevel", true, "Level");               // "f" then a capital, not "fl"
-	Expect("b", true, "b");                         // a prefix alone stays
+	Expect("b", true, "B");                         // a prefix alone stays (a first word, so capitalised)
 	Expect("bX", true, "X");
-	Expect("bool_value", true, "bool value");       // no capital after the letter: not a prefix
-	Expect("my__double___gap", true, "my double gap");
-	Expect("_edge_", true, "edge");
+	Expect("bool_value", true, "Bool value");       // no capital after the letter: not a prefix
+	Expect("my__double___gap", true, "My double gap");
+	Expect("_edge_", true, "Edge");
 	Expect("Already Spaced", true, "Already Spaced");
 	Expect("Spaced_and under", true, "Spaced and under");
 	Expect("EnableVSync", true, "Enable VSync");
@@ -125,12 +125,13 @@ int main(int argc, char** argv)
 	Expect("LocalizedDamage:Global:Head", false, "Localized Damage:Global:Head");
 	std::cout << "== labels: names (sections and files - no type prefix dropped)\n";
 	Expect("BackPocketForController", false, "Back Pocket For Controller");
-	Expect("po3_MagicSneakAttacks", false, "po3 Magic Sneak Attacks");
+	Expect("po3_MagicSneakAttacks", false, "Po3 Magic Sneak Attacks");
 	Expect("iEquip", false, "iEquip");
 	Expect("iHUD", false, "iHUD");
-	Expect("my_iEquip_Patch", false, "my iEquip Patch");
+	Expect("my_iEquip_Patch", false, "My iEquip Patch");
+	Expect("iEquip_Patch", false, "iEquip Patch");       // a first word with a capital of its own is a name: kept
 	Expect("moreHUD Inventory Plugin", false, "moreHUD Inventory Plugin");
-	Expect("input", false, "input");
+	Expect("input", false, "Input");
 
 	std::cout << "== own page (the 2026-10-12 test: Lock Interaction Overhaul kept its INI page beside its own)\n";
 	const std::vector<std::string> lio = { "lockinteractionoverhaul" };
@@ -150,12 +151,12 @@ int main(int argc, char** argv)
 	RealFile(mods / "Back Pocket For Controller/SKSE/Plugins/BackPocketForController.ini",
 			 { { "fHoldSeconds", "Hold Seconds" },
 			   { "bRequireFavourite", "Require Favourite" },
-			   { "toggle_item_scan_code", "toggle item scan code" },
-			   { "controller_toggle_item_key_code", "controller toggle item key code" },
-			   { "show_notifications", "show notifications" },
-			   { "hide_pocketed_from_disenchanting", "hide pocketed from disenchanting" },
+			   { "toggle_item_scan_code", "Toggle item scan code" },
+			   { "controller_toggle_item_key_code", "Controller toggle item key code" },
+			   { "show_notifications", "Show notifications" },
+			   { "hide_pocketed_from_disenchanting", "Hide pocketed from disenchanting" },
 			   { "uLogLevel", "Log Level" } },
-			 { { "General", "General" }, { "input", "input" }, { "Debug", "Debug" } });
+			 { { "General", "General" }, { "input", "Input" }, { "Debug", "Debug" } });
 	RealFile(mods / "SSE Display Tweaks/SKSE/Plugins/SSEDisplayTweaks.ini",
 			 { { "EnableVSync", "Enable VSync" },
 			   { "FramerateLimit", "Framerate Limit" },

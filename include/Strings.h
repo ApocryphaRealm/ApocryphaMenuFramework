@@ -30,6 +30,17 @@ namespace strings
 	// Pointers stay valid until the next Load().
 	const char* TR(const char* a_key, const char* a_english);
 
+	// A COUNTED PHRASE IN THE RIGHT FORM (v4; the owner, 2026-10-12: the INI list said "1 tabs" and "1 settings").
+	// The plural form a count takes in the shown language, by CLDR's cardinal rules for the eleven languages AMF ships:
+	// "One" (English, German, Italian, Spanish: 1; French: 0 and 1; Czech, Polish: 1; Russian: 1, 21, 31 ... not 11),
+	// "Few" (Czech: 2-4; Polish and Russian: 2-4, 22-24 ... not 12-14), else "Other" (Polish and Russian's "many" too).
+	// Chinese, Japanese and Korean have one form: always "Other".
+	const char* PluralForm(long long a_count);
+
+	// The text for a_key + "_" + PluralForm(a_count) ("AMF_IniSettings_One"); a missing "_Few" falls back to "_Other",
+	// a missing "_One" or "_Other" to the English given. The text is a format with the count's %d.
+	const char* TRN(const char* a_key, long long a_count, const char* a_englishOne, const char* a_englishOther);
+
 	// "english", "german", ... - what Load() resolved (after the override and the game's INI).
 	const std::string& Language();
 

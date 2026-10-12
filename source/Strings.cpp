@@ -168,6 +168,41 @@ namespace strings
 		return it == g_texts.end() ? a_english : it->second.c_str();
 	}
 
+	const char* PluralForm(long long a_count)
+	{
+		const long long n = a_count < 0 ? -a_count : a_count;
+		const long long d = n % 10, dd = n % 100;
+		std::string lang;
+		{
+			std::scoped_lock l(g_lock);
+			lang = g_language;
+		}
+		if (lang == "chinese" || lang == "japanese" || lang == "korean") { return "Other"; }
+		if (lang == "french") { return n <= 1 ? "One" : "Other"; }
+		if (lang == "czech") { return n == 1 ? "One" : (n >= 2 && n <= 4 ? "Few" : "Other"); }
+		if (lang == "polish") { return n == 1 ? "One" : (d >= 2 && d <= 4 && !(dd >= 12 && dd <= 14) ? "Few" : "Other"); }
+		if (lang == "russian")
+		{
+			if (d == 1 && dd != 11) { return "One"; }
+			return d >= 2 && d <= 4 && !(dd >= 12 && dd <= 14) ? "Few" : "Other";
+		}
+		return n == 1 ? "One" : "Other";   // English, German, Italian, Spanish, and any other
+	}
+
+	const char* TRN(const char* a_key, long long a_count, const char* a_englishOne, const char* a_englishOther)
+	{
+		const std::string form = PluralForm(a_count);
+		const std::string base = std::string(a_key) + "_";
+		std::scoped_lock l(g_lock);
+		auto find = [&](const std::string& a_form) -> const char* {
+			const auto it = g_texts.find(base + a_form);
+			return it == g_texts.end() ? nullptr : it->second.c_str();
+		};
+		if (const char* t = find(form)) { return t; }
+		if (form == "Few") { if (const char* t = find("Other")) { return t; } }
+		return form == "One" ? a_englishOne : a_englishOther;
+	}
+
 	const std::string& Language()
 	{
 		return g_language;

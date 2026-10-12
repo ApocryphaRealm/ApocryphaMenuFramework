@@ -232,6 +232,16 @@ namespace input
 			return (static_cast<std::uint64_t>(a_button->GetDevice()) << 32) | a_button->GetIDCode();
 		}
 
+		// The buttons whose press went to ImGui and whose release has not yet (input thread only) - so a release with no held
+		// time is still known for one (v4, InputFrames.h ButtonEdge).
+		inputframes::FedButtons g_fedButtons;
+
+		// A release, by value: IsUp() also wants a held time, which a click shorter than a frame never gets (v4).
+		bool IsRelease(const RE::ButtonEvent* a_button)
+		{
+			return a_button && a_button->Value() == 0.0f;
+		}
+
 		// Software cursor, owned by the render thread. The game recentres/hides the OS cursor
 		// at will, so the only trustworthy position is one we integrate ourselves from the
 		// MouseMoveEvent deltas (the Wheeler-lineage approach from the survey).
@@ -545,11 +555,18 @@ namespace input
 
 						// Transitions only; ImGui tracks held state itself, and the raw
 						// held-repeat frames (value > 0, heldDownSecs > 0) would double-fire.
-						const bool isDown = button->IsDown();
-						const bool isUp = button->IsUp();
-						if (!isDown && !isUp)
+						// v4 (next after 2.1.9): the release is told by its VALUE, not by IsUp() - a click shorter than a
+						// frame comes back with no held time, which IsUp() does not count (InputFrames.h ButtonEdge).
+						const auto edge = g_fedButtons.Feed(ButtonKey(button), button->Value(), button->HeldDuration());
+						if (edge == inputframes::Edge::kNone)
 						{
 							break;
+						}
+						const bool isDown = edge == inputframes::Edge::kPress;
+						if (!isDown && button->HeldDuration() == 0.0f)
+						{
+							logger::debug("input: device {} code {} released with no held time (a click shorter than a frame) - passed on as its release",
+										  static_cast<std::uint32_t>(button->GetDevice()), button->GetIDCode());
 						}
 
 						switch (button->GetDevice())
@@ -652,7 +669,7 @@ namespace input
 
 				bool passThrough = false;
 
-				if (a_button && a_button->IsUp())
+				if (IsRelease(a_button))
 				{
 					// Pass the release ONLY if the game saw the press (held across the open
 					// transition). A stray release for a key the game never saw down would be a
@@ -850,7 +867,7 @@ namespace input
 						{
 							g_gameHeldButtons.insert(ButtonKey(button));
 						}
-						else if (button->IsUp())
+						else if (IsRelease(button))
 						{
 							g_gameHeldButtons.erase(ButtonKey(button));
 						}

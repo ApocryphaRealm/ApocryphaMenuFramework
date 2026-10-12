@@ -978,8 +978,15 @@ namespace inipages
 				for (const Section& s : m.sections) { keys += s.settings.size(); }
 				ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
 				ImGui::Indent();
-				ImGui::TextWrapped(strings::TR("AMF_IniRow", "%s: %d settings in %d tabs, from %s"), m.name.c_str(), static_cast<int>(keys),
-								   static_cast<int>(m.sections.size()), FileName(m.mainIni).c_str());
+				// v4: each count in its own singular or plural ("1 tabs", "1 settings" - the owner, 2026-10-12), so the row is
+				// built from two counted phrases (strings::TRN) in a row that places them
+				char settingsText[96], tabsText[96];
+				std::snprintf(settingsText, sizeof(settingsText), strings::TRN("AMF_IniSettings", static_cast<long long>(keys), "%d setting", "%d settings"),
+							  static_cast<int>(keys));
+				std::snprintf(tabsText, sizeof(tabsText), strings::TRN("AMF_IniTabs", static_cast<long long>(m.sections.size()), "%d tab", "%d tabs"),
+							  static_cast<int>(m.sections.size()));
+				ImGui::TextWrapped(strings::TR("AMF_IniRowCounted", "%s: %s in %s, from %s"), m.name.c_str(), settingsText, tabsText,
+								   FileName(m.mainIni).c_str());
 				ImGui::Unindent();
 				ImGui::PopStyleColor();
 			}
