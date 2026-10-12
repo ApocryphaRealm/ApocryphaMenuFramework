@@ -17,6 +17,8 @@
 #include <ctime>
 #include <filesystem>
 #include "Watchdog.h"
+#include "Persistence.h"
+#include <cstdio>
 #include "utils/Logger.h"
 
 #include <iterator>
@@ -30,6 +32,20 @@ namespace devbenchtool
 {
 	namespace
 	{
+		// A string made safe inside JSON quotes (2.1.9, for file names in op=cleanstate): quote, backslash and control characters.
+		std::string JsonEscape(const std::string& a_s)
+		{
+			std::string out;
+			out.reserve(a_s.size() + 8);
+			for (const char ch : a_s)
+			{
+				const auto u = static_cast<unsigned char>(ch);
+				if (ch == '"' || ch == '\\') { out += '\\'; out += ch; }
+				else if (u < 0x20) { char buf[8]; std::snprintf(buf, sizeof(buf), "\\u%04x", u); out += buf; }
+				else { out += ch; }
+			}
+			return out;
+		}
 		// Minimal extractor for a top-level JSON number field: "key":123 or "key":12.5.
 		double JsonNum(const std::string& a_json, const char* a_key, double a_default)
 		{
@@ -384,6 +400,23 @@ namespace devbenchtool
 						 ",\"pauseGame\":" + (v.pauseGameWhileOpen ? "true" : "false") +
 						 ",\"note\":\"a change is applied on the next game frame; read op=state or op=setting again\"}";
 			}
+			else if (op == "cleanstate")
+			{
+				// 2.1.9 (AmeliaZ): report and run the orphaned-state tidy-up - every <save>.amf-state.ini whose save is gone is
+				// moved into "<save folder>\AMF orphaned state\" (never deleted). args value 1 = list only (nothing moved).
+				// Reports the switch too (state of Settings > General's "Tidy up save state left by deleted saves").
+				const bool listOnly = JsonNum(args, "value", 0.0) != 0.0;
+				const persistence::CleanResult c = persistence::CleanOrphanedState(listOnly);
+				std::string files;
+				for (const std::string& f : c.files) { files += (files.empty() ? "\"" : ",\"") + JsonEscape(f) + "\""; }
+				result = std::string("{\"ok\":") + (c.ran ? "true" : "false") + ",\"op\":\"cleanstate\",\"listOnly\":" + (listOnly ? "true" : "false") +
+						 ",\"enabledAtStart\":" + (settings::Get().cleanOrphanedState ? "true" : "false") +
+						 ",\"stateFiles\":" + std::to_string(c.stateFiles) + ",\"orphaned\":" + std::to_string(c.orphaned) +
+						 ",\"moved\":" + std::to_string(c.moved) + ",\"failed\":" + std::to_string(c.failed) +
+						 ",\"saveFolder\":\"" + JsonEscape(c.saveFolder) + "\",\"backupFolder\":\"" + JsonEscape(c.backupFolder) + "\"" +
+						 (c.error.empty() ? std::string() : ",\"error\":\"" + JsonEscape(c.error) + "\"") +
+						 ",\"files\":[" + files + "]}";
+			}
 			else if (op == "mouse")
 			{
 				// 2.1.1: press OR release a mouse button (args button, down true/false), so a test can drag - press on a
@@ -683,7 +716,10 @@ namespace devbenchtool
 			"no args reports them); state carries pointer {speed, gameCursorSpeed, scale}, wheelSwitchesTabs, pauseGame and "
 			"pauseHeld (the game is paused by this menu now). The wheel over a row of tabs (a mod's, or 2.1.9 Settings / Controls / Help "
 			"and the settings sub-tab rows; state.tabBars lists each bar drawn last frame as x0,y0,x1,y1, outer first): op=cursor onto it, then "
-			"op=inject device=mouse code=9 (down, next tab) or code=8 (up).\","
+			"op=inject device=mouse code=9 (down, next tab) or code=8 (up). "
+			"2.1.9: cleanstate reports and runs the orphaned save-state tidy-up - every <save>.amf-state.ini whose .ess is gone is MOVED into "
+			"<save folder>\\AMF orphaned state\\ (never deleted); args value=1 lists only; returns stateFiles, orphaned, moved, failed, "
+			"saveFolder, backupFolder, files and enabledAtStart (the Settings > General switch).\","
 			"\"inputSchema\":{\"type\":\"object\",\"properties\":{"
 			"\"op\":{\"type\":\"string\"},\"node\":{\"type\":\"string\"},"
 			"\"mod\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"position\":{\"type\":\"string\"},"

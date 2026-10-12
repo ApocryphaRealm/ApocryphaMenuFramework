@@ -4,6 +4,7 @@
 
 #include <ShlObj.h>
 
+#include <filesystem>
 #include <fstream>
 #include <mutex>
 #include <unordered_map>
@@ -72,6 +73,26 @@ namespace persistence
 				name.resize(name.size() - 4);
 			}
 			return name;
+		}
+
+		// UTF-8 <-> a path, without C++20's char8_t strings (the log and the JSON take plain UTF-8 std::string)
+		std::string U8(const std::filesystem::path& a_path)
+		{
+			const std::wstring w = a_path.wstring();
+			if (w.empty()) { return {}; }
+			const int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), static_cast<int>(w.size()), nullptr, 0, nullptr, nullptr);
+			std::string s(static_cast<std::size_t>(n > 0 ? n : 0), '\0');
+			if (n > 0) { WideCharToMultiByte(CP_UTF8, 0, w.c_str(), static_cast<int>(w.size()), s.data(), n, nullptr, nullptr); }
+			return s;
+		}
+
+		std::filesystem::path FromU8(const std::string& a_s)
+		{
+			if (a_s.empty()) { return {}; }
+			const int n = MultiByteToWideChar(CP_UTF8, 0, a_s.c_str(), static_cast<int>(a_s.size()), nullptr, 0);
+			std::wstring w(static_cast<std::size_t>(n > 0 ? n : 0), L'\0');
+			if (n > 0) { MultiByteToWideChar(CP_UTF8, 0, a_s.c_str(), static_cast<int>(a_s.size()), w.data(), n); }
+			return std::filesystem::path(w);
 		}
 
 		std::string SiblingPath(const std::string& a_baseName)
@@ -212,5 +233,115 @@ namespace persistence
 		std::scoped_lock lock(g_lock);
 		const auto it = g_values.find(a_key);
 		return it != g_values.end() ? it->second : a_default;
+	}
+
+	CleanResult CleanOrphanedState(bool a_listOnly)
+	{
+		namespace fs = std::filesystem;
+		static constexpr std::wstring_view kSuffix = L".amf-state.ini";
+		CleanResult r;
+		r.listOnly = a_listOnly;
+		const std::string dirUtf8 = SavesDirectory();
+		r.saveFolder = dirUtf8;
+		if (dirUtf8.empty())
+		{
+			r.error = "the save folder could not be worked out (no Documents folder)";
+			logger::warn("persistence: orphaned state - {}; nothing done", r.error);
+			return r;
+		}
+		std::error_code ec;
+		const fs::path dir = FromU8(dirUtf8);
+		if (!fs::is_directory(dir, ec))
+		{
+			r.error = "the save folder does not exist yet";
+			logger::info("persistence: orphaned state - {} ({}); nothing to tidy", r.error, dirUtf8);
+			r.ran = true;
+			return r;
+		}
+		std::string active;
+		{
+			std::scoped_lock lock(g_lock);
+			active = g_activeSaveBaseName;
+		}
+		const fs::path backup = dir / L"AMF orphaned state";
+		r.backupFolder = U8(backup);
+
+		std::vector<fs::path> orphans;
+		for (fs::directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec))
+		{
+			std::error_code fec;
+			if (!it->is_regular_file(fec)) { continue; }
+			const std::wstring name = it->path().filename().wstring();
+			if (name.size() <= kSuffix.size() ||
+				_wcsicmp(name.c_str() + (name.size() - kSuffix.size()), kSuffix.data()) != 0)
+			{
+				continue;
+			}
+			++r.stateFiles;
+			const std::wstring base = name.substr(0, name.size() - kSuffix.size());
+			if (fs::exists(dir / (base + L".ess"), fec) || fec)
+			{
+				continue;   // its save is there (or could not be checked - then it is left alone)
+			}
+			if (!active.empty() && U8(fs::path(base)) == active)
+			{
+				continue;   // the save being played right now, about to be written
+			}
+			orphans.push_back(it->path());
+		}
+		if (ec)
+		{
+			r.error = "the save folder could not be read: " + ec.message();
+			logger::warn("persistence: orphaned state - {} ({})", r.error, dirUtf8);
+			return r;
+		}
+		r.ran = true;
+		r.orphaned = static_cast<int>(orphans.size());
+		if (orphans.empty())
+		{
+			logger::info("persistence: orphaned state - {} state file(s) in {}, none without its save", r.stateFiles, dirUtf8);
+			return r;
+		}
+		if (!a_listOnly)
+		{
+			std::error_code mk;
+			fs::create_directories(backup, mk);
+			if (mk && !fs::is_directory(backup, mk))
+			{
+				r.error = "could not make the backup folder: " + mk.message();
+				logger::error("persistence: orphaned state - {} ({}); nothing moved", r.error, r.backupFolder);
+				r.failed = r.orphaned;
+				for (const fs::path& p : orphans) { r.files.push_back(U8(p.filename())); }
+				return r;
+			}
+		}
+		for (const fs::path& p : orphans)
+		{
+			const std::string shown = U8(p.filename());
+			r.files.push_back(shown);
+			if (a_listOnly)
+			{
+				logger::info("persistence: orphaned state (list only): {} - its save is gone", shown);
+				continue;
+			}
+			fs::path target = backup / p.filename();
+			for (int n = 2; fs::exists(target, ec) && n < 1000; ++n)   // a name already backed up keeps both
+			{
+				target = backup / (p.stem().wstring() + L" (" + std::to_wstring(n) + L")" + p.extension().wstring());
+			}
+			if (MoveFileExW(p.c_str(), target.c_str(), MOVEFILE_COPY_ALLOWED | MOVEFILE_WRITE_THROUGH))
+			{
+				++r.moved;
+				logger::info("persistence: orphaned state moved: {} -> {} (its save is gone)", shown, U8(target));
+			}
+			else
+			{
+				++r.failed;
+				logger::warn("persistence: orphaned state NOT moved: {} (error {}) - left where it was", shown, GetLastError());
+			}
+		}
+		logger::info("persistence: orphaned state - {} of {} state file(s) had no save; {} {}, {} failed; backup folder {}",
+					 r.orphaned, r.stateFiles, a_listOnly ? "listed" : "moved", a_listOnly ? r.orphaned : r.moved, r.failed, r.backupFolder);
+		return r;
 	}
 }

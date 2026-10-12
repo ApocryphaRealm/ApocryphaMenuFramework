@@ -373,6 +373,9 @@ namespace settings
 				"; lifts the moment play begins, or after uTimeoutSeconds if the main menu never\n"
 				"; appears, so a slow start can never leave you looking at nothing. 0 disables.\n"
 				"bBlackCurtain=" << (a_v.startupCurtain ? 1 : 0) << "\n"
+				"; At game start, move every <save>.amf-state.ini whose save is gone into the save folder's\n"
+				"; \"AMF orphaned state\" folder (never deleted). 1 = on (the default), 0 = off.\n"
+				"bCleanOrphanedSaveState=" << (a_v.cleanOrphanedState ? 1 : 0) << "\n"
 				"; Seconds the curtain may stay up before it lifts anyway. It also lifts the moment\n"
 				"; play begins, so this only matters for a start that never reaches either.\n"
 				"uTimeoutSeconds=" << a_v.curtainTimeoutSeconds << "\n"
@@ -748,6 +751,7 @@ namespace settings
 			ReadBool(entries, "Watchdog.bEnabled", g_values.watchdogEnabled);
 			ReadBool(entries, "FastExit.bEnabled", g_values.fastExit);
 			ReadBool(entries, "Startup.bBlackCurtain", g_values.startupCurtain);
+			ReadBool(entries, "Startup.bCleanOrphanedSaveState", g_values.cleanOrphanedState);
 			ReadNumber(entries, "Startup.uTimeoutSeconds", g_values.curtainTimeoutSeconds);
 			{
 				auto it = entries.find("Startup.sCurtainImage");

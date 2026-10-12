@@ -2,6 +2,7 @@
 
 #include <string>
 #include <string_view>
+#include <vector>
 
 // ============================================================================================
 // M-adjacent: an AMF-owned, per-save persistence channel mirroring co-save's SCOPING (not its
@@ -37,4 +38,25 @@ namespace persistence
 	// mirroring co-save's own timing (data is committed when the game saves, not on every Set).
 	void SetValue(const std::string& a_key, const std::string& a_value);
 	std::string GetValue(const std::string& a_key, const std::string& a_default);
+
+	// ORPHANED STATE FILES (2.1.9, AmeliaZ on Nexus, 2026-10-11: "auto clean *.amf-state.ini files not associated to saves").
+	// A deleted save leaves its <save>.amf-state.ini behind. CleanOrphanedState lists every *.amf-state.ini in the save folder
+	// whose <save>.ess is gone and, unless a_listOnly, MOVES each into "<save folder>\AMF orphaned state\" - never a delete,
+	// and not the Recycle Bin: under Mod Organizer's profile-local saves the folder is virtual, and a file the shell cannot
+	// recycle is deleted outright when no prompt is allowed. Each file and the count are logged. Run at kDataLoaded when
+	// Settings > General > "Tidy up orphaned save state" is on (the default), and by DevBench amf.menu op=cleanstate.
+	struct CleanResult
+	{
+		bool ran = false;            // false: the save folder could not be found or read (error says why)
+		bool listOnly = false;
+		int stateFiles = 0;          // *.amf-state.ini files found
+		int orphaned = 0;            // of those, the ones whose save is gone
+		int moved = 0;
+		int failed = 0;
+		std::string saveFolder;      // UTF-8
+		std::string backupFolder;    // UTF-8
+		std::string error;
+		std::vector<std::string> files;   // the orphaned files' names, UTF-8
+	};
+	CleanResult CleanOrphanedState(bool a_listOnly);
 }

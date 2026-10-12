@@ -172,6 +172,9 @@ namespace settings
 		// never shown. Lifts by itself on a timeout - see Curtain.cpp, where failing safe is the
 		// whole design.
 		bool startupCurtain = true;
+		// [Startup] bCleanOrphanedSaveState (2.1.9; AmeliaZ, 2026-10-11): at game start, move every <save>.amf-state.ini whose
+		// save is gone into "<save folder>\AMF orphaned state\" (persistence::CleanOrphanedState - never a delete). On by default.
+		bool cleanOrphanedState = true;
 		// How long the curtain may stay up before it gives up and lifts anyway. INI-only, because
 		// it is a safety valve rather than a preference. 30 proved too short on a heavy list.
 		std::uint32_t curtainTimeoutSeconds = 120;
