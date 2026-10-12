@@ -32,6 +32,7 @@ namespace hostlogic
 		ImVec2 savedPos, savedSize;
 		bool rectWarned = false;
 		int lastOpen = -2;
+		std::uint32_t lastThread = 0;   // the render thread AMF named last call (only for the "moved" log line)
 	};
 
 	struct Result
@@ -42,6 +43,37 @@ namespace hostlogic
 	};
 
 	inline bool Finite(const ImVec2& a_v) { return std::isfinite(a_v.x) && std::isfinite(a_v.y); }
+
+	// 4a. THE THREAD (v6). AMF calls the bridge only from inside its present hook and names, in the frame record, the thread
+	// that hook is running on this frame. The call must be on exactly that thread. v5 pinned the FIRST caller's thread
+	// instead; Skyrim SE 1.5.97 draws its first frames on a short-lived thread and then moves present to another, so v5
+	// switched hosting off on every launch. A move of the render thread between frames is followed (one log line), never
+	// a call off AMF's named thread. a_callerThread: GetCurrentThreadId() in the game, any value in the offline check.
+	inline bool CheckThread(const AMF_HostFrame* a_f, std::uint32_t a_callerThread, State& a_s, Result& a_r)
+	{
+		if (a_f->size < sizeof(AMF_HostFrame))
+		{
+			a_r.fail = "AMF's frame record has no render thread (an AMF older than this bridge)";
+			return false;
+		}
+		if (a_f->renderThread == 0)
+		{
+			a_r.fail = "AMF named no render thread for this frame";
+			return false;
+		}
+		if (a_callerThread != a_f->renderThread)
+		{
+			a_r.fail = std::format("called on thread {} - AMF's present hook runs on thread {} this frame", a_callerThread, a_f->renderThread);
+			return false;
+		}
+		if (a_s.lastThread != 0 && a_s.lastThread != a_f->renderThread)
+		{
+			a_r.info.push_back(std::format("the game's present moved from thread {} to {} - followed (AMF's present hook names it each frame)",
+										   a_s.lastThread, a_f->renderThread));
+		}
+		a_s.lastThread = a_f->renderThread;
+		return true;
+	}
 
 	// a_imageBase / a_imageEnd: OAR's module image - its "imgui_impl_dx11" string must lie inside it.
 	inline Result Frame(ImGuiContext* a_ctx, AMF_HostFrame* a_f, State& a_s, std::uintptr_t a_imageBase, std::uintptr_t a_imageEnd,

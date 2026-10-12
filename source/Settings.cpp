@@ -396,8 +396,10 @@ namespace settings
 				"bCloseAmfOnOpen=" << (a_v.closeOnOpen ? 1 : 0) << "\n"
 				"\n"
 				"[Performance]\n"
-				"; 1 = this menu's own FPS and frame-time graph in the top-right corner of the screen, menu open or not. 0 = not (the default).\n"
+				"; 1 = this menu's own FPS and frame-time graph in a corner of the screen, menu open or not. 0 = not (the default).\n"
 				"bOverlay=" << (a_v.perfOverlay ? 1 : 0) << "\n"
+				"; Its corner: 0 = top-left, 1 = top-right, 2 = bottom-left, 3 = bottom-right (the default).\n"
+				"iCorner=" << a_v.perfCorner << "\n"
 				"\n"
 				"[Startup]\n"
 				"; Hold the screen black from the first frame the game draws until its main menu is\n"
@@ -798,6 +800,8 @@ namespace settings
 			ReadBool(entries, "ImGuiMenus.bHostOpenAnimationReplacer", g_values.hostOar);
 			ReadBool(entries, "ImGuiMenus.bCloseAmfOnOpen", g_values.closeOnOpen);
 			ReadBool(entries, "Performance.bOverlay", g_values.perfOverlay);
+			ReadNumber(entries, "Performance.iCorner", g_values.perfCorner);
+			if (g_values.perfCorner < 0 || g_values.perfCorner > 3) { g_values.perfCorner = 3; }
 			ReadNumber(entries, "Startup.uTimeoutSeconds", g_values.curtainTimeoutSeconds);
 			{
 				auto it = entries.find("Startup.sCurtainImage");

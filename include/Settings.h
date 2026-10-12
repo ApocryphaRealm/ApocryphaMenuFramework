@@ -203,6 +203,11 @@ namespace settings
 		bool closeOnOpen = true;
 		// [Performance] bOverlay (next version after 2.1.9): AMF's own FPS / frame-time graph in the screen's corner - Performance.h. Off by default.
 		bool perfOverlay = false;
+		// [Performance] iCorner (v6): the corner the graph sits in - 0 top-left, 1 top-right, 2 bottom-left, 3 bottom-right. Default
+		// bottom-right: in the v5 capture of Njordlinger the minimap held top-right, the player bars bottom-left and OptiScaler's
+		// counter top-left; vanilla puts its notifications top-left and the compass top-centre, and its stamina bar ends short of
+		// the bottom-right corner, so that corner is the one the usual HUD leaves empty.
+		int perfCorner = 3;
 		// How long the curtain may stay up before it gives up and lifts anyway. INI-only, because
 		// it is a safety valve rather than a preference. 30 proved too short on a heavy list.
 		std::uint32_t curtainTimeoutSeconds = 120;

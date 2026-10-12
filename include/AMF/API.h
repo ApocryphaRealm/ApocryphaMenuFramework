@@ -139,7 +139,9 @@ AMF_API bool AMF_GetStick(int a_which, float* a_x, float* a_y, bool* a_clicked, 
 //       other value is refused. Returns false when refused (a second bridge for the same target, an unknown target).
 //       From then on AMF calls a_callback ONCE A FRAME on the render thread, after its own frame is drawn and before the
 //       hosted mod's frame starts (AMF's present hook runs inside the mod's), with the rectangle and whether AMF's hosted
-//       page is up this frame. The bridge fills in what it sees of the mod (targetOpen, wantsMouse, placed).
+//       page is up this frame. The bridge fills in what it sees of the mod (targetOpen, wantsMouse, placed). The callback
+//       is the ONLY place a bridge touches the mod: AMF invokes it from inside its present hook and nowhere else, which
+//       fixes both the thread (renderThread below) and the timing (outside the mod's NewFrame -> Render).
 //   AMF_HostBridgeFailed(target, reason)
 //       The bridge found something it cannot vouch for (an unknown build of the mod, a context that does not look right).
 //       AMF stops hosting that target for the session, logs the reason and falls back to opening the mod's menu on its
@@ -159,6 +161,10 @@ struct AMF_HostFrame
 	std::int32_t  targetOpen; // -1 not known, 0 the mod's menu is closed, 1 it is open
 	std::int32_t  wantsMouse; // 1: the mod's ImGui wants the mouse (a window or popup of its is under the pointer)
 	std::int32_t  placed;     // 1: the mod's window was put in the rectangle this frame
+	// v6 (appended; `size` tells a bridge whether it is there): the thread AMF's present hook is running on THIS frame, as
+	// that hook recorded it on entry. The game's present can move to another thread (SE 1.5.97 does, once, in its first
+	// second), so a bridge must not pin the first thread it is called on: it checks it is called on THIS thread, every call.
+	std::uint32_t renderThread;
 };
 typedef void (*AMF_HostFrameCallback)(AMF_HostFrame* a_frame, void* a_user);
 

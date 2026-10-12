@@ -10,6 +10,7 @@
 #include <Windows.h>
 #include <Psapi.h>
 
+#include <cstddef>
 #include <cstdio>
 #include <iostream>
 #include <string>
@@ -59,7 +60,51 @@ namespace
 		f.displayW = 1920.0f;
 		f.displayH = 1080.0f;
 		f.targetOpen = -1;
+		f.renderThread = 4936;
 		return f;
+	}
+
+	// v6: the render-thread check (HostLogic.h CheckThread) - the v5 in-game failure replayed. Skyrim SE 1.5.97 drew its first
+	// frames on thread 4936, which then ended; present carried on on 42524. v5 pinned the first caller and failed closed.
+	void ThreadChecks(ImGuiContext* a_oar, std::uintptr_t a_base, std::uintptr_t a_end)
+	{
+		hostlogic::State s;
+		hostlogic::Result r;
+		AMF_HostFrame f = MakeFrame(true, 600.0f, 100.0f, 800.0f, 700.0f);
+		f.renderThread = 4936;
+		Check(hostlogic::CheckThread(&f, 4936, s, r) && r.fail.empty() && r.info.empty(), "thread: first frames on 4936, AMF names 4936 - passes");
+		r = {};
+		f.renderThread = 42524;
+		const bool moved = hostlogic::CheckThread(&f, 42524, s, r);
+		Check(moved && r.fail.empty() && r.info.size() == 1, "thread: present moves to 42524 and AMF names 42524 - passes, one 'moved' line");
+		r = {};
+		Check(hostlogic::CheckThread(&f, 42524, s, r) && r.info.empty(), "thread: the frames after on 42524 - passes, no more lines");
+		// the whole frame on the new thread still places OAR's window
+		{
+			ImGuiContext* other = ImGui::GetCurrentContext();
+			ImGui::SetCurrentContext(a_oar);
+			ImGui::GetIO().DeltaTime = 1.0f / 60.0f;
+			ImGui::NewFrame();
+			ImGui::Begin(kTitle.c_str(), nullptr, ImGuiWindowFlags_NoCollapse);
+			ImGui::End();
+			ImGui::Render();
+			ImGui::SetCurrentContext(other);
+			hostlogic::State fs;
+			const auto fr = hostlogic::Frame(a_oar, &f, fs, a_base, a_end, kTitle);
+			Check(fr.fail.empty() && f.placed == 1, "thread: after the move the frame is hosted (placed)");
+		}
+		// fail closed
+		r = {};
+		f.renderThread = 4936;
+		const bool offThread = hostlogic::CheckThread(&f, 42524, s, r);
+		Check(!offThread && !r.fail.empty(), "thread: called on 42524 while AMF names 4936 - fails closed (" + r.fail + ")");
+		r = {};
+		f.renderThread = 0;
+		Check(!hostlogic::CheckThread(&f, 42524, s, r) && !r.fail.empty(), "thread: AMF names no thread (0) - fails closed");
+		r = {};
+		AMF_HostFrame old = MakeFrame(true, 600.0f, 100.0f, 800.0f, 700.0f);
+		old.size = static_cast<std::uint32_t>(offsetof(AMF_HostFrame, renderThread));   // v5's record, before the field
+		Check(!hostlogic::CheckThread(&old, 4936, s, r) && !r.fail.empty(), "thread: v5 AMF's shorter frame record - fails closed");
 	}
 }
 
@@ -192,6 +237,9 @@ int main()
 		Check(!r.fail.empty(), "another renderer name: fails closed");
 		ImGui::GetIO().BackendRendererName = kRenderer;
 	}
+
+	ImGui::SetCurrentContext(other);
+	ThreadChecks(oar, base, end);
 
 	ImGui::DestroyContext(oar);
 	ImGui::DestroyContext(other);

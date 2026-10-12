@@ -383,6 +383,11 @@ namespace consumer
 		return id != 0 && id == static_cast<std::uint32_t>(::GetCurrentThreadId());
 	}
 
+	std::uint32_t RenderThreadId()
+	{
+		return g_renderThreadId.load(std::memory_order_acquire);
+	}
+
 	// SVG TEXTURES (2.1.3). SKSE Menu Framework mods may ship .svg icons (Walk With Me: Data/Interface/WalkWithMe/*.svg),
 	// and the WIC loader below reads only bitmaps - a user's log showed eight "could not decode" lines and the mod's
 	// icons missing (2026-10-07). nanosvg parses and rasterises the file; it is drawn at a size that stays sharp when the

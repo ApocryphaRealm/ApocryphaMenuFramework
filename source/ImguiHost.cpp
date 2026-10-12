@@ -1,6 +1,7 @@
 #include "ImguiHost.h"
 
 #include "Bindings.h"
+#include "ConsumerSurface.h"
 #include "HostCore.h"
 #include "Input.h"
 #include "Renderer.h"
@@ -66,6 +67,14 @@ namespace imguihost
 
 		// OAR's UI interface: V3 (3.2.1+) when it answers it, else none here (3.0.2 is opened with its key)
 		OAR_API::UI::IUIInterface3* g_oarV3 = nullptr;
+		// v6: OAR's V2 interface (every OAR from 3.0.2), asked only whether OAR built an ImGui context this session - a null
+		// check, nothing of the context is read. OAR reads bEnableUI once at start-up and with it off builds no menu at all;
+		// with it on its context exists from the first frame (the v5 bridge log saw it then). So after the first frames a
+		// null context means "no menu this session", whatever the INI says now.
+		OAR_API::UI::IUIInterface2* g_oarV2 = nullptr;
+		std::atomic<int> g_framesSeen{ 0 };   // Frame() calls so far (read by RefreshKeys on any thread)
+		constexpr int kOarUiSettledFrames = 120;
+		int g_oarUiLogged = -2;               // the last session answer logged (-1 not known, 0 no menu, 1 menu)
 
 		// one key press at a time, stepped over frames (render thread only)
 		struct Press
@@ -238,8 +247,28 @@ namespace imguihost
 					const auto c = hostcore::ParseOarIni(hostcore::ReadFileText(L"Data/SKSE/Plugins/OpenAnimationReplacer.ini"));
 					t.key = c.key;
 					t.keyFrom = "OpenAnimationReplacer.ini";
-					t.blocked = c.enableUI ? std::string() : std::string(TR("AMF_ImguiOarUiOff", "Its menu is switched off in "
-						"OpenAnimationReplacer.ini (bEnableUI = false), so there is nothing to open."));
+					// v6: what OAR really has this session wins over what its INI says now (it reads the INI only at start-up)
+					OAR_API::UI::IUIInterface2* ui = g_oarV3 ? static_cast<OAR_API::UI::IUIInterface2*>(g_oarV3) : g_oarV2;
+					int session = -1;
+					if (ui && g_framesSeen.load(std::memory_order_relaxed) > kOarUiSettledFrames) { session = ui->GetImGuiContext() ? 1 : 0; }
+					const char* const offInIni = TR("AMF_ImguiOarUiOff", "Its menu is switched off in OpenAnimationReplacer.ini "
+						"(bEnableUI = false), so there is nothing to open.");
+					if (session == 1) { t.blocked.clear(); }
+					else if (session == 0)
+					{
+						t.blocked = c.enableUI ? std::string(TR("AMF_ImguiOarUiOffAtStart", "Its menu was switched off in "
+							"OpenAnimationReplacer.ini (bEnableUI = false) when the game started, so it has none this session. It "
+							"comes back after the game is restarted."))
+											   : std::string(offInIni);
+					}
+					else { t.blocked = c.enableUI ? std::string() : std::string(offInIni); }
+					if (session != g_oarUiLogged)
+					{
+						g_oarUiLogged = session;
+						logger::info("imgui: Open Animation Replacer's menu this session: {} (its INI now says bEnableUI = {})",
+									 session == 1 ? "built" : (session == 0 ? "NOT built - it has no ImGui context" : "not known yet"),
+									 c.enableUI ? "true" : "false");
+					}
 				}
 			}
 			{
@@ -507,6 +536,7 @@ namespace imguihost
 		}
 
 		// Once a frame, after AMF's frame is drawn: hand the bridge the rectangle (or "not hosting") and read back what it saw.
+		// Called only from Frame(), which only AMF's present hook calls - the one place a bridge is let at the mod's context.
 		void CallBridge()
 		{
 			AMF_HostFrameCallback cb = nullptr;
@@ -517,6 +547,10 @@ namespace imguihost
 				cb = g_bridge.callback;
 				user = g_bridge.user;
 			}
+			// v6: the thread the present hook stamped on entry THIS frame. v5's bridge pinned the first thread that called it,
+			// and SE 1.5.97 moves its present to another thread in the first second, so hosting switched itself off every launch.
+			const std::uint32_t renderThread = consumer::RenderThreadId();
+			if (!consumer::OnRenderThread()) { return; }   // not inside the present hook: the bridge is not called at all
 			const ImGuiIO& io = ImGui::GetIO();
 			AMF_HostFrame f{};
 			f.size = sizeof(AMF_HostFrame);
@@ -532,6 +566,7 @@ namespace imguihost
 			f.targetOpen = -1;
 			f.wantsMouse = 0;
 			f.placed = 0;
+			f.renderThread = renderThread;
 			const bool ok = GuardedCall(cb, &f, user);
 			{
 				std::scoped_lock l(g_bridgeLock);
@@ -700,6 +735,11 @@ namespace imguihost
 			{
 				// OAR 3.0.2 knows only V2 and answers V3 with nullptr (and a warning in its own log)
 				g_oarV3 = request(OAR_API::UI::InterfaceVersion::V3, "ApocryphaMenuFramework", REL::Version(2, 2, 0, 0));
+				if (!g_oarV3)
+				{
+					g_oarV2 = static_cast<OAR_API::UI::IUIInterface2*>(
+						request(OAR_API::UI::InterfaceVersion::V2, "ApocryphaMenuFramework", REL::Version(2, 2, 0, 0)));
+				}
 			}
 			logger::info("imgui: Open Animation Replacer - {}", !request ? "no RequestPluginAPI_UI export: opened with its key" :
 						 g_oarV3 ? "UI interface V3: opened and closed through its API" :
@@ -839,6 +879,13 @@ namespace imguihost
 
 	void DrawSettings()
 	{
+		static int s_settingsDrawnFrame = -100;
+		if (ImGui::GetFrameCount() > s_settingsDrawnFrame + 1)
+		{
+			std::scoped_lock l(g_lock);
+			RefreshKeys();   // the tab was just opened: OAR's menu-off reason below is read fresh (v6)
+		}
+		s_settingsDrawnFrame = ImGui::GetFrameCount();
 		ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
 		ImGui::PushTextWrapPos(0.0f);
 		ImGui::TextUnformatted(TR("AMF_ImguiSettingsHelp", "Mods that draw their own ImGui menus get a row on Framework > Other menus, "
@@ -903,7 +950,13 @@ namespace imguihost
 		ImGui::TextUnformatted(TR("AMF_HostOarHelp", "On: its Open on Other menus keeps this menu open and shows Open Animation "
 			"Replacer's own menu inside the page, live. Needs AMF-Host-OAR.dll (in this mod's package) and a version of Open "
 			"Animation Replacer it knows; otherwise it opens over a closed menu, as the others do."));
-		if (!b.registered) { ImGui::TextUnformatted(TR("AMF_HostNoBridge", "AMF-Host-OAR.dll is not installed or not loaded.")); }
+		std::string oarBlocked;
+		{
+			std::scoped_lock l(g_lock);
+			oarBlocked = g_targets[kOar].blocked;
+		}
+		if (!oarBlocked.empty()) { ImGui::TextUnformatted(oarBlocked.c_str()); }   // v6: OAR's own INI switched its menu off
+		else if (!b.registered) { ImGui::TextUnformatted(TR("AMF_HostNoBridge", "AMF-Host-OAR.dll is not installed or not loaded.")); }
 		else if (b.failed) { ImGui::Text(TR("AMF_HostStopped", "Hosting is off for this session: %s"), b.failReason.c_str()); }
 		else { ImGui::TextUnformatted(TR("AMF_HostReady", "AMF-Host-OAR.dll is loaded and ready.")); }
 		ImGui::PopTextWrapPos();
@@ -914,6 +967,7 @@ namespace imguihost
 	void Frame()
 	{
 		++g_frame;
+		g_framesSeen.store(g_frame, std::memory_order_relaxed);
 		RunApiCall();
 		StepPress();
 		CallBridge();

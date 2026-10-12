@@ -11,6 +11,7 @@
 
 #include <Windows.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <mutex>
 #include <string>
@@ -85,6 +86,26 @@ namespace perf
 			logger::info("settings page: performance corner graph -> {}", values.perfOverlay);
 			settings::Save();
 		}
+		// v6: the corner (the v5 test had it over the minimap, top-right) - [Performance] iCorner
+		{
+			const char* corners[] = { TR("AMF_PerfCornerTL", "Top left"), TR("AMF_PerfCornerTR", "Top right"),
+									  TR("AMF_PerfCornerBL", "Bottom left"), TR("AMF_PerfCornerBR", "Bottom right") };
+			const int corner = std::clamp(values.perfCorner, 0, 3);
+			ImGui::SetNextItemWidth(ImGui::GetFontSize() * 12.0f);
+			if (theme::BeginComboTight(TR("AMF_PerfCorner", "Corner"), corners[corner]))
+			{
+				for (int i = 0; i < 4; ++i)
+				{
+					if (ImGui::Selectable(corners[i], i == corner) && i != corner)
+					{
+						values.perfCorner = i;
+						logger::info("settings page: performance corner graph corner -> {}", i);
+						settings::Save();
+					}
+				}
+				ImGui::EndCombo();
+			}
+		}
 		ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
 		ImGui::PushTextWrapPos(0.0f);
 		ImGui::TextUnformatted(TR("AMF_PerfHelp", "Measured by this menu itself: the time between the frames the game shows, over the "
@@ -101,7 +122,12 @@ namespace perf
 		const ImGuiIO& io = ImGui::GetIO();
 		const float w = ImGui::GetFontSize() * 16.0f;
 		const float pad = ImGui::GetFontSize() * 0.6f;
-		ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - pad, pad), ImGuiCond_Always, ImVec2(1.0f, 0.0f));
+		// 0 top-left, 1 top-right, 2 bottom-left, 3 bottom-right ([Performance] iCorner); the pivot keeps the graph inside the screen
+		const int corner = std::clamp(settings::Get().perfCorner, 0, 3);
+		const bool right = corner == 1 || corner == 3;
+		const bool bottom = corner >= 2;
+		ImGui::SetNextWindowPos(ImVec2(right ? io.DisplaySize.x - pad : pad, bottom ? io.DisplaySize.y - pad : pad), ImGuiCond_Always,
+								ImVec2(right ? 1.0f : 0.0f, bottom ? 1.0f : 0.0f));
 		ImGui::SetNextWindowBgAlpha(0.75f);
 		constexpr ImGuiWindowFlags kFlags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav |
 											ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoBringToFrontOnFocus |
@@ -118,8 +144,9 @@ namespace perf
 		const auto s = Copy().Compute();
 		char buf[384];
 		std::snprintf(buf, sizeof(buf),
-					  "{\"fps\":{\"min\":%.1f,\"avg\":%.1f,\"max\":%.1f},\"frameMs\":{\"min\":%.2f,\"avg\":%.2f,\"max\":%.2f},\"frames\":%d,\"overlay\":%s}",
-					  s.fpsMin, s.fpsAvg, s.fpsMax, s.minMs, s.avgMs, s.maxMs, s.count, settings::Get().perfOverlay ? "true" : "false");
+					  "{\"fps\":{\"min\":%.1f,\"avg\":%.1f,\"max\":%.1f},\"frameMs\":{\"min\":%.2f,\"avg\":%.2f,\"max\":%.2f},\"frames\":%d,\"overlay\":%s,\"corner\":%d}",
+					  s.fpsMin, s.fpsAvg, s.fpsMax, s.minMs, s.avgMs, s.maxMs, s.count, settings::Get().perfOverlay ? "true" : "false",
+					  settings::Get().perfCorner);
 		return buf;
 	}
 }

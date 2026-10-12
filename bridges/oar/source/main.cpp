@@ -16,8 +16,9 @@
 //   2. the context is Initialized and its IO.BackendRendererName is OAR's own "imgui_impl_dx11" string (inside OAR's
 //      image) - the proof the struct is read at the right layout;
 //   3. the window found by name carries OAR's title, its Pos / Size are finite, and the rectangle lies inside OAR's display;
-//   4. the call is on the render thread (the first caller's thread, every time) and outside OAR's NewFrame -> Render
-//      (ctx->WithinFrameScope is false);
+//   4. the call is on the render thread - the thread AMF's present hook names in the frame record for THIS frame (v6; v5
+//      pinned the first caller's thread, and the game's present moves threads once at start-up, so hosting switched itself
+//      off every launch) - and outside OAR's NewFrame -> Render (ctx->WithinFrameScope is false);
 //   5. the bridge's own current-context pointer is put back afterwards.
 // Any failure turns hosting off for the session (one log line, AMF_HostBridgeFailed), and AMF falls back to its launcher.
 // Nothing of OAR's code is used; OAR's public UI API header is (include/OAR, verbatim, with its notice).
@@ -72,7 +73,6 @@ namespace
 	std::string g_title;                            // "Open Animation Replacer 3.0.2" - OAR's main window
 
 	bool g_disabled = false;
-	DWORD g_renderThread = 0;
 	bool g_noContextLogged = false;
 	hostlogic::State g_state;
 
@@ -145,18 +145,17 @@ namespace
 	void OnFrame(AMF_HostFrame* a_f, void*)
 	{
 		if (!a_f || g_disabled || !g_oar) { return; }
-		if (a_f->size < sizeof(AMF_HostFrame))
+		// 4a. the render thread - the one AMF's present hook names for THIS frame (HostLogic.h CheckThread; v6). Also refuses an
+		// AMF whose frame record is older than this bridge's.
 		{
-			Fail("AMF's frame record is smaller than this bridge expects");
-			return;
-		}
-		// 4. the render thread - the first caller's thread, every time
-		const DWORD tid = GetCurrentThreadId();
-		if (g_renderThread == 0) { g_renderThread = tid; }
-		else if (tid != g_renderThread)
-		{
-			Fail(std::format("called on thread {} - the render thread is {}", tid, g_renderThread));
-			return;
+			hostlogic::Result t;
+			const bool ok = hostlogic::CheckThread(a_f, static_cast<std::uint32_t>(GetCurrentThreadId()), g_state, t);
+			for (const std::string& line : t.info) { spdlog::info("{}", line); }
+			if (!ok)
+			{
+				Fail(t.fail);
+				return;
+			}
 		}
 
 		auto* ctx = static_cast<ImGuiContext*>(g_oar->GetImGuiContext());
