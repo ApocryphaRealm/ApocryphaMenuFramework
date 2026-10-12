@@ -15,6 +15,8 @@
 #include "HelpBar.h"
 #include "IniPages.h"
 #include "MfmPages.h"
+#include "ImguiHost.h"
+#include "Performance.h"
 #include "McmStyle.h"
 #include "Input.h"
 #include "Offsets.h"
@@ -2393,7 +2395,7 @@ namespace renderer
 					static int s_mcmSub = 0;
 					// 2.1.6 (the owner, 2026-10-08: "I just want the tabs that apply to MCM menus to be within a tab called MCM"):
 					// one tab per menu system - MCM | FLICK | Prisma - and Spacing, which covers every converted page.
-					SubTabs sub("##mcmsub", 6, s_mcmSub);   // 2.1.9: MCM | FLICK | Prisma | INI | Spacing; next version: MFM after INI
+					SubTabs sub("##mcmsub", 7, s_mcmSub);   // 2.1.9: MCM | FLICK | Prisma | INI | Spacing; next version: MFM after INI
 					if (sub.Tab(TR("AMF_SubMcm", "MCM")))
 					{
 					static int s_mcmInner = 0;
@@ -2898,6 +2900,12 @@ namespace renderer
 							"is not loaded is greyed out and says what is missing."));
 						ImGui::Spacing();
 						mfmpages::DrawSettingsList();
+						ImGui::EndTabItem();
+					}
+					// next after 2.1.9: other mods' own ImGui menus - a switch per mod for its row on Framework > Other menus (ImguiHost.h)
+					if (sub.Tab(TR("AMF_SubImgui", "ImGui menus")))
+					{
+						imguihost::DrawSettings();
 						ImGui::EndTabItem();
 					}
 					if (sub.Tab(TR("AMF_SubMcmSpacing", "Spacing")))
@@ -4025,6 +4033,9 @@ namespace renderer
 				sideItem(TR("AMF_Settings", "Settings"), "settings");
 				sideItem(TR("AMF_Controls", "Controls"), "controls");
 				sideItem(TR("AMF_Help", "Help"),     "help");
+				// next after 2.1.9: AMF's own frame-time graph, and other mods' own ImGui menus (the launcher) when one is loaded
+				sideItem(TR("AMF_Performance", "Performance"), "performance");
+				if (imguihost::AnyShown()) { sideItem(TR("AMF_OtherMenus", "Other menus"), "othermenus"); }
 				ImGui::Separator();
 				ImGui::TextDisabled("%s", TR("AMF_Mods", "Mods"));
 
@@ -4636,6 +4647,8 @@ namespace renderer
 				if (sel == "settings")      { DrawFrameworkSettingsPane(); }
 				else if (sel == "controls") { DrawControlsPane(); }
 				else if (sel == "help")     { DrawHelpPane(); }
+				else if (sel == "performance") { perf::DrawPage(); }
+				else if (sel == "othermenus" && imguihost::AnyShown()) { imguihost::DrawPage(); }
 				else if (sel == "mod" && !entries.empty())
 				{
 					const registry::Entry& entry = entries[selMod];
@@ -4900,6 +4913,7 @@ namespace renderer
 					return;
 				}
 				consumer::NoteRenderThread();   // 2.1.9 (theme-switch-fix): the immediate context's thread, for LoadTexture's mips
+				perf::NoteFrame();   // next after 2.1.9: AMF's own frame time - one present-hook call per frame the game shows
 
 				// SKSE MENU FRAMEWORK'S EVENTS (2.1.4 - NPC Preset Applier, a Nexus report 2026-10-07: its portraits were
 				// queued and never made under AMF). SMF 3 sends its RegisterEvent / RegisterEventPriority listeners four
@@ -5201,6 +5215,7 @@ namespace renderer
 				// decide through the IsOpen flag it was handed - not ours.
 				consumer::DrawHudElements();
 				consumer::DrawWindows();
+				perf::DrawOverlay();   // next after 2.1.9: the corner graph, when its switch is on (no input, no focus)
 
 				// Which stick drives ImGui follows "is an item being edited" (the controller scheme in
 				// Input.cpp). The framework window samples it while it draws; with only a mod's window
@@ -5248,6 +5263,7 @@ namespace renderer
 				ImGui::Render();
 				ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 				compat::FireMenuEvent(compat::MenuEvent::kAfterRender);   // SMF's event 4 (see the top of this frame)
+				imguihost::Frame();   // next after 2.1.9: other mods' menus - a queued key press steps on, OAR's state is read
 
 				// In-process capture: the backbuffer now holds the frame WITH the overlay.
 				{
@@ -5465,7 +5481,7 @@ namespace renderer
 		}
 		std::string n = a_node;
 		if (n.rfind("system/", 0) == 0) { n = n.substr(7); }  // pre-1.4.4 paths still accepted
-		if (n == "settings" || n == "controls" || n == "help" || n == "mod") { g_selNode = n; }
+		if (n == "settings" || n == "controls" || n == "help" || n == "mod" || n == "performance" || n == "othermenus") { g_selNode = n; }
 	}
 
 	std::string GetSelectedNode()
@@ -5808,6 +5824,7 @@ namespace renderer
 			   ",\"pauseGame\":" + (settings::Get().pauseGameWhileOpen ? "true" : "false") +
 			   ",\"pauseHeld\":" + (PauseHeld() ? "true" : "false") +
 			   ",\"idleCamera\":" + IdleCameraJson() +   // next after 2.1.9: [Menu] bKeepCameraAwake and the camera's vanity state
+			   ",\"perf\":" + perf::StateJson() +   // next after 2.1.9: AMF's own FPS / frame times (Performance.h)
 			   ",\"lastDevice\":\"" + (input::LastDevice() == input::Device::kGamepad ? "gamepad" :
 										   input::LastDevice() == input::Device::kKeyboardMouse ? "keyboard" : "none") + "\"" +
 			   ",\"customOrder\":" + (personalization::IsCustomOrder() ? "true" : "false") +

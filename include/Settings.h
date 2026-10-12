@@ -188,6 +188,14 @@ namespace settings
 		std::string iniPagesOff;
 		// [MfmMenus] bEnabled (next version after 2.1.9): Mod Function Menu entries as a menu here - MfmPages.h. On by default.
 		bool mfmMenus = true;
+		// [ImGuiMenus] (next version after 2.1.9; the owner, 2026-10-12: host other mods' own ImGui menus) - ImguiHost.h. One switch per
+		// target: its row on Framework > Other menus (on by default). A target that is not loaded never shows, whatever this says.
+		bool imguiOar = true;      // bOpenAnimationReplacer
+		bool imguiCs = true;       // bCommunityShaders
+		bool imguiIed = true;      // bImmersiveEquipmentDisplays
+		bool imguiOpti = true;     // bOptiScaler
+		// [Performance] bOverlay (next version after 2.1.9): AMF's own FPS / frame-time graph in the screen's corner - Performance.h. Off by default.
+		bool perfOverlay = false;
 		// How long the curtain may stay up before it gives up and lifts anyway. INI-only, because
 		// it is a safety valve rather than a preference. 30 proved too short on a heavy list.
 		std::uint32_t curtainTimeoutSeconds = 120;

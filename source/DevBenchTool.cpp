@@ -3,6 +3,7 @@
 #include "PrismaRedux.h"
 #include "IniPages.h"
 #include "MfmPages.h"
+#include "ImguiHost.h"
 #include "SystemRow.h"
 
 #include "DevBench/DevBenchAPI.h"
@@ -209,6 +210,12 @@ namespace devbenchtool
 				// run hands the call to the render thread and waits for it (a mod's function is never called on this thread).
 				result = mfmpages::ToolJson(args);
 			}
+			else if (op == "imgui")
+			{
+				// next version: other mods' own ImGui menus (ImguiHost.h) - {"op":"imgui","do":"list|open|close","id":"oar|cs|ied|optiscaler"}.
+				// open / close run on the render thread, as the page's buttons do.
+				result = imguihost::ToolJson(args);
+			}
 			else if (op == "prisma")
 			{
 				// 2.1.6: the Prisma MCM Redux menus - {"op":"prisma","do":"list|get|set|action|apply","mod":"<ModID>",...}
@@ -382,9 +389,10 @@ namespace devbenchtool
 				std::string error;
 				if (!name.empty() && value > -999.0)
 				{
-					if (name != "pointerSpeed" && name != "wheelSwitchesTabs" && name != "pauseGame" && name != "keepCameraAwake")
+					if (name != "pointerSpeed" && name != "wheelSwitchesTabs" && name != "pauseGame" && name != "keepCameraAwake" &&
+						name != "perfOverlay")
 					{
-						ok = false; error = "unknown setting '" + name + "' (pointerSpeed|wheelSwitchesTabs|pauseGame|keepCameraAwake)";
+						ok = false; error = "unknown setting '" + name + "' (pointerSpeed|wheelSwitchesTabs|pauseGame|keepCameraAwake|perfOverlay)";
 					}
 					else if (name == "pointerSpeed" && !(value >= 0.25 && value <= 4.0))
 					{
@@ -397,6 +405,7 @@ namespace devbenchtool
 							if (name == "pointerSpeed")     { v.pointerSpeed = static_cast<float>(std::round(value * 100.0) / 100.0); }
 							else if (name == "wheelSwitchesTabs") { v.wheelSwitchesTabs = value != 0.0; }
 							else if (name == "keepCameraAwake") { v.keepCameraAwake = value != 0.0; }
+							else if (name == "perfOverlay") { v.perfOverlay = value != 0.0; }
 							else                             { v.pauseGameWhileOpen = value != 0.0; }
 							logger::info("devbench: setting {} -> {} (saved)", name, value);
 							settings::Save();
@@ -414,6 +423,7 @@ namespace devbenchtool
 						 ",\"wheelSwitchesTabs\":" + (v.wheelSwitchesTabs ? "true" : "false") +
 						 ",\"pauseGame\":" + (v.pauseGameWhileOpen ? "true" : "false") +
 						 ",\"keepCameraAwake\":" + (v.keepCameraAwake ? "true" : "false") +
+						 ",\"perfOverlay\":" + (v.perfOverlay ? "true" : "false") +
 						 ",\"note\":\"a change is applied on the next game frame; read op=state or op=setting again\"}";
 			}
 			else if (op == "cleanstate")
@@ -741,7 +751,12 @@ namespace devbenchtool
 			"writes the mod's override file exactly as the page's control does (value checked against the key's kind). "
 			"Next version: mfm drives the Mod Function Menu entries: do=list (each entry's path, dll, api, type, actions, resolved, "
 			"missing; mfmLoaded = Mod Function Menu's own DLL is loaded too) | run {path} - presses the entry as the page does, on the render thread, and returns ok, type, message (the "
-			"text a Message/MessageBox function returned) and error.\","
+			"text a Message/MessageBox function returned) and error. "
+			"Next version: imgui drives Framework > Other menus (other mods' own ImGui menus): do=list (id, name, loaded, shown, module, "
+			"method api|key, key, dik, keyFrom, blocked, state -1 not known / 0 closed / 1 open, presses, lastOutcome) | open {id} | close {id} "
+			"(ids oar, cs, ied, optiscaler) - as the page's buttons: open closes this menu first, then OAR's API call or the mod's key "
+			"(SendInput, game in the foreground only) over the next frames. state.perf is AMF's own frame timing (fps and frameMs min/avg/max "
+			"over the last 240 frames, overlay); setting name=perfOverlay value=0|1 switches the corner graph.\","
 			"\"inputSchema\":{\"type\":\"object\",\"properties\":{"
 			"\"op\":{\"type\":\"string\"},\"node\":{\"type\":\"string\"},"
 			"\"mod\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"position\":{\"type\":\"string\"},"

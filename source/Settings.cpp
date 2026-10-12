@@ -381,6 +381,18 @@ namespace settings
 				"; \"Mod Function Menu\" (the default). 0 = they are not. Mod Function Menu itself is not needed and not changed.\n"
 				"bEnabled=" << (a_v.mfmMenus ? 1 : 0) << "\n"
 				"\n"
+				"[ImGuiMenus]\n"
+				"; Other mods' own ImGui menus, opened from Framework > Other menus. 1 = the mod's row is shown there when the mod is\n"
+				"; loaded (the default), 0 = it is not. Nothing of these mods is changed.\n"
+				"bOpenAnimationReplacer=" << (a_v.imguiOar ? 1 : 0) << "\n"
+				"bCommunityShaders=" << (a_v.imguiCs ? 1 : 0) << "\n"
+				"bImmersiveEquipmentDisplays=" << (a_v.imguiIed ? 1 : 0) << "\n"
+				"bOptiScaler=" << (a_v.imguiOpti ? 1 : 0) << "\n"
+				"\n"
+				"[Performance]\n"
+				"; 1 = this menu's own FPS and frame-time graph in the top-right corner of the screen, menu open or not. 0 = not (the default).\n"
+				"bOverlay=" << (a_v.perfOverlay ? 1 : 0) << "\n"
+				"\n"
 				"[Startup]\n"
 				"; Hold the screen black from the first frame the game draws until its main menu is\n"
 				"; up, so the logo frames and the half-drawn menu behind them are never shown. It\n"
@@ -773,6 +785,11 @@ namespace settings
 				if (it != entries.end()) { g_values.iniPagesOff = it->second; }
 			}
 			ReadBool(entries, "MfmMenus.bEnabled", g_values.mfmMenus);
+			ReadBool(entries, "ImGuiMenus.bOpenAnimationReplacer", g_values.imguiOar);
+			ReadBool(entries, "ImGuiMenus.bCommunityShaders", g_values.imguiCs);
+			ReadBool(entries, "ImGuiMenus.bImmersiveEquipmentDisplays", g_values.imguiIed);
+			ReadBool(entries, "ImGuiMenus.bOptiScaler", g_values.imguiOpti);
+			ReadBool(entries, "Performance.bOverlay", g_values.perfOverlay);
 			ReadNumber(entries, "Startup.uTimeoutSeconds", g_values.curtainTimeoutSeconds);
 			{
 				auto it = entries.find("Startup.sCurtainImage");

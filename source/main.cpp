@@ -7,6 +7,7 @@
 #include "Input.h"
 #include "IniPages.h"
 #include "MfmPages.h"
+#include "ImguiHost.h"
 #include "Persistence.h"
 #include "Registry.h"
 #include "Keyboard.h"
@@ -139,6 +140,7 @@ namespace
 			prisma::Load();  // 2.1.6: Prisma MCM Redux menus as AMF entries
 			inipages::Load();  // 2.1.9: INI-only mods' settings (SSE Display Tweaks) as AMF entries
 			mfmpages::Load();  // next version: Mod Function Menu entries as one AMF menu
+			imguihost::Load();  // next version: other mods' own ImGui menus (OAR, Community Shaders, IED, OptiScaler) - the launcher
 			rememberedsettings::Init();  // the remembered MCM settings' active profile
 			// 2.1.9 (AmeliaZ): state files left by deleted saves are deleted (the owner, 2026-10-12: not moved to a backup folder)
 			if (settings::Get().cleanOrphanedState)

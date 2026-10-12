@@ -59,6 +59,14 @@ Maxim Shemanarev (McSeem); the rasteriser on stb_truetype's by Sean Barrett.
 
 MIT - the notice is `include/DevBench/DevBenchAPI.LICENSE.txt`, kept with the files.
 
+## Open Animation Replacer's public UI API header (`include/OAR/OpenAnimationReplacerAPI-UI.h`, next version after 2.1.9)
+
+Copied verbatim from github.com/ersh1/OpenAnimationReplacer (src/API, commit f4e7688, Version 3.2.1), as the header itself
+invites ("Copy this file into your own project if you wish to use this API"). Copyright (c) Ersh; GPL-3.0-or-later WITH
+the author's Modding Exception and GPL-3.0 Linking Exception (the repository's COPYING and EXCEPTIONS). Only the
+declarations are used, to call Open Animation Replacer's RequestPluginAPI_UI export and its UI interface's open / close /
+is-open functions when Open Animation Replacer is loaded; nothing of Open Animation Replacer is shipped.
+
 ## Notes carried from the previous licence file
 
 Third-party components, each under its own permissive licence:
