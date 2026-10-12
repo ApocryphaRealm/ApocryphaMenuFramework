@@ -1459,9 +1459,15 @@ namespace renderer
 		std::string ArtLabel(const std::string& a_name)
 		{
 			if (a_name == "veldun") { return "Vel'dun"; }   // the theme's own spelling; a file name cannot carry it
+			// every word capitalised (themes-draft: "dear-diary-dark" reads "Dear Diary Dark", as the theme is named)
 			std::string out = a_name;
-			for (char& c : out) { if (c == '-' || c == '_') { c = ' '; } }
-			if (!out.empty()) { out[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(out[0]))); }
+			bool wordStart = true;
+			for (char& c : out)
+			{
+				if (c == '-' || c == '_') { c = ' '; wordStart = true; continue; }
+				if (wordStart) { c = static_cast<char>(std::toupper(static_cast<unsigned char>(c))); }
+				wordStart = false;
+			}
 			return out;
 		}
 
@@ -3422,8 +3428,8 @@ namespace renderer
 				ImGui::SeparatorText(TR("AMF_ManLook", "How it looks"));
 				// 2.1.6 (the owner, 2026-10-08: "make sure the help pages are up to date too"): Appearance has four sub-tabs now -
 				// Theme and text, Window, Colours (2.1.5) and Art (2.1.6) - and each has its line here.
-				bullet(TR("AMF_ManLook1", "Theme: Skyrim is the Nordic knotwork frame; Vel'dun, Oathvein, Norden, Norden - Black and "
-						  "Oblivion each bring their own art, and Untarnished is plain lines. Settings -> Appearance -> Theme and text."));
+				bullet(TR("AMF_ManLook1", "Theme: Skyrim is the Nordic knotwork frame; Vel'dun, Oathvein, Norden, Norden - Black, "
+						  "Oblivion, Dragonborn, Edge, Nordic, Dear Diary and Dear Diary - Dark each bring their own art, and Untarnished is plain lines. Settings -> Appearance -> Theme and text."));
 				bullet(TR("AMF_ManLook2", "Font: drop a .ttf into Data/SKSE/Plugins/ApocryphaMenuFramework/fonts and pick it under Settings -> Appearance -> Theme and text."));
 				bullet(TR("AMF_ManLook3", "Text size scales on top of the automatic resolution scale, so the menu reads the same on "
 						  "a 1080p screen and a 4K one."));
