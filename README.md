@@ -31,6 +31,9 @@ Licence: GPL-3.0-or-later (see `LICENSE` and `NOTICE.md`). Not a fork: contains 
 - **Hang watchdog.** If the renderer produces no frame for 120 s (configurable, `[Watchdog]`), the
   framework terminates the game process itself - the only thing that closes a kernel-wedged
   Skyrim, since Task Manager cannot.
+- **Converted menus.** Mod Function Menu entries run in AMF itself (Settings -> Converted menus -> MFM):
+  Mod Function Menu is not needed, and mods that list it as a requirement only need their own files. If it is
+  installed as well, both menus open on F1 - uninstall it, or change its key in `ccld_ModFunctionMenu.toml`.
 - **DevBench driving tools** (optional, only if DevBench is installed): `amf.menu` opens, selects
   and reads the menu headlessly (`op=systemrow` reports the journal's own category list and whether
   the framework's row is live in it); `amf.mainmenu` drives the vanilla start menu; `amf.process`

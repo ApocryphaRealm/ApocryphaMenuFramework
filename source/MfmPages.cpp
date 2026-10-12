@@ -323,6 +323,10 @@ namespace mfmpages
 		}
 
 		std::string J(const std::string& a_s) { return nlohmann::json(a_s).dump(-1, ' ', false, nlohmann::json::error_handler_t::replace); }
+
+		// Mod Function Menu's own DLL is loaded as well (the owner, 2026-10-12: "ideally amf would make mfm unneccacery").
+		// Only reported - its files are never touched and it is never held back; both menus then open on F1.
+		bool MfmLoaded() { return ::GetModuleHandleW(L"ccld_ModFunctionMenu.dll") != nullptr; }
 	}
 
 	void Load()
@@ -330,6 +334,11 @@ namespace mfmpages
 		std::scoped_lock l(g_lock);
 		if (g_loaded) { return; }   // once per session, as MFM builds its tree once
 		g_loaded = true;
+		if (MfmLoaded())
+		{
+			logger::info("mfm: Mod Function Menu is installed as well. Both menus open on F1; you can uninstall it, or change its key in "
+						 "ccld_ModFunctionMenu.toml.");
+		}
 		const std::filesystem::path root(kRoot);
 		g_mod = mfm::BuildGroup(root, "Mod", g_problems);
 		g_config = mfm::BuildGroup(root, "Config", g_problems);
@@ -379,6 +388,13 @@ namespace mfmpages
 			ImGui::Text(strings::TR("AMF_MfmCount", "%d entries found (Mod %d, Config %d); %d of them can run."), static_cast<int>(g_states.size()),
 						static_cast<int>(mfm::CountFiles(g_mod)), static_cast<int>(mfm::CountFiles(g_config)), static_cast<int>(resolved));
 		}
+		ImGui::TextUnformatted(strings::TR("AMF_MfmNotNeeded", "Mod Function Menu itself is not needed: AMF runs these menus. Mods that "
+			"list it as a requirement only need their own files."));
+		if (MfmLoaded())
+		{
+			ImGui::TextUnformatted(strings::TR("AMF_MfmAlsoInstalled", "Mod Function Menu is installed as well. Both menus open on F1; you can "
+				"uninstall it, or change its key in ccld_ModFunctionMenu.toml."));
+		}
 		ImGui::PopTextWrapPos();
 		ImGui::PopStyleColor();
 	}
@@ -401,7 +417,8 @@ namespace mfmpages
 					   ",\"lastOutcome\":" + J(s.lastOutcome) + "}";
 			}
 			return std::string("{\"ok\":true,\"op\":\"mfm\",\"do\":\"list\",\"enabled\":") + (settings::Get().mfmMenus ? "true" : "false") +
-				   ",\"registered\":" + (g_registered ? "true" : "false") + ",\"menu\":" + J(g_entry) + ",\"count\":" + std::to_string(g_states.size()) +
+				   ",\"registered\":" + (g_registered ? "true" : "false") +
+				   ",\"mfmLoaded\":" + (MfmLoaded() ? "true" : "false") + ",\"menu\":" + J(g_entry) + ",\"count\":" + std::to_string(g_states.size()) +
 				   ",\"entries\":[" + out + "]}";
 		}
 		if (what == "run")

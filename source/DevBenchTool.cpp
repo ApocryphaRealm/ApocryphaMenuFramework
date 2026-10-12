@@ -737,7 +737,7 @@ namespace devbenchtool
 			"2.1.9: ini drives the INI-only mods' pages (SSE Display Tweaks): do=list | get {mod} | set {mod, section, name, value} - set "
 			"writes the mod's override file exactly as the page's control does (value checked against the key's kind). "
 			"Next version: mfm drives the Mod Function Menu entries: do=list (each entry's path, dll, api, type, actions, resolved, "
-			"missing) | run {path} - presses the entry as the page does, on the render thread, and returns ok, type, message (the "
+			"missing; mfmLoaded = Mod Function Menu's own DLL is loaded too) | run {path} - presses the entry as the page does, on the render thread, and returns ok, type, message (the "
 			"text a Message/MessageBox function returned) and error.\","
 			"\"inputSchema\":{\"type\":\"object\",\"properties\":{"
 			"\"op\":{\"type\":\"string\"},\"node\":{\"type\":\"string\"},"

@@ -2804,8 +2804,7 @@ namespace renderer
 						ImGui::TextWrapped("%s", TR("AMF_MfmLoadHelp", "On: the buttons other mods add for Mod Function Menu (Toggle UI, "
 							"Game Settings Override and others) are a menu here, \"Mod Function Menu\" - a heading for Mod and for Config, a "
 							"header per folder, a button per entry. A button calls a function of a mod that is already loaded; one whose mod "
-							"is not loaded is greyed out and says what is missing. Mod Function Menu itself is not needed, and is left as it is "
-							"when it is installed."));
+							"is not loaded is greyed out and says what is missing."));
 						ImGui::Spacing();
 						mfmpages::DrawSettingsList();
 						ImGui::EndTabItem();
