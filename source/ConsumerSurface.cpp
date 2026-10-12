@@ -368,6 +368,20 @@ namespace consumer
 		g_device = a_device;
 	}
 
+	// 2.1.9 (theme-switch-fix): the thread the renderer's frame runs on (0 = no frame yet).
+	std::atomic<std::uint32_t> g_renderThreadId{ 0 };
+
+	void NoteRenderThread()
+	{
+		g_renderThreadId.store(static_cast<std::uint32_t>(::GetCurrentThreadId()), std::memory_order_release);
+	}
+
+	bool OnRenderThread()
+	{
+		const std::uint32_t id = g_renderThreadId.load(std::memory_order_acquire);
+		return id != 0 && id == static_cast<std::uint32_t>(::GetCurrentThreadId());
+	}
+
 	// SVG TEXTURES (2.1.3). SKSE Menu Framework mods may ship .svg icons (Walk With Me: Data/Interface/WalkWithMe/*.svg),
 	// and the WIC loader below reads only bitmaps - a user's log showed eight "could not decode" lines and the mod's
 	// icons missing (2026-10-07). nanosvg parses and rasterises the file; it is drawn at a size that stays sharp when the
@@ -494,9 +508,25 @@ namespace consumer
 		ID3D11Resource* resource = nullptr;
 		ID3D11ShaderResourceView* srv = nullptr;
 
-		// 2.1.6: the art library's textures get mipmaps (generated on the immediate context - this runs on the render thread)
+		// 2.1.6: the art library's textures get mipmaps, generated on the immediate context (DirectXTK calls UpdateSubresource
+		// and GenerateMips on it, and says itself that this is not thread-safe). 2.1.9 (theme-switch-fix): ONLY on the render
+		// thread. A DevBench theme switch ran this on the DevBench listener thread, beside the game drawing on the same context,
+		// and the game crashed in the AMD DX11 driver's worker thread moments later (2026-10-11). Asked from any other thread,
+		// the texture loads without mipmaps instead - the device calls alone are free-threaded. Before the first frame (D3D
+		// init, on the thread that will render) there is no drawing to collide with.
 		ID3D11DeviceContext* mipContext = nullptr;
-		if (a_mips && !dds) { g_device->GetImmediateContext(&mipContext); }
+		if (a_mips && !dds) {
+			const bool noFrameYet = g_renderThreadId.load(std::memory_order_acquire) == 0;
+			if (noFrameYet || OnRenderThread()) {
+				g_device->GetImmediateContext(&mipContext);
+			} else {
+				static std::atomic<bool> s_warned{ false };
+				if (!s_warned.exchange(true)) {
+					logger::warn("LoadTexture: \"{}\" was asked for mipmaps off the render thread (thread {}) - loaded without them, "
+					             "because the game's immediate context belongs to the render thread", path, ::GetCurrentThreadId());
+				}
+			}
+		}
 		const HRESULT loaded = dds ? DirectX::CreateDDSTextureFromFile(g_device, wide.c_str(), &resource, &srv)
 		                     : mipContext ? DirectX::CreateWICTextureFromFile(g_device, mipContext, wide.c_str(), &resource, &srv)
 		                                  : DirectX::CreateWICTextureFromFile(g_device, wide.c_str(), &resource, &srv);

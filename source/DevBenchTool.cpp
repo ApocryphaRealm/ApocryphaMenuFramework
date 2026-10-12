@@ -494,7 +494,8 @@ namespace devbenchtool
 			}
 			if (op == "skinreload")
 			{
-				skin::Reload();
+				// 2.1.9 (theme-switch-fix): on the render thread - the art's mipmaps use the game's immediate context
+				renderer::ReloadArtOnRenderThread(3000);
 				a_write(a_sink, (std::string(R"({"ok":true,"op":"skinreload","skin":)") + skin::StatusJson() + "}").c_str());
 				return;
 			}

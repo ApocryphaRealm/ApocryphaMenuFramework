@@ -100,6 +100,12 @@ namespace consumer
 	// Handed the game's device by the renderer at D3D init; textures cannot be created before it.
 	void SetDevice(ID3D11Device* a_device);
 
+	// 2.1.9 (theme-switch-fix): the renderer stamps the thread its frame runs on, every frame. The game's immediate context
+	// belongs to that thread; LoadTexture builds mipmaps (which need the context) only there. OnRenderThread() is false until
+	// the first frame has been stamped.
+	void NoteRenderThread();
+	bool OnRenderThread();
+
 	// Counts for the DevBench tool, so a live run can be checked without reading the log.
 	std::size_t WindowCount();
 	std::size_t HudElementCount();
