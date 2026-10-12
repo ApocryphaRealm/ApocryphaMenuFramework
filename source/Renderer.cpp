@@ -1297,9 +1297,83 @@ namespace renderer
 		// drawn on (render thread only): the input drain, which runs before ImGui::NewFrame, asks WheelStepsModTabs whether the
 		// pointer is over it and, if so, leaves the step here instead of handing ImGui the wheel - so the page under the bar
 		// never also scrolls. The bar takes the step as it is drawn next.
-		ImVec2 g_pagesBarMin{ 0.0f, 0.0f }, g_pagesBarMax{ 0.0f, 0.0f };
-		int g_pagesBarFrame = -100;
+		// 2.1.9 (AMF-63: on Controls the wheel over the Keyboard/Controller tabs scrolled the page instead): EVERY tab bar
+		// the menu draws itself is listed here as it is drawn - a mod's pages, the Settings, Controls and Help tabs and the
+		// sub-tab rows inside Settings - and the wheel goes to the innermost bar under the pointer (the last one drawn).
+		struct WheelBar { ImGuiID id; ImVec2 min; ImVec2 max; };
+		std::vector<WheelBar> g_wheelBars;   // the bars drawn on g_wheelBarsFrame, outer first
+		int g_wheelBarsFrame = -100;
+		ImGuiID g_wheelTarget = 0;  // the bar a pending wheel step is for
+		int g_wheelStepFrame = -100;  // the frame whose input drain took the step; only the next frame may use it
 		int g_wheelTabStep = 0;     // +1 next tab, -1 previous; summed over this frame's wheel clicks
+		int g_prevTabCount = 0;     // the main bar's tab count last frame (g_tabCount is re-measured from 0 every frame)
+		std::mutex g_wheelBarsMirrorLock;
+		std::vector<WheelBar> g_wheelBarsMirror;   // g_wheelBars as last drawn, for DevBench
+
+		// Call right after a BeginTabBar that returned true. Lists the bar for the wheel and returns the step the wheel asked
+		// of THIS bar (+1 next tab, -1 previous, 0 nothing). The caller turns the step into its own one-frame tab request,
+		// the same request the D-pad uses, so a click, the D-pad and the wheel never fight.
+		int TabBarWheelStep()
+		{
+			const ImGuiTabBar* bar = ImGui::GetCurrentTabBar();
+			if (!bar) { return 0; }
+			const int frame = ImGui::GetFrameCount();
+			if (g_wheelBarsFrame != frame) { g_wheelBars.clear(); g_wheelBarsFrame = frame; }
+			g_wheelBars.push_back({ bar->ID, bar->BarRect.Min, bar->BarRect.Max });
+			{
+				// the copy DevBench reads (state.tabBars) from its own thread
+				std::scoped_lock l(g_wheelBarsMirrorLock);
+				g_wheelBarsMirror = g_wheelBars;
+			}
+			if (g_wheelTabStep == 0 || g_wheelTarget != bar->ID) { return 0; }
+			const int step = g_wheelTabStep;
+			g_wheelTabStep = 0;
+			g_wheelTarget = 0;
+			if (frame - g_wheelStepFrame > 1)
+			{
+				logger::debug("tabs: a stale mouse wheel step ({}) dropped", step);
+				return 0;
+			}
+			return step;
+		}
+
+		// The wheel on the framework's OWN main tab bars (Settings, Controls, Help - 2.1.9, AMF-63): the same one-frame request
+		// a mod's page bar takes, against last frame's open tab and tab count. Call right after their BeginTabBar.
+		void OwnTabBarWheel(const char* a_page)
+		{
+			const int step = TabBarWheelStep();
+			if (step == 0) { return; }
+			const int last = std::max(0, g_prevTabCount - 1);
+			const int want = std::clamp(g_prevTabIndex + step, 0, last);
+			if (g_tabRequest < 0 && want != g_prevTabIndex)
+			{
+				g_tabRequest = want;
+				logger::debug("tabs: mouse wheel {} on {} -> tab {} of {}", step > 0 ? "down" : "up", a_page ? a_page : "?", want + 1, last + 1);
+			}
+			else
+			{
+				logger::debug("tabs: mouse wheel {} on {} at tab {} of {} - nothing to step to", step > 0 ? "down" : "up",
+							  a_page ? a_page : "?", g_prevTabIndex + 1, last + 1);
+			}
+		}
+
+		// DevBench state.tabBars: the bars the wheel can step, as last drawn, outer first - [{"x0","y0","x1","y1"}].
+		std::string TabBarsJson()
+		{
+			std::vector<WheelBar> bars;
+			{
+				std::scoped_lock l(g_wheelBarsMirrorLock);
+				bars = g_wheelBarsMirror;
+			}
+			std::string out;
+			for (const WheelBar& b : bars)
+			{
+				out += (out.empty() ? "" : ",") + std::string("{\"x0\":") + std::to_string(static_cast<int>(b.min.x)) +
+					   ",\"y0\":" + std::to_string(static_cast<int>(b.min.y)) + ",\"x1\":" + std::to_string(static_cast<int>(b.max.x)) +
+					   ",\"y1\":" + std::to_string(static_cast<int>(b.max.y)) + "}";
+			}
+			return out;
+		}
 
 		// Right before the main bar's tab number a_index is submitted: the highlight goes onto it when Y asked for that.
 		void FocusMainTabIfAsked(int a_index)
@@ -1337,6 +1411,17 @@ namespace renderer
 			{
 				if (a_declare) { _request = DeclareInnerTabs(a_count, a_current); }
 				_open = ImGui::BeginTabBar(a_id, ImGuiTabBarFlags_FittingPolicyScroll);
+				// 2.1.9: the wheel over a sub-tab row steps it, like every other tab bar in the menu
+				if (_open)
+				{
+					const int step = TabBarWheelStep();
+					const int want = std::clamp(a_current + step, 0, std::max(0, a_count - 1));
+					if (step != 0 && _request < 0 && want != a_current)
+					{
+						_request = want;
+						logger::debug("tabs: mouse wheel {} on sub-tabs {} -> tab {} of {}", step > 0 ? "down" : "up", a_id ? a_id : "?", want + 1, a_count);
+					}
+				}
 			}
 			~SubTabs()
 			{
@@ -1848,13 +1933,13 @@ namespace renderer
 				}
 				ImGui::TextWrapped("%s", TR("AMF_PointerSpeedHelp", "How fast the mouse moves this menu's pointer. At 1.00 it moves exactly as "
 								   "fast as the game's own menu cursor, at any screen size; higher is faster, lower is slower."));
-				if (widgets::Toggle(TR("AMF_WheelTabs", "Mouse wheel switches a mod's tabs"), &values.wheelSwitchesTabs))
+				if (widgets::Toggle(TR("AMF_WheelTabs", "Mouse wheel switches tabs"), &values.wheelSwitchesTabs))
 				{
 					logger::info("settings page: mouse wheel switches tabs -> {}", values.wheelSwitchesTabs);
 					settings::Save();
 				}
-				ImGui::TextWrapped("%s", TR("AMF_WheelTabsHelp", "On: with the pointer over a mod's tabs, rolling the wheel down opens the next "
-								   "tab and rolling it up the previous one."));
+				ImGui::TextWrapped("%s", TR("AMF_WheelTabsHelp", "On: with the pointer over a row of tabs - a mod's tabs or this menu's own (Settings, Controls, Help) - "
+								   "rolling the wheel down opens the next tab and rolling it up the previous one."));
 				ImGui::Spacing();
 
 				if (widgets::Toggle(TR("AMF_FastExit", "Fast exit - end the process the moment the game exits"), &values.fastExit))
@@ -4365,6 +4450,7 @@ namespace renderer
 				// Re-measured every frame. A pane with no tab bar leaves these at zero, so left
 				// falls straight back to the mod list exactly as it always did.
 				g_prevTabIndex = g_tabIndex;   // 2.1.5: where Y sends the highlight
+				g_prevTabCount = g_tabCount;   // 2.1.9: how far the wheel may step the main bar
 				g_tabCount = 0;
 				g_tabIndex = 0;
 				g_tabBarHasNav = false;
@@ -4399,16 +4485,8 @@ namespace renderer
 						// ImGui), and a wheel step taken over it asks for the previous / next tab through the same one-frame
 						// request the D-pad uses, so a click, the D-pad and the wheel never fight. Wheel down = the next tab.
 						// The open tab is LAST frame's (g_prevTabIndex): g_tabIndex is re-measured from 0 as the tabs draw.
-						if (const ImGuiTabBar* bar = ImGui::GetCurrentTabBar())
+						if (const int step = TabBarWheelStep(); step != 0)
 						{
-							g_pagesBarMin = bar->BarRect.Min;
-							g_pagesBarMax = bar->BarRect.Max;
-							g_pagesBarFrame = ImGui::GetFrameCount();
-						}
-						if (g_wheelTabStep != 0)
-						{
-							const int step = g_wheelTabStep;
-							g_wheelTabStep = 0;
 							const int last = static_cast<int>(visiblePages.size()) - 1;
 							const int want = std::clamp(g_prevTabIndex + step, 0, last);
 							if (g_tabRequest < 0 && want != g_prevTabIndex)
@@ -5120,17 +5198,27 @@ namespace renderer
 	{
 		// Render thread, from the input drain before ImGui::NewFrame - so GetFrameCount() is still the frame that drew the bar.
 		// Our own menu only, and only a bar drawn on the last frame: a page without one leaves the wheel to scroll.
-		if (!g_windowVisible.load(std::memory_order_acquire) || ImGui::GetFrameCount() - g_pagesBarFrame > 1)
+		// 2.1.9: any tab bar the menu drew (a mod's pages, Settings / Controls / Help, a settings sub-tab row) - the innermost
+		// one under the pointer, which is the last one drawn.
+		if (!g_windowVisible.load(std::memory_order_acquire) || ImGui::GetFrameCount() - g_wheelBarsFrame > 1)
 		{
 			return false;
 		}
-		if (a_x < g_pagesBarMin.x || a_x > g_pagesBarMax.x || a_y < g_pagesBarMin.y || a_y > g_pagesBarMax.y)
+		for (auto it = g_wheelBars.rbegin(); it != g_wheelBars.rend(); ++it)
 		{
-			return false;
+			if (a_x < it->min.x || a_x > it->max.x || a_y < it->min.y || a_y > it->max.y)
+			{
+				continue;
+			}
+			if (g_wheelTarget != it->id) { g_wheelTabStep = 0; }
+			g_wheelTarget = it->id;
+			g_wheelTabStep += a_step;
+			g_wheelStepFrame = ImGui::GetFrameCount();
+			logger::debug("tabs: mouse wheel over tab bar {:08X} at ({:.0f}, {:.0f}) - step {} (the page does not scroll)",
+						  it->id, a_x, a_y, a_step);
+			return true;
 		}
-		g_wheelTabStep += a_step;
-		logger::debug("tabs: mouse wheel over the tab bar at ({:.0f}, {:.0f}) - step {} (the page does not scroll)", a_x, a_y, a_step);
-		return true;
+		return false;
 	}
 
 	// A page declares its own tab bar, and takes back the tab the D-pad asked for (-1 = nothing asked).
@@ -5514,6 +5602,7 @@ namespace renderer
 			   ",\"gameCursorSpeed\":" + std::to_string(input::VanillaCursorSpeedSetting()) +
 			   ",\"scale\":" + std::to_string(input::PointerScale()) + "}" +
 			   ",\"wheelSwitchesTabs\":" + (settings::Get().wheelSwitchesTabs ? "true" : "false") +
+			   ",\"tabBars\":[" + TabBarsJson() + "]" +   // 2.1.9: every tab bar drawn last frame, outer first (aim op=cursor at one)
 			   ",\"pauseGame\":" + (settings::Get().pauseGameWhileOpen ? "true" : "false") +
 			   ",\"pauseHeld\":" + (PauseHeld() ? "true" : "false") +
 			   ",\"lastDevice\":\"" + (input::LastDevice() == input::Device::kGamepad ? "gamepad" :
