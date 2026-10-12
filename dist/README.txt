@@ -34,6 +34,8 @@ WHAT YOU GET
     add your own (CUSTOM-MENU-ART.md).
   * Full controller navigation. Keyboard or controller is detected from whatever you last
     used - there is nothing to configure and nothing to switch on.
+  * Keep the camera awake: with the game left running behind the menu, the idle camera never
+    starts circling your character while the menu is open (Settings > General, on by default).
   * Menu-key rebinding (default F1), per-save persistence of menu state, and a hang watchdog
     so a wedged game can always be closed.
   * Every control the framework claims can be switched off or rebound - no key is taken

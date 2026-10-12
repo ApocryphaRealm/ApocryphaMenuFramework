@@ -26,6 +26,8 @@ Licence: GPL-3.0-or-later (see `LICENSE` and `NOTICE.md`). Not a fork: contains 
   the menu; the toggle key is rebindable from Framework -> Controls (default F1).
 - **Per-save persistence for registered mods** - a plain-text `<save>.amf-state.ini` beside each
   save, restored when that save loads, scoped exactly like the co-save.
+- **Keep the camera awake.** With the game left running behind the menu, the idle camera never starts circling
+  the character while it is open (Settings -> General, on by default, `[Menu] bKeepCameraAwake`).
 - **Toggles render as sliding switches**, sliders can be nudged with the arrow keys, and
   explanatory text is never drawn in the near-invisible disabled grey.
 - **Hang watchdog.** If the renderer produces no frame for 120 s (configurable, `[Watchdog]`), the

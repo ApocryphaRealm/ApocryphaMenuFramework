@@ -373,7 +373,8 @@ namespace devbenchtool
 			else if (op == "setting")
 			{
 				// 2.1.7: set one of the Settings > General values the settings page sets, and save the INI, exactly as the
-				// page's control does. args name: pointerSpeed (value 0.25-4.00) | wheelSwitchesTabs (0/1) | pauseGame (0/1).
+				// page's control does. args name: pointerSpeed (value 0.25-4.00) | wheelSwitchesTabs (0/1) | pauseGame (0/1)
+				// | keepCameraAwake (0/1, next after 2.1.9).
 				// No name (or no value) just reports them. The write runs on the game's main thread, where the frame reads them.
 				const std::string name = JsonStr(args, "name");
 				const double value = JsonNum(args, "value", -1000.0);
@@ -381,9 +382,9 @@ namespace devbenchtool
 				std::string error;
 				if (!name.empty() && value > -999.0)
 				{
-					if (name != "pointerSpeed" && name != "wheelSwitchesTabs" && name != "pauseGame")
+					if (name != "pointerSpeed" && name != "wheelSwitchesTabs" && name != "pauseGame" && name != "keepCameraAwake")
 					{
-						ok = false; error = "unknown setting '" + name + "' (pointerSpeed|wheelSwitchesTabs|pauseGame)";
+						ok = false; error = "unknown setting '" + name + "' (pointerSpeed|wheelSwitchesTabs|pauseGame|keepCameraAwake)";
 					}
 					else if (name == "pointerSpeed" && !(value >= 0.25 && value <= 4.0))
 					{
@@ -395,6 +396,7 @@ namespace devbenchtool
 							auto& v = settings::Get();
 							if (name == "pointerSpeed")     { v.pointerSpeed = static_cast<float>(std::round(value * 100.0) / 100.0); }
 							else if (name == "wheelSwitchesTabs") { v.wheelSwitchesTabs = value != 0.0; }
+							else if (name == "keepCameraAwake") { v.keepCameraAwake = value != 0.0; }
 							else                             { v.pauseGameWhileOpen = value != 0.0; }
 							logger::info("devbench: setting {} -> {} (saved)", name, value);
 							settings::Save();
@@ -411,6 +413,7 @@ namespace devbenchtool
 						 ",\"pointerSpeed\":" + std::to_string(v.pointerSpeed) +
 						 ",\"wheelSwitchesTabs\":" + (v.wheelSwitchesTabs ? "true" : "false") +
 						 ",\"pauseGame\":" + (v.pauseGameWhileOpen ? "true" : "false") +
+						 ",\"keepCameraAwake\":" + (v.keepCameraAwake ? "true" : "false") +
 						 ",\"note\":\"a change is applied on the next game frame; read op=state or op=setting again\"}";
 			}
 			else if (op == "cleanstate")

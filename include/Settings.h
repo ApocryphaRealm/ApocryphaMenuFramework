@@ -101,6 +101,12 @@ namespace settings
 		// time, actors, weather and cooldowns stop. OFF by default, so nothing changes for anyone who does not turn
 		// it on. Opened from the System row the game is already paused by the journal; this adds nothing there.
 		bool pauseGameWhileOpen = false;
+		// [Menu] bKeepCameraAwake (the owner, 2026-10-12: "similar to the one in the Oblivion version, which lets you keep
+		// the game unpaused but prevents the camera from entering its idle spin around the character mode when it's left
+		// unattended"). While this window is open and the game is NOT paused by bPauseGame, the player camera's auto vanity
+		// mode is held off (PlayerCamera's allowAutoVanityMode, a runtime value - no INI is written); the camera's own value
+		// and its idle timer are put back when the window closes. ON by default, as in the Oblivion version.
+		bool keepCameraAwake = true;
 
 		// [Menu] fPointerSpeed (2.1.7; Apparerus on Discord, 2026-10-08: "it is much slower than in skyrim native menus";
 		// the owner: "ill add it in an update" / "along with dpi settings"). AMF's pointer is its own, moved by the mouse's

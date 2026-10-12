@@ -154,6 +154,80 @@ namespace renderer
 				}
 			});
 		}
+		// KEEP THE CAMERA AWAKE (next after 2.1.9, [Menu] bKeepCameraAwake; the owner, 2026-10-12, after the Oblivion version's
+		// switch of the same name). With the game running behind our menu, nothing the player does reaches the game, so the
+		// player camera's idle timer runs out and the auto vanity camera starts circling the character. While the menu is open
+		// and our own pause is not in effect, the camera's allowAutoVanityMode (CommonLibSSE-NG's name, PlayerCamera
+		// RUNTIME_DATA2 - the value the game fills from bDisableAutoVanityMode:Camera) is held false. Its own value and its
+		// idleTimer are remembered on the way in and written back on the way out, so nothing is left changed when the menu
+		// closes, and a crash leaves nothing at all: no INI setting and no file is touched. Main thread only, once on each edge,
+		// like SyncGamePause.
+		bool g_idleCameraHeld = false;   // main thread only
+		bool g_savedAllowAutoVanity = true;   // main thread only
+		float g_savedIdleTimer = 0.0f;        // main thread only
+		std::atomic<bool> g_idleCameraHeldMirror{ false };   // for the DevBench state (listener thread)
+
+		void SyncIdleCamera(bool a_want)
+		{
+			static bool last = false;   // render thread only
+			if (a_want == last)
+			{
+				return;
+			}
+			last = a_want;
+			auto* tasks = SKSE::GetTaskInterface();
+			if (!tasks)
+			{
+				logger::warn("camera: no SKSE task interface - the idle camera is not {}", a_want ? "held off" : "released");
+				return;
+			}
+			tasks->AddTask([a_want]() {
+				auto* camera = RE::PlayerCamera::GetSingleton();
+				if (!camera)
+				{
+					logger::warn("camera: PlayerCamera not ready - idle camera {} skipped", a_want ? "hold" : "release");
+					return;
+				}
+				auto& data = camera->GetRuntimeData2();
+				if (a_want && !g_idleCameraHeld)
+				{
+					g_savedAllowAutoVanity = data.allowAutoVanityMode;
+					g_savedIdleTimer = data.idleTimer;
+					data.allowAutoVanityMode = false;
+					g_idleCameraHeld = true;
+					g_idleCameraHeldMirror.store(true, std::memory_order_relaxed);
+					logger::debug("camera: menu open, game running - idle vanity camera held off (its own allowAutoVanityMode {}, idleTimer {:.2f})",
+								  g_savedAllowAutoVanity, g_savedIdleTimer);
+				}
+				else if (!a_want && g_idleCameraHeld)
+				{
+					const float timerNow = data.idleTimer;
+					data.idleTimer = g_savedIdleTimer;
+					data.allowAutoVanityMode = g_savedAllowAutoVanity;
+					g_idleCameraHeld = false;
+					g_idleCameraHeldMirror.store(false, std::memory_order_relaxed);
+					logger::debug("camera: idle vanity camera released (menu closed, switch off or our pause on) - allowAutoVanityMode {} "
+								  "and idleTimer {:.2f} put back (it read {:.2f})",
+								  g_savedAllowAutoVanity, g_savedIdleTimer, timerNow);
+				}
+			});
+		}
+		// For the DevBench state: the switch, whether we hold the camera now, and the camera's own values as they read now
+		// (listener thread - plain reads of a float, a bool and a pointer, for reporting only).
+		std::string IdleCameraJson()
+		{
+			std::string out = std::string("{\"keepCameraAwake\":") + (settings::Get().keepCameraAwake ? "true" : "false") +
+							  ",\"idleCameraBlocked\":" + (g_idleCameraHeldMirror.load(std::memory_order_relaxed) ? "true" : "false");
+			if (auto* camera = RE::PlayerCamera::GetSingleton())
+			{
+				const auto& data = camera->GetRuntimeData2();
+				const auto* vanity = camera->GetRuntimeData().cameraStates[RE::CameraStates::kAutoVanity].get();
+				out += std::string(",\"allowAutoVanityMode\":") + (data.allowAutoVanityMode ? "true" : "false") +
+					   ",\"idleTimer\":" + std::to_string(data.idleTimer) +
+					   ",\"vanityActive\":" + (vanity && camera->currentState.get() == vanity ? "true" : "false");
+			}
+			return out + "}";
+		}
 		std::atomic<void*> g_gameWindow{ nullptr };   // the game's HWND, set at D3DInit; read by the watchdog
 		std::atomic<bool> g_justOpened{ false };  // set on the input thread, consumed on the render thread
 
@@ -1970,6 +2044,18 @@ namespace renderer
 				}
 				ImGui::TextWrapped("%s", TR("AMF_PauseGameHelp", "On: time stops while this menu is open, the way it does in the game's own "
 								   "menus - nothing moves, fights or ticks down behind it. Off: the game keeps running while you change settings."));
+				ImGui::Spacing();
+
+				// next after 2.1.9 (the owner, 2026-10-12): the Oblivion version's [Menu] bKeepCameraAwake, as a switch
+				if (widgets::Toggle(TR("AMF_KeepCameraAwake", "Keep the camera awake while this menu is open"), &values.keepCameraAwake))
+				{
+					logger::info("settings page: keep the camera awake -> {}", values.keepCameraAwake);
+					settings::Save();
+				}
+				ImGui::TextWrapped("%s", TR("AMF_KeepCameraAwakeHelp", "On: with the game running behind this menu, the idle camera never starts "
+								   "circling your character, however long the menu is left open. When the menu closes the camera behaves as "
+								   "before. Off: after a while left alone, the camera starts circling as usual. With the game paused by this "
+								   "menu it changes nothing."));
 				ImGui::Spacing();
 
 				// 2.1.7: Pointer speed (Apparerus) and the wheel over the tabs (HadToRegister) - the owner, 2026-10-08
@@ -4930,7 +5016,11 @@ namespace renderer
 					}
 					// not on top of the journal's own pause (the System row): ours there only added a count to take off again
 					const bool nestedNow = g_nested.load(std::memory_order_acquire);
-					SyncGamePause(visible && settings::Get().pauseGameWhileOpen && !nestedNow, visible && s_lifted);
+					const bool ownPause = visible && settings::Get().pauseGameWhileOpen && !nestedNow;
+					SyncGamePause(ownPause, visible && s_lifted);
+					// the idle camera only matters while time runs behind the menu: not under our own pause (lifted for a
+					// page's scripts, time runs, so it is held again)
+					SyncIdleCamera(visible && settings::Get().keepCameraAwake && !(ownPause && !s_lifted));
 				}
 
 				// Open-transition work happens HERE, not in ToggleMainWindow - the toggle is
@@ -5706,6 +5796,7 @@ namespace renderer
 			   ",\"tabBars\":[" + TabBarsJson() + "]" +   // 2.1.9: every tab bar drawn last frame, outer first (aim op=cursor at one)
 			   ",\"pauseGame\":" + (settings::Get().pauseGameWhileOpen ? "true" : "false") +
 			   ",\"pauseHeld\":" + (PauseHeld() ? "true" : "false") +
+			   ",\"idleCamera\":" + IdleCameraJson() +   // next after 2.1.9: [Menu] bKeepCameraAwake and the camera's vanity state
 			   ",\"lastDevice\":\"" + (input::LastDevice() == input::Device::kGamepad ? "gamepad" :
 										   input::LastDevice() == input::Device::kKeyboardMouse ? "keyboard" : "none") + "\"" +
 			   ",\"customOrder\":" + (personalization::IsCustomOrder() ? "true" : "false") +

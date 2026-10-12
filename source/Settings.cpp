@@ -298,6 +298,9 @@ namespace settings
 				"; world time, actors and weather stop until it closes. 0 (the default) leaves the\n"
 				"; game running behind it.\n"
 				"bPauseGame=" << (a_v.pauseGameWhileOpen ? 1 : 0) << "\n"
+				"; Keep the camera awake: 1 (the default) = while this menu is open and the game is not paused, the\n"
+				"; idle camera never starts circling your character. 0 = it does, as the game decides.\n"
+				"bKeepCameraAwake=" << (a_v.keepCameraAwake ? 1 : 0) << "\n"
 				"; How fast the mouse moves the menu's pointer (0.25-4.00). 1.00 (the default) moves it exactly as fast\n"
 				"; as the game's own menu cursor, at any screen size, following the game's own fMouseCursorSpeed.\n"
 				"fPointerSpeed=" << a_v.pointerSpeed << "\n"
@@ -658,6 +661,7 @@ namespace settings
 			ReadNumber(entries, "Input.uToggleKey", g_values.toggleKey);
 			ReadBool(entries, "Input.bOnScreenKeyboard", g_values.onScreenKeyboard);
 			ReadBool(entries, "Menu.bPauseGame", g_values.pauseGameWhileOpen);
+			ReadBool(entries, "Menu.bKeepCameraAwake", g_values.keepCameraAwake);
 			ReadNumber(entries, "Menu.fPointerSpeed", g_values.pointerSpeed);
 			ReadBool(entries, "Menu.bWheelSwitchesTabs", g_values.wheelSwitchesTabs);
 			ReadBool(entries, "Menus.bSystemMenuRow", g_values.systemMenuRow);
