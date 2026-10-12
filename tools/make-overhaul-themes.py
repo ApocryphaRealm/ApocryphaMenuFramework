@@ -359,9 +359,159 @@ def knob(t, size=128):
     return img.resize((size, size), Image.LANCZOS)
 
 
+def dilate(mask, r):
+    """An L mask grown by r written pixels (dilated at twice the written size, so it stays cheap), soft-edged."""
+    w, h = mask.size
+    f = S(1) // K // 2                      # supersampled pixels per half written pixel
+    small = mask.resize((w // f, h // f), Image.LANCZOS)
+    small = small.filter(ImageFilter.MaxFilter(int(round(r * 2)) * 2 + 1))
+    return small.resize((w, h), Image.LANCZOS)
+
+
+def paint(img, mask, col):
+    """Lay col over img wherever mask is set."""
+    layer = Image.new("RGBA", img.size, col)
+    layer.putalpha(ImageChops.multiply(mask, Image.new("L", img.size, col[3])))
+    return Image.alpha_composite(img, layer)
+
+
+def written(pt, n=64):
+    """A supersampled canvas point in the written art's pixels (the cursor .ini's hot spot)."""
+    return (int(round(pt[0] / S(n) * n * K)), int(round(pt[1] / S(n) * n * K)))
+
+
+def bold_cursor(t, n=64):
+    """A broad arrow with a dark outline and a light outer rim, so it reads on dark panels and light ones alike
+    (Dear Diary - Dark, the owner in game 2026-10-12: "I want a more visually distinct cursor")."""
+    fill, line, rim = rgba(t["cursor"][0]), rgba(t["cursor"][1]), rgba(t["cursor"][3])
+    N = S(n)
+    pts = [(N * 0.1, N * 0.08), (N * 0.1, N * 0.84), (N * 0.29, N * 0.67), (N * 0.42, N * 0.94), (N * 0.56, N * 0.88),
+           (N * 0.43, N * 0.61), (N * 0.68, N * 0.61)]
+    m = Image.new("L", (N, N), 0)
+    ImageDraw.Draw(m).polygon(pts, fill=255)
+    img = Image.new("RGBA", (N, N), (0, 0, 0, 0))
+    img = paint(img, dilate(m, 4.2), rim)
+    img = paint(img, dilate(m, 2.6), line)
+    img = paint(img, m, fill)
+    shade = Image.new("L", (N, N), 0)          # a darker lower-right half of the face, for depth
+    ImageDraw.Draw(shade).polygon([(N * 0.1, N * 0.84), (N * 0.29, N * 0.67), (N * 0.42, N * 0.94), (N * 0.56, N * 0.88),
+                                   (N * 0.43, N * 0.61), (N * 0.68, N * 0.61), (N * 0.3, N * 0.5)], fill=255)
+    img = paint(img, ImageChops.multiply(shade, ImageChops.multiply(m, Image.new("L", (N, N), 70))), rim)
+    return img.resize((n * K, n * K), Image.LANCZOS), written(pts[0], n)
+
+
+def blade_cursor(t, n=64):
+    """A sword pointing up and to the left, the point at the hot spot: a silver blade with a bright ridge, a gold guard and
+    pommel, a dark grip, all in a dark outline so it reads on any backdrop (Edge, the owner 2026-10-12: "a cursor for Edge
+    UI that looks more like a blade, since it's called Edge UI")."""
+    blade, line, gold, gold_dk = rgba(t["cursor"][0]), rgba(t["cursor"][1]), rgba(t["cursor"][3]), rgba(t["cursor"][4])
+    N = S(n)
+    r2 = math.sqrt(0.5)
+    T = (N * 0.06, N * 0.06)
+
+    def at(a, b):                     # a along the blade (toward the hilt), b across it, both in canvas fractions
+        return (T[0] + (a * r2 + b * r2) * N, T[1] + (a * r2 - b * r2) * N)
+
+    L, w, tip = 0.62, 0.05, 0.16
+    blade_pts = [at(0, 0), at(tip, w), at(L, w), at(L, -w), at(tip, -w)]
+    guard_pts = [at(L - 0.02, 0.19), at(L + 0.035, 0.19), at(L + 0.035, -0.19), at(L - 0.02, -0.19)]
+    grip_pts = [at(L + 0.035, 0.032), at(L + 0.2, 0.032), at(L + 0.2, -0.032), at(L + 0.035, -0.032)]
+    pc, pr = L + 0.245, 0.05
+    pommel_pts = [at(pc - pr, 0), at(pc, pr), at(pc + pr, 0), at(pc, -pr)]
+
+    def mask(*polys):
+        m = Image.new("L", (N, N), 0)
+        d = ImageDraw.Draw(m)
+        for p in polys:
+            d.polygon(p, fill=255)
+        return m
+
+    img = Image.new("RGBA", (N, N), (0, 0, 0, 0))
+    img = paint(img, dilate(mask(blade_pts, guard_pts, grip_pts, pommel_pts), 2.4), line)
+    img = paint(img, mask(blade_pts), blade)
+    img = paint(img, mask([at(0, 0), at(tip, w), at(L, w), at(L, 0), at(tip * 0.5, 0)]), (176, 180, 188, 255))  # far edge, shaded
+    ridge = Image.new("L", (N, N), 0)
+    ImageDraw.Draw(ridge).line([at(0.05, 0), at(L - 0.01, 0)], fill=255, width=int(S(1.3)))
+    img = paint(img, ridge, (255, 255, 255, 255))
+    img = paint(img, mask(guard_pts), gold)
+    img = paint(img, mask([at(L + 0.008, 0.19), at(L + 0.035, 0.19), at(L + 0.035, -0.19), at(L + 0.008, -0.19)]), gold_dk)
+    img = paint(img, mask(grip_pts), (58, 52, 44, 255))
+    wraps = Image.new("L", (N, N), 0)
+    dw = ImageDraw.Draw(wraps)
+    for a in (L + 0.08, L + 0.125, L + 0.17):
+        dw.line([at(a, 0.032), at(a + 0.02, -0.032)], fill=255, width=int(S(1.1)))
+    img = paint(img, wraps, gold_dk)
+    img = paint(img, mask(pommel_pts), gold)
+    return img.resize((n * K, n * K), Image.LANCZOS), written(T, n)
+
+
+def quill_cursor(t, n=64):
+    """A white feather quill writing up and to the left, the nib at the hot spot, in a dark ink outline so the white reads
+    on pale paper (Dear Diary, the owner 2026-10-12: "I want Dear Diary theme to have a white feather quill for the
+    pointer")."""
+    vane, line, nib, ink = rgba(t["cursor"][0]), rgba(t["cursor"][1]), rgba(t["cursor"][3]), rgba(t["cursor"][4])
+    N = S(n)
+    r2 = math.sqrt(0.5)
+    T = (N * 0.06, N * 0.06)
+
+    def at(a, b):                     # a along the quill (toward the tail), b across it, in canvas fractions
+        return (T[0] + (a * r2 + b * r2) * N, T[1] + (a * r2 - b * r2) * N)
+
+    a0, a1 = 0.27, 1.0
+    steps = 40
+    side1 = [at(a0 + (a1 - a0) * i / steps, 0.15 * math.sin(math.pi * i / steps) ** 0.75 + 0.012) for i in range(steps + 1)]
+    side2 = [at(a0 + (a1 - a0) * i / steps, -0.085 * math.sin(math.pi * i / steps) ** 0.8 - 0.012) for i in range(steps + 1)]
+    vane_pts = side1 + side2[::-1]
+    nib_pts = [at(0, 0), at(0.15, 0.03), at(0.15, -0.03)]
+    barrel_pts = [at(0.14, 0.024), at(0.3, 0.02), at(0.3, -0.02), at(0.14, -0.024)]
+
+    def mask(*polys):
+        m = Image.new("L", (N, N), 0)
+        d = ImageDraw.Draw(m)
+        for p in polys:
+            d.polygon(p, fill=255)
+        return m
+
+    vm = mask(vane_pts)
+    cuts = Image.new("L", (N, N), 0)        # two barb notches in the wide side, one in the narrow side
+    cd = ImageDraw.Draw(cuts)
+    for a, b, s in ((0.55, 0.16, 1), (0.78, 0.13, 1), (0.66, -0.095, -1)):
+        cd.polygon([at(a, b * 1.15), at(a + 0.1, b * 1.15), at(a - 0.02, b * 0.45)], fill=255)
+    vm = ImageChops.subtract(vm, cuts)
+    whole = ImageChops.lighter(vm, mask(nib_pts, barrel_pts))
+
+    img = Image.new("RGBA", (N, N), (0, 0, 0, 0))
+    img = paint(img, dilate(whole, 2.3), line)
+    img = paint(img, vm, vane)
+    shade = Image.new("L", (N, N), 0)       # the narrow side a touch greyer, for the fold of the feather
+    ImageDraw.Draw(shade).polygon([at(a0, 0)] + side2 + [at(a1, 0)], fill=255)
+    img = paint(img, ImageChops.multiply(ImageChops.multiply(shade, vm), Image.new("L", (N, N), 255)), (222, 216, 204, 255))
+    barbs = Image.new("L", (N, N), 0)       # fine barb lines angled back from the shaft
+    bd = ImageDraw.Draw(barbs)
+    for i in range(7):
+        a = 0.36 + i * 0.085
+        bd.line([at(a, 0), at(a + 0.07, 0.12 * math.sin(math.pi * (a - a0) / (a1 - a0)) ** 0.75)], fill=255, width=int(S(0.7)))
+    img = paint(img, ImageChops.multiply(barbs, vm), (196, 188, 174, 255))
+    shaft = Image.new("L", (N, N), 0)
+    ImageDraw.Draw(shaft).line([at(0.14, 0), at(0.97, 0)], fill=255, width=int(S(1.4)))
+    img = paint(img, mask(barrel_pts), (236, 230, 214, 255))
+    img = paint(img, shaft, (176, 160, 136, 255))
+    img = paint(img, mask(nib_pts), nib)
+    slit = Image.new("L", (N, N), 0)
+    ImageDraw.Draw(slit).line([at(0.015, 0), at(0.1, 0)], fill=255, width=int(S(0.9)))
+    img = paint(img, slit, ink)
+    return img.resize((n * K, n * K), Image.LANCZOS), written(T, n)
+
+
 def cursor(t, n=64):
     fill, line = rgba(t["cursor"][0]), rgba(t["cursor"][1])
     style = t["cursor"][2]
+    if style == "quill":
+        return quill_cursor(t, n)
+    if style == "bold":
+        return bold_cursor(t, n)
+    if style == "blade":
+        return blade_cursor(t, n)
     N = S(n)
     img = Image.new("RGBA", (N, N), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
@@ -374,6 +524,61 @@ def cursor(t, n=64):
     d.polygon(pts, fill=line)
     d.polygon(ca.shrink(pts, S(3.2)), fill=fill)
     return img.resize((n * K, n * K), Image.LANCZOS), (4 * K, 3 * K)
+
+
+def hover_frame(gold, glow, dark, line=4.5, inset=3.5, bracket=15, gem=4.6):
+    """A highlight (hover) frame for a theme whose window frame is too dark to read round a control: a bright line in
+    the theme's warm gold over a dark backing, a soft glow outside it, a heavier bracket and a small gem at each corner.
+    78 x 78 with a 26 px corner, like the window frames (drawn 8x and scaled down)."""
+    F, E = FSIZE * FS, FS
+    g, gl, dk = rgba(gold), rgba(glow), rgba(dark)
+    a0, a1 = inset * E, (inset + line) * E      # the line's outer and inner edges
+    mid = (a0 + a1) / 2
+
+    def ring(o, i):
+        m = Image.new("L", (F, F), 0)
+        d = ImageDraw.Draw(m)
+        d.rectangle([o, o, F - 1 - o, F - 1 - o], fill=255)
+        d.rectangle([i, i, F - 1 - i, F - 1 - i], fill=0)
+        return m
+
+    img = Image.new("RGBA", (F, F), (0, 0, 0, 0))
+    halo = ring(0.5 * E, a1 + 1.5 * E).filter(ImageFilter.GaussianBlur(1.4 * E))
+    img = paint(img, ImageChops.multiply(halo, Image.new("L", (F, F), 110)), gl)
+    img = paint(img, ring(a0 - 1.1 * E, a1 + 1.1 * E), dk)
+    img = paint(img, ring(a0, a1), g)
+    # a brighter core down the middle of the line
+    img = paint(img, ring(mid - 0.6 * E, mid + 0.6 * E), (255, 230, 168, 255))
+    # corner brackets and gems
+    br = Image.new("L", (F, F), 0)
+    bd = ImageDraw.Draw(br)
+    w2 = (line + 1.6) * E
+    for cx, sx in ((0, 1), (F - 1, -1)):
+        for cy, sy in ((0, 1), (F - 1, -1)):
+            x0, y0 = cx + sx * (a0 - 0.8 * E), cy + sy * (a0 - 0.8 * E)
+            x1, y1 = x0 + sx * bracket * E, y0 + sy * w2
+            bd.rectangle([min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1)], fill=255)
+            x1, y1 = x0 + sx * w2, y0 + sy * bracket * E
+            bd.rectangle([min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1)], fill=255)
+    img = paint(img, dilate_px(br, 1.0 * E), dk)
+    img = paint(img, br, g)
+    gems = Image.new("L", (F, F), 0)
+    gd = ImageDraw.Draw(gems)
+    for cx in (mid, F - 1 - mid):
+        for cy in (mid, F - 1 - mid):
+            r = gem * E
+            gd.polygon([(cx, cy - r), (cx + r, cy), (cx, cy + r), (cx - r, cy)], fill=255)
+    img = paint(img, dilate_px(gems, 1.0 * E), dk)
+    img = paint(img, gems, (255, 230, 168, 255))
+    return img.resize((FSIZE, FSIZE), Image.LANCZOS)
+
+
+def dilate_px(mask, px):
+    """An L mask grown by px of its own pixels (a polygon-sized MaxFilter at a quarter scale)."""
+    w, h = mask.size
+    small = mask.resize((w // 4, h // 4), Image.LANCZOS)
+    small = small.filter(ImageFilter.MaxFilter(max(3, int(round(px / 4)) * 2 + 1)))
+    return small.resize((w, h), Image.LANCZOS)
 
 
 def toggle_track(t):
@@ -522,6 +727,9 @@ def write_theme_ini(tid, t):
         lines.append("%s=%s" % (key, p[key]))
     lines += ["fBorderThickness=1.0", "bKnotwork=0", "; the theme's own art parts, by name - its namesake in every kind"]
     lines.append("sFrameArt=%s" % tid)
+    if t.get("highlight"):
+        lines.append("; the hover / highlight frame: its own, brighter than the window frame")
+        lines.append("sHighlightArt=%s-hover" % tid)
     if t.get("bg"):
         lines.append("sBackgroundArt=%s" % tid)
     else:
@@ -543,6 +751,17 @@ def draw(tid, t):
                 "; whole: a highlighted item gets the complete frame (thin lines with open bands)\nsHighlight=whole\n" +
                 "; how far the art reaches in from its outer edge, in texture pixels - a framed pane keeps its scroll bar inside it\n" +
                 "uBand=%d\n" % t["frame"].get("band", 6))
+
+    hover = os.path.join(ASSETS, "frames", tid + "-hover")
+    if t.get("highlight"):
+        t["highlight"]().save(hover + ".png")
+        with open(hover + ".ini", "w", encoding="utf-8", newline="\r\n") as f:
+            f.write("; Hover / highlight frame drawn for AMF's %s theme (tools/make-overhaul-themes.py) - original art.\n" % t["name"] +
+                    "[Frame]\nuCorner=26\nsHighlight=whole\nuBand=9\n")
+    else:
+        for ext in (".png", ".ini"):
+            if os.path.exists(hover + ext):
+                os.remove(hover + ext)
 
     if t.get("bg"):
         maker = t["bg"] if callable(t["bg"]) else (lambda: BG_MAKERS[t["bg"]](t))
@@ -598,8 +817,9 @@ def draw(tid, t):
 
     img, hot = cursor(t)
     ca.save(img, "cursors", tid)
-    ca.ini("cursors", tid, ["; 24 px tall on a 1080p screen; the hot spot is the tip, in the art's own (written) pixels",
-                            "uDrawCorner=24", "uHotX=%d" % hot[0], "uHotY=%d" % hot[1]], note)
+    ch = t.get("cursor_h", 24)
+    ca.ini("cursors", tid, ["; %d px tall on a 1080p screen; the hot spot is the tip, in the art's own (written) pixels" % ch,
+                            "uDrawCorner=%d" % ch, "uHotX=%d" % hot[0], "uHotY=%d" % hot[1]], note)
     write_theme_ini(tid, t)
     print("drew", tid)
 
@@ -678,7 +898,9 @@ register("edge", name="Edge",
          frame=dict(lines=[(3, 2.0, "B1A06F", 245), (6, 1.0, "6A644D", 235)], corner="rounded", radius=4, ornament="hatch",
                     hatch=13, ornament_colour="B1A06F", band=8),
          tick="check", arrow="chevron", section="rule", knob="square", knob_colour="#F6DB85", knob_shade="#C9AE5E",
-         cursor=("#F4F4F4", "#1A1A1A", "slim"), grab_mark=None, section_outline=False)
+         # the pointer is a sword (the owner, 2026-10-12: "a cursor for Edge UI that looks more like a blade"): silver blade,
+         # Edge's warm gold #F6DB85 guard and pommel, dark outline
+         cursor=("#DCDDE2", "#121212", "blade", "#F6DB85", "#B39A55"), cursor_h=32, grab_mark=None, section_outline=False)
 
 # Nordic - NORDIC UI's look (Nexus 49881); its author: "Permissions are open to use my art as you wish". ITS OWN ART: the
 # Greek-key corner ornament (configpanel.swf shape 130), credited. The controls are drawn here in its shape language.
@@ -705,7 +927,9 @@ register("dear-diary", name="Dear Diary",
          frame_maker=lambda: frame_from_strip(src("dear-diary", "leather-framed-panel.png").crop((3, 150, 16, 400)), 9),
          bg=lambda: tone(mirror_tile(src("dear-diary", "paper-texture.png"), 256), (0.876, 0.934, 0.943)),
          tick="check", arrow="triangle", section="flourish", knob="circle", knob_colour="#7A2A22", knob_shade="#4E1612",
-         cursor=("#5A1414", "#F0E6D0", "slim"), grab_mark="grip", section_outline=False)
+         # the pointer is a white feather quill, nib at the hot spot (the owner, 2026-10-12), in a dark ink outline with an
+         # iron nib and an oxblood ink slit
+         cursor=("#FAF8F2", "#2A1612", "quill", "#3A2E28", "#640000"), cursor_h=32, grab_mark="grip", section_outline=False)
 
 # Dear Diary - Dark - Dear Diary Dark Mode's look (Nexus 60837); asset use allowed with credit. ITS OWN ART: the frame's
 # filigree corner and the near-black grunge of its MCM panel (configpanel_BG.swf bitmap 15), credited.
@@ -720,7 +944,12 @@ register("dear-diary-dark", name="Dear Diary - Dark",
          frame_maker=lambda: frame_from_panel(src("dear-diary-dark", "mcm-panel-bg-full.png").crop((24, 71, 266, 543)), 30, 8),
          bg=lambda: mirror_tile(src("dear-diary-dark", "mcm-panel-bg-full.png").crop((300, 90, 740, 530)), 256),
          tick="check", arrow="triangle", section="double", knob="square", knob_colour="#8A2A10", knob_shade="#521301",
-         cursor=("#FFCC99", "#28180A", "slim"), grab_mark="grip")
+         # In game (the owner, 2026-10-12): the window frame's dark bronze (#28180A-#7D5B3D) round a hovered control "is not
+         # visually distinguishable" on these near-black panels, "I want it to be the golden color", and "a more visually
+         # distinct cursor". So: its own hover frame in a bright gold (#F2C25A: the overhaul's glowing arrow glyph #F8C080
+         # taken toward gold, core #FFE6A8 near its button text #FFDB9E) and a broad pointer drawn 32 px tall with a dark outline and a gold rim.
+         highlight=lambda: hover_frame("#F2C25A", "#E0A848", "#140A04"),
+         cursor=("#FFDB9E", "#140A04", "bold", "#F8C080"), cursor_h=32, grab_mark="grip")
 
 
 if __name__ == "__main__":
