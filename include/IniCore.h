@@ -88,6 +88,42 @@ namespace inicore
 		return out;
 	}
 
+	// A DLL'S VERSION-RESOURCE NAME, ONLY WHEN IT IS A NAME (the v4 test, 2026-10-12: AlternateConversationCamera.dll's
+	// ProductName is Visual Studio's template "TODO: <Product name>", so its page read "TODO: <Product name> (INI)"). Not a
+	// name: empty or blank; holding "TODO" (as written - "Mastodon" stays), "<" or ">"; one of the template's defaults,
+	// any case; or just the DLL's own file name (a_dllFile, "AlternateConversationCamera.dll"), any case.
+	inline bool UsableDllName(const std::string& a_name, const std::string& a_dllFile)
+	{
+		const auto lower = [](std::string s) {
+			const auto b = s.find_first_not_of(" \t\r\n");
+			s = b == std::string::npos ? std::string() : s.substr(b, s.find_last_not_of(" \t\r\n") - b + 1);
+			for (char& c : s) { c = static_cast<char>(std::tolower(static_cast<unsigned char>(c))); }
+			return s;
+		};
+		const std::string n = lower(a_name);
+		if (n.empty()) { return false; }
+		if (a_name.find("TODO") != std::string::npos || a_name.find('<') != std::string::npos || a_name.find('>') != std::string::npos) { return false; }
+		for (const char* d : { "product name", "file description", "filedescription", "productname", "todo" })
+		{
+			if (n == d) { return false; }
+		}
+		return n != lower(a_dllFile);
+	}
+
+	// the first usable one of a DLL's version-resource names (ProductName before FileDescription), trimmed and at most 60
+	// characters; empty when none is, and the page then takes the INI's own words
+	inline std::string FirstUsableDllName(const std::vector<std::string>& a_candidates, const std::string& a_dllFile)
+	{
+		for (const std::string& c : a_candidates)
+		{
+			const auto b = c.find_first_not_of(" \t\r\n");
+			if (b == std::string::npos) { continue; }
+			const std::string t = c.substr(b, c.find_last_not_of(" \t\r\n") - b + 1);
+			if (t.size() <= 60 && UsableDllName(t, a_dllFile)) { return t; }
+		}
+		return {};
+	}
+
 	// A MOD'S OWN PAGE TAKES ITS INI PAGE AWAY (next after 2.1.9; the 2026-10-12 test: Lock Interaction Overhaul registers as
 	// "ApocryphaRealm Lock Interaction Overhaul", so its INI page stayed beside its own). True when a registered entry is
 	// that mod's: its title, normalised, is one of the INI's names (a_names - the file's base name, its DLL's product name,

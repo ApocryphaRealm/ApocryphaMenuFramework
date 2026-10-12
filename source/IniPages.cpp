@@ -664,8 +664,9 @@ namespace inipages
 
 		std::string J(const std::string& a_s) { return nlohmann::json(a_s).dump(); }
 
-		// a loaded DLL's ProductName, else FileDescription (empty when the DLL is not loaded or names neither)
-		std::string DllName(const std::wstring& a_dll)
+		// a loaded DLL's ProductName, else FileDescription - the first that is a real name (inicore::UsableDllName: not a
+		// Visual Studio template placeholder, not the file name); empty when the DLL is not loaded or names neither
+		std::string DllName(const std::wstring& a_dll, const std::string& a_dllFile)
 		{
 			HMODULE module = GetModuleHandleW(a_dll.c_str());
 			if (!module) { return {}; }
@@ -690,6 +691,7 @@ namespace inipages
 				}
 			}
 			prefixes.emplace_back(L"\\StringFileInfo\\040904b0\\");
+			std::vector<std::string> candidates;
 			for (const wchar_t* field : { L"ProductName", L"FileDescription" })
 			{
 				for (const std::wstring& pre : prefixes)
@@ -701,12 +703,11 @@ namespace inipages
 						const std::wstring w(value);
 						std::string s(static_cast<std::size_t>(std::max(0, WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()), nullptr, 0, nullptr, nullptr))), '\0');
 						if (!s.empty()) { WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()), s.data(), static_cast<int>(s.size()), nullptr, nullptr); }
-						s = Trim(s);
-						if (!s.empty() && s.size() <= 60) { return s; }
+						candidates.push_back(s);
 					}
 				}
 			}
-			return {};
+			return inicore::FirstUsableDllName(candidates, a_dllFile);
 		}
 
 		void Skip(const std::string& a_folder, const std::string& a_file, const std::string& a_reason)
@@ -819,7 +820,7 @@ namespace inipages
 					}
 				}
 				// the name: the table's, a loaded DLL's own, the plugin's (a Data INI beside one), else the file's words
-				const std::string dll = DllName(fs::path(base + ".dll").wstring());
+				const std::string dll = DllName(fs::path(base + ".dll").wstring(), base + ".dll");
 				std::string plugin;
 				if (a_data)
 				{

@@ -5,6 +5,11 @@
 // Prints one line per check and "ini_check: N of N passed"; exits 1 on any failure.
 #include "../include/IniCore.h"
 
+#define NOMINMAX
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#pragma comment(lib, "version.lib")
+
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -92,6 +97,58 @@ namespace
 			Expect(s, false, want);
 		}
 	}
+
+	// a DLL file's ProductName then FileDescription (the listed translations, then US English), read as the pages read a
+	// loaded one - here from the file, so no game is needed
+	std::vector<std::string> VersionNames(const std::filesystem::path& a_dll)
+	{
+		std::vector<std::string> out;
+		DWORD handle = 0;
+		const DWORD size = GetFileVersionInfoSizeW(a_dll.wstring().c_str(), &handle);
+		if (size == 0) { return out; }
+		std::vector<unsigned char> data(size);
+		if (!GetFileVersionInfoW(a_dll.wstring().c_str(), 0, size, data.data())) { return out; }
+		struct LangCp { WORD lang; WORD cp; };
+		LangCp* langs = nullptr;
+		UINT bytes = 0;
+		std::vector<std::wstring> prefixes;
+		if (VerQueryValueW(data.data(), L"\\VarFileInfo\\Translation", reinterpret_cast<void**>(&langs), &bytes) && langs)
+		{
+			for (UINT i = 0; i < bytes / sizeof(LangCp); ++i)
+			{
+				wchar_t p[64];
+				swprintf_s(p, L"\\StringFileInfo\\%04x%04x\\", langs[i].lang, langs[i].cp);
+				prefixes.emplace_back(p);
+			}
+		}
+		prefixes.emplace_back(L"\\StringFileInfo\\040904b0\\");
+		for (const wchar_t* field : { L"ProductName", L"FileDescription" })
+		{
+			for (const std::wstring& pre : prefixes)
+			{
+				wchar_t* value = nullptr;
+				UINT len = 0;
+				if (VerQueryValueW(data.data(), (pre + field).c_str(), reinterpret_cast<void**>(&value), &len) && value && len > 1)
+				{
+					const std::wstring w(value);
+					const int n = WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()), nullptr, 0, nullptr, nullptr);
+					std::string s(static_cast<std::size_t>(n > 0 ? n : 0), '\0');
+					if (!s.empty()) { WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()), s.data(), n, nullptr, nullptr); }
+					out.push_back(s);
+				}
+			}
+		}
+		return out;
+	}
+
+	// the page's name as IniPages.cpp picks it when no table entry or plugin names the mod: the DLL's usable name, else
+	// the INI base name's words
+	void ExpectName(const std::vector<std::string>& a_candidates, const std::string& a_base, const std::string& a_want, const std::string& a_what)
+	{
+		const std::string dll = inicore::FirstUsableDllName(a_candidates, a_base + ".dll");
+		const std::string got = !dll.empty() ? inicore::Label(dll, false) : inicore::Label(a_base, false);
+		Check(got == a_want, a_what + " -> \"" + got + "\"" + (got == a_want ? "" : " (want \"" + a_want + "\")"));
+	}
 }
 
 int main(int argc, char** argv)
@@ -146,6 +203,38 @@ int main(int argc, char** argv)
 	Check(!inicore::IsOwnPage({ "lockedemptycontaineractivatetextfix" }, "LockedEmptyContainerActivateTextFix", "ApocryphaRealm Lock Interaction Overhaul",
 							  "lockinteractionoverhaul"),
 		  "a different INI with a similar name keeps its page");
+
+	std::cout << "== DLL version-resource names (the v4 test: \"TODO: <Product name> (INI)\")\n";
+	const std::string acc = "AlternateConversationCamera";
+	const std::string accWords = "Alternate Conversation Camera";
+	ExpectName({ "TODO: <Product name>", "TODO: <File description>" }, acc, accWords, "the Visual Studio template's two placeholders");
+	ExpectName({}, acc, accWords, "no version names");
+	ExpectName({ "", "   " }, acc, accWords, "empty and blank");
+	ExpectName({ "Product name" }, acc, accWords, "\"Product name\"");
+	ExpectName({ "PRODUCT NAME" }, acc, accWords, "\"PRODUCT NAME\" (any case)");
+	ExpectName({ "File description" }, acc, accWords, "\"File description\"");
+	ExpectName({ "FileDescription" }, acc, accWords, "\"FileDescription\"");
+	ExpectName({ "productname" }, acc, accWords, "\"productname\"");
+	ExpectName({ "todo" }, acc, accWords, "\"todo\"");
+	ExpectName({ "My Mod TODO" }, acc, accWords, "a name holding TODO");
+	ExpectName({ "<Camera>" }, acc, accWords, "a name holding < and >");
+	ExpectName({ "Camera > Fix" }, acc, accWords, "a name holding >");
+	ExpectName({ "AlternateConversationCamera.dll" }, acc, accWords, "the DLL's own file name");
+	ExpectName({ " alternateconversationcamera.DLL " }, acc, accWords, "the DLL's own file name, other case and spaces");
+	ExpectName({ "TODO: <Product name>", "Conversation Camera Plus" }, acc, "Conversation Camera Plus", "a placeholder ProductName falls to a real FileDescription");
+	ExpectName({ "Back Pocket For Controller" }, "BackPocketForController", "Back Pocket For Controller", "a real product name is kept");
+	ExpectName({ "Mastodon Tweaks" }, "MastodonTweaks", "Mastodon Tweaks", "lower-case \"todo\" inside a word is kept");
+	ExpectName({ std::string(61, 'x') }, acc, accWords, "a name over 60 characters");
+	for (const char* folder : { "Improved Alternate Conversation Camera", "Improved Alternate Conversation Camera SE - Simple" })
+	{
+		const std::filesystem::path dll = mods / folder / "SKSE/Plugins/AlternateConversationCamera.dll";
+		if (!std::filesystem::exists(dll)) { std::cout << "SKIP " << dll.string() << " (not found)\n"; continue; }
+		const std::vector<std::string> names = VersionNames(dll);
+		std::cout << "-- " << dll.string() << "\n";
+		for (const std::string& n : names) { std::cout << "     version name \"" << n << "\"\n"; }
+		Check(!names.empty() && inicore::FirstUsableDllName(names, acc + ".dll").empty(), "the real DLL names nothing usable");
+		ExpectName(names, acc, accWords, std::string("the real DLL (") + folder + ")");
+	}
 
 	std::cout << "== real files (read only)\n";
 	RealFile(mods / "Back Pocket For Controller/SKSE/Plugins/BackPocketForController.ini",
