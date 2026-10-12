@@ -39,7 +39,6 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 - The mouse wheel over this menu's own tabs steps them, as it has on a mod's tabs since 2.1.7 (AMF-63: on Controls the wheel over Keyboard / Controller scrolled the page instead). Every tab bar the menu draws now takes it - Settings, Controls, Help and the sub-tab rows inside Settings (Appearance, Converted menus) - and it goes to the innermost row under the pointer; the page under it does not scroll. The switch on Settings > General is now "Mouse wheel switches tabs", in all eleven languages. DevBench: state.tabBars lists every bar drawn last frame (x0, y0, x1, y1), so op=cursor can be aimed at one before op=inject device=mouse code=9/8.
 
 ### Changed
-- The menu list's alphabetical-order control is now an on/off switch like every other setting, not a tick box; it does the same thing (on: A-Z or Z-A by the switch beside it; off: the order you arranged by hand).
 - Built so the DLL and PDB carry no build-machine paths: no user folder and no project folder (the linker's temp files and CommonLibSSE-NG's own sources are now built outside / trimmed from them).
 - Settings > Converted menus > FLICK: a mod built for FLICK's 30 May 2026 header says 'Built for an older FLICK (before 8 June 2026)', in all eleven languages. DevBench amf.menu op=flick reports the eras old-2026-04-13 and old-2026-05-30.
 

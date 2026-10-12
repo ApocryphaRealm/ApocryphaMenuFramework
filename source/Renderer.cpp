@@ -3917,10 +3917,11 @@ namespace renderer
 				// and switch on, it would be A to Z ... just have a tick box next to the sorting toggle. Whether they want
 				// alphabetical sorting on. So a tick box, a toggle for A to Z and Z to A, and then a sort button for sorting and
 				// adding the separators"). It replaces 2026-09-19's two switches (A-Z, Z-A; both off = the list's own order):
-				//   switch    - alphabetical order on or off (off: the order the player arranged by hand);
-				//   switch    - on A-Z, off Z-A; greyed while the first switch is off, and remembered for the next time it is on;
+				//   tick box  - alphabetical order on or off (off: the order the player arranged by hand);
+				//   switch    - on A-Z, off Z-A; greyed while the tick box is off, and remembered for the next tick;
 				//   Sort      - the MCM category sort, separators and all, as on Settings > Menu list (where Undo is).
-				// 2.1.9: the first is a switch too (gate row checkbox-is-a-toggle, the owner, 2026-10-12: rule 32 holds regardless).
+				// A tick box rather than a switch for the first, against rule 32, because the owner asked for one by name - and
+				// confirmed it on 2026-10-12: "It was indeed supposed to be a tick box next to a toggle."
 				// Favourites stay pinned at the top under any order.
 				{
 					const auto mode = personalization::GetSortMode();
@@ -3934,7 +3935,7 @@ namespace renderer
 						settings::Save();
 					};
 					ImGui::SameLine();
-					if (widgets::Toggle("##alphabetical", &alphabetical)) { apply(); }
+					if (ImGui::Checkbox("##alphabetical", &alphabetical)) { apply(); }   // rule-32: ok - owner-named exception (the owner, 2026-10-12: "It was indeed supposed to be a tick box next to a toggle.")
 					NoteHoverFrame();   // 2.1.6: the mouse gets the frame the controller gets (the owner, 2026-10-08)
 					if (ImGui::IsItemHovered()) { ImGui::SetTooltip("%s", TR("AMF_SortAlphaTip", "Sort the list alphabetically. Off: the order you arranged by hand.")); }
 					ImGui::SameLine();
