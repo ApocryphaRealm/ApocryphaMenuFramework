@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <string_view>
@@ -29,6 +30,34 @@ namespace theme
 		// page's swatches and "Theme". Full alpha; ImU32 (ABGR).
 		std::uint32_t g_roleU32[kRoleCount] = {};
 		std::uint32_t g_themeRoleU32[kRoleCount] = {};
+
+		// Control outlines (next after 2.1.9, the owner 2026-10-12): never thinner than one pixel, and never closer to the panel
+		// or a control's face than this contrast ratio (WCAG's, 1 = identical, 21 = black on white). The package gate's
+		// theme-outline-gate.py holds the same figure and the same sum.
+		constexpr float kMinOutlineWidth = 1.0f;
+		constexpr float kMinOutlineContrast = 2.0f;
+
+		float Luminance(const ImVec4& a_c)
+		{
+			auto lin = [](float v) { return v <= 0.04045f ? v / 12.92f : std::pow((v + 0.055f) / 1.055f, 2.4f); };
+			return 0.2126f * lin(a_c.x) + 0.7152f * lin(a_c.y) + 0.0722f * lin(a_c.z);
+		}
+
+		// a colour as it shows over an opaque one (the panel is taken as drawn over black)
+		ImVec4 Over(const ImVec4& a_top, const ImVec4& a_under)
+		{
+			const float a = std::clamp(a_top.w, 0.0f, 1.0f);
+			return ImVec4{ a_top.x * a + a_under.x * (1.0f - a), a_top.y * a + a_under.y * (1.0f - a), a_top.z * a + a_under.z * (1.0f - a), 1.0f };
+		}
+
+		// The contrast of a line drawn on a face that sits on the panel.
+		float OutlineContrast(const ImVec4& a_line, const ImVec4& a_face, const ImVec4& a_panel)
+		{
+			const ImVec4 panel = Over(a_panel, ImVec4{ 0.0f, 0.0f, 0.0f, 1.0f });
+			const ImVec4 face = Over(a_face, panel);
+			const float l1 = Luminance(Over(a_line, face)), l2 = Luminance(face);
+			return (std::max(l1, l2) + 0.05f) / (std::min(l1, l2) + 0.05f);
+		}
 
 		std::string_view Trim(std::string_view a_text)
 		{
@@ -657,7 +686,7 @@ namespace theme
 
 		ImGuiStyle& style = ImGui::GetStyle();
 		style.WindowBorderSize = active.borderThickness;
-		style.FrameBorderSize = active.borderThickness;
+		style.FrameBorderSize = std::max(kMinOutlineWidth, active.borderThickness);   // every control keeps an outline (see below)
 		style.PopupBorderSize = active.borderThickness;
 		style.ChildBorderSize = active.borderThickness;
 
@@ -678,7 +707,7 @@ namespace theme
 		// so switching theme changes the colours and the art, never the geometry.
 		constexpr float kFramePadding = static_cast<float>(knotwork::kCorner) + 8.0f;
 		style.WindowPadding = ImVec2(kFramePadding, kFramePadding);
-		style.TabBorderSize = active.borderThickness;
+		style.TabBorderSize = std::max(kMinOutlineWidth, active.borderThickness);
 		style.WindowRounding = 0.0f;
 		style.FrameRounding = 0.0f;
 
@@ -692,6 +721,30 @@ namespace theme
 			for (int r = 0; r < kRoleCount; ++r) { g_roleU32[r] = look.role[r]; g_themeRoleU32[r] = look.themeRole[r]; }
 			g_headerTextU32 = look.header;
 			g_helpTextU32 = look.help;
+
+			// EVERY CONTROL HAS A VISIBLE OUTLINE (the owner, 2026-10-12, Norden - Black: "the button faces don't have any kind
+			// of outline at all ... everything should have a basic minimal outline so that it's at least visible. And then the
+			// detailed art styled frame that goes around it when it's focused or hovered"). Faces sit on the background colour
+			// at rest, so a control is told from the panel by its outline alone. The outline is the Border colour; when that
+			// would not show - transparent, or within kMinOutlineContrast of the panel or a face - it is the Text colour,
+			// which every theme already makes readable on both. The same test is the package gate's
+			// (.MD\scripts\gates\theme-outline-gate.py), so a shipped theme never needs the fallback.
+			const ImVec4 panel = style.Colors[ImGuiCol_WindowBg];
+			const ImVec4 line = style.Colors[ImGuiCol_Border];
+			const float worst = std::min({ OutlineContrast(line, panel, panel),
+										   OutlineContrast(line, style.Colors[ImGuiCol_FrameBg], panel),
+										   OutlineContrast(line, style.Colors[ImGuiCol_Button], panel) });
+			if (worst < kMinOutlineContrast)
+			{
+				const ImVec4 t = style.Colors[ImGuiCol_Text];
+				style.Colors[ImGuiCol_Border] = ImVec4{ t.x, t.y, t.z, 1.0f };
+				logger::info("theme \"{}\": the border colour does not show against the panel or a control face (contrast {:.2f}, "
+							 "needs {:.1f}) - control outlines use the text colour", active.id, worst, kMinOutlineContrast);
+			}
+			else
+			{
+				logger::debug("theme \"{}\": control outline contrast {:.2f} (needs {:.1f})", active.id, worst, kMinOutlineContrast);
+			}
 			logger::debug("theme colours ({}): {}", active.id, look.picked.empty() ? std::string("all the theme's own") : "the player's " + look.picked);
 		}
 
