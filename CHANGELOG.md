@@ -28,6 +28,7 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 
 ### Fixed
 - Kill Feed 1.1.0 is connected again: it is built for FLICK 1.0.0, but its DLL lacks the text AMF 2.1.8 looked for to recognise a current FLICK mod, so 2.1.8 read it as an old one and left it without a page. Exhausting Combat 1.0.0, which looks current but uses an older order, is no longer answered with the current table.
+- *(branch theme-switch-fix - built, not yet tested in game; not part of the build recorded working above)* A theme switch made through the DevBench driving tool (amf.menu op=theme, and amf.process op=skinreload) now runs on the render thread between frames. It ran on DevBench's own thread, where the theme's art, loading for the first time, built its mipmaps on the game's immediate context while the game was drawing with it; the game crashed in the AMD DX11 driver within a second of the switch (2026-10-11, twice). Mipmaps are now only built on the render thread; asked from any other thread, a texture loads without them. A theme picked from the settings page always ran on the render thread and is unchanged. The log now says at start-up whether the game's immediate context is multithread-protected.
 
 ### Changed
 - Settings > Converted menus > FLICK: a mod built for FLICK's 30 May 2026 header says 'Built for an older FLICK (before 8 June 2026)', in all eleven languages. DevBench amf.menu op=flick reports the eras old-2026-04-13 and old-2026-05-30.

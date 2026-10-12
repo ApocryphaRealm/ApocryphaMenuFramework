@@ -94,7 +94,12 @@ namespace renderer
 	// Switch the active theme by registry id (e.g. "skyrim", "untarnished") and
 	// save it. Exposed for DevBench so a visual comparison of two themes can be photographed in
 	// ONE game session instead of one launch per theme. Returns false for an unknown id.
+	// 2.1.9 (theme-switch-fix): safe from any thread - the switch itself runs on the render thread at the start of its next
+	// frame (the art it loads uses the game's immediate context), and the caller waits up to a few seconds for it.
 	bool SetTheme(const std::string& a_themeId);
+	// 2.1.9 (theme-switch-fix): amf.process op=skinreload - reload the menu art on the render thread, waiting for it. False
+	// when no frame took the job within the timeout (it still runs at the next frame).
+	bool ReloadArtOnRenderThread(unsigned a_timeoutMs);
 	// 2.1.6 (amf.menu op=art): list the art library's parts, or with a_set pick one for the active theme - a_kind is
 	// frame / background / toggle, a_name "" (the theme's own), "none", or a part name. Returns the reply JSON.
 	std::string ArtOp(const std::string& a_kind, const std::string& a_name, bool a_set);

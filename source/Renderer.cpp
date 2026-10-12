@@ -48,6 +48,7 @@
 #include <directxtk/ScreenGrab.h>
 #include <wincodec.h>
 #include <condition_variable>
+#include <d3d11_4.h>   // ID3D11Multithread (2.1.9, theme-switch-fix: logged at D3D init)
 #include <imgui_impl_dx11.h>
 #include <imgui_impl_win32.h>
 
@@ -165,6 +166,65 @@ namespace renderer
 		// 2.1.6: a DevBench art pick (listener thread) asks the render thread to reload the art at its next frame - the
 		// textures and their cache belong to the render thread.
 		std::atomic<bool> g_artReloadPending{ false };
+
+		// 2.1.9 (theme-switch-fix): work a DevBench call (listener thread) hands to the render thread, run at the start of the
+		// next frame, before ImGui::NewFrame. A DevBench theme switch used to run theme::Apply and skin::Reload on the listener
+		// thread itself; the art it loaded generated mipmaps on the game's immediate context while the game drew on it, and
+		// the game crashed in the AMD DX11 driver's worker thread within a second (2026-10-11, twice). A job captures only by
+		// value: the caller may stop waiting before it runs (logic library: a task that captured locals by reference wrote
+		// into a dead stack frame after its caller's timeout).
+		std::mutex g_renderJobsLock;
+		std::vector<std::function<void()>> g_renderJobs;
+
+		void RunRenderJobs()
+		{
+			std::vector<std::function<void()>> jobs;
+			{
+				std::scoped_lock l(g_renderJobsLock);
+				jobs.swap(g_renderJobs);
+			}
+			for (auto& job : jobs)
+			{
+				try { job(); }
+				catch (const std::exception& e) { logger::error("render-thread job threw: {}", e.what()); }
+				catch (...) { logger::error("render-thread job threw a non-standard exception"); }
+			}
+		}
+
+		// Runs a_job on the render thread and waits up to a_timeoutMs for it. True when it ran in time; false when no frame
+		// took it in time (it stays queued and runs at the next frame). On the render thread itself it runs at once.
+		bool RunOnRenderThread(std::function<void()> a_job, unsigned a_timeoutMs)
+		{
+			if (consumer::OnRenderThread())
+			{
+				a_job();
+				return true;
+			}
+			struct Done
+			{
+				std::mutex m;
+				std::condition_variable cv;
+				bool done = false;
+			};
+			auto state = std::make_shared<Done>();
+			{
+				std::scoped_lock l(g_renderJobsLock);
+				g_renderJobs.push_back([job = std::move(a_job), state]() {
+					struct Signal
+					{   // signals even when the job throws, so the caller never waits out the timeout for nothing
+						std::shared_ptr<Done> s;
+						~Signal()
+						{
+							{ std::scoped_lock l(s->m); s->done = true; }
+							s->cv.notify_all();
+						}
+					} signal{ state };
+					job();
+				});
+			}
+			std::unique_lock l(state->m);
+			return state->cv.wait_for(l, std::chrono::milliseconds(a_timeoutMs), [&state] { return state->done; });
+		}
 
 		// Knotwork frame texture (the embedded MO2-Skyrim border-image.png). Created once at
 		// D3DInit on the game's own device; used by DrawKnotworkFrame as an ImGui texture id.
@@ -1026,6 +1086,22 @@ namespace renderer
 								  static_cast<const void*>(hwnd), static_cast<const void*>(window.swapChain));
 					g_d3dReady = false;
 					return;
+				}
+
+				// 2.1.9 (theme-switch-fix): whether the game's immediate context serialises calls from several threads. If it does,
+				// two threads using it cannot corrupt the driver's command stream, and the theme-switch crash had another cause.
+				{
+					ID3D11Multithread* mt = nullptr;
+					if (SUCCEEDED(context->QueryInterface(__uuidof(ID3D11Multithread), reinterpret_cast<void**>(&mt))) && mt)
+					{
+						logger::info("d3d: the game's immediate context is {}multithread-protected (render thread {})",
+									 mt->GetMultithreadProtected() ? "" : "NOT ", ::GetCurrentThreadId());
+						mt->Release();
+					}
+					else
+					{
+						logger::info("d3d: the game's immediate context has no ID3D11Multithread interface");
+					}
 				}
 
 				ImGui::CreateContext();
@@ -4569,6 +4645,7 @@ namespace renderer
 				{
 					return;
 				}
+				consumer::NoteRenderThread();   // 2.1.9 (theme-switch-fix): the immediate context's thread, for LoadTexture's mips
 
 				// SKSE MENU FRAMEWORK'S EVENTS (2.1.4 - NPC Preset Applier, a Nexus report 2026-10-07: its portraits were
 				// queued and never made under AMF). SMF 3 sends its RegisterEvent / RegisterEventPriority listeners four
@@ -4724,6 +4801,7 @@ namespace renderer
 				ImGuiIO& io = ImGui::GetIO();
 
 				if (g_artReloadPending.exchange(false, std::memory_order_acq_rel)) { skin::Reload(); }   // 2.1.6, op=art
+				RunRenderJobs();   // 2.1.9 (theme-switch-fix): DevBench op=theme / op=skinreload, run here and not on the listener
 
 				// Software cursor while the menu (or a mod's blocking window) has the input - the game
 				// hides and recentres the OS cursor at will, so ImGui draws its own at the position we
@@ -5134,21 +5212,37 @@ namespace renderer
 
 	bool SetTheme(const std::string& a_themeId)
 	{
+		bool known = false;
 		for (const theme::Palette& palette : theme::ListThemes())
 		{
-			if (palette.id == a_themeId)
-			{
-				theme::SetActiveTheme(a_themeId);
-				theme::Apply();
-				skin::Reload();
-				settings::Get().themeId = a_themeId;
-				settings::Save();
-				logger::info("theme switched to \"{}\" (DevBench)", a_themeId);
-				return true;
-			}
+			if (palette.id == a_themeId) { known = true; break; }
 		}
-		logger::warn("theme \"{}\" is not registered", a_themeId);
-		return false;
+		if (!known)
+		{
+			logger::warn("theme \"{}\" is not registered", a_themeId);
+			return false;
+		}
+		// 2.1.9 (theme-switch-fix): the switch runs on the RENDER thread, between frames (see g_renderJobs). The id is
+		// captured by value. Waiting lets a driving tool's next call (a capture) see the new theme, as it did before.
+		const std::string id = a_themeId;
+		const bool ran = RunOnRenderThread([id]() {
+			theme::SetActiveTheme(id);
+			theme::Apply();
+			skin::Reload();
+			settings::Get().themeId = id;
+			settings::Save();
+			logger::info("theme switched to \"{}\" (DevBench) on the render thread", id);
+		}, 3000);
+		if (!ran)
+		{
+			logger::warn("theme \"{}\" queued (DevBench): no frame took it within 3 s - it applies at the next frame", a_themeId);
+		}
+		return true;
+	}
+
+	bool ReloadArtOnRenderThread(unsigned a_timeoutMs)
+	{
+		return RunOnRenderThread([]() { skin::Reload(); }, a_timeoutMs);
 	}
 
 	// 2.1.6 - amf.menu op=art: the Appearance > Art page's dropdowns for a driving tool. No kind = list every part per kind;
