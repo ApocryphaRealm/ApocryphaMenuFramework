@@ -14,7 +14,7 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   `1.0.10` never exists.
 > * The next number is **LAST WORKING + 1**. A failed, scratch or untested test build does NOT
 >   consume its number - the next attempt at the same step REUSES it.
-> * Numbers are never typed. ONE tool, `.MD\scripts\version-gate.ps1`, holds every version rule
+> * Numbers are never typed. ONE tool, role `version-gate` (`resolve.py run version-gate`), holds every version rule
 >   and is a GATE that fails: `bump` issues the next number and writes every location, `record`
 >   proves it working (evidence + the binary's hash), `gate` refuses packaging or finalizing
 >   anything it did not issue. Documents go through `docs-pipeline.ps1 -Action bump` and the rules
