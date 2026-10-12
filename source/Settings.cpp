@@ -388,6 +388,9 @@ namespace settings
 				"bCommunityShaders=" << (a_v.imguiCs ? 1 : 0) << "\n"
 				"bImmersiveEquipmentDisplays=" << (a_v.imguiIed ? 1 : 0) << "\n"
 				"bOptiScaler=" << (a_v.imguiOpti ? 1 : 0) << "\n"
+				"; 1 = with AMF-Host-OAR.dll installed, Open Animation Replacer's menu opens inside this menu's page, live (the default).\n"
+				"; 0 = it opens over a closed menu, as the other mods' do.\n"
+				"bHostOpenAnimationReplacer=" << (a_v.hostOar ? 1 : 0) << "\n"
 				"\n"
 				"[Performance]\n"
 				"; 1 = this menu's own FPS and frame-time graph in the top-right corner of the screen, menu open or not. 0 = not (the default).\n"
@@ -789,6 +792,7 @@ namespace settings
 			ReadBool(entries, "ImGuiMenus.bCommunityShaders", g_values.imguiCs);
 			ReadBool(entries, "ImGuiMenus.bImmersiveEquipmentDisplays", g_values.imguiIed);
 			ReadBool(entries, "ImGuiMenus.bOptiScaler", g_values.imguiOpti);
+			ReadBool(entries, "ImGuiMenus.bHostOpenAnimationReplacer", g_values.hostOar);
 			ReadBool(entries, "Performance.bOverlay", g_values.perfOverlay);
 			ReadNumber(entries, "Startup.uTimeoutSeconds", g_values.curtainTimeoutSeconds);
 			{

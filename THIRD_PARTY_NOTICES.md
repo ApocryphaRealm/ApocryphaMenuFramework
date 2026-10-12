@@ -67,6 +67,12 @@ the author's Modding Exception and GPL-3.0 Linking Exception (the repository's C
 declarations are used, to call Open Animation Replacer's RequestPluginAPI_UI export and its UI interface's open / close /
 is-open functions when Open Animation Replacer is loaded; nothing of Open Animation Replacer is shipped.
 
+## AMF-Host-OAR.dll (`bridges/oar`, next version after 2.1.9)
+
+The bridge that hosts Open Animation Replacer's menu is part of this mod (GPL-3.0-or-later). It links Dear ImGui 1.89.6
+(MIT, https://github.com/ocornut/imgui - vcpkg's port, unmodified, the version Open Animation Replacer pins) and the same
+CommonLibSSE-NG as the DLL of its line (above). It uses Open Animation Replacer's public UI API header (above).
+
 ## Notes carried from the previous licence file
 
 Third-party components, each under its own permissive licence:

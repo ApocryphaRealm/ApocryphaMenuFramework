@@ -5071,6 +5071,9 @@ namespace renderer
 				// Translation runs after the backends' NewFrame (so our queued io.Add*Event
 				// calls land after, and therefore win over, the Win32 backend's own
 				// GetCursorPos-based mouse update) and before ImGui::NewFrame consumes them.
+				// next after 2.1.9: while another mod's menu is hosted in the page and open, it swallows the game's input before this
+				// framework's hook sees any - the pointer, the mouse buttons and the menu key are read from the OS instead (ImguiHost.h)
+				const bool hostedInput = interactive && imguihost::PollOsInput();
 				if (interactive)
 				{
 					input::ProcessQueuedEvents();
@@ -5084,7 +5087,14 @@ namespace renderer
 				// Software cursor while the menu (or a mod's blocking window) has the input - the game
 				// hides and recentres the OS cursor at will, so ImGui draws its own at the position we
 				// integrate. RaceMenu Atelier hides the game's own cursor for exactly this reason.
-				io.MouseDrawCursor = interactive;
+				io.MouseDrawCursor = interactive && !hostedInput;   // a hosted menu draws its own pointer, on top
+				// and a hosted menu has the keyboard: none of this framework's text fields keeps it
+				if (hostedInput && GImGui && GImGui->ActiveId != 0 && keyboard::IsTextField(GImGui->ActiveId))
+				{
+					logger::debug("input: a hosted menu is open - text field {} lets go of the keyboard", GImGui->ActiveId);
+					ImGui::ClearActiveID();
+					keyboard::Hide();
+				}
 
 				// Nav mode follows the EXPLICIT setting live (the toggle sits on the settings
 				// page itself). Never auto-detected - that is the nav-focus-drift bug.

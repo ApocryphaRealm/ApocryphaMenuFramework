@@ -1,0 +1,43 @@
+{
+    "version": 3,
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 21,
+        "patch": 0
+    },
+    "configurePresets": [
+        {
+            "name": "base",
+            "hidden": true,
+            "generator": "Ninja",
+            "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+            "cacheVariables": {
+                "VCPKG_TARGET_TRIPLET": "x64-windows-static-md",
+                "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL",
+                "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+                "CMAKE_CXX_FLAGS": "/permissive- /Zc:preprocessor /EHsc $penv{CXXFLAGS} -DWIN32_LEAN_AND_MEAN -DNOMINMAX -DUNICODE -D_UNICODE -UENABLE_SKYRIM_VR"
+            }
+        },
+        {
+            "name": "se",
+            "inherits": "base",
+            "displayName": "AMF-Host-OAR - SE 1.5.97 / AE 1.6 line (CommonLibSSE-NG from cmake/ports)",
+            "binaryDir": "${sourceDir}/build/se",
+            "cacheVariables": {
+                "VCPKG_OVERLAY_PORTS": "${sourceDir}/../../cmake/ports/commonlibsse-ng",
+                "AMF_RUNTIME_LINE": "1"
+            }
+        },
+        {
+            "name": "17",
+            "inherits": "base",
+            "displayName": "AMF-Host-OAR - Skyrim 1.7.x line (CommonLibSSE-NG 7.2.0 from cmake/ports-17)",
+            "binaryDir": "${sourceDir}/build/17",
+            "cacheVariables": {
+                "VCPKG_OVERLAY_PORTS": "${sourceDir}/../../cmake/ports-17/commonlibsse-ng",
+                "VCPKG_MANIFEST_DIR": "${sourceDir}/manifest-17",
+                "AMF_RUNTIME_LINE": "17"
+            }
+        }
+    ]
+}

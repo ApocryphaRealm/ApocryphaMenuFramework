@@ -1,6 +1,8 @@
 #include "ImguiHost.h"
 
+#include "Bindings.h"
 #include "HostCore.h"
+#include "Input.h"
 #include "Renderer.h"
 #include "Settings.h"
 #include "Strings.h"
@@ -89,6 +91,59 @@ namespace imguihost
 		bool g_oarSeenOpen = false;
 		int g_reopenDeadline = 0;
 		int g_pageDrawnFrame = -100;   // the last frame DrawPage ran, to refresh the keys when the page is opened
+
+		// ---- phase 2: the bridge and the hosted page (render thread unless noted) ----
+		struct Bridge
+		{
+			bool registered = false;
+			std::uint32_t api = 0;
+			AMF_HostFrameCallback callback = nullptr;
+			void* user = nullptr;
+			bool failed = false;          // set by AMF_HostBridgeFailed (any thread) or a fault in the call
+			std::string failReason;
+			int targetOpen = -1;          // what the bridge saw last frame
+			int wantsMouse = 0;
+			std::uint64_t placedFrames = 0;
+			std::uint64_t calls = 0;
+		};
+		std::mutex g_bridgeLock;          // registration and failure may come from any thread
+		Bridge g_bridge;                  // target "oar"
+
+		struct Hosting
+		{
+			bool active = false;
+			int startFrame = 0;
+			bool seenOpen = false;
+			float x = 0, y = 0, w = 0, h = 0;   // the empty rectangle, this frame (display pixels)
+			int rectFrame = -1;                 // ImGui frame the rectangle was taken on
+			std::uint64_t eventsAtOpen = 0;     // AMF's input-hook event count when OAR's menu opened
+			std::uint64_t eventsWhileOpen = 0;  // ... and how many reached AMF's hook while it was open (expected 0)
+			std::uint64_t osPresses = 0;        // mouse presses AMF took from the OS while hosting
+			std::string lastEnd;                // why the last hosting ended
+			int sessions = 0;
+		};
+		Hosting g_host;
+		bool g_osDown[3] = {};
+		bool g_osToggleDown = false;
+		bool g_osPolling = false;
+
+		Bridge BridgeCopy()
+		{
+			std::scoped_lock l(g_bridgeLock);
+			return g_bridge;
+		}
+
+		bool HostAvailable()
+		{
+			const Bridge b = BridgeCopy();
+			return b.registered && !b.failed && settings::Get().hostOar;
+		}
+
+		int OarState()
+		{
+			std::scoped_lock l(g_lock);
+			return g_targets[kOar].state;
+		}
 
 		bool SwitchOn(int a_id)
 		{
@@ -309,6 +364,59 @@ namespace imguihost
 			}
 		}
 
+		// The hosted page ends: close OAR when asked (and when it is open) - its API's CloseMenu, else Escape (OAR closes its
+		// menu on Escape whatever its own key is).
+		void EndHosting(bool a_closeTarget, const std::string& a_why)
+		{
+			if (!g_host.active) { return; }
+			g_host.active = false;
+			{
+				std::scoped_lock l(g_bridgeLock);   // DevBench reads it from its own thread
+				g_host.lastEnd = a_why;
+			}
+			g_osPolling = false;
+			const int state = OarState();
+			logger::info("imgui: hosted Open Animation Replacer ended - {}{} (AMF's input hook got {} event(s) while it was open; {} press(es) taken from the OS)",
+						 a_why, a_closeTarget && state == 1 ? "; closing its menu" : "", g_host.eventsWhileOpen, g_host.osPresses);
+			if (!a_closeTarget || state != 1) { return; }
+			if (g_oarV3) { g_apiCall = ApiCall{ kOar, false, g_frame }; return; }
+			if (g_press) { return; }
+			Press p;
+			p.target = kOar;
+			p.combo.keys = { 0x01 };   // Escape
+			p.startFrame = g_frame;
+			g_press = p;
+		}
+
+		std::string StartHosting(const hostcore::KeyCombo& a_combo)
+		{
+			if (g_press) { return "a key press is still going on"; }
+			g_host.active = true;
+			g_host.startFrame = g_frame;
+			g_host.seenOpen = false;
+			g_host.eventsAtOpen = 0;
+			g_host.eventsWhileOpen = 0;
+			g_host.osPresses = 0;
+			g_host.rectFrame = -1;
+			++g_host.sessions;
+			renderer::SetSelectedNode("othermenus");   // the hosted page is Other menus (a DevBench open may come from another page)
+			const int state = OarState();
+			logger::info("imgui: hosting Open Animation Replacer in this page (session {}) - its menu is {}", g_host.sessions,
+						 state == 1 ? "already open: snapped here" : (g_oarV3 ? "opened through its API" : "opened with its key"));
+			if (state == 1) { return std::string(); }
+			if (g_oarV3)
+			{
+				g_apiCall = ApiCall{ kOar, true, g_frame };
+				return std::string();
+			}
+			Press p;
+			p.target = kOar;
+			p.combo = a_combo;
+			p.startFrame = g_frame;
+			g_press = p;
+			return std::string();
+		}
+
 		// What a press of Open / Close does. Render thread. Returns "" when started, else why not.
 		std::string Act(int a_id, bool a_open)
 		{
@@ -322,6 +430,17 @@ namespace imguihost
 				if (!t.blocked.empty()) { return t.blocked; }
 				++t.presses;
 				combo = t.key;
+			}
+			// phase 2: OAR opens INSIDE this page when the bridge is there and its switch is on (AMF stays open)
+			// (only with this menu up: the page is where OAR goes - with the menu closed, Open is the launcher's)
+			if (a_id == kOar && HostAvailable() && (renderer::IsMainWindowVisible() || g_host.active))
+			{
+				if (a_open) { return g_host.active ? std::string() : StartHosting(combo); }
+				if (g_host.active)
+				{
+					EndHosting(true, "Close pressed");
+					return std::string();
+				}
 			}
 			const bool useApi = a_id == kOar && g_oarV3;
 			if (!useApi)
@@ -368,6 +487,120 @@ namespace imguihost
 			std::scoped_lock l(g_lock);
 			g_targets[kOar].lastOutcome = std::string(c.open ? "OpenMenu" : "CloseMenu") + (ok ? " - done" : " - OAR said no");
 			logger::info("imgui: Open Animation Replacer - {} through its API: {}", c.open ? "OpenMenu" : "CloseMenu", ok ? "done" : "refused");
+		}
+
+		// The bridge's own code runs inside this call; a fault in it must not take the game down with it.
+		bool GuardedCall(AMF_HostFrameCallback a_cb, AMF_HostFrame* a_f, void* a_user)
+		{
+			__try
+			{
+				a_cb(a_f, a_user);
+				return true;
+			}
+			__except (EXCEPTION_EXECUTE_HANDLER)
+			{
+				return false;
+			}
+		}
+
+		// Once a frame, after AMF's frame is drawn: hand the bridge the rectangle (or "not hosting") and read back what it saw.
+		void CallBridge()
+		{
+			AMF_HostFrameCallback cb = nullptr;
+			void* user = nullptr;
+			{
+				std::scoped_lock l(g_bridgeLock);
+				if (!g_bridge.registered || g_bridge.failed) { return; }
+				cb = g_bridge.callback;
+				user = g_bridge.user;
+			}
+			const ImGuiIO& io = ImGui::GetIO();
+			AMF_HostFrame f{};
+			f.size = sizeof(AMF_HostFrame);
+			f.frame = static_cast<std::uint32_t>(g_frame);
+			f.hosting = (g_host.active && g_host.rectFrame == ImGui::GetFrameCount() && renderer::IsMainWindowVisible() && g_host.w > 1.0f &&
+						 g_host.h > 1.0f) ? 1 : 0;
+			f.x = g_host.x;
+			f.y = g_host.y;
+			f.w = g_host.w;
+			f.h = g_host.h;
+			f.displayW = io.DisplaySize.x;
+			f.displayH = io.DisplaySize.y;
+			f.targetOpen = -1;
+			f.wantsMouse = 0;
+			f.placed = 0;
+			const bool ok = GuardedCall(cb, &f, user);
+			{
+				std::scoped_lock l(g_bridgeLock);
+				++g_bridge.calls;
+				if (!ok)
+				{
+					g_bridge.failed = true;
+					g_bridge.failReason = "the bridge faulted in its frame call";
+					logger::error("imgui: AMF-Host-OAR faulted in its frame call - hosting is off for this session");
+					return;
+				}
+				g_bridge.targetOpen = f.targetOpen;
+				g_bridge.wantsMouse = f.wantsMouse;
+				if (f.placed) { ++g_bridge.placedFrames; }
+			}
+			// one lock at a time (DevBench's list takes g_lock, then g_bridgeLock)
+			if (!g_oarV3)
+			{
+				std::scoped_lock l2(g_lock);
+				g_targets[kOar].state = f.targetOpen;   // OAR 3.0.2 has no IsMenuOpen: the bridge reads it from OAR's context
+			}
+		}
+
+		void HostingLifecycle()
+		{
+			if (!g_host.active) { return; }
+			const Bridge b = BridgeCopy();
+			const int state = g_oarV3 ? (g_oarV3->IsMenuOpen() ? 1 : 0) : b.targetOpen;
+			if (b.failed || !b.registered)
+			{
+				// fail closed: hosting stops; OAR keeps the screen as the launcher would have given it
+				const bool open = state == 1;
+				EndHosting(false, "the bridge stopped: " + b.failReason);
+				if (open && renderer::IsMainWindowVisible())
+				{
+					logger::info("imgui: falling back to the launcher - this menu closes and Open Animation Replacer keeps the screen");
+					renderer::SetMenuVisible(false);
+				}
+				return;
+			}
+			if (!renderer::IsMainWindowVisible())
+			{
+				EndHosting(true, "this menu closed");
+				return;
+			}
+			// the page draws its hosted layout from the frame after the button that started it
+			if (g_host.rectFrame != ImGui::GetFrameCount() && g_frame > g_host.startFrame + 1)
+			{
+				EndHosting(true, "the page was left");
+				return;
+			}
+			if (state == 1)
+			{
+				if (!g_host.seenOpen)
+				{
+					g_host.seenOpen = true;
+					g_host.eventsAtOpen = input::EventsSeen();
+					logger::info("imgui: Open Animation Replacer's menu is open in the page - this menu now reads the pointer, the mouse "
+								 "buttons and its key from the OS");
+				}
+				g_host.eventsWhileOpen = input::EventsSeen() - g_host.eventsAtOpen;
+				return;
+			}
+			if (g_host.seenOpen)
+			{
+				EndHosting(false, "Open Animation Replacer closed its menu");
+				return;
+			}
+			if (g_frame > g_host.startFrame + 240)
+			{
+				EndHosting(false, "Open Animation Replacer's menu did not open within 4 s");
+			}
 		}
 
 		const char* StateText(int a_state)
@@ -455,6 +688,38 @@ namespace imguihost
 		ImGui::PopStyleColor();
 		ImGui::Spacing();
 
+		// phase 2: the HOSTED PAGE - AMF's frame and an empty rectangle that OAR's own window is moved into each frame
+		if (g_host.active)
+		{
+			ImGui::TextUnformatted(kNames[kOar]);
+			ImGui::SameLine();
+			ImGui::TextDisabled("%s", TR("AMF_HostLive", "- live in this page"));
+			ImGui::SameLine();
+			bool close = ImGui::Button(TR("AMF_ImguiClose", "Close"));
+			renderer::NoteHoveredItem();
+			ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
+			ImGui::PushTextWrapPos(0.0f);
+			ImGui::TextUnformatted(TR("AMF_HostHelp", "Open Animation Replacer draws its own menu here, with its own look and controls; "
+				"it does not take a controller. Escape or Close closes it, and this menu's key closes both."));
+			ImGui::PopTextWrapPos();
+			ImGui::PopStyleColor();
+			ImGui::BeginChild("##amf_hosted", ImVec2(0.0f, 0.0f), false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+			const ImVec2 pos = ImGui::GetWindowPos(), size = ImGui::GetWindowSize();
+			g_host.x = pos.x;
+			g_host.y = pos.y;
+			g_host.w = size.x;
+			g_host.h = size.y;
+			g_host.rectFrame = ImGui::GetFrameCount();
+			if (OarState() != 1)
+			{
+				ImGui::SetCursorPos(ImVec2(ImGui::GetStyle().WindowPadding.x, ImGui::GetStyle().WindowPadding.y));
+				ImGui::TextDisabled("%s", TR("AMF_HostOpening", "Opening Open Animation Replacer..."));
+			}
+			ImGui::EndChild();
+			if (close) { EndHosting(true, "Close pressed"); }
+			return;
+		}
+
 		std::array<Target, kCount> targets;
 		{
 			std::scoped_lock l(g_lock);
@@ -473,7 +738,7 @@ namespace imguihost
 			ImGui::TextDisabled(TR("AMF_ImguiState", "- %s"), StateText(t.state));
 			const std::string keyName = hostcore::ComboName(t.key);
 			ImGui::BeginDisabled(!t.blocked.empty());
-			if (i == kOar && g_oarV3)
+			if (i == kOar && (g_oarV3 || HostAvailable()))
 			{
 				if (ImGui::Button(TR("AMF_ImguiOpen", "Open"))) { action = i; open = true; }
 				renderer::NoteHoveredItem();
@@ -494,6 +759,7 @@ namespace imguihost
 			ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
 			ImGui::PushTextWrapPos(0.0f);
 			if (!t.blocked.empty()) { ImGui::TextUnformatted(t.blocked.c_str()); }
+			else if (i == kOar && HostAvailable()) { ImGui::TextUnformatted(TR("AMF_HostRowNote", "Opens inside this page, live (AMF-Host-OAR).")); }
 			else if (i == kOar && g_oarV3) { ImGui::TextUnformatted(TR("AMF_ImguiByApi", "Opened and closed through its own interface.")); }
 			else
 			{
@@ -538,6 +804,25 @@ namespace imguihost
 			ImGui::SameLine();
 			ImGui::TextDisabled("(%s)", loaded[i] ? TR("AMF_ImguiLoaded", "loaded") : TR("AMF_ImguiNotLoaded", "not loaded"));
 		}
+		ImGui::Spacing();
+		auto& v = settings::Get();
+		if (widgets::Toggle(TR("AMF_HostOarSwitch", "Open Animation Replacer's menu inside this menu (live)"), &v.hostOar))
+		{
+			logger::info("settings page: host Open Animation Replacer's menu in the page -> {}", v.hostOar);
+			if (!v.hostOar && g_host.active) { EndHosting(true, "hosting switched off"); }
+			settings::Save();
+		}
+		const Bridge b = BridgeCopy();
+		ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
+		ImGui::PushTextWrapPos(0.0f);
+		ImGui::TextUnformatted(TR("AMF_HostOarHelp", "On: its Open on Other menus keeps this menu open and shows Open Animation "
+			"Replacer's own menu inside the page, live. Needs AMF-Host-OAR.dll (in this mod's package) and a version of Open "
+			"Animation Replacer it knows; otherwise it opens over a closed menu, as the others do."));
+		if (!b.registered) { ImGui::TextUnformatted(TR("AMF_HostNoBridge", "AMF-Host-OAR.dll is not installed or not loaded.")); }
+		else if (b.failed) { ImGui::Text(TR("AMF_HostStopped", "Hosting is off for this session: %s"), b.failReason.c_str()); }
+		else { ImGui::TextUnformatted(TR("AMF_HostReady", "AMF-Host-OAR.dll is loaded and ready.")); }
+		ImGui::PopTextWrapPos();
+		ImGui::PopStyleColor();
 	}
 
 	void Frame()
@@ -545,6 +830,8 @@ namespace imguihost
 		++g_frame;
 		RunApiCall();
 		StepPress();
+		CallBridge();
+		HostingLifecycle();
 		if (g_oarV3)
 		{
 			const bool open = g_oarV3->IsMenuOpen();
@@ -594,8 +881,25 @@ namespace imguihost
 					   (t.keyOpensOnly ? "true" : "false") + ",\"blocked\":" + J(t.blocked) + ",\"state\":" + std::to_string(t.state) +
 					   ",\"presses\":" + std::to_string(t.presses) + ",\"lastOutcome\":" + J(t.lastOutcome) + "}";
 			}
+			const Bridge b = BridgeCopy();
+			std::string lastEnd;
+			{
+				std::scoped_lock l2(g_bridgeLock);
+				lastEnd = g_host.lastEnd;
+			}
+			const std::string hosting = std::string("{\"bridge\":") + (b.registered ? "true" : "false") + ",\"bridgeFailed\":" +
+										(b.failed ? "true" : "false") + ",\"failReason\":" + J(b.failReason) + ",\"switch\":" +
+										(settings::Get().hostOar ? "true" : "false") + ",\"active\":" + (g_host.active ? "true" : "false") +
+										",\"targetOpen\":" + std::to_string(b.targetOpen) + ",\"wantsMouse\":" + std::to_string(b.wantsMouse) +
+										",\"placedFrames\":" + std::to_string(b.placedFrames) + ",\"calls\":" + std::to_string(b.calls) +
+										",\"rect\":[" + std::to_string(static_cast<int>(g_host.x)) + "," + std::to_string(static_cast<int>(g_host.y)) + "," +
+										std::to_string(static_cast<int>(g_host.w)) + "," + std::to_string(static_cast<int>(g_host.h)) + "]" +
+										",\"osPolling\":" + (g_osPolling ? "true" : "false") +
+										",\"amfEventsWhileOpen\":" + std::to_string(g_host.eventsWhileOpen) + ",\"osPresses\":" +
+										std::to_string(g_host.osPresses) + ",\"sessions\":" + std::to_string(g_host.sessions) + ",\"lastEnd\":" +
+										J(lastEnd) + "}";
 			return std::string("{\"ok\":true,\"op\":\"imgui\",\"do\":\"list\",\"oarApiV3\":") + (g_oarV3 ? "true" : "false") +
-				   ",\"targets\":[" + out + "]}";
+				   ",\"targets\":[" + out + "],\"hosting\":" + hosting + "}";
 		}
 		if (what == "open" || what == "close")
 		{
@@ -621,5 +925,96 @@ namespace imguihost
 				   "\"" + (why->empty() ? std::string(",\"note\":\"started - the press runs over the next frames; read do=list\"") : ",\"error\":" + J(*why)) + "}";
 		}
 		return "{\"ok\":false,\"op\":\"imgui\",\"error\":\"do = list | open {id} | close {id}\"}";
+	}
+
+	bool PollOsInput()
+	{
+		const bool active = g_host.active && g_host.seenOpen && BridgeCopy().targetOpen != 0;
+		if (!active)
+		{
+			if (g_osPolling)
+			{
+				// whatever AMF still holds from the OS is let go, so nothing stays down when the game's input comes back
+				for (int b = 0; b < 3; ++b)
+				{
+					if (g_osDown[b]) { input::QueueMouseButton(static_cast<std::uint32_t>(b), false); }
+					g_osDown[b] = false;
+				}
+				g_osPolling = false;
+			}
+			g_osToggleDown = false;
+			return false;
+		}
+		g_osPolling = true;
+		const HWND game = static_cast<HWND>(renderer::GetGameWindow());
+		if (!game || ::GetForegroundWindow() != game) { return true; }
+		POINT pt{};
+		RECT rc{};
+		if (::GetCursorPos(&pt) && ::ScreenToClient(game, &pt) && ::GetClientRect(game, &rc) && rc.right > 0 && rc.bottom > 0)
+		{
+			// the client area onto the back buffer AMF draws in (they differ when the game renders smaller than its window)
+			const ImGuiIO& io = ImGui::GetIO();
+			input::SetCursorAbsolute(static_cast<float>(pt.x) * io.DisplaySize.x / static_cast<float>(rc.right),
+									 static_cast<float>(pt.y) * io.DisplaySize.y / static_cast<float>(rc.bottom));
+		}
+		const int wants = BridgeCopy().wantsMouse;
+		constexpr int kVk[3] = { VK_LBUTTON, VK_RBUTTON, VK_MBUTTON };
+		for (int b = 0; b < 3; ++b)
+		{
+			const bool down = (::GetAsyncKeyState(kVk[b]) & 0x8000) != 0;
+			if (down == g_osDown[b]) { continue; }
+			if (down && wants) { continue; }   // a press OAR's window or popup is under: OAR's alone
+			g_osDown[b] = down;
+			input::QueueMouseButton(static_cast<std::uint32_t>(b), down);
+			if (down) { ++g_host.osPresses; }
+		}
+		// AMF's own menu key, which never reaches AMF's hook while OAR's menu is open
+		const std::int32_t dik = bindings::ToggleKeyboardCode();
+		if (dik > 0)
+		{
+			const UINT sc = static_cast<UINT>(dik & 0x7F) | ((dik & 0x80) ? 0xE000u : 0u);
+			const UINT vk = ::MapVirtualKeyW(sc, MAPVK_VSC_TO_VK_EX);
+			const bool down = vk != 0 && (::GetAsyncKeyState(static_cast<int>(vk)) & 0x8000) != 0;
+			if (down && !g_osToggleDown)
+			{
+				logger::info("imgui: this menu's key, read from the OS while Open Animation Replacer is hosted - closing both");
+				renderer::SetMenuVisible(false);
+			}
+			g_osToggleDown = down;
+		}
+		return true;
+	}
+
+	bool RegisterBridge(const char* a_target, std::uint32_t a_api, AMF_HostFrameCallback a_callback, void* a_user)
+	{
+		const std::string target = a_target ? a_target : "";
+		std::scoped_lock l(g_bridgeLock);
+		if (target != "oar" || a_api != AMF_HOST_BRIDGE_API || !a_callback || g_bridge.registered)
+		{
+			logger::warn("imgui: a host bridge for \"{}\" (api {}) was refused - {}", target, a_api,
+						 target != "oar" ? "only \"oar\" is hosted" : a_api != AMF_HOST_BRIDGE_API ? "unknown bridge api" :
+						 !a_callback ? "no callback" : "one is registered already");
+			return false;
+		}
+		g_bridge.registered = true;
+		g_bridge.api = a_api;
+		g_bridge.callback = a_callback;
+		g_bridge.user = a_user;
+		logger::info("imgui: host bridge for Open Animation Replacer registered (api {})", a_api);
+		return true;
+	}
+
+	void BridgeFailed(const char* a_target, const char* a_reason)
+	{
+		const std::string reason = a_reason ? a_reason : "(no reason given)";
+		std::scoped_lock l(g_bridgeLock);
+		if (!a_target || std::string(a_target) != "oar") { return; }
+		if (!g_bridge.failed)
+		{
+			g_bridge.failed = true;
+			g_bridge.failReason = reason;
+			logger::warn("imgui: the host bridge for Open Animation Replacer stopped - {}; hosting is off for this session and Open "
+						 "falls back to the launcher", reason);
+		}
 	}
 }

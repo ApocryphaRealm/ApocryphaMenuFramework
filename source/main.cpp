@@ -331,6 +331,17 @@ AMF_API std::uint32_t AMF_GetInputMode()
 	return input::UsingController() ? 1u : 0u;
 }
 
+// next after 2.1.9: a bridge DLL hosting another mod's live ImGui menu in AMF's page (AMF/API.h, ImguiHost.h)
+AMF_API bool AMF_RegisterHostBridge(const char* a_target, std::uint32_t a_bridgeApi, AMF_HostFrameCallback a_callback, void* a_user)
+{
+	return imguihost::RegisterBridge(a_target, a_bridgeApi, a_callback, a_user);
+}
+
+AMF_API void AMF_HostBridgeFailed(const char* a_target, const char* a_reason)
+{
+	imguihost::BridgeFailed(a_target, a_reason);
+}
+
 SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 {
 	// ONCE-ONLY GUARD (1.3.3; replaces the 1.3.2 filename check, which refused BOTH loads).

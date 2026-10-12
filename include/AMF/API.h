@@ -128,6 +128,44 @@ AMF_API void AMF_SetSticksCaptured(bool a_captured);
 AMF_API bool AMF_GetStick(int a_which, float* a_x, float* a_y, bool* a_clicked, bool* a_live);
 
 // --------------------------------------------------------------------------------------------
+// HOSTING ANOTHER MOD'S LIVE IMGUI MENU (next version after 2.1.9; 4. plans\amf-imgui-hosting\FINDINGS.md, method b1
+// "snap-docking"). A mod with an ImGui menu of its own links its own Dear ImGui, of its own version, so AMF cannot draw
+// it. A small BRIDGE DLL built against THAT mod's ImGui version (AMF-Host-OAR.dll for Open Animation Replacer) moves the
+// mod's main window, between the mod's frames, into a rectangle AMF leaves empty in its own window; the mod draws its
+// real menu there, on top of AMF, live. AMF core holds no other ImGui version.
+//
+//   AMF_RegisterHostBridge(target, bridgeApi, callback, user)
+//       target "oar" (Open Animation Replacer) is the only one AMF hosts so far. bridgeApi = AMF_HOST_BRIDGE_API (1); any
+//       other value is refused. Returns false when refused (a second bridge for the same target, an unknown target).
+//       From then on AMF calls a_callback ONCE A FRAME on the render thread, after its own frame is drawn and before the
+//       hosted mod's frame starts (AMF's present hook runs inside the mod's), with the rectangle and whether AMF's hosted
+//       page is up this frame. The bridge fills in what it sees of the mod (targetOpen, wantsMouse, placed).
+//   AMF_HostBridgeFailed(target, reason)
+//       The bridge found something it cannot vouch for (an unknown build of the mod, a context that does not look right).
+//       AMF stops hosting that target for the session, logs the reason and falls back to opening the mod's menu on its
+//       own (Framework > Other menus' launcher). Safe from inside the callback.
+// --------------------------------------------------------------------------------------------
+#define AMF_HOST_BRIDGE_API 1u
+
+struct AMF_HostFrame
+{
+	std::uint32_t size;       // sizeof(AMF_HostFrame), set by AMF
+	std::uint32_t frame;      // AMF's frame number
+	std::int32_t  hosting;    // 1: AMF's hosted page is drawn this frame - put the mod's main window in the rectangle
+	float         x, y, w, h; // the rectangle, in the game's back-buffer pixels (AMF's ImGui display space)
+	float         displayW;   // AMF's display size, for a sanity check
+	float         displayH;
+	// written by the bridge (AMF sets them to -1 / 0 / 0 before the call):
+	std::int32_t  targetOpen; // -1 not known, 0 the mod's menu is closed, 1 it is open
+	std::int32_t  wantsMouse; // 1: the mod's ImGui wants the mouse (a window or popup of its is under the pointer)
+	std::int32_t  placed;     // 1: the mod's window was put in the rectangle this frame
+};
+typedef void (*AMF_HostFrameCallback)(AMF_HostFrame* a_frame, void* a_user);
+
+AMF_API bool AMF_RegisterHostBridge(const char* a_target, std::uint32_t a_bridgeApi, AMF_HostFrameCallback a_callback, void* a_user);
+AMF_API void AMF_HostBridgeFailed(const char* a_target, const char* a_reason);
+
+// --------------------------------------------------------------------------------------------
 // ig* surface (M3): cimgui-compatible C exports generated from the PUBLIC cimgui definitions
 // (github.com/cimgui/cimgui, MIT). Consumers that already resolve names like "igText",
 // "igSliderFloat", "igTextDisabledV" keep working by resolving the same names from this DLL.

@@ -194,6 +194,9 @@ namespace settings
 		bool imguiCs = true;       // bCommunityShaders
 		bool imguiIed = true;      // bImmersiveEquipmentDisplays
 		bool imguiOpti = true;     // bOptiScaler
+		// [ImGuiMenus] bHostOpenAnimationReplacer: with AMF-Host-OAR.dll installed, OAR's menu opens INSIDE this menu's page (live,
+		// snapped into its content area) instead of over a closed menu. On by default; off = the launcher only.
+		bool hostOar = true;
 		// [Performance] bOverlay (next version after 2.1.9): AMF's own FPS / frame-time graph in the screen's corner - Performance.h. Off by default.
 		bool perfOverlay = false;
 		// How long the curtain may stay up before it gives up and lifts anyway. INI-only, because
