@@ -33,6 +33,9 @@ Licence: GPL-3.0-or-later (see `LICENSE` and `NOTICE.md`). Not a fork: contains 
 - **Hang watchdog.** If the renderer produces no frame for 120 s (configurable, `[Watchdog]`), the
   framework terminates the game process itself - the only thing that closes a kernel-wedged
   Skyrim, since Task Manager cannot.
+- **INI files as pages.** Every `.ini` directly in `Data\SKSE\Plugins` and in `Data` gets a page "<name> (INI)" (a tab
+  per section, a control per key) unless its mod has a page of its own; a change writes only that value, keeping a
+  `.amf-backup` of the file. Each page has its own switch under Settings -> Converted menus -> INI.
 - **Converted menus.** Mod Function Menu entries run in AMF itself (Settings -> Converted menus -> MFM):
   Mod Function Menu is not needed, and mods that list it as a requirement only need their own files. If it is
   installed as well, it takes the key first: on F1 (both menus' default) only Mod Function Menu opens - uninstall it, or

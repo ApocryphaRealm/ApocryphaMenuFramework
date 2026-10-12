@@ -2865,15 +2865,18 @@ namespace renderer
 					// 2.1.9: INI-only mods (SSE Display Tweaks so far) - IniPages.h
 					if (sub.Tab(TR("AMF_SubIni", "INI")))
 					{
-						if (widgets::Toggle(TR("AMF_IniLoad", "INI-only mods' settings here"), &values.iniMenus))
+						if (widgets::Toggle(TR("AMF_IniLoad", "INI files' settings here"), &values.iniMenus))
 						{
-							logger::info("settings page: INI-only mods' pages -> {}", values.iniMenus);
+							logger::info("settings page: INI pages -> {}", values.iniMenus);
 							settings::Save();
 							inipages::ApplyVisibility();
 						}
-						ImGui::TextWrapped("%s", TR("AMF_IniLoadHelp", "On: a mod whose settings live only in an INI file gets a page here, \"<name> (INI)\" - "
-							"a tab per section, a control per key, the file's own comments as the help. Changes go to the mod's override file and "
-							"its main INI is never changed. These mods read their INI when the game starts, so a change takes effect next time."));
+						// next after 2.1.9 (the owner, 2026-10-12: "any surface level ini file to have a menu" ... "add the data folder")
+						ImGui::TextWrapped("%s", TR("AMF_IniLoadHelp2", "On: every INI file directly in Data/SKSE/Plugins and in Data gets a page "
+							"here, \"<name> (INI)\" - a tab per section, a control per key, the file's own comments as the help - unless its mod "
+							"already has a page here. A change is written to the file itself, only the value you change (or to its _custom.ini "
+							"when it has one), and the file as it first was is kept as .amf-backup. Mods and the game read these files when the "
+							"game starts, so a change takes effect next time. Each page has its own switch below."));
 						ImGui::Spacing();
 						inipages::DrawSettingsList();
 						ImGui::EndTabItem();
@@ -5035,6 +5038,9 @@ namespace renderer
 					if (interactive && (!s_wasInteractive || (justOpened && !consumerOwnsInput)))
 					{
 						input::OnMenuOpened();
+						// next after 2.1.9: INI pages registered (or taken away for a mod's own page) - other plugins register
+						// after AMF's kDataLoaded, so this is checked as the menu opens
+						inipages::Sync();
 					}
 					s_wasInteractive = interactive;
 				}

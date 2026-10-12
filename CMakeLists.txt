@@ -121,6 +121,7 @@ target_link_libraries(
 		Shell32.lib   # SHGetKnownFolderPath (Persistence.cpp)
 		Ole32.lib     # CoTaskMemFree (Persistence.cpp)
 		Psapi.lib     # EnumProcessModules (SmfAlias.cpp)
+		Version.lib   # GetFileVersionInfoW - an INI page's name from its DLL (IniPages.cpp)
 )
 
 if (MSVC)

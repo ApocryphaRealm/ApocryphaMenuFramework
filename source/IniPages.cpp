@@ -13,11 +13,13 @@
 
 #include <algorithm>
 #include <cctype>
+#include <charconv>
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
+#include <set>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -26,18 +28,21 @@ namespace inipages
 {
 	namespace
 	{
-		// THE TABLE. One row per INI-only mod AMF can show. dll: the plugin that must be loaded for its page to appear.
+		namespace fs = std::filesystem;
+
+		constexpr std::uintmax_t kMaxBytes = 256 * 1024;   // a settings file is far smaller; anything bigger is data
+
+		// Files whose reader is known. SSE Display Tweaks (SlavicPotato, MIT; read from SSETweaks/config.cpp) reads
+		// SSEDisplayTweaks.ini and SSEDisplayTweaks_custom.ini ONCE at game start, the custom file winning key by key, so its
+		// changes always go to the custom file - created if it is not there yet.
 		struct Known
 		{
-			const char* id;        // DevBench's name for it
-			const char* name;      // the entry is "<name> (INI)"
-			const char* mainIni;   // read, never written
-			const char* customIni; // read over the main one, key by key, and the only file written
-			const wchar_t* dll;
+			const char* base;       // the file name without .ini, lower case
+			const char* name;       // the entry is "<name> (INI)"
+			bool alwaysCustom;      // write <base>_custom.ini even when it does not exist yet
 		};
 		constexpr Known kKnown[] = {
-			{ "SSEDisplayTweaks", "SSE Display Tweaks", "Data/SKSE/Plugins/SSEDisplayTweaks.ini",
-			  "Data/SKSE/Plugins/SSEDisplayTweaks_custom.ini", L"SSEDisplayTweaks.dll" },
+			{ "ssedisplaytweaks", "SSE Display Tweaks", true },
 		};
 
 		enum class Kind { kBool, kInt, kFloat, kChoice, kText };
@@ -49,9 +54,11 @@ namespace inipages
 			std::string mainValue;
 			bool custom = false;      // the custom file sets it
 			std::string title;        // the "##" line
-			std::string help;         // the "#" lines
+			std::string help;         // the comment lines
 			std::vector<std::string> options;
 			Kind kind = Kind::kText;
+			bool digitBool = false;   // a switch written as 1 / 0 (a "bName" key), not true / false
+			bool readOnly = false;    // a text too long for the edit box is shown, never written back cut short
 			int decimals = 0;
 			char text[256]{};         // kText's edit buffer
 		};
@@ -64,17 +71,36 @@ namespace inipages
 
 		struct Mod
 		{
-			const Known* known = nullptr;
-			std::string entry;
+			std::string id;           // "skse/plugins/foo.ini" / "data/foo.ini" - the switch and DevBench name
+			std::string base;         // "Foo" (the file name without .ini)
+			std::string folder;       // "Data/SKSE/Plugins" or "Data", as shown
+			bool dataFolder = false;
+			bool gameSettings = false;   // in Data beside a plugin of the same name
+			std::string name;         // shown name, without the suffix
+			std::string entry;        // the registered entry
+			std::string mainIni;      // "Data/SKSE/Plugins/Foo.ini"
+			std::string customIni;    // the override file written instead of the main one, or empty (written in place)
 			std::vector<Section> sections;
-			std::vector<std::string> pages;   // registered page names (the sections)
+			std::vector<std::string> matchNames;   // normalised names a mod's own page would carry
+			std::vector<std::string> pages;        // registered page names (the sections)
+			bool registered = false;
+			std::string ownPage;      // the entry that has this mod's own page (the INI page was taken away for it)
 			bool backupTaken = false;
 			int writes = 0;
 			std::string lastError;
 		};
 
-		std::mutex g_lock;            // guards g_mods (render thread draws, DevBench reads and sets)
-		std::vector<Mod> g_mods;
+		struct Skipped
+		{
+			std::string folder;
+			std::string file;
+			std::string reason;       // shown as written (translated when found)
+		};
+
+		std::mutex g_lock;            // guards g_mods / g_skipped (render thread draws, DevBench reads and sets)
+		std::vector<Mod> g_mods;      // filled once by Load; never resized after, so a page's index stays good
+		std::vector<Skipped> g_skipped;
+		bool g_loaded = false;
 
 		std::string Trim(const std::string& a_s)
 		{
@@ -90,6 +116,47 @@ namespace inipages
 			return a_s;
 		}
 
+		// "Lock Interaction Overhaul (MCM)" and "LockInteractionOverhaul" -> "lockinteractionoverhaul": letters and digits only,
+		// anything in brackets left out
+		std::string Normal(const std::string& a_s)
+		{
+			std::string out;
+			int depth = 0;
+			for (const char c : a_s)
+			{
+				if (c == '(' || c == '[') { ++depth; continue; }
+				if (c == ')' || c == ']') { depth = std::max(0, depth - 1); continue; }
+				if (depth == 0 && std::isalnum(static_cast<unsigned char>(c))) { out += static_cast<char>(std::tolower(static_cast<unsigned char>(c))); }
+			}
+			return out;
+		}
+
+		// "BackPocketForController" -> "Back Pocket For Controller", "my_mod" -> "my mod": a name with no spaces split into its
+		// words, so the Mods row's search finds it by them
+		std::string Words(const std::string& a_s)
+		{
+			if (a_s.find(' ') != std::string::npos) { return a_s; }
+			std::string out;
+			for (std::size_t i = 0; i < a_s.size(); ++i)
+			{
+				const char c = a_s[i];
+				if (c == '_') { if (!out.empty() && out.back() != ' ') { out += ' '; } continue; }
+				const bool upper = std::isupper(static_cast<unsigned char>(c)) != 0;
+				if (upper && i > 0 && !out.empty() && out.back() != ' ')
+				{
+					const char p = a_s[i - 1];
+					const bool nextLower = i + 1 < a_s.size() && std::islower(static_cast<unsigned char>(a_s[i + 1]));
+					if (std::islower(static_cast<unsigned char>(p)) || std::isdigit(static_cast<unsigned char>(p)) ||
+						(std::isupper(static_cast<unsigned char>(p)) && nextLower))
+					{
+						out += ' ';
+					}
+				}
+				out += c;
+			}
+			return Trim(out);
+		}
+
 		bool IsBool(const std::string& a_v) { const std::string l = Lower(a_v); return l == "true" || l == "false"; }
 
 		bool IsInt(const std::string& a_v)
@@ -99,6 +166,16 @@ namespace inipages
 			if (i >= a_v.size()) { return false; }
 			for (; i < a_v.size(); ++i) { if (!std::isdigit(static_cast<unsigned char>(a_v[i]))) { return false; } }
 			return true;
+		}
+
+		// a whole number the number box can hold (an int); a bigger one stays text, so it is never written back changed
+		bool FitsInt(const std::string& a_v)
+		{
+			if (!IsInt(a_v)) { return false; }
+			int out = 0;
+			const char* b = a_v.data() + (a_v[0] == '+' ? 1 : 0);
+			const auto r = std::from_chars(b, a_v.data() + a_v.size(), out);
+			return r.ec == std::errc() && r.ptr == a_v.data() + a_v.size();
 		}
 
 		// "0.75" -> 2; -1 when not a plain decimal
@@ -113,8 +190,18 @@ namespace inipages
 
 		void Classify(Setting& a_s)
 		{
+			a_s.digitBool = false;
+			a_s.readOnly = false;
 			if (IsBool(a_s.value)) { a_s.kind = Kind::kBool; return; }
-			if (IsInt(a_s.value)) { a_s.kind = Kind::kInt; return; }
+			// Skyrim's own convention, and most SKSE plugins': a "bName" key holds 1 or 0
+			if ((a_s.value == "0" || a_s.value == "1") && a_s.key.size() > 1 && a_s.key[0] == 'b' &&
+				std::isupper(static_cast<unsigned char>(a_s.key[1])))
+			{
+				a_s.kind = Kind::kBool;
+				a_s.digitBool = true;
+				return;
+			}
+			if (FitsInt(a_s.value)) { a_s.kind = Kind::kInt; return; }
 			if (const int d = FloatDecimals(a_s.value); d >= 0) { a_s.kind = Kind::kFloat; a_s.decimals = std::clamp(d, 1, 6); return; }
 			const std::string l = Lower(a_s.value);
 			if (a_s.options.size() >= 2 && std::any_of(a_s.options.begin(), a_s.options.end(), [&](const std::string& o) { return Lower(o) == l; }))
@@ -123,21 +210,24 @@ namespace inipages
 				return;
 			}
 			a_s.kind = Kind::kText;
+			a_s.readOnly = a_s.value.size() >= sizeof(a_s.text) - 1;
 			std::snprintf(a_s.text, sizeof(a_s.text), "%s", a_s.value.c_str());
 		}
 
-		// section (lower) -> key (lower) -> value, for the custom file
-		using Flat = std::vector<std::pair<std::string, std::string>>;   // "section\nkey" -> value
+		bool On(const Setting& a_s) { return a_s.digitBool ? a_s.value == "1" : Lower(a_s.value) == "true"; }
 
-		// a_bom: the file starts with a UTF-8 byte-order mark (Display Tweaks' own INI does - 2.1.9's offline test found
-		// [Main] unread behind it); it is stripped here and put back by WriteKey
-		bool ReadLines(const std::string& a_path, std::vector<std::string>& a_lines, bool& a_crlf, bool* a_bom = nullptr)
+		using Flat = std::vector<std::pair<std::string, std::string>>;   // "section\nkey" (lower) -> value
+
+		// The file's lines. a_bom: it starts with a UTF-8 byte-order mark (Display Tweaks' own INI does), stripped here and put
+		// back by WriteKey. a_utf16: it is UTF-16 text, which this reader does not take.
+		bool ReadLines(const std::string& a_path, std::vector<std::string>& a_lines, bool& a_crlf, bool* a_bom = nullptr, bool* a_utf16 = nullptr)
 		{
-			std::ifstream in(a_path, std::ios::binary);
+			std::ifstream in(fs::path(a_path), std::ios::binary);
 			if (!in.is_open()) { return false; }
 			std::stringstream ss;
 			ss << in.rdbuf();
 			std::string all = ss.str();
+			if (a_utf16) { *a_utf16 = all.size() >= 2 && ((all[0] == '\xFF' && all[1] == '\xFE') || (all[0] == '\xFE' && all[1] == '\xFF')); }
 			const bool bom = all.size() >= 3 && all.compare(0, 3, "\xEF\xBB\xBF") == 0;
 			if (bom) { all.erase(0, 3); }
 			if (a_bom) { *a_bom = bom; }
@@ -152,6 +242,8 @@ namespace inipages
 			return true;
 		}
 
+		bool IsSection(const std::string& a_t) { return a_t.size() >= 2 && a_t.front() == '[' && a_t.back() == ']'; }
+
 		// An active "key = value" line: not a comment, has '=' and a name before it. Returns false otherwise.
 		bool ParseKeyLine(const std::string& a_line, std::string& a_key, std::string& a_value)
 		{
@@ -161,9 +253,57 @@ namespace inipages
 			if (eq == std::string::npos || eq == 0) { return false; }
 			a_key = Trim(t.substr(0, eq));
 			a_value = Trim(t.substr(eq + 1));
-			// inih (what Display Tweaks reads with) strips an inline " ;comment"
-			if (const auto sc = a_value.find(" ;"); sc != std::string::npos) { a_value = Trim(a_value.substr(0, sc)); }
+			// an inline " ;comment" is not part of the value (inih, and the game, read it so)
+			for (const char* mark : { " ;", "\t;" })
+			{
+				if (const auto sc = a_value.find(mark); sc != std::string::npos) { a_value = Trim(a_value.substr(0, sc)); }
+			}
 			return !a_key.empty();
+		}
+
+		// Whether the file reads cleanly: every line blank, a comment, a [section] or a key = value under a section; no section
+		// and no key (within its section) given twice. Empty = clean; otherwise the reason, in the player's language.
+		std::string CleanProblem(const std::vector<std::string>& a_lines)
+		{
+			std::set<std::string> sections;
+			std::set<std::string> keys;   // "section\nkey"
+			std::string section;
+			bool any = false;
+			char buf[512];
+			for (std::size_t i = 0; i < a_lines.size(); ++i)
+			{
+				const std::string t = Trim(a_lines[i]);
+				if (t.empty() || t[0] == '#' || t[0] == ';') { continue; }
+				if (IsSection(t))
+				{
+					section = Lower(Trim(t.substr(1, t.size() - 2)));
+					if (!sections.insert(section).second)
+					{
+						std::snprintf(buf, sizeof(buf), strings::TR("AMF_IniWhySectionTwice", "[%s] appears twice"), Trim(t.substr(1, t.size() - 2)).c_str());
+						return buf;
+					}
+					any = true;
+					continue;
+				}
+				std::string k, v;
+				if (!ParseKeyLine(a_lines[i], k, v))
+				{
+					std::snprintf(buf, sizeof(buf), strings::TR("AMF_IniWhyBadLine", "line %d is not a section, a setting or a comment"), static_cast<int>(i + 1));
+					return buf;
+				}
+				if (!any)
+				{
+					std::snprintf(buf, sizeof(buf), strings::TR("AMF_IniWhyKeyFirst", "line %d sets a key before any [section]"), static_cast<int>(i + 1));
+					return buf;
+				}
+				if (!keys.insert(section + "\n" + Lower(k)).second)
+				{
+					std::snprintf(buf, sizeof(buf), strings::TR("AMF_IniWhyKeyTwice", "%s is set twice in one section"), k.c_str());
+					return buf;
+				}
+			}
+			if (!any) { return strings::TR("AMF_IniWhyNoSection", "no [section] in it"); }
+			return {};
 		}
 
 		Flat ReadCustom(const std::string& a_path)
@@ -176,7 +316,7 @@ namespace inipages
 			for (const std::string& l : lines)
 			{
 				const std::string t = Trim(l);
-				if (t.size() >= 2 && t.front() == '[' && t.back() == ']') { section = Lower(Trim(t.substr(1, t.size() - 2))); continue; }
+				if (IsSection(t)) { section = Lower(Trim(t.substr(1, t.size() - 2))); continue; }
 				std::string k, v;
 				if (ParseKeyLine(l, k, v)) { out.emplace_back(section + "\n" + Lower(k), v); }
 			}
@@ -184,21 +324,18 @@ namespace inipages
 		}
 
 		// The main INI, in its own order, with the comment block above each key as its title and help.
-		std::vector<Section> ReadMain(const std::string& a_path)
+		std::vector<Section> ReadMain(const std::vector<std::string>& a_lines)
 		{
 			std::vector<Section> out;
-			std::vector<std::string> lines;
-			bool crlf = false;
-			if (!ReadLines(a_path, lines, crlf)) { return out; }
 			std::string title;
 			std::vector<std::string> help;
 			std::vector<std::string> options;
 			auto reset = [&]() { title.clear(); help.clear(); options.clear(); };
-			for (const std::string& l : lines)
+			for (const std::string& l : a_lines)
 			{
 				const std::string t = Trim(l);
 				if (t.empty()) { continue; }   // a blank line inside a block keeps the block (the key follows it)
-				if (t.front() == '[' && t.back() == ']')
+				if (IsSection(t))
 				{
 					out.push_back({ Trim(t.substr(1, t.size() - 2)), {} });
 					reset();
@@ -235,7 +372,7 @@ namespace inipages
 				s.key = k;
 				s.value = s.mainValue = v;
 				s.title = title;
-				// the help: its lines joined, an empty "#" line kept as a paragraph break
+				// the help: its lines joined, an empty comment line kept as a paragraph break
 				std::string h;
 				for (const std::string& hl : help)
 				{
@@ -255,7 +392,7 @@ namespace inipages
 
 		void ApplyCustom(Mod& a_mod)
 		{
-			const Flat custom = ReadCustom(a_mod.known->customIni);
+			const Flat custom = a_mod.customIni.empty() ? Flat{} : ReadCustom(a_mod.customIni);
 			for (Section& sec : a_mod.sections)
 			{
 				for (Setting& s : sec.settings)
@@ -272,36 +409,51 @@ namespace inipages
 			}
 		}
 
-		// Write one key to the custom file: replace it inside its section, or add it to the section, or add the section.
-		// The rest of the file is left exactly as it was. Called with g_lock held.
+		// The line with only its value changed: the key, the spacing round '=', an inline comment and anything after it kept.
+		std::string WithValue(const std::string& a_line, const std::string& a_value)
+		{
+			const auto eq = a_line.find('=');
+			std::size_t start = eq + 1;
+			while (start < a_line.size() && (a_line[start] == ' ' || a_line[start] == '\t')) { ++start; }
+			std::size_t end = a_line.size();
+			for (const char* mark : { " ;", "\t;" })
+			{
+				if (const auto sc = a_line.find(mark, start); sc != std::string::npos) { end = std::min(end, sc); }
+			}
+			while (end > start && (a_line[end - 1] == ' ' || a_line[end - 1] == '\t')) { --end; }
+			return a_line.substr(0, start) + a_value + a_line.substr(end);
+		}
+
+		// Write one key: to the custom file (replaced in place, or added to its section, or the section added), or in place in
+		// the main file (only that key's value). The rest of the file is left exactly as it was. Called with g_lock held.
 		bool WriteKey(Mod& a_mod, const std::string& a_section, const std::string& a_key, const std::string& a_value, std::string& a_error)
 		{
-			namespace fs = std::filesystem;
-			const std::string path = a_mod.known->customIni;
+			const bool inPlace = a_mod.customIni.empty();
+			const std::string path = inPlace ? a_mod.mainIni : a_mod.customIni;
 			std::vector<std::string> lines;
 			bool crlf = true;
 			bool bom = false;
+			bool utf16 = false;
 			std::error_code ec;
-			const bool existed = fs::exists(path, ec) && ReadLines(path, lines, crlf, &bom);
-			if (existed && !a_mod.backupTaken)
+			const bool existed = fs::exists(fs::path(path), ec) && ReadLines(path, lines, crlf, &bom, &utf16);
+			if (inPlace && !existed) { a_error = "could not read " + path; logger::error("ini pages: {}; nothing written", a_error); return false; }
+			// never write a file that does not read cleanly NOW (it may have changed since the game started)
+			if (existed)
 			{
-				// the custom file as it first was, kept once (an older backup is never replaced)
-				const std::string backup = path + ".amf-backup";
-				if (!fs::exists(backup, ec))
+				std::string problem = utf16 ? std::string("UTF-16 text") : CleanProblem(lines);
+				if (!problem.empty())
 				{
-					fs::copy_file(path, backup, ec);
-					if (ec) { a_error = "could not keep a backup (" + ec.message() + ")"; logger::error("ini pages: {} - {}; nothing written", path, a_error); return false; }
-					logger::info("ini pages: {} kept as {} before the first change", path, backup);
+					a_error = path + " does not read cleanly (" + problem + ")";
+					logger::error("ini pages: {}; nothing written", a_error);
+					return false;
 				}
-				a_mod.backupTaken = true;
 			}
 			const std::string wantSection = Lower(a_section), wantKey = Lower(a_key);
-			const std::string newLine = a_key + " = " + a_value;
 			int secStart = -1, secEnd = static_cast<int>(lines.size()), keyLine = -1;
 			for (int i = 0; i < static_cast<int>(lines.size()); ++i)
 			{
 				const std::string t = Trim(lines[i]);
-				if (t.size() >= 2 && t.front() == '[' && t.back() == ']')
+				if (IsSection(t))
 				{
 					if (secStart >= 0 && secEnd == static_cast<int>(lines.size())) { secEnd = i; }
 					if (Lower(Trim(t.substr(1, t.size() - 2))) == wantSection && secStart < 0) { secStart = i; secEnd = static_cast<int>(lines.size()); }
@@ -310,38 +462,57 @@ namespace inipages
 				std::string k, v;
 				if (secStart >= 0 && i < secEnd && ParseKeyLine(lines[i], k, v) && Lower(k) == wantKey) { keyLine = i; }
 			}
-			if (keyLine >= 0) { lines[keyLine] = newLine; }
+			if (inPlace && keyLine < 0)
+			{
+				a_error = "[" + a_section + "] " + a_key + " is no longer in " + path;
+				logger::error("ini pages: {}; nothing written", a_error);
+				return false;
+			}
+			if (existed && !a_mod.backupTaken)
+			{
+				// the file as it first was, kept once (an older backup is never replaced)
+				const std::string backup = path + ".amf-backup";
+				if (!fs::exists(fs::path(backup), ec))
+				{
+					fs::copy_file(fs::path(path), fs::path(backup), ec);
+					if (ec) { a_error = "could not keep a backup (" + ec.message() + ")"; logger::error("ini pages: {} - {}; nothing written", path, a_error); return false; }
+					logger::info("ini pages: {} kept as {} before the first change", path, backup);
+				}
+				a_mod.backupTaken = true;
+			}
+			if (keyLine >= 0) { lines[keyLine] = WithValue(lines[keyLine], a_value); }
 			else if (secStart >= 0)
 			{
 				int at = secEnd;
 				while (at - 1 > secStart && Trim(lines[at - 1]).empty()) { --at; }
-				lines.insert(lines.begin() + at, newLine);
+				lines.insert(lines.begin() + at, a_key + " = " + a_value);
 			}
 			else
 			{
 				if (!lines.empty() && !Trim(lines.back()).empty()) { lines.push_back(""); }
 				lines.push_back("[" + a_section + "]");
-				lines.push_back(newLine);
+				lines.push_back(a_key + " = " + a_value);
 			}
 			const std::string tmp = path + ".amf-tmp";
 			{
-				std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+				std::ofstream out(fs::path(tmp), std::ios::binary | std::ios::trunc);
 				if (!out.is_open()) { a_error = "could not write " + tmp; logger::error("ini pages: {}; nothing written", a_error); return false; }
 				if (bom) { out << "\xEF\xBB\xBF"; }
 				for (const std::string& l : lines) { out << l << (crlf ? "\r\n" : "\n"); }
 				out.flush();
 				if (!out.good()) { a_error = "the write to " + tmp + " failed"; logger::error("ini pages: {}", a_error); return false; }
 			}
-			fs::rename(tmp, path, ec);
+			fs::rename(fs::path(tmp), fs::path(path), ec);
 			if (ec)
 			{
 				a_error = "could not put the new file in place (" + ec.message() + ")";
 				logger::error("ini pages: {} - {}; {} left as it was", path, a_error, path);
-				fs::remove(tmp, ec);
+				fs::remove(fs::path(tmp), ec);
 				return false;
 			}
 			++a_mod.writes;
-			logger::info("ini pages: [{}] {} = {} written to {}{}", a_section, a_key, a_value, path, existed ? "" : " (a new file)");
+			logger::info("ini pages: [{}] {} = {} written to {}{}", a_section, a_key, a_value, path,
+						 existed ? (inPlace ? " (in place, that line only)" : "") : " (a new file)");
 			return true;
 		}
 
@@ -352,11 +523,19 @@ namespace inipages
 			switch (a_s.kind)
 			{
 			case Kind::kBool:
-				if (!IsBool(a_value)) { a_error = a_s.key + " takes true or false"; return false; }
-				a_value = Lower(a_value);
+				if (a_s.digitBool)
+				{
+					if (IsBool(a_value)) { a_value = Lower(a_value) == "true" ? "1" : "0"; }
+					if (a_value != "0" && a_value != "1") { a_error = a_s.key + " takes 1 or 0"; return false; }
+				}
+				else
+				{
+					if (!IsBool(a_value)) { a_error = a_s.key + " takes true or false"; return false; }
+					a_value = Lower(a_value);
+				}
 				break;
 			case Kind::kInt:
-				if (!IsInt(a_value)) { a_error = a_s.key + " takes a whole number"; return false; }
+				if (!FitsInt(a_value)) { a_error = a_s.key + " takes a whole number"; return false; }
 				break;
 			case Kind::kFloat:
 				if (!IsInt(a_value) && FloatDecimals(a_value) < 0) { a_error = a_s.key + " takes a number"; return false; }
@@ -369,6 +548,7 @@ namespace inipages
 				}
 				break;
 			case Kind::kText:
+				if (a_s.readOnly) { a_error = a_s.key + " is too long to change here"; return false; }
 				if (a_value.find_first_of("\r\n") != std::string::npos) { a_error = "one line only"; return false; }
 				break;
 			}
@@ -378,7 +558,7 @@ namespace inipages
 				return false;
 			}
 			a_s.value = a_value;
-			a_s.custom = true;
+			a_s.custom = !a_mod.customIni.empty();
 			if (a_s.kind == Kind::kText) { std::snprintf(a_s.text, sizeof(a_s.text), "%s", a_value.c_str()); }
 			a_mod.lastError.clear();
 			return true;
@@ -391,22 +571,39 @@ namespace inipages
 			return buf;
 		}
 
+		std::string FileName(const std::string& a_path) { return fs::path(a_path).filename().string(); }
+
 		void DrawPage(std::size_t a_mod, const std::string& a_section)
 		{
 			std::scoped_lock l(g_lock);
 			if (a_mod >= g_mods.size()) { return; }
 			Mod& mod = g_mods[a_mod];
-			if (!mod.known) { return; }
 			auto sec = std::find_if(mod.sections.begin(), mod.sections.end(), [&](const Section& s) { return s.name == a_section; });
 			if (sec == mod.sections.end()) { ImGui::TextUnformatted("?"); return; }
-			helpbar::Want("ini|" + std::string(mod.known->id) + "|" + a_section);
+			helpbar::Want("ini|" + mod.id + "|" + a_section);
 
-			const std::string customName = std::filesystem::path(mod.known->customIni).filename().string();
-			const std::string mainName = std::filesystem::path(mod.known->mainIni).filename().string();
 			ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
-			ImGui::TextWrapped(strings::TR("AMF_IniRestart", "%s reads these when the game starts: a change takes effect the next time you start the game."),
-							   mod.known->name);
-			ImGui::TextWrapped(strings::TR("AMF_IniWrites", "Changes are written to %s; %s itself is never changed."), customName.c_str(), mainName.c_str());
+			if (mod.gameSettings)
+			{
+				ImGui::TextWrapped(strings::TR("AMF_IniGameRestart", "The game reads this file as %s's game settings when it starts: a change takes "
+								   "effect the next time you start the game."), mod.name.c_str());
+			}
+			else
+			{
+				ImGui::TextWrapped(strings::TR("AMF_IniRestart", "%s reads these when the game starts: a change takes effect the next time you start the game."),
+								   mod.name.c_str());
+			}
+			if (!mod.customIni.empty())
+			{
+				ImGui::TextWrapped(strings::TR("AMF_IniWrites", "Changes are written to %s; %s itself is never changed."), FileName(mod.customIni).c_str(),
+								   FileName(mod.mainIni).c_str());
+			}
+			else
+			{
+				const std::string file = FileName(mod.mainIni);
+				ImGui::TextWrapped(strings::TR("AMF_IniWritesInPlace", "Changes are written into %s itself, only the value you change; the file as it "
+								   "first was is kept as %s.amf-backup."), file.c_str(), file.c_str());
+			}
 			if (!mod.lastError.empty())
 			{
 				ImGui::TextWrapped(strings::TR("AMF_IniError", "Not saved: %s"), mod.lastError.c_str());
@@ -421,20 +618,22 @@ namespace inipages
 				const std::string label = s.key;
 				const std::string help = s.title.empty() ? s.help : (s.help.empty() ? s.title : s.title + "\n" + s.help);
 				std::string error;
-				bool wrote = false;
 				switch (s.kind)
 				{
 				case Kind::kBool:
 				{
-					bool b = Lower(s.value) == "true";
-					if (widgets::Toggle(label.c_str(), &b)) { wrote = SetValue(mod, *sec, s, b ? "true" : "false", error); }
+					bool b = On(s);
+					if (widgets::Toggle(label.c_str(), &b))
+					{
+						SetValue(mod, *sec, s, s.digitBool ? (b ? "1" : "0") : (b ? "true" : "false"), error);
+					}
 					break;
 				}
 				case Kind::kInt:
 				{
 					int v = std::atoi(s.value.c_str());
 					ImGui::SetNextItemWidth(ImGui::GetFontSize() * 9.0f);
-					if (ImGui::InputInt(label.c_str(), &v, 1, 10)) { wrote = SetValue(mod, *sec, s, std::to_string(v), error); }
+					if (ImGui::InputInt(label.c_str(), &v, 1, 10)) { SetValue(mod, *sec, s, std::to_string(v), error); }
 					break;
 				}
 				case Kind::kFloat:
@@ -448,7 +647,7 @@ namespace inipages
 					if (ImGui::InputDouble(label.c_str(), &v, step, step * 10.0, fmt))
 					{
 						v = std::round(v / step) * step;
-						wrote = SetValue(mod, *sec, s, FormatFloat(v, s.decimals), error);
+						SetValue(mod, *sec, s, FormatFloat(v, s.decimals), error);
 					}
 					break;
 				}
@@ -460,7 +659,7 @@ namespace inipages
 						for (const std::string& o : s.options)
 						{
 							const bool selected = Lower(o) == Lower(s.value);
-							if (ImGui::Selectable(o.c_str(), selected) && !selected) { wrote = SetValue(mod, *sec, s, o, error); }
+							if (ImGui::Selectable(o.c_str(), selected) && !selected) { SetValue(mod, *sec, s, o, error); }
 							if (selected) { ImGui::SetItemDefaultFocus(); }
 						}
 						ImGui::EndCombo();
@@ -470,21 +669,20 @@ namespace inipages
 				case Kind::kText:
 				{
 					ImGui::SetNextItemWidth(ImGui::GetFontSize() * 14.0f);
-					ImGui::InputText(label.c_str(), s.text, sizeof(s.text));
-					if (ImGui::IsItemDeactivatedAfterEdit() && s.value != s.text) { wrote = SetValue(mod, *sec, s, s.text, error); }
+					ImGui::InputText(label.c_str(), s.text, sizeof(s.text), s.readOnly ? ImGuiInputTextFlags_ReadOnly : 0);
+					if (!s.readOnly && ImGui::IsItemDeactivatedAfterEdit() && s.value != s.text) { SetValue(mod, *sec, s, s.text, error); }
 					break;
 				}
 				}
 				if (!help.empty() && (ImGui::IsItemHovered() || ImGui::IsItemFocused())) { helpbar::OfferForLastItem(help); }
-				if (s.custom)
+				if (s.custom || s.value != s.mainValue)
 				{
 					ImGui::SameLine();
 					ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
 					ImGui::TextUnformatted(customMark);
 					ImGui::PopStyleColor();
 				}
-				if (!error.empty()) { logger::warn("ini pages: {} [{}] {} not set - {}", mod.known->id, sec->name, s.key, error); }
-				(void)wrote;
+				if (!error.empty()) { logger::warn("ini pages: {} [{}] {} not set - {}", mod.id, sec->name, s.key, error); }
 				ImGui::PopID();
 			}
 		}
@@ -502,82 +700,339 @@ namespace inipages
 		}
 
 		std::string J(const std::string& a_s) { return nlohmann::json(a_s).dump(); }
+
+		// a loaded DLL's ProductName, else FileDescription (empty when the DLL is not loaded or names neither)
+		std::string DllName(const std::wstring& a_dll)
+		{
+			HMODULE module = GetModuleHandleW(a_dll.c_str());
+			if (!module) { return {}; }
+			wchar_t path[MAX_PATH]{};
+			if (!GetModuleFileNameW(module, path, MAX_PATH)) { return {}; }
+			DWORD handle = 0;
+			const DWORD size = GetFileVersionInfoSizeW(path, &handle);
+			if (size == 0) { return {}; }
+			std::vector<std::uint8_t> data(size);
+			if (!GetFileVersionInfoW(path, 0, size, data.data())) { return {}; }
+			struct LangCp { WORD lang; WORD cp; };
+			LangCp* langs = nullptr;
+			UINT bytes = 0;
+			std::vector<std::wstring> prefixes;
+			if (VerQueryValueW(data.data(), L"\\VarFileInfo\\Translation", reinterpret_cast<void**>(&langs), &bytes) && langs)
+			{
+				for (UINT i = 0; i < bytes / sizeof(LangCp); ++i)
+				{
+					wchar_t p[64];
+					swprintf_s(p, L"\\StringFileInfo\\%04x%04x\\", langs[i].lang, langs[i].cp);
+					prefixes.emplace_back(p);
+				}
+			}
+			prefixes.emplace_back(L"\\StringFileInfo\\040904b0\\");
+			for (const wchar_t* field : { L"ProductName", L"FileDescription" })
+			{
+				for (const std::wstring& pre : prefixes)
+				{
+					wchar_t* value = nullptr;
+					UINT len = 0;
+					if (VerQueryValueW(data.data(), (pre + field).c_str(), reinterpret_cast<void**>(&value), &len) && value && len > 1)
+					{
+						const std::wstring w(value);
+						std::string s(static_cast<std::size_t>(std::max(0, WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()), nullptr, 0, nullptr, nullptr))), '\0');
+						if (!s.empty()) { WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()), s.data(), static_cast<int>(s.size()), nullptr, nullptr); }
+						s = Trim(s);
+						if (!s.empty() && s.size() <= 60) { return s; }
+					}
+				}
+			}
+			return {};
+		}
+
+		void Skip(const std::string& a_folder, const std::string& a_file, const std::string& a_reason)
+		{
+			g_skipped.push_back({ a_folder, a_file, a_reason });
+			logger::info("ini pages: {}/{} - no page: {}", a_folder, a_file, a_reason);
+		}
+
+		std::set<std::string> OffSet()
+		{
+			std::set<std::string> out;
+			std::stringstream ss(settings::Get().iniPagesOff);
+			std::string item;
+			while (std::getline(ss, item, ',')) { if (const std::string t = Lower(Trim(item)); !t.empty()) { out.insert(t); } }
+			return out;
+		}
+
+		bool PageOn(const Mod& a_mod, const std::set<std::string>& a_off) { return settings::Get().iniMenus && !a_off.contains(a_mod.id); }
+
+		// Called with g_lock held.
+		void ApplyVisibilityLocked()
+		{
+			const std::set<std::string> off = OffSet();
+			for (const Mod& m : g_mods)
+			{
+				if (!m.registered) { continue; }
+				const bool show = PageOn(m, off);
+				for (const std::string& p : m.pages) { registry::SetPageVisible(m.entry.c_str(), p.c_str(), show); }
+			}
+		}
+
+		void Scan(const fs::path& a_dir, const std::string& a_shown, bool a_data)
+		{
+			std::error_code ec;
+			if (!fs::is_directory(a_dir, ec)) { return; }
+			std::vector<fs::path> files;
+			for (const auto& de : fs::directory_iterator(a_dir, ec))
+			{
+				std::error_code fe;
+				if (!de.is_regular_file(fe)) { continue; }
+				if (Lower(de.path().extension().string()) == ".ini") { files.push_back(de.path()); }
+			}
+			std::sort(files.begin(), files.end(), [](const fs::path& a, const fs::path& b) { return Lower(a.filename().string()) < Lower(b.filename().string()); });
+			std::set<std::string> present;
+			for (const fs::path& f : files) { present.insert(Lower(f.filename().string())); }
+			char buf[512];
+			for (const fs::path& f : files)
+			{
+				// a name outside plain ASCII is left out: its narrow form would not name the same file again
+				{
+					const std::wstring w = f.filename().wstring();
+					if (std::any_of(w.begin(), w.end(), [](wchar_t c) { return c > 0x7E || c < 0x20; }))
+					{
+						Skip(a_shown, "?.ini", strings::TR("AMF_IniWhyName", "its file name is not plain ASCII"));
+						continue;
+					}
+				}
+				const std::string file = f.filename().string();
+				const std::string lowerFile = Lower(file);
+				const std::string base = f.stem().string();
+				const std::string lowerBase = Lower(base);
+				if (lowerBase.rfind("apocryphamenuframework", 0) == 0) { Skip(a_shown, file, strings::TR("AMF_IniWhyOwn", "AMF's own settings")); continue; }
+				if (lowerFile == "skyrim.ini" || lowerFile == "skyrimprefs.ini" || lowerFile == "skyrimcustom.ini")
+				{
+					Skip(a_shown, file, strings::TR("AMF_IniWhyGame", "the game's own INI - never touched here"));
+					continue;
+				}
+				if (lowerBase.size() > 7 && lowerBase.compare(lowerBase.size() - 7, 7, "_custom") == 0 &&
+					present.contains(lowerBase.substr(0, lowerBase.size() - 7) + ".ini"))
+				{
+					const std::string mainFile = base.substr(0, base.size() - 7) + ".ini";
+					std::snprintf(buf, sizeof(buf), strings::TR("AMF_IniWhyCustom", "read as part of %s's page"), mainFile.c_str());
+					Skip(a_shown, file, buf);
+					continue;
+				}
+				const std::uintmax_t bytes = fs::file_size(f, ec);
+				if (ec || bytes > kMaxBytes) { Skip(a_shown, file, strings::TR("AMF_IniWhyBig", "over 256 KB - too big for a settings file")); continue; }
+				std::vector<std::string> lines;
+				bool crlf = false, utf16 = false;
+				if (!ReadLines(f.string(), lines, crlf, nullptr, &utf16)) { Skip(a_shown, file, strings::TR("AMF_IniWhyUnread", "could not be opened")); continue; }
+				if (utf16) { Skip(a_shown, file, strings::TR("AMF_IniWhyUtf16", "UTF-16 text, which this reader does not take")); continue; }
+				if (const std::string problem = CleanProblem(lines); !problem.empty()) { Skip(a_shown, file, problem); continue; }
+				Mod mod;
+				mod.base = base;
+				mod.folder = a_shown;
+				mod.dataFolder = a_data;
+				mod.id = Lower((a_data ? std::string("data/") : std::string("skse/plugins/")) + file);
+				mod.mainIni = (a_dir / file).generic_string();
+				mod.sections = ReadMain(lines);
+				if (mod.sections.empty()) { Skip(a_shown, file, strings::TR("AMF_IniWhyNoKeys", "no setting under a section")); continue; }
+				const Known* known = nullptr;
+				for (const Known& k : kKnown) { if (lowerBase == k.base) { known = &k; } }
+				const fs::path custom = a_dir / (base + "_custom.ini");
+				if ((known && known->alwaysCustom) || present.contains(lowerBase + "_custom.ini"))
+				{
+					mod.customIni = custom.generic_string();
+					if (fs::exists(custom, ec))
+					{
+						std::vector<std::string> cl;
+						bool ccrlf = false, cutf16 = false;
+						const bool read = ReadLines(custom.string(), cl, ccrlf, nullptr, &cutf16);
+						const std::string problem = !read ? std::string("could not be opened") : (cutf16 ? std::string("UTF-16 text") : CleanProblem(cl));
+						if (!problem.empty())
+						{
+							std::snprintf(buf, sizeof(buf), strings::TR("AMF_IniWhyCustomBad", "its %s does not read cleanly (%s)"),
+										  custom.filename().string().c_str(), problem.c_str());
+							Skip(a_shown, file, buf);
+							continue;
+						}
+					}
+				}
+				// the name: the table's, a loaded DLL's own, the plugin's (a Data INI beside one), else the file's words
+				const std::string dll = DllName(fs::path(base + ".dll").wstring());
+				std::string plugin;
+				if (a_data)
+				{
+					for (const char* ext : { ".esp", ".esm", ".esl" })
+					{
+						if (fs::exists(a_dir / (base + ext), ec)) { plugin = base + ext; break; }
+					}
+				}
+				mod.gameSettings = !plugin.empty();
+				mod.name = known ? std::string(known->name) : (!plugin.empty() ? plugin : (!dll.empty() ? Words(dll) : Words(base)));
+				mod.entry = mod.name + (mod.gameSettings ? " (INI, game settings)" : " (INI)");
+				for (const std::string& n : { base, dll, mod.name, plugin.empty() ? std::string() : base })
+				{
+					if (const std::string k = Normal(n); !k.empty() && std::find(mod.matchNames.begin(), mod.matchNames.end(), k) == mod.matchNames.end())
+					{
+						mod.matchNames.push_back(k);
+					}
+				}
+				ApplyCustom(mod);
+				g_mods.push_back(std::move(mod));
+			}
+		}
 	}
 
 	void Load()
 	{
 		std::scoped_lock l(g_lock);
-		if (!g_mods.empty()) { return; }   // once per session
-		for (const Known& k : kKnown)
+		if (g_loaded) { return; }   // once per session
+		g_loaded = true;
+		Scan(fs::path("Data/SKSE/Plugins"), "Data/SKSE/Plugins", false);
+		Scan(fs::path("Data"), "Data", true);
+		// two files giving the same entry name (the same name in both folders): the second says which folder it is in
+		std::set<std::string> names;
+		for (Mod& m : g_mods)
 		{
-			if (!GetModuleHandleW(k.dll))
-			{
-				logger::info("ini pages: {} is not loaded - no page", k.name);
-				continue;
-			}
-			Mod mod;
-			mod.known = &k;
-			mod.entry = std::string(k.name) + " (INI)";
-			mod.sections = ReadMain(k.mainIni);
-			if (mod.sections.empty())
-			{
-				logger::warn("ini pages: {} is loaded but {} could not be read (or sets nothing) - no page", k.name, k.mainIni);
-				continue;
-			}
-			g_mods.push_back(std::move(mod));
-			Mod& m = g_mods.back();
-			ApplyCustom(m);
+			if (!names.insert(Lower(m.entry)).second) { m.entry = m.name + " (INI, " + m.folder + ")"; names.insert(Lower(m.entry)); }
+		}
+		for (const Mod& m : g_mods)
+		{
 			std::size_t keys = 0, custom = 0;
 			for (const Section& s : m.sections)
 			{
 				keys += s.settings.size();
 				for (const Setting& st : s.settings) { custom += st.custom ? 1 : 0; }
 			}
-			const std::size_t index = g_mods.size() - 1;
+			logger::info("ini pages: {} - {} key(s) in {} section(s) from {}{}", m.entry, keys, m.sections.size(), m.mainIni,
+						 m.customIni.empty() ? std::string(", written in place") : ", " + std::to_string(custom) + " set by " + m.customIni + " (written there)");
+		}
+		logger::info("ini pages: {} file(s) with a page, {} not shown", g_mods.size(), g_skipped.size());
+	}
+
+	void Sync()
+	{
+		std::scoped_lock l(g_lock);
+		if (g_mods.empty()) { return; }
+		std::set<std::string> ours;
+		for (const Mod& m : g_mods) { ours.insert(m.entry); }
+		// every OTHER entry's name, normalised, against each INI's names
+		std::vector<std::pair<std::string, std::string>> others;   // normalised, as shown
+		for (const registry::Entry& e : registry::Snapshot())
+		{
+			if (ours.contains(e.modName)) { continue; }
+			others.emplace_back(Normal(e.modName), e.modName);
+		}
+		bool changed = false;
+		for (std::size_t i = 0; i < g_mods.size(); ++i)
+		{
+			Mod& m = g_mods[i];
+			if (!m.ownPage.empty()) { continue; }
+			std::string own;
+			for (const auto& [n, shown] : others)
+			{
+				if (std::find(m.matchNames.begin(), m.matchNames.end(), n) != m.matchNames.end()) { own = shown; break; }
+			}
+			if (!own.empty())
+			{
+				m.ownPage = own;
+				if (m.registered)
+				{
+					registry::Remove(m.entry, "");
+					m.registered = false;
+					m.pages.clear();
+				}
+				logger::info("ini pages: {} - no page: {} has its own page here (\"{}\")", m.mainIni, m.name, own);
+				continue;
+			}
+			if (m.registered) { continue; }
 			for (const Section& s : m.sections)
 			{
 				const std::string page = s.name;
-				if (registry::RegisterFn(m.entry.c_str(), page.c_str(), [index, page]() { DrawPage(index, page); }, true))
-				{
-					m.pages.push_back(page);
-				}
+				if (registry::RegisterFn(m.entry.c_str(), page.c_str(), [i, page]() { DrawPage(i, page); }, true)) { m.pages.push_back(page); }
 			}
-			logger::info("ini pages: {} - {} key(s) in {} section(s) from {}, {} set by {}", m.entry, keys, m.sections.size(), k.mainIni, custom, k.customIni);
+			m.registered = true;
+			changed = true;
 		}
-		const bool show = settings::Get().iniMenus;
-		for (const Mod& m : g_mods)
-		{
-			for (const std::string& p : m.pages) { registry::SetPageVisible(m.entry.c_str(), p.c_str(), show); }
-		}
+		if (changed) { ApplyVisibilityLocked(); }
 	}
 
 	void ApplyVisibility()
 	{
 		std::scoped_lock l(g_lock);
-		const bool show = settings::Get().iniMenus;
-		for (const Mod& m : g_mods)
-		{
-			for (const std::string& p : m.pages) { registry::SetPageVisible(m.entry.c_str(), p.c_str(), show); }
-		}
-		logger::info("ini pages: {} entr(ies) {}", g_mods.size(), show ? "shown" : "hidden");
+		ApplyVisibilityLocked();
+		std::size_t shown = 0;
+		const std::set<std::string> off = OffSet();
+		for (const Mod& m : g_mods) { shown += m.registered && PageOn(m, off) ? 1 : 0; }
+		logger::info("ini pages: {} of {} entr(ies) shown{}", shown, g_mods.size(), settings::Get().iniMenus ? "" : " (all off)");
 	}
 
 	void DrawSettingsList()
 	{
+		Sync();
 		std::scoped_lock l(g_lock);
-		ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
-		if (g_mods.empty())
+		const std::set<std::string> off = OffSet();
+		bool anyShown = false;
+		for (const bool data : { false, true })
 		{
-			ImGui::TextWrapped("%s", strings::TR("AMF_IniNone", "No INI-only mod this menu can show is installed (so far: SSE Display Tweaks)."));
+			bool heading = false;
+			for (Mod& m : g_mods)
+			{
+				if (m.dataFolder != data || !m.ownPage.empty()) { continue; }
+				if (!heading)
+				{
+					heading = true;
+					ImGui::Spacing();
+					ImGui::SeparatorText(data ? strings::TR("AMF_IniGroupData", "In Data") : strings::TR("AMF_IniGroupSkse", "In Data/SKSE/Plugins"));
+				}
+				anyShown = true;
+				bool on = !off.contains(m.id);
+				const std::string label = m.entry + "##ini-" + m.id;
+				if (widgets::Toggle(label.c_str(), &on))
+				{
+					std::set<std::string> next = off;
+					if (on) { next.erase(m.id); } else { next.insert(m.id); }
+					std::string joined;
+					for (const std::string& s : next) { joined += (joined.empty() ? "" : ",") + s; }
+					settings::Get().iniPagesOff = joined;
+					logger::info("settings page: INI page {} -> {}", m.id, on ? "on" : "off");
+					settings::Save();
+					ApplyVisibilityLocked();
+				}
+				std::size_t keys = 0;
+				for (const Section& s : m.sections) { keys += s.settings.size(); }
+				ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
+				ImGui::Indent();
+				ImGui::TextWrapped(strings::TR("AMF_IniRow", "%s: %d settings in %d tabs, from %s"), m.name.c_str(), static_cast<int>(keys),
+								   static_cast<int>(m.sections.size()), FileName(m.mainIni).c_str());
+				ImGui::Unindent();
+				ImGui::PopStyleColor();
+			}
 		}
+		if (!anyShown)
+		{
+			ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
+			ImGui::TextWrapped("%s", strings::TR("AMF_IniNone", "No INI file with settings was found in Data/SKSE/Plugins or Data."));
+			ImGui::PopStyleColor();
+		}
+		bool skippedHeading = false;
+		auto skippedLine = [&](const std::string& a_folder, const std::string& a_file, const std::string& a_reason) {
+			if (!skippedHeading)
+			{
+				skippedHeading = true;
+				ImGui::Spacing();
+				ImGui::SeparatorText(strings::TR("AMF_IniSkipped", "Not shown"));
+			}
+			ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
+			ImGui::BulletText("%s/%s: %s", a_folder.c_str(), a_file.c_str(), a_reason.c_str());
+			ImGui::PopStyleColor();
+		};
+		char buf[512];
 		for (const Mod& m : g_mods)
 		{
-			std::size_t keys = 0;
-			for (const Section& s : m.sections) { keys += s.settings.size(); }
-			ImGui::BulletText(strings::TR("AMF_IniRow", "%s: %d settings in %d tabs, from %s"), m.entry.c_str(), static_cast<int>(keys),
-							  static_cast<int>(m.sections.size()), std::filesystem::path(m.known->mainIni).filename().string().c_str());
+			if (m.ownPage.empty()) { continue; }
+			std::snprintf(buf, sizeof(buf), strings::TR("AMF_IniWhyOwnPage", "%s already has its own page here"), m.ownPage.c_str());
+			skippedLine(m.folder, FileName(m.mainIni), buf);
 		}
-		ImGui::PopStyleColor();
+		for (const Skipped& s : g_skipped) { skippedLine(s.folder, s.file, s.reason); }
 	}
 
 	std::string ToolJson(const std::string& a_argsJson)
@@ -585,21 +1040,33 @@ namespace inipages
 		const nlohmann::json args = nlohmann::json::parse(a_argsJson.empty() ? std::string("{}") : a_argsJson, nullptr, false);
 		auto str = [&](const char* a_k) { return args.is_object() && args.contains(a_k) && args[a_k].is_string() ? args[a_k].get<std::string>() : std::string(); };
 		const std::string what = str("do").empty() ? "list" : str("do");
+		Sync();
 		std::scoped_lock l(g_lock);
 		if (what == "list")
 		{
+			const std::set<std::string> off = OffSet();
 			std::string mods;
 			for (const Mod& m : g_mods)
 			{
 				std::string secs;
 				for (const Section& s : m.sections) { secs += (secs.empty() ? "" : ",") + std::string("{\"name\":") + J(s.name) + ",\"keys\":" + std::to_string(s.settings.size()) + "}"; }
-				mods += (mods.empty() ? "" : ",") + std::string("{\"mod\":") + J(m.known->id) + ",\"entry\":" + J(m.entry) + ",\"main\":" + J(m.known->mainIni) +
-						",\"custom\":" + J(m.known->customIni) + ",\"writes\":" + std::to_string(m.writes) + ",\"sections\":[" + secs + "]}";
+				mods += (mods.empty() ? "" : ",") + std::string("{\"mod\":") + J(m.id) + ",\"base\":" + J(m.base) + ",\"entry\":" + J(m.entry) +
+						",\"folder\":" + J(m.folder) + ",\"main\":" + J(m.mainIni) + ",\"custom\":" + J(m.customIni) +
+						",\"gameSettings\":" + (m.gameSettings ? "true" : "false") + ",\"registered\":" + (m.registered ? "true" : "false") +
+						",\"switch\":" + (off.contains(m.id) ? "false" : "true") + ",\"shown\":" + (m.registered && PageOn(m, off) ? "true" : "false") +
+						(m.ownPage.empty() ? std::string() : ",\"ownPage\":" + J(m.ownPage)) +
+						",\"writes\":" + std::to_string(m.writes) + ",\"sections\":[" + secs + "]}";
 			}
-			return std::string("{\"ok\":true,\"op\":\"ini\",\"do\":\"list\",\"shown\":") + (settings::Get().iniMenus ? "true" : "false") + ",\"mods\":[" + mods + "]}";
+			std::string skipped;
+			for (const Skipped& s : g_skipped)
+			{
+				skipped += (skipped.empty() ? "" : ",") + std::string("{\"folder\":") + J(s.folder) + ",\"file\":" + J(s.file) + ",\"reason\":" + J(s.reason) + "}";
+			}
+			return std::string("{\"ok\":true,\"op\":\"ini\",\"do\":\"list\",\"shown\":") + (settings::Get().iniMenus ? "true" : "false") +
+				   ",\"count\":" + std::to_string(g_mods.size()) + ",\"mods\":[" + mods + "],\"skipped\":[" + skipped + "]}";
 		}
-		const std::string id = str("mod");
-		auto mod = std::find_if(g_mods.begin(), g_mods.end(), [&](const Mod& m) { return Lower(m.known->id) == Lower(id); });
+		const std::string id = Lower(str("mod"));
+		auto mod = std::find_if(g_mods.begin(), g_mods.end(), [&](const Mod& m) { return m.id == id || Lower(m.base) == id || Lower(m.entry) == id; });
 		if (mod == g_mods.end()) { return "{\"ok\":false,\"op\":\"ini\",\"error\":\"no such mod (do=list names them)\"}"; }
 		if (what == "get")
 		{
@@ -612,7 +1079,7 @@ namespace inipages
 						   "\",\"value\":" + J(st.value) + ",\"main\":" + J(st.mainValue) + ",\"custom\":" + (st.custom ? "true" : "false") + "}";
 				}
 			}
-			return "{\"ok\":true,\"op\":\"ini\",\"do\":\"get\",\"mod\":" + J(mod->known->id) + ",\"settings\":[" + out + "]}";
+			return "{\"ok\":true,\"op\":\"ini\",\"do\":\"get\",\"mod\":" + J(mod->id) + ",\"settings\":[" + out + "]}";
 		}
 		if (what == "set")
 		{
@@ -629,7 +1096,8 @@ namespace inipages
 					std::string error;
 					const bool ok = SetValue(*mod, s, st, value, error);
 					return std::string("{\"ok\":") + (ok ? "true" : "false") + ",\"op\":\"ini\",\"do\":\"set\",\"section\":" + J(s.name) + ",\"name\":" + J(st.key) +
-						   ",\"value\":" + J(st.value) + ",\"file\":" + J(mod->known->customIni) + (ok ? std::string() : ",\"error\":" + J(error)) + "}";
+						   ",\"value\":" + J(st.value) + ",\"file\":" + J(mod->customIni.empty() ? mod->mainIni : mod->customIni) +
+						   (ok ? std::string() : ",\"error\":" + J(error)) + "}";
 				}
 			}
 			return "{\"ok\":false,\"op\":\"ini\",\"error\":\"no such section/name (do=get lists them)\"}";

@@ -371,8 +371,10 @@ namespace settings
 				"bEnabled=" << (a_v.fastExit ? 1 : 0) << "\n"
 				"\n"
 				"[IniMenus]\n"
-				"; 1 = INI-only mods' settings (SSE Display Tweaks so far) are pages in this menu (the default). 0 = they are not.\n"
+				"; 1 = every INI file directly in Data\\SKSE\\Plugins and in Data gets a page in this menu (the default). 0 = none do.\n"
 				"bEnabled=" << (a_v.iniMenus ? 1 : 0) << "\n"
+				"; The pages switched off one by one (Settings > Converted menus > INI), comma-separated. Empty = all shown.\n"
+				"sOff=" << a_v.iniPagesOff << "\n"
 				"\n"
 				"[MfmMenus]\n"
 				"; 1 = Mod Function Menu entries (the buttons other mods add under SKSE\\Plugins\\ccld_ModFunctionMenu) are a menu here,\n"
@@ -766,6 +768,10 @@ namespace settings
 			ReadBool(entries, "Startup.bBlackCurtain", g_values.startupCurtain);
 			ReadBool(entries, "Startup.bCleanOrphanedSaveState", g_values.cleanOrphanedState);
 			ReadBool(entries, "IniMenus.bEnabled", g_values.iniMenus);
+			{
+				auto it = entries.find("IniMenus.sOff");
+				if (it != entries.end()) { g_values.iniPagesOff = it->second; }
+			}
 			ReadBool(entries, "MfmMenus.bEnabled", g_values.mfmMenus);
 			ReadNumber(entries, "Startup.uTimeoutSeconds", g_values.curtainTimeoutSeconds);
 			{
