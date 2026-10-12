@@ -3,6 +3,7 @@
 #include "Renderer.h"
 #include "Theme.h"
 #include "utils/Logger.h"
+#include "utils/ToggleSwitch.h"   // widgets::Toggle: a consumer's Checkbox drawn as AMF's switch (2.1.9)
 
 #include <cmath>
 
@@ -670,6 +671,18 @@ void amf_ConsumerSameLine(float a_offsetFromStartX, float a_spacing)
 		}
 	}
 	ImGui::SameLine(a_offsetFromStartX, a_spacing);
+}
+
+// 2.1.9 (the owner, on Simple Timed Block's SKSE Menu Framework page): a consumer's Checkbox drew a stock tick box - against
+// rule 32, and in Norden - Black invisible, black on black. The Checkbox export (tools/harden-cimgui.py) comes here and draws
+// AMF's on/off switch instead, with the same label, value and result, as FLICK pages already get (FlickHost's Checkbox).
+// One group, so the consumer's next IsItemHovered / help marker sees the switch and its label as one item.
+bool amf_ConsumerCheckbox(const char* a_label, bool* a_value)
+{
+	ImGui::BeginGroup();
+	const bool changed = widgets::Toggle(a_label, a_value);
+	ImGui::EndGroup();
+	return changed;
 }
 
 void amf_BeginConsumerHeader()

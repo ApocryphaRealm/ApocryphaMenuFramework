@@ -166,6 +166,10 @@ def main() -> int:
     # The export goes through amf_ConsumerSameLine (ConsumerSurface.cpp), which keeps the column when the label fits
     # and otherwise starts the next item just after the label, as SameLine() would.
     sameline = 0
+    # 2.1.9 (the owner, on Simple Timed Block's SKSE Menu Framework page: stock tick boxes, and in Norden - Black invisible,
+    # black on black): rule 32 holds on a consumer's page too. The Checkbox export goes through amf_ConsumerCheckbox
+    # (ConsumerSurface.cpp), which draws AMF's on/off switch with the same label, value and result.
+    checkbox = 0
     for m in fn.finditer(src):
         ret, name, args = m.group(2).strip(), m.group(3), m.group(4).strip()
         lines = guards_for(ret, args)
@@ -190,6 +194,12 @@ def main() -> int:
             out.append("\n    return amf_ConsumerSameLine(offset_from_start_x, spacing);   // AMF: never on top of the label (2.1.6)")
             pos = body_end
             sameline += 1
+        elif name == "igCheckbox":
+            body_end = src.index("\n}", pos)
+            assert src[pos:body_end].strip() == "return ImGui::Checkbox(label,v);", src[pos:body_end]
+            out.append("\n    return amf_ConsumerCheckbox(label, v);   // AMF: on/off as AMF's switch (rule 32)")
+            pos = body_end
+            checkbox += 1
         elif name in TEXT_FIELDS:
             body_end = src.index("\n}", pos)
             body = src[pos:body_end]
@@ -234,7 +244,8 @@ def main() -> int:
         "// pointers they resolved by name, so nothing else validates what they pass); the four text-field\n"
         "// exports note their item for the on-screen keyboard; and the collapsing-header / tree-node\n"
         "// exports run with ImGui's stock window padding so a framed header's edge sits where it does\n"
-        "// under SKSE Menu Framework (2.0.6); and SameLine never puts an item on top of the one before it (2.1.6).\n"
+        "// under SKSE Menu Framework (2.0.6); SameLine never puts an item on top of the one before it (2.1.6);\n"
+        "// and Checkbox draws AMF's on/off switch, as every boolean in the menu does (rule 32, 2.1.9).\n"
         "// The generator's docstring explains exactly what is guarded and what is deliberately not -\n"
         "// in particular that ImGui's optional p_* pointers are left alone, because guarding p_open\n"
         "// would stop every window without a close button from drawing.\n"
@@ -246,9 +257,12 @@ def main() -> int:
     assert len(wrapped) == 13, wrapped
     # 2.1.6: the column-overlap guard the SameLine export calls (defined in ConsumerSurface.cpp).
     assert sameline == 1, sameline
+    # 2.1.9: the switch the Checkbox export draws (defined in ConsumerSurface.cpp).
+    assert checkbox == 1, checkbox
     text = (banner + "void amf_NoteTextField(unsigned int a_itemId);\n"
             "void amf_BeginConsumerHeader();\nvoid amf_EndConsumerHeader();\n"
-            "void amf_ConsumerSameLine(float a_offsetFromStartX, float a_spacing);\n" + "".join(out))
+            "void amf_ConsumerSameLine(float a_offsetFromStartX, float a_spacing);\n"
+            "bool amf_ConsumerCheckbox(const char* a_label, bool* a_value);\n" + "".join(out))
     os.makedirs(os.path.dirname(TARGET), exist_ok=True)
     io.open(TARGET, "w", encoding="utf-8", newline="\n").write(text)
 
