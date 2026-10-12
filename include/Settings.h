@@ -197,6 +197,10 @@ namespace settings
 		// [ImGuiMenus] bHostOpenAnimationReplacer: with AMF-Host-OAR.dll installed, OAR's menu opens INSIDE this menu's page (live,
 		// snapped into its content area) instead of over a closed menu. On by default; off = the launcher only.
 		bool hostOar = true;
+		// [ImGuiMenus] bCloseAmfOnOpen (the owner, 2026-10-12): when AMF opens another mod's menu ON ITS OWN (not hosted in AMF's
+		// page), or that mod's own key is pressed while AMF is open, AMF closes so nothing of it is behind that menu. A hosted menu
+		// never closes AMF. On by default.
+		bool closeOnOpen = true;
 		// [Performance] bOverlay (next version after 2.1.9): AMF's own FPS / frame-time graph in the screen's corner - Performance.h. Off by default.
 		bool perfOverlay = false;
 		// How long the curtain may stay up before it gives up and lifts anyway. INI-only, because

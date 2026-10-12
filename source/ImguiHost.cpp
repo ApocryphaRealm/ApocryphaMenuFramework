@@ -388,9 +388,9 @@ namespace imguihost
 			g_press = p;
 		}
 
-		std::string StartHosting(const hostcore::KeyCombo& a_combo)
+		std::string StartHosting(const hostcore::KeyCombo& a_combo, bool a_pressKey = true)
 		{
-			if (g_press) { return "a key press is still going on"; }
+			if (g_press && a_pressKey) { return "a key press is still going on"; }
 			g_host.active = true;
 			g_host.startFrame = g_frame;
 			g_host.seenOpen = false;
@@ -403,7 +403,7 @@ namespace imguihost
 			const int state = OarState();
 			logger::info("imgui: hosting Open Animation Replacer in this page (session {}) - its menu is {}", g_host.sessions,
 						 state == 1 ? "already open: snapped here" : (g_oarV3 ? "opened through its API" : "opened with its key"));
-			if (state == 1) { return std::string(); }
+			if (state == 1 || !a_pressKey) { return std::string(); }
 			if (g_oarV3)
 			{
 				g_apiCall = ApiCall{ kOar, true, g_frame };
@@ -448,8 +448,11 @@ namespace imguihost
 				if (combo.Empty()) { return "no key"; }
 				if (g_press) { return "a key press is still going on"; }
 			}
-			// AMF's menu goes first, so the mod's menu has the mouse, the keys and the screen
-			const bool closeAmf = a_open && renderer::IsMainWindowVisible();
+			// AMF's menu goes first, so the mod's menu has the mouse, the keys and the screen - and nothing of AMF is behind it
+			// (the owner, 2026-10-12: "some of these menus need to have nothing behind them so that you can see the world
+			// clearly"). Only here, on the paths where the mod's menu opens ON ITS OWN; a hosted menu keeps AMF open.
+			// Close first, then the key or the API call two frames later: with AMF closed its hook passes every key on.
+			const bool closeAmf = a_open && renderer::IsMainWindowVisible() && settings::Get().closeOnOpen;
 			if (closeAmf)
 			{
 				logger::info("imgui: {} - closing this menu first, so its menu gets the input", kNames[a_id]);
@@ -562,7 +565,7 @@ namespace imguihost
 				// fail closed: hosting stops; OAR keeps the screen as the launcher would have given it
 				const bool open = state == 1;
 				EndHosting(false, "the bridge stopped: " + b.failReason);
-				if (open && renderer::IsMainWindowVisible())
+				if (open && renderer::IsMainWindowVisible() && settings::Get().closeOnOpen)
 				{
 					logger::info("imgui: falling back to the launcher - this menu closes and Open Animation Replacer keeps the screen");
 					renderer::SetMenuVisible(false);
@@ -600,6 +603,61 @@ namespace imguihost
 			if (g_frame > g_host.startFrame + 240)
 			{
 				EndHosting(false, "Open Animation Replacer's menu did not open within 4 s");
+			}
+		}
+
+		// Is every key of the combo held now (the OS's view; DIK -> virtual key through the layout)?
+		bool ComboDown(const hostcore::KeyCombo& a_c)
+		{
+			if (a_c.Empty()) { return false; }
+			for (std::uint32_t dik : a_c.keys)
+			{
+				const UINT sc = (dik & 0x7F) | ((dik & 0x80) ? 0xE000u : 0u);
+				const UINT vk = ::MapVirtualKeyW(sc, MAPVK_VSC_TO_VK_EX);
+				if (vk == 0 || (::GetAsyncKeyState(static_cast<int>(vk)) & 0x8000) == 0) { return false; }
+			}
+			return true;
+		}
+
+		// THE MOD'S OWN KEY WHILE AMF IS OPEN (the owner, 2026-10-12). The mod's own input hook runs before AMF's and opens its
+		// menu by itself; AMF follows it: a hosted mod is snapped into the page (AMF stays open), one that opens on its own
+		// closes AMF (with the close switch on), so it is shown alone. Read from the OS on the frame, edge only; never while a
+		// press of AMF's own is going on, while a text field of AMF has the keyboard, or with the game in the background.
+		bool g_keyHeld[kCount] = {};
+		void WatchOwnKeys()
+		{
+			std::array<hostcore::KeyCombo, kCount> keys;
+			std::array<bool, kCount> usable{};
+			{
+				std::scoped_lock l(g_lock);
+				for (int i = 0; i < kCount; ++i)
+				{
+					keys[i] = g_targets[i].key;
+					usable[i] = g_targets[i].loaded && g_targets[i].blocked.empty() && SwitchOn(i);
+				}
+			}
+			const bool watch = renderer::IsMainWindowVisible() && !g_press && !renderer::WantsTextInput() && GameIsForeground();
+			for (int i = 0; i < kCount; ++i)
+			{
+				const bool down = usable[i] && ComboDown(keys[i]);
+				const bool edge = down && !g_keyHeld[i];
+				g_keyHeld[i] = down;
+				if (!edge || !watch) { continue; }
+				if (i == kOar && HostAvailable())
+				{
+					if (!g_host.active)
+					{
+						logger::info("imgui: Open Animation Replacer's own key with this menu open - its menu is shown inside the page");
+						StartHosting(keys[i], false);
+					}
+					continue;
+				}
+				if (settings::Get().closeOnOpen)
+				{
+					logger::info("imgui: {}'s own key ({}) with this menu open - this menu closes so its menu is shown alone", kNames[i],
+								 hostcore::ComboName(keys[i]));
+					renderer::SetMenuVisible(false);
+				}
 			}
 		}
 
@@ -681,9 +739,9 @@ namespace imguihost
 		ImGui::Spacing();
 		ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
 		ImGui::PushTextWrapPos(0.0f);
-		ImGui::TextUnformatted(TR("AMF_OtherMenusHelp", "These mods draw menus of their own. Open one from here: this menu closes "
-			"first, so the mod's menu has the mouse and the keys. Close it the way the mod does - its key, or Escape - and open "
-			"this menu again with its key."));
+		ImGui::TextUnformatted(TR("AMF_OtherMenusHelp2", "These mods draw menus of their own. Open one from here. A menu shown inside "
+			"this menu keeps it open; one that opens on its own closes this menu first, so nothing of it is behind (Settings > "
+			"Converted menus > ImGui menus). Close a mod's menu the way the mod does - its key, or Escape."));
 		ImGui::PopTextWrapPos();
 		ImGui::PopStyleColor();
 		ImGui::Spacing();
@@ -777,6 +835,8 @@ namespace imguihost
 		}
 	}
 
+	void DrawShowInside();
+
 	void DrawSettings()
 	{
 		ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
@@ -803,16 +863,41 @@ namespace imguihost
 			}
 			ImGui::SameLine();
 			ImGui::TextDisabled("(%s)", loaded[i] ? TR("AMF_ImguiLoaded", "loaded") : TR("AMF_ImguiNotLoaded", "not loaded"));
+			if (i == kOar) { DrawShowInside(); }
 		}
 		ImGui::Spacing();
 		auto& v = settings::Get();
-		if (widgets::Toggle(TR("AMF_HostOarSwitch", "Open Animation Replacer's menu inside this menu (live)"), &v.hostOar))
+		if (widgets::Toggle(TR("AMF_ImguiCloseSwitch", "Close AMF when opening another menu"), &v.closeOnOpen))
 		{
-			logger::info("settings page: host Open Animation Replacer's menu in the page -> {}", v.hostOar);
-			if (!v.hostOar && g_host.active) { EndHosting(true, "hosting switched off"); }
+			logger::info("settings page: close this menu when another mod's menu opens on its own -> {}", v.closeOnOpen);
 			settings::Save();
 		}
+		ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
+		ImGui::PushTextWrapPos(0.0f);
+		ImGui::TextUnformatted(TR("AMF_ImguiCloseHelp", "On: when a mod's menu opens on its own - from Open on Other menus, or with "
+			"that mod's own key while this menu is open - this menu closes, so nothing of it is behind and the world shows clearly. "
+			"It never closes for a menu shown inside it. Off: this menu stays open behind."));
+		ImGui::PopTextWrapPos();
+		ImGui::PopStyleColor();
+	}
+
+	// "Show inside AMF" for Open Animation Replacer: on = hosted in the page (AMF stays open), off = it opens on its own. Off
+	// by itself, greyed, while the bridge is not there or did not validate.
+	void DrawShowInside()
+	{
+		auto& v = settings::Get();
 		const Bridge b = BridgeCopy();
+		const bool ready = b.registered && !b.failed;
+		ImGui::Indent();
+		bool off = false;
+		ImGui::BeginDisabled(!ready);
+		if (widgets::Toggle(TR("AMF_HostInside", "Show inside AMF"), ready ? &v.hostOar : &off) && ready)
+		{
+			logger::info("settings page: Open Animation Replacer shown inside AMF -> {}", v.hostOar);
+			if (!v.hostOar && g_host.active) { EndHosting(true, "Show inside AMF switched off"); }
+			settings::Save();
+		}
+		ImGui::EndDisabled();
 		ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
 		ImGui::PushTextWrapPos(0.0f);
 		ImGui::TextUnformatted(TR("AMF_HostOarHelp", "On: its Open on Other menus keeps this menu open and shows Open Animation "
@@ -823,6 +908,7 @@ namespace imguihost
 		else { ImGui::TextUnformatted(TR("AMF_HostReady", "AMF-Host-OAR.dll is loaded and ready.")); }
 		ImGui::PopTextWrapPos();
 		ImGui::PopStyleColor();
+		ImGui::Unindent();
 	}
 
 	void Frame()
@@ -832,6 +918,7 @@ namespace imguihost
 		StepPress();
 		CallBridge();
 		HostingLifecycle();
+		WatchOwnKeys();
 		if (g_oarV3)
 		{
 			const bool open = g_oarV3->IsMenuOpen();

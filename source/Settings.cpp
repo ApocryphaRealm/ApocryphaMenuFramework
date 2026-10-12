@@ -391,6 +391,9 @@ namespace settings
 				"; 1 = with AMF-Host-OAR.dll installed, Open Animation Replacer's menu opens inside this menu's page, live (the default).\n"
 				"; 0 = it opens over a closed menu, as the other mods' do.\n"
 				"bHostOpenAnimationReplacer=" << (a_v.hostOar ? 1 : 0) << "\n"
+				"; 1 = when this menu opens another mod's menu on its own (not inside this menu), or that mod's key is pressed while\n"
+				"; this menu is open, this menu closes so nothing of it is behind (the default). A menu shown inside this menu keeps it open.\n"
+				"bCloseAmfOnOpen=" << (a_v.closeOnOpen ? 1 : 0) << "\n"
 				"\n"
 				"[Performance]\n"
 				"; 1 = this menu's own FPS and frame-time graph in the top-right corner of the screen, menu open or not. 0 = not (the default).\n"
@@ -793,6 +796,7 @@ namespace settings
 			ReadBool(entries, "ImGuiMenus.bImmersiveEquipmentDisplays", g_values.imguiIed);
 			ReadBool(entries, "ImGuiMenus.bOptiScaler", g_values.imguiOpti);
 			ReadBool(entries, "ImGuiMenus.bHostOpenAnimationReplacer", g_values.hostOar);
+			ReadBool(entries, "ImGuiMenus.bCloseAmfOnOpen", g_values.closeOnOpen);
 			ReadBool(entries, "Performance.bOverlay", g_values.perfOverlay);
 			ReadNumber(entries, "Startup.uTimeoutSeconds", g_values.curtainTimeoutSeconds);
 			{
