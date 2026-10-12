@@ -177,6 +177,8 @@ namespace settings
 		bool cleanOrphanedState = true;
 		// [IniMenus] bEnabled (2.1.9): INI-only mods' settings (SSE Display Tweaks so far) as pages here - IniPages.h. On by default.
 		bool iniMenus = true;
+		// [MfmMenus] bEnabled (next version after 2.1.9): Mod Function Menu entries as a menu here - MfmPages.h. On by default.
+		bool mfmMenus = true;
 		// How long the curtain may stay up before it gives up and lifts anyway. INI-only, because
 		// it is a safety valve rather than a preference. 30 proved too short on a heavy list.
 		std::uint32_t curtainTimeoutSeconds = 120;

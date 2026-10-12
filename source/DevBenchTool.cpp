@@ -2,6 +2,7 @@
 #include "FlickHost.h"
 #include "PrismaRedux.h"
 #include "IniPages.h"
+#include "MfmPages.h"
 #include "SystemRow.h"
 
 #include "DevBench/DevBenchAPI.h"
@@ -201,6 +202,12 @@ namespace devbenchtool
 			{
 				// 2.1.9: INI-only mods' pages (IniPages.h) - {"op":"ini","do":"list|get|set","mod":"SSEDisplayTweaks","section":"Render","name":"EnableVSync","value":"false"}
 				result = inipages::ToolJson(args);
+			}
+			else if (op == "mfm")
+			{
+				// next version: Mod Function Menu entries (MfmPages.h) - {"op":"mfm","do":"list|run","path":"Mod/Toggle UI/Toggle UI.toml"}.
+				// run hands the call to the render thread and waits for it (a mod's function is never called on this thread).
+				result = mfmpages::ToolJson(args);
 			}
 			else if (op == "prisma")
 			{
@@ -728,7 +735,10 @@ namespace devbenchtool
 			"(nothing when the folder holds no .ess); args value=1 lists only; returns saves, stateFiles, orphaned, deleted, failed, "
 			"saveFolder, files and enabledAtStart (the Settings > General switch). "
 			"2.1.9: ini drives the INI-only mods' pages (SSE Display Tweaks): do=list | get {mod} | set {mod, section, name, value} - set "
-			"writes the mod's override file exactly as the page's control does (value checked against the key's kind).\","
+			"writes the mod's override file exactly as the page's control does (value checked against the key's kind). "
+			"Next version: mfm drives the Mod Function Menu entries: do=list (each entry's path, dll, api, type, actions, resolved, "
+			"missing) | run {path} - presses the entry as the page does, on the render thread, and returns ok, type, message (the "
+			"text a Message/MessageBox function returned) and error.\","
 			"\"inputSchema\":{\"type\":\"object\",\"properties\":{"
 			"\"op\":{\"type\":\"string\"},\"node\":{\"type\":\"string\"},"
 			"\"mod\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"position\":{\"type\":\"string\"},"

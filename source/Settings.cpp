@@ -371,6 +371,11 @@ namespace settings
 				"; 1 = INI-only mods' settings (SSE Display Tweaks so far) are pages in this menu (the default). 0 = they are not.\n"
 				"bEnabled=" << (a_v.iniMenus ? 1 : 0) << "\n"
 				"\n"
+				"[MfmMenus]\n"
+				"; 1 = Mod Function Menu entries (the buttons other mods add under SKSE\\Plugins\\ccld_ModFunctionMenu) are a menu here,\n"
+				"; \"Mod Function Menu\" (the default). 0 = they are not. Mod Function Menu itself is not needed and not changed.\n"
+				"bEnabled=" << (a_v.mfmMenus ? 1 : 0) << "\n"
+				"\n"
 				"[Startup]\n"
 				"; Hold the screen black from the first frame the game draws until its main menu is\n"
 				"; up, so the logo frames and the half-drawn menu behind them are never shown. It\n"
@@ -757,6 +762,7 @@ namespace settings
 			ReadBool(entries, "Startup.bBlackCurtain", g_values.startupCurtain);
 			ReadBool(entries, "Startup.bCleanOrphanedSaveState", g_values.cleanOrphanedState);
 			ReadBool(entries, "IniMenus.bEnabled", g_values.iniMenus);
+			ReadBool(entries, "MfmMenus.bEnabled", g_values.mfmMenus);
 			ReadNumber(entries, "Startup.uTimeoutSeconds", g_values.curtainTimeoutSeconds);
 			{
 				auto it = entries.find("Startup.sCurtainImage");

@@ -14,6 +14,7 @@
 #include "PrismaRedux.h"
 #include "HelpBar.h"
 #include "IniPages.h"
+#include "MfmPages.h"
 #include "McmStyle.h"
 #include "Input.h"
 #include "Offsets.h"
@@ -2304,7 +2305,7 @@ namespace renderer
 					static int s_mcmSub = 0;
 					// 2.1.6 (the owner, 2026-10-08: "I just want the tabs that apply to MCM menus to be within a tab called MCM"):
 					// one tab per menu system - MCM | FLICK | Prisma - and Spacing, which covers every converted page.
-					SubTabs sub("##mcmsub", 5, s_mcmSub);   // 2.1.9: MCM | FLICK | Prisma | INI | Spacing
+					SubTabs sub("##mcmsub", 6, s_mcmSub);   // 2.1.9: MCM | FLICK | Prisma | INI | Spacing; next version: MFM after INI
 					if (sub.Tab(TR("AMF_SubMcm", "MCM")))
 					{
 					static int s_mcmInner = 0;
@@ -2789,6 +2790,24 @@ namespace renderer
 							"its main INI is never changed. These mods read their INI when the game starts, so a change takes effect next time."));
 						ImGui::Spacing();
 						inipages::DrawSettingsList();
+						ImGui::EndTabItem();
+					}
+					// next version: Mod Function Menu entries - MfmPages.h
+					if (sub.Tab(TR("AMF_SubMfm", "MFM")))
+					{
+						if (widgets::Toggle(TR("AMF_MfmLoad", "Mod Function Menu entries here"), &values.mfmMenus))
+						{
+							logger::info("settings page: Mod Function Menu entries -> {}", values.mfmMenus);
+							settings::Save();
+							mfmpages::ApplyVisibility();
+						}
+						ImGui::TextWrapped("%s", TR("AMF_MfmLoadHelp", "On: the buttons other mods add for Mod Function Menu (Toggle UI, "
+							"Game Settings Override and others) are a menu here, \"Mod Function Menu\" - a heading for Mod and for Config, a "
+							"header per folder, a button per entry. A button calls a function of a mod that is already loaded; one whose mod "
+							"is not loaded is greyed out and says what is missing. Mod Function Menu itself is not needed, and is left as it is "
+							"when it is installed."));
+						ImGui::Spacing();
+						mfmpages::DrawSettingsList();
 						ImGui::EndTabItem();
 					}
 					if (sub.Tab(TR("AMF_SubMcmSpacing", "Spacing")))
@@ -5404,6 +5423,11 @@ namespace renderer
 			logger::warn("theme \"{}\" queued (DevBench): no frame took it within 3 s - it applies at the next frame", a_themeId);
 		}
 		return true;
+	}
+
+	bool RunOnRenderThreadWait(std::function<void()> a_job, unsigned a_timeoutMs)
+	{
+		return RunOnRenderThread(std::move(a_job), a_timeoutMs);
 	}
 
 	bool ReloadArtOnRenderThread(unsigned a_timeoutMs)

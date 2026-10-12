@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <string>
 
 struct ImDrawList;
@@ -102,6 +103,10 @@ namespace renderer
 	// 2.1.9 (theme-switch-fix): amf.process op=skinreload - reload the menu art on the render thread, waiting for it. False
 	// when no frame took the job within the timeout (it still runs at the next frame).
 	bool ReloadArtOnRenderThread(unsigned a_timeoutMs);
+	// Next version (MFM pages): run a_job on the render thread at the start of its next frame (at once when called there) and wait
+	// up to a_timeoutMs for it. False when no frame took it in time - it stays queued and runs at the next frame, so a_job must
+	// capture by value. The DevBench amf.menu op=mfm do=run uses it: a mod's function is never called from the listener thread.
+	bool RunOnRenderThreadWait(std::function<void()> a_job, unsigned a_timeoutMs);
 	// 2.1.6 (amf.menu op=art): list the art library's parts, or with a_set pick one for the active theme - a_kind is
 	// frame / background / toggle, a_name "" (the theme's own), "none", or a part name. Returns the reply JSON.
 	std::string ArtOp(const std::string& a_kind, const std::string& a_name, bool a_set);

@@ -73,6 +73,11 @@ English. The font atlas takes its glyph ranges from the loaded translation and m
 Hangul face where the chosen font lacks the characters. Each mod's own page is that mod's to translate - a mod that ships its own `<Mod>_<language>.txt` beside ours follows the same Language setting (`AMF_GetLanguage()` in the C API) and its characters go into the atlas automatically (1.6.5).
 Corrections from native speakers are welcome - the files are plain text.
 
+## Credits
+
+- **ccld** - Mod Function Menu (MIT). AMF shows Mod Function Menu's entries as one of its converted menus; that support
+  is a clean reimplementation from Mod Function Menu's description and public SDK header, with none of its code.
+
 ## Licence
 
 GPL-3.0-or-later - see `LICENSE` and `NOTICE.md`; components under other licences, with their notices, are in
