@@ -13,14 +13,17 @@
 // Names: a loaded <name>.dll gives its version resource's ProductName (else FileDescription); otherwise the file's name with
 // its words split ("BackPocketForController" -> "Back Pocket For Controller"), so the Mods row's search finds it. A file in
 // Data beside a plugin of the same name (<name>.esp/.esm/.esl - the game reads it as that plugin's game settings) is named
-// after the plugin and marked "(INI, game settings)".
+// after the plugin and marked "(INI, game settings)". Shown labels - keys, sections (the tabs) and names from a file's
+// name - are words: underscores as spaces, camelCase split, a key's type prefix (b, i, u, f, s, fl, sz) dropped
+// ("bRequireFavourite" -> "Require Favourite"); the file is read and written by its own names (IniCore.h, inicore::Label).
 //
 // Not shown, each listed with its reason on Settings > Converted menus > INI: AMF's own INIs; Skyrim.ini, SkyrimPrefs.ini and
 // SkyrimCustom.ini (they live in Documents, never in Data - and are never touched if one is found there); a file over
 // 256 KB; a file with no [section]; a file that does not read cleanly (a line that is neither a section, a setting nor a
 // comment, a key before any section, a key or a section given twice, UTF-16 text); a <name>_custom.ini beside its
 // <name>.ini (read as part of that page); a mod that already has a page here from its own AMF / SMF / FLICK / MCM / Prisma
-// registration (matched by name - checked again each time the menu opens, as other plugins register after AMF).
+// registration (matched by its title, or by the DLL that registered it having the INI's base name - checked again whenever a
+// page is registered and each time the menu opens, as other plugins register after AMF).
 //
 // Writing: one key at a time. A file with a <name>_custom.ini beside it (and SSE Display Tweaks always - its reader takes the
 // custom file over the main one) writes to the custom file: the key replaced in place, or added under its section. Any other
@@ -41,6 +44,9 @@ namespace inipages
 	// Registers the pages found, and takes away any whose mod now has a page of its own (other plugins register after AMF's
 	// kDataLoaded). Called each time the menu opens and before DevBench lists. Thread-safe.
 	void Sync();
+
+	// Render thread, every frame: Sync again when the registry changed since the last call (a mod registered a page).
+	void SyncIfRegistryChanged();
 
 	// Settings > Converted menus > INI (the master switch) or a page's own switch: show or hide the entries.
 	void ApplyVisibility();

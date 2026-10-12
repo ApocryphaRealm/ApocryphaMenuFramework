@@ -30,6 +30,10 @@ namespace registry
 	{
 		std::string modName;
 		std::vector<Page> pages;
+		// next after 2.1.9: the DLL whose render callback registered the entry, its file name without .dll, lower case
+		// ("lockinteractionoverhaul"); empty for a page AMF draws itself. An INI page is taken away for its mod's own page
+		// by it (IniPages.cpp), whatever title the mod gives that page.
+		std::string module;
 	};
 
 	// Thread-safe: registration typically arrives from other plugins' load/messaging threads;
@@ -56,4 +60,8 @@ namespace registry
 	std::vector<Entry> Snapshot();
 
 	std::size_t Count();
+
+	// next after 2.1.9: goes up with every registration, rename and removal, so a reader can tell cheaply that the registry
+	// changed (the INI pages re-check for a mod's own page when one is registered). Thread-safe.
+	std::uint64_t Generation();
 }

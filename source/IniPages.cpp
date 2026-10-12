@@ -1,6 +1,7 @@
 #include "IniPages.h"
 
 #include "HelpBar.h"
+#include "IniCore.h"
 #include "Registry.h"
 #include "Settings.h"
 #include "Strings.h"
@@ -116,46 +117,8 @@ namespace inipages
 			return a_s;
 		}
 
-		// "Lock Interaction Overhaul (MCM)" and "LockInteractionOverhaul" -> "lockinteractionoverhaul": letters and digits only,
-		// anything in brackets left out
-		std::string Normal(const std::string& a_s)
-		{
-			std::string out;
-			int depth = 0;
-			for (const char c : a_s)
-			{
-				if (c == '(' || c == '[') { ++depth; continue; }
-				if (c == ')' || c == ']') { depth = std::max(0, depth - 1); continue; }
-				if (depth == 0 && std::isalnum(static_cast<unsigned char>(c))) { out += static_cast<char>(std::tolower(static_cast<unsigned char>(c))); }
-			}
-			return out;
-		}
-
-		// "BackPocketForController" -> "Back Pocket For Controller", "my_mod" -> "my mod": a name with no spaces split into its
-		// words, so the Mods row's search finds it by them
-		std::string Words(const std::string& a_s)
-		{
-			if (a_s.find(' ') != std::string::npos) { return a_s; }
-			std::string out;
-			for (std::size_t i = 0; i < a_s.size(); ++i)
-			{
-				const char c = a_s[i];
-				if (c == '_') { if (!out.empty() && out.back() != ' ') { out += ' '; } continue; }
-				const bool upper = std::isupper(static_cast<unsigned char>(c)) != 0;
-				if (upper && i > 0 && !out.empty() && out.back() != ' ')
-				{
-					const char p = a_s[i - 1];
-					const bool nextLower = i + 1 < a_s.size() && std::islower(static_cast<unsigned char>(a_s[i + 1]));
-					if (std::islower(static_cast<unsigned char>(p)) || std::isdigit(static_cast<unsigned char>(p)) ||
-						(std::isupper(static_cast<unsigned char>(p)) && nextLower))
-					{
-						out += ' ';
-					}
-				}
-				out += c;
-			}
-			return Trim(out);
-		}
+		using inicore::Label;
+		using inicore::Normal;
 
 		bool IsBool(const std::string& a_v) { const std::string l = Lower(a_v); return l == "true" || l == "false"; }
 
@@ -615,7 +578,7 @@ namespace inipages
 			for (Setting& s : sec->settings)
 			{
 				ImGui::PushID(s.key.c_str());
-				const std::string label = s.key;
+				const std::string label = Label(s.key, true);   // shown only: the file keeps its own key name
 				const std::string help = s.title.empty() ? s.help : (s.help.empty() ? s.title : s.title + "\n" + s.help);
 				std::string error;
 				switch (s.kind)
@@ -866,7 +829,7 @@ namespace inipages
 					}
 				}
 				mod.gameSettings = !plugin.empty();
-				mod.name = known ? std::string(known->name) : (!plugin.empty() ? plugin : (!dll.empty() ? Words(dll) : Words(base)));
+				mod.name = known ? std::string(known->name) : (!plugin.empty() ? plugin : (!dll.empty() ? Label(dll, false) : Label(base, false)));
 				mod.entry = mod.name + (mod.gameSettings ? " (INI, game settings)" : " (INI)");
 				for (const std::string& n : { base, dll, mod.name, plugin.empty() ? std::string() : base })
 				{
@@ -914,12 +877,13 @@ namespace inipages
 		if (g_mods.empty()) { return; }
 		std::set<std::string> ours;
 		for (const Mod& m : g_mods) { ours.insert(m.entry); }
-		// every OTHER entry's name, normalised, against each INI's names
-		std::vector<std::pair<std::string, std::string>> others;   // normalised, as shown
-		for (const registry::Entry& e : registry::Snapshot())
+		// every OTHER entry, against each INI: by its title, and by the DLL that registered it
+		std::vector<registry::Entry> others;
+		for (registry::Entry& e : registry::Snapshot())
 		{
 			if (ours.contains(e.modName)) { continue; }
-			others.emplace_back(Normal(e.modName), e.modName);
+			e.pages.clear();   // only the name and the module are read here
+			others.push_back(std::move(e));
 		}
 		bool changed = false;
 		for (std::size_t i = 0; i < g_mods.size(); ++i)
@@ -927,9 +891,9 @@ namespace inipages
 			Mod& m = g_mods[i];
 			if (!m.ownPage.empty()) { continue; }
 			std::string own;
-			for (const auto& [n, shown] : others)
+			for (const registry::Entry& e : others)
 			{
-				if (std::find(m.matchNames.begin(), m.matchNames.end(), n) != m.matchNames.end()) { own = shown; break; }
+				if (inicore::IsOwnPage(m.matchNames, m.base, e.modName, e.module)) { own = e.modName; break; }
 			}
 			if (!own.empty())
 			{
@@ -946,13 +910,26 @@ namespace inipages
 			if (m.registered) { continue; }
 			for (const Section& s : m.sections)
 			{
-				const std::string page = s.name;
-				if (registry::RegisterFn(m.entry.c_str(), page.c_str(), [i, page]() { DrawPage(i, page); }, true)) { m.pages.push_back(page); }
+				// the tab shows the section's words; the page reads and writes the section by its own name. Two sections
+				// whose words come out the same keep their own names
+				std::string tab = Label(s.name, false);
+				if (std::find(m.pages.begin(), m.pages.end(), tab) != m.pages.end()) { tab = s.name; }
+				const std::string section = s.name;
+				if (registry::RegisterFn(m.entry.c_str(), tab.c_str(), [i, section]() { DrawPage(i, section); }, true)) { m.pages.push_back(tab); }
 			}
 			m.registered = true;
 			changed = true;
 		}
 		if (changed) { ApplyVisibilityLocked(); }
+	}
+
+	void SyncIfRegistryChanged()
+	{
+		static std::uint64_t s_seen = 0;   // render thread only
+		const std::uint64_t now = registry::Generation();
+		if (now == s_seen) { return; }
+		s_seen = now;   // read BEFORE Sync, so a registration arriving during it is seen next frame (Sync's own bump costs one idle re-check)
+		Sync();
 	}
 
 	void ApplyVisibility()

@@ -3,6 +3,9 @@
 #include "utils/Logger.h"
 
 #include <algorithm>
+#include <atomic>
+#include <cctype>
+#include <filesystem>
 #include <mutex>
 
 namespace registry
@@ -11,7 +14,31 @@ namespace registry
 	{
 		std::mutex g_lock;
 		std::vector<Entry> g_entries;
+		std::atomic<std::uint64_t> g_generation{ 0 };
+
+		// the file name without .dll, lower case, of the module holding a_address ("" when none holds it)
+		std::string ModuleAt(const void* a_address)
+		{
+			HMODULE module = nullptr;
+			if (!a_address || !::GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+													 static_cast<LPCWSTR>(a_address), &module) || !module)
+			{
+				return {};
+			}
+			wchar_t path[MAX_PATH]{};
+			const DWORD n = ::GetModuleFileNameW(module, path, MAX_PATH);
+			if (n == 0 || n >= MAX_PATH) { return {}; }
+			std::string out;
+			for (const wchar_t c : std::filesystem::path(path).stem().wstring())
+			{
+				if (c > 0x7E || c < 0x20) { return {}; }   // a name outside plain ASCII is not matched
+				out += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+			}
+			return out;
+		}
 	}
+
+	std::uint64_t Generation() { return g_generation.load(std::memory_order_acquire); }
 
 	bool Register(const char* a_modName, const char* a_pageName, AMF_RenderCallback a_render)
 	{
@@ -21,7 +48,23 @@ namespace registry
 						 a_modName ? a_modName : "<null>", a_pageName ? a_pageName : "<null>");
 			return false;
 		}
-		return RegisterFn(a_modName, a_pageName, std::function<void()>(a_render));
+		if (!RegisterFn(a_modName, a_pageName, std::function<void()>(a_render))) { return false; }
+		// the DLL the callback lives in registered it (AMF_RegisterPage and SMF's AddSectionItem both come here)
+		if (std::string module = ModuleAt(reinterpret_cast<const void*>(a_render)); !module.empty())
+		{
+			std::scoped_lock lock(g_lock);
+			for (auto& entry : g_entries)
+			{
+				if (entry.modName == a_modName && entry.module.empty())
+				{
+					logger::debug("page registry: \"{}\" registered by {}.dll", a_modName, module);
+					entry.module = std::move(module);
+					break;
+				}
+			}
+		}
+		g_generation.fetch_add(1, std::memory_order_acq_rel);
+		return true;
 	}
 
 	bool RegisterFn(const char* a_modName, const char* a_pageName, std::function<void()> a_render, bool a_converted)
@@ -50,13 +93,15 @@ namespace registry
 				}
 
 				entry.pages.push_back({ a_pageName, std::move(a_render), false, a_converted });
+				g_generation.fetch_add(1, std::memory_order_acq_rel);
 				logger::info("page registered: \"{}\" -> \"{}\" (mod now has {} page(s), rendered as tabs - one menu per mod)",
 							 a_modName, a_pageName, entry.pages.size());
 				return true;
 			}
 		}
 
-		g_entries.push_back({ a_modName, { { a_pageName, std::move(a_render), false, a_converted } } });
+		g_entries.push_back({ a_modName, { { a_pageName, std::move(a_render), false, a_converted } }, {} });
+		g_generation.fetch_add(1, std::memory_order_acq_rel);
 		logger::info("first page registered for \"{}\": \"{}\" ({} mod(s) in the registry)",
 					 a_modName, a_pageName, g_entries.size());
 		return true;
@@ -110,6 +155,7 @@ namespace registry
 				return false;
 			}
 			mod->modName = a_newName;
+			g_generation.fetch_add(1, std::memory_order_acq_rel);   // a new title may match an INI page's mod
 			logger::info("RenameSection (SMF-compat): menu \"{}\" -> \"{}\"", a_modName, a_newName);
 			return true;
 		}

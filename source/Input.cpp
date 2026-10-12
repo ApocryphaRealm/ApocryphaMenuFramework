@@ -5,6 +5,7 @@
 #include <cmath>
 
 #include "Bindings.h"
+#include "InputFrames.h"
 #include "Compat.h"
 #include "ConsumerSurface.h"
 #include "Offsets.h"
@@ -240,6 +241,8 @@ namespace input
 		// thread at the top of ProcessQueuedEvents; guarded by the same lock as the main queue.
 		struct Deferred { int framesLeft; Record record; };
 		std::vector<Deferred> g_deferred;
+		// A button's second press or release in one frame, kept for the next (InputFrames.h). Render thread only.
+		std::vector<Record> g_carry;
 
 		std::atomic<float> g_cursorMirrorX{ 0.0f };   // read by DevBench off-thread
 		std::atomic<float> g_cursorMirrorY{ 0.0f };
@@ -1016,7 +1019,10 @@ namespace input
 					++it;
 				}
 			}
-			drained.swap(g_queue);
+			// last frame's carry first: it is older than anything queued since
+			drained.swap(g_carry);
+			drained.insert(drained.end(), g_queue.begin(), g_queue.end());
+			g_queue.clear();
 		}
 
 		ImGuiIO& io = ImGui::GetIO();
@@ -1025,36 +1031,22 @@ namespace input
 		ReleaseStuckKeys(io);
 
 		// A PRESS AND ITS RELEASE NEVER SHARE A FRAME (next after 2.1.9; the 2026-10-12 combined test: a second real click on a
-		// switch did not register). ImGui runs with trickling OFF (Renderer.cpp - the cursor's one-position-per-frame rule), and
-		// with trickling off it flattens a frame's events: "successive down/up/down/up will be lost" (imgui.cpp, UpdateInputEvents).
-		// A quick click whose down and up reach the same drain was therefore never a click at all. The release of a button or key
-		// that went down earlier in THIS drain is held to the next frame, and everything after it for that same button or key
-		// follows it in order, a frame apart - so every press is seen down for at least one frame, on every page.
-		std::unordered_set<std::uint64_t> downThisDrain;
-		std::unordered_map<std::uint64_t, int> heldBack;   // button or key -> frames its held-back records already use
-		auto buttonKey = [](const Record& a_r) { return (static_cast<std::uint64_t>(a_r.kind) << 32) | a_r.code; };
+		// switch did not register). ImGui runs with trickling OFF and flattens a frame's events, so each mouse button, key and
+		// pad button changes at most once per frame here; a second change waits for the next frame, ahead of newer input
+		// (InputFrames.h - the offline check tools\input_frames_check runs the same function).
+		inputframes::OneTransitionPerFrame(drained, g_carry, [](const Record& a_r) -> std::uint64_t {
+			const bool button = a_r.kind == Record::Kind::kMouseButton || a_r.kind == Record::Kind::kKeyboard || a_r.kind == Record::Kind::kGamepad;
+			return button ? ((static_cast<std::uint64_t>(a_r.kind) + 1) << 32) | a_r.code : 0;
+		});
+		for (const Record& r : g_carry)
+		{
+			logger::debug("input: {} {} {} held to the next frame - it already changed in this frame",
+						  r.kind == Record::Kind::kMouseButton ? "mouse button" : (r.kind == Record::Kind::kKeyboard ? "key" : "pad button"), r.code,
+						  r.down ? "press" : "release");
+		}
 
 		for (const Record& record : drained)
 		{
-			if (record.kind == Record::Kind::kMouseButton || record.kind == Record::Kind::kKeyboard ||
-				record.kind == Record::Kind::kGamepad)
-			{
-				const std::uint64_t k = buttonKey(record);
-				const auto held = heldBack.find(k);
-				if (held != heldBack.end() || (!record.down && downThisDrain.contains(k)))
-				{
-					const int frames = held != heldBack.end() ? ++held->second : (heldBack[k] = 1);
-					{
-						std::scoped_lock lock(g_queueLock);
-						g_deferred.push_back({ frames, record });
-					}
-					logger::debug("input: {} {} {} held to frame +{} - its press came in this same frame",
-								  record.kind == Record::Kind::kMouseButton ? "mouse button" : (record.kind == Record::Kind::kKeyboard ? "key" : "pad button"),
-								  record.code, record.down ? "press" : "release", frames);
-					continue;
-				}
-				if (record.down) { downThisDrain.insert(k); }
-			}
 			switch (record.kind)
 			{
 			case Record::Kind::kMouseMove:
@@ -1086,6 +1078,8 @@ namespace input
 				break;
 			case Record::Kind::kMouseButton:
 				if (record.down) { NoteDevice(Device::kKeyboardMouse); }
+				// every click that reaches the menu, so a test can tell "never arrived" from "arrived and was lost"
+				logger::debug("input: mouse button {} {}", record.code, record.down ? "press" : "release");
 				if (record.code < ImGuiMouseButton_COUNT)
 				{
 					io.AddMouseButtonEvent(static_cast<int>(record.code), record.down);
@@ -1266,6 +1260,7 @@ namespace input
 
 		std::scoped_lock lock(g_queueLock);
 		g_queue.clear();
+		g_carry.clear();
 
 		logger::debug("menu opened: cursor centred at ({:.0f}, {:.0f}), stale queue cleared", g_cursorX, g_cursorY);
 	}

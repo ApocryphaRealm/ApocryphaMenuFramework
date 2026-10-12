@@ -5043,6 +5043,9 @@ namespace renderer
 						inipages::Sync();
 					}
 					s_wasInteractive = interactive;
+					// and whenever a page is registered (the 2026-10-12 test: Lock Interaction Overhaul registered its own page
+					// after AMF's INI pages were up) - an atomic read on a frame where nothing registered
+					inipages::SyncIfRegistryChanged();
 				}
 				if (visible) { mcmloader::LearnFromLayoutIfChanged(); }   // the sort learns from menus moved by hand
 				// Published only AFTER the rising edge has cleared the queue, so nothing the input thread
