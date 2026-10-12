@@ -5,6 +5,7 @@
 #include "FlickHost.h"
 #include "PrismaRedux.h"
 #include "Input.h"
+#include "IniPages.h"
 #include "Persistence.h"
 #include "Registry.h"
 #include "Keyboard.h"
@@ -135,6 +136,7 @@ namespace
 			// at which every plugin's load state can be asked (a config whose plugin is not loaded is skipped).
 			mcmloader::Load();
 			prisma::Load();  // 2.1.6: Prisma MCM Redux menus as AMF entries
+			inipages::Load();  // 2.1.9: INI-only mods' settings (SSE Display Tweaks) as AMF entries
 			rememberedsettings::Init();  // the remembered MCM settings' active profile
 			// 2.1.9 (AmeliaZ): state files left by deleted saves go to the save folder's "AMF orphaned state" folder (never deleted)
 			if (settings::Get().cleanOrphanedState)

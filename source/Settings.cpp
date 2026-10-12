@@ -367,6 +367,10 @@ namespace settings
 				"; Saves and settings are written when you save or change them, not at exit. 0 disables.\n"
 				"bEnabled=" << (a_v.fastExit ? 1 : 0) << "\n"
 				"\n"
+				"[IniMenus]\n"
+				"; 1 = INI-only mods' settings (SSE Display Tweaks so far) are pages in this menu (the default). 0 = they are not.\n"
+				"bEnabled=" << (a_v.iniMenus ? 1 : 0) << "\n"
+				"\n"
 				"[Startup]\n"
 				"; Hold the screen black from the first frame the game draws until its main menu is\n"
 				"; up, so the logo frames and the half-drawn menu behind them are never shown. It\n"
@@ -752,6 +756,7 @@ namespace settings
 			ReadBool(entries, "FastExit.bEnabled", g_values.fastExit);
 			ReadBool(entries, "Startup.bBlackCurtain", g_values.startupCurtain);
 			ReadBool(entries, "Startup.bCleanOrphanedSaveState", g_values.cleanOrphanedState);
+			ReadBool(entries, "IniMenus.bEnabled", g_values.iniMenus);
 			ReadNumber(entries, "Startup.uTimeoutSeconds", g_values.curtainTimeoutSeconds);
 			{
 				auto it = entries.find("Startup.sCurtainImage");

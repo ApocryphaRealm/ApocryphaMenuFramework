@@ -13,6 +13,7 @@
 #include "FlickHost.h"
 #include "PrismaRedux.h"
 #include "HelpBar.h"
+#include "IniPages.h"
 #include "McmStyle.h"
 #include "Input.h"
 #include "Offsets.h"
@@ -2267,7 +2268,7 @@ namespace renderer
 					static int s_mcmSub = 0;
 					// 2.1.6 (the owner, 2026-10-08: "I just want the tabs that apply to MCM menus to be within a tab called MCM"):
 					// one tab per menu system - MCM | FLICK | Prisma - and Spacing, which covers every converted page.
-					SubTabs sub("##mcmsub", 4, s_mcmSub);
+					SubTabs sub("##mcmsub", 5, s_mcmSub);   // 2.1.9: MCM | FLICK | Prisma | INI | Spacing
 					if (sub.Tab(TR("AMF_SubMcm", "MCM")))
 					{
 					static int s_mcmInner = 0;
@@ -2736,6 +2737,22 @@ namespace renderer
 						ImGui::Spacing();
 						ImGui::TextDisabled("%s", TR("AMF_PrismaPmcm", "PMCM menus (the other Prisma settings system) are web pages of their own and "
 							"stay in PMCM."));
+						ImGui::EndTabItem();
+					}
+					// 2.1.9: INI-only mods (SSE Display Tweaks so far) - IniPages.h
+					if (sub.Tab(TR("AMF_SubIni", "INI")))
+					{
+						if (widgets::Toggle(TR("AMF_IniLoad", "INI-only mods' settings here"), &values.iniMenus))
+						{
+							logger::info("settings page: INI-only mods' pages -> {}", values.iniMenus);
+							settings::Save();
+							inipages::ApplyVisibility();
+						}
+						ImGui::TextWrapped("%s", TR("AMF_IniLoadHelp", "On: a mod whose settings live only in an INI file gets a page here, \"<name> (INI)\" - "
+							"a tab per section, a control per key, the file's own comments as the help. Changes go to the mod's override file and "
+							"its main INI is never changed. These mods read their INI when the game starts, so a change takes effect next time."));
+						ImGui::Spacing();
+						inipages::DrawSettingsList();
 						ImGui::EndTabItem();
 					}
 					if (sub.Tab(TR("AMF_SubMcmSpacing", "Spacing")))

@@ -1,6 +1,7 @@
 #include "DevBenchTool.h"
 #include "FlickHost.h"
 #include "PrismaRedux.h"
+#include "IniPages.h"
 #include "SystemRow.h"
 
 #include "DevBench/DevBenchAPI.h"
@@ -195,6 +196,11 @@ namespace devbenchtool
 				consumers += "]";
 				const std::string status = flick::StatusJson();
 				result = status.substr(0, status.rfind('}')) + ",\"consumers\":" + consumers + "}";
+			}
+			else if (op == "ini")
+			{
+				// 2.1.9: INI-only mods' pages (IniPages.h) - {"op":"ini","do":"list|get|set","mod":"SSEDisplayTweaks","section":"Render","name":"EnableVSync","value":"false"}
+				result = inipages::ToolJson(args);
 			}
 			else if (op == "prisma")
 			{
@@ -719,7 +725,9 @@ namespace devbenchtool
 			"op=inject device=mouse code=9 (down, next tab) or code=8 (up). "
 			"2.1.9: cleanstate reports and runs the orphaned save-state tidy-up - every <save>.amf-state.ini whose .ess is gone is MOVED into "
 			"<save folder>\\AMF orphaned state\\ (never deleted); args value=1 lists only; returns stateFiles, orphaned, moved, failed, "
-			"saveFolder, backupFolder, files and enabledAtStart (the Settings > General switch).\","
+			"saveFolder, backupFolder, files and enabledAtStart (the Settings > General switch). "
+			"2.1.9: ini drives the INI-only mods' pages (SSE Display Tweaks): do=list | get {mod} | set {mod, section, name, value} - set "
+			"writes the mod's override file exactly as the page's control does (value checked against the key's kind).\","
 			"\"inputSchema\":{\"type\":\"object\",\"properties\":{"
 			"\"op\":{\"type\":\"string\"},\"node\":{\"type\":\"string\"},"
 			"\"mod\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"position\":{\"type\":\"string\"},"
