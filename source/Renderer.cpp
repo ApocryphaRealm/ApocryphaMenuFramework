@@ -522,17 +522,38 @@ namespace renderer
 		}
 
 		// Right after an item the mouse may be over: a hover frame round it when it is (the mod list's names).
-		void NoteHoverFrame()
-		{
-			if (!ImGui::IsItemHovered()) { return; }
-			ImDrawList* dl = ImGui::GetWindowDrawList();
-			g_highlights.push_back({ dl, ImGui::GetItemRectMin(), ImGui::GetItemRectMax(), dl->GetClipRectMin(), dl->GetClipRectMax(), false });
-		}
+		void NoteHoverFrame() { NoteHoveredItem(); }
+
+		// 2.1.9: the mouse has been moved or clicked since the last keyboard or controller move (ImGui's NavDisableMouseHover
+		// is cleared by the mouse and set again by every nav move). Reset when the menu closes.
+		bool g_mouseSinceNav = false;
 
 		// Before Render: the nav item's frame (ImGui's own nav rect, wherever the highlight is), then every frame noted.
 		void FlushHighlightFrames()
 		{
 			ImGuiContext& g = *GImGui;
+			// 2.1.9 (the owner, 2026-10-12: hovering the Mods row's switches with the mouse after a key press framed BOTH - the
+			// nav item, still lit from the keys, and the item under the mouse). ImGui 1.90.8 hides its nav highlight on a mouse
+			// CLICK only, never on mouse movement, so the two showed at once. Now, once the mouse has moved since the last nav
+			// move and something is framed under it, the nav highlight is hidden the way a click hides it (NavDisableHighlight,
+			// which also hides ImGui's own nav box); the next arrow key or D-pad press brings it back (ImGui), and so does an
+			// activate or input key (here: ImGui ignores A and Enter while the highlight is hidden, so the press lights it
+			// rather than doing nothing at all). No mouse movement since the last nav move (a resting cursor) changes nothing.
+			{
+				const ImGuiIO& io = g.IO;
+				if (g.NavDisableMouseHover) { g_mouseSinceNav = false; }
+				else if (ImLengthSqr(io.MouseDelta) > 4.0f || io.MouseClicked[0] || io.MouseClicked[1]) { g_mouseSinceNav = true; }
+				const bool mouseFrame = std::any_of(g_highlights.begin(), g_highlights.end(), [](const HighlightMark& m) { return !m.nav && m.drawList; });
+				if (g_mouseSinceNav && mouseFrame && !g.NavDisableHighlight) { g.NavDisableHighlight = true; }
+				else if (g.NavDisableHighlight && g.NavId != 0 && g.ActiveId == 0 && !io.WantTextInput &&
+						 (ImGui::IsKeyPressed(ImGuiKey_Space, false) || ImGui::IsKeyPressed(ImGuiKey_Enter, false) ||
+						  ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false) || ImGui::IsKeyPressed(ImGuiKey_NavGamepadActivate, false) ||
+						  ImGui::IsKeyPressed(ImGuiKey_NavGamepadInput, false)))
+				{
+					ImGui::NavRestoreHighlightAfterMove();
+					g_mouseSinceNav = false;
+				}
+			}
 			// NavIdIsAlive: the highlighted item was drawn THIS frame. Without it the frame went round the last place a vanished
 			// item stood - a box round nothing beside the General tab after a tab change (the owner's screenshot, 2026-10-08).
 			// ImGui's own highlight is drawn by the item itself, so it never had this.
@@ -554,12 +575,19 @@ namespace renderer
 						return o.drawList == m.drawList && std::abs(o.min.x - m.min.x) < 3.0f && std::abs(o.min.y - m.min.y) < 3.0f &&
 							   std::abs(o.max.x - m.max.x) < 3.0f && std::abs(o.max.y - m.max.y) < 3.0f;
 					};
+					// 2.1.9: and a hover frame INSIDE another one draws only the outer - a switch notes its own track, and the
+					// group it sits in with its label (the Mods row's A-Z and Fold) notes switch and label; both drew, one in
+					// the other
+					auto inside = [&](const HighlightMark& o) {
+						return o.drawList == m.drawList && o.min.x <= m.min.x + 1.0f && o.min.y <= m.min.y + 1.0f &&
+							   o.max.x >= m.max.x - 1.0f && o.max.y >= m.max.y - 1.0f;
+					};
 					bool skip = false;
 					for (std::size_t j = 0; j < g_highlights.size() && !skip; ++j)
 					{
 						const HighlightMark& o = g_highlights[j];
 						skip = (o.nav && o.drawList == m.drawList && (same(o) || (o.min.x == m.min.x && o.min.y == m.min.y))) ||
-							   (j < i && !o.nav && same(o));
+							   (j < i && !o.nav && same(o)) || (j != i && !o.nav && !same(o) && inside(o));
 					}
 					if (skip) { continue; }
 				}
@@ -5074,7 +5102,7 @@ namespace renderer
 				}
 				// 2.1.5: the theme's frame round the highlighted and hovered items, over every window's own drawing.
 				if (IsMainWindowVisible()) { FlushHighlightFrames(); }
-				else { g_highlights.clear(); }
+				else { g_highlights.clear(); g_mouseSinceNav = false; }
 
 				// The on-screen keyboard, after the window so this frame's text fields are known. It
 				// closes itself when the window is not up.
@@ -5288,6 +5316,17 @@ namespace renderer
 	{
 		if (!a_drawList) { return; }
 		g_highlights.push_back({ a_drawList, a_min, a_max, a_drawList->GetClipRectMin(), a_drawList->GetClipRectMax(), false });
+	}
+
+	void NoteHoveredItem()
+	{
+		if (!ImGui::IsItemHovered()) { return; }
+		// 2.1.9: the item's FRAME, not its whole rect - for a labelled control (a dropdown, slider, text box) ImGui's item
+		// rect runs on over the label, and the hover frame went round the Font dropdown AND the word "Font" (the owner's
+		// screenshot, 2026-10-12). ImGui keeps the frame as the item's nav rect (the box the controller frame already uses);
+		// for an item without a separate frame - a button, a row, a group - the nav rect IS the item rect.
+		const ImRect r = GImGui->LastItemData.NavRect;
+		NoteHoverRect(ImGui::GetWindowDrawList(), r.Min, r.Max);
 	}
 
 	void SetSelectedNode(const std::string& a_node)
