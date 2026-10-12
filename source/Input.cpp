@@ -1024,8 +1024,37 @@ namespace input
 		const bool controllerMode = UsingController();
 		ReleaseStuckKeys(io);
 
+		// A PRESS AND ITS RELEASE NEVER SHARE A FRAME (next after 2.1.9; the 2026-10-12 combined test: a second real click on a
+		// switch did not register). ImGui runs with trickling OFF (Renderer.cpp - the cursor's one-position-per-frame rule), and
+		// with trickling off it flattens a frame's events: "successive down/up/down/up will be lost" (imgui.cpp, UpdateInputEvents).
+		// A quick click whose down and up reach the same drain was therefore never a click at all. The release of a button or key
+		// that went down earlier in THIS drain is held to the next frame, and everything after it for that same button or key
+		// follows it in order, a frame apart - so every press is seen down for at least one frame, on every page.
+		std::unordered_set<std::uint64_t> downThisDrain;
+		std::unordered_map<std::uint64_t, int> heldBack;   // button or key -> frames its held-back records already use
+		auto buttonKey = [](const Record& a_r) { return (static_cast<std::uint64_t>(a_r.kind) << 32) | a_r.code; };
+
 		for (const Record& record : drained)
 		{
+			if (record.kind == Record::Kind::kMouseButton || record.kind == Record::Kind::kKeyboard ||
+				record.kind == Record::Kind::kGamepad)
+			{
+				const std::uint64_t k = buttonKey(record);
+				const auto held = heldBack.find(k);
+				if (held != heldBack.end() || (!record.down && downThisDrain.contains(k)))
+				{
+					const int frames = held != heldBack.end() ? ++held->second : (heldBack[k] = 1);
+					{
+						std::scoped_lock lock(g_queueLock);
+						g_deferred.push_back({ frames, record });
+					}
+					logger::debug("input: {} {} {} held to frame +{} - its press came in this same frame",
+								  record.kind == Record::Kind::kMouseButton ? "mouse button" : (record.kind == Record::Kind::kKeyboard ? "key" : "pad button"),
+								  record.code, record.down ? "press" : "release", frames);
+					continue;
+				}
+				if (record.down) { downThisDrain.insert(k); }
+			}
 			switch (record.kind)
 			{
 			case Record::Kind::kMouseMove:

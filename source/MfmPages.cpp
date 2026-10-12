@@ -227,9 +227,19 @@ namespace mfmpages
 				const State* s = FindState(c.rel);
 				const bool runnable = s && s->resolved;
 				const std::string label = std::string(icons::kAction) + "  " + c.name;
-				if (!runnable) { ImGui::BeginDisabled(); }
+				// an entry that cannot run is inert AND looks it: ImGui's disabled fade alone left the label reading as white in the
+				// 2026-10-12 test captures, so its label also takes the theme's disabled text colour (every theme has one)
+				if (!runnable)
+				{
+					ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+					ImGui::BeginDisabled();
+				}
 				if (ImGui::Button(label.c_str())) { a_pressed = c.rel; }
-				if (!runnable) { ImGui::EndDisabled(); }
+				if (!runnable)
+				{
+					ImGui::EndDisabled();
+					ImGui::PopStyleColor();
+				}
 				if (s && s->readError.empty())
 				{
 					// the function it calls, as the entry names it (the mod's own data, shown as written)
@@ -336,7 +346,11 @@ namespace mfmpages
 		g_loaded = true;
 		if (MfmLoaded())
 		{
-			logger::info("mfm: Mod Function Menu is installed as well. Both menus open on F1; you can uninstall it, or change its key in "
+			// tested 2026-10-12: with MFM 1.5.0 loaded a real F1 opened ONLY MFM. It hooks the same input call AMF does (ID 67315+0x7B
+			// on SE - its log's "ProcessInputQueue" address minus the image base), later than AMF, so its hook sees each key first and
+			// does not pass its own key on
+			logger::info("mfm: Mod Function Menu is installed as well, and it takes the key first: on F1, the default key of both, only "
+						 "Mod Function Menu opens and AMF does not. Uninstall it - AMF runs its menus - or give it another key in "
 						 "ccld_ModFunctionMenu.toml.");
 		}
 		const std::filesystem::path root(kRoot);
@@ -392,8 +406,9 @@ namespace mfmpages
 			"list it as a requirement only need their own files."));
 		if (MfmLoaded())
 		{
-			ImGui::TextUnformatted(strings::TR("AMF_MfmAlsoInstalled", "Mod Function Menu is installed as well. Both menus open on F1; you can "
-				"uninstall it, or change its key in ccld_ModFunctionMenu.toml."));
+			ImGui::TextUnformatted(strings::TR("AMF_MfmAlsoInstalled", "Mod Function Menu is installed as well, and it takes the key first: on F1, "
+				"the default key of both, only Mod Function Menu opens and AMF does not. Uninstall it - AMF runs its menus - or give it "
+				"another key in ccld_ModFunctionMenu.toml."));
 		}
 		ImGui::PopTextWrapPos();
 		ImGui::PopStyleColor();
