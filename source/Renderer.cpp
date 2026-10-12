@@ -1709,7 +1709,7 @@ namespace renderer
 					DrawHighlightFrame(ImGui::GetWindowDrawList(), start, ImVec2(start.x + h * 2.0f, start.y + h), 1.0f);
 				}
 				widgets::Toggle(TR("AMF_PreviewOff", "Switched off"), &off);
-				ImGui::Checkbox(TR("AMF_PreviewTick", "Tick box"), &tick);
+				ImGui::Checkbox(TR("AMF_PreviewTick", "Tick box"), &tick);   // rule-32: ok - a sample of the tick-box art kind (kTickBox) that pages of other mods draw
 				ImGui::SetNextItemWidth(-FLT_MIN);
 				precise::SliderFloat("##previewslider", &slider, 0.0f, 1.0f, "%.2f");   // 2.1.6: one step of the shown digit per nudge, like every slider
 				ImGui::Button(TR("AMF_PreviewButton", "Button"));
@@ -1907,6 +1907,7 @@ namespace renderer
 			// TABS BY AREA (the owner, 2026-10-05: "divide the AMF settings page into several tabs that are divided by their
 			// area that they affect"). Same tab mechanics as Controls and Help, so the pad walks them the same way.
 			if (!ImGui::BeginTabBar("##settingstabs", ImGuiTabBarFlags_FittingPolicyScroll)) { return; }
+			OwnTabBarWheel("Settings");   // 2.1.9 (AMF-63): the wheel over this bar steps its tabs; over the page it still scrolls
 			int index = 0;
 			const auto tab = [&](const char* a_label) {
 				const ImGuiTabItemFlags flags = (index == g_tabRequest) ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
@@ -3216,6 +3217,7 @@ namespace renderer
 			ImGui::Spacing();
 
 			if (!ImGui::BeginTabBar("##controlstabs", ImGuiTabBarFlags_FittingPolicyScroll)) { return; }
+			OwnTabBarWheel("Controls");   // 2.1.9 (AMF-63): the wheel over this bar steps its tabs; over the page it still scrolls
 
 			int index = 0;
 			const auto tab = [&](const char* a_label) {
@@ -3382,6 +3384,7 @@ namespace renderer
 			const auto bullet = [](const char* a_text) { ImGui::Bullet(); ImGui::SameLine(); ImGui::TextWrapped("%s", a_text); };
 
 			if (!ImGui::BeginTabBar("##helptabs", ImGuiTabBarFlags_FittingPolicyScroll)) { return; }
+			OwnTabBarWheel("Help");   // 2.1.9 (AMF-63): the wheel over this bar steps its tabs; over the page it still scrolls
 
 			int index = 0;
 			const auto tab = [&](const char* a_label) {
@@ -3914,10 +3917,10 @@ namespace renderer
 				// and switch on, it would be A to Z ... just have a tick box next to the sorting toggle. Whether they want
 				// alphabetical sorting on. So a tick box, a toggle for A to Z and Z to A, and then a sort button for sorting and
 				// adding the separators"). It replaces 2026-09-19's two switches (A-Z, Z-A; both off = the list's own order):
-				//   tick box  - alphabetical order on or off (off: the order the player arranged by hand);
-				//   switch    - on A-Z, off Z-A; greyed while the tick box is off, and remembered for the next tick;
+				//   switch    - alphabetical order on or off (off: the order the player arranged by hand);
+				//   switch    - on A-Z, off Z-A; greyed while the first switch is off, and remembered for the next time it is on;
 				//   Sort      - the MCM category sort, separators and all, as on Settings > Menu list (where Undo is).
-				// A tick box rather than a switch for the first, against rule 32, because the owner asked for one by name.
+				// 2.1.9: the first is a switch too (gate row checkbox-is-a-toggle, the owner, 2026-10-12: rule 32 holds regardless).
 				// Favourites stay pinned at the top under any order.
 				{
 					const auto mode = personalization::GetSortMode();
@@ -3931,7 +3934,7 @@ namespace renderer
 						settings::Save();
 					};
 					ImGui::SameLine();
-					if (ImGui::Checkbox("##alphabetical", &alphabetical)) { apply(); }
+					if (widgets::Toggle("##alphabetical", &alphabetical)) { apply(); }
 					NoteHoverFrame();   // 2.1.6: the mouse gets the frame the controller gets (the owner, 2026-10-08)
 					if (ImGui::IsItemHovered()) { ImGui::SetTooltip("%s", TR("AMF_SortAlphaTip", "Sort the list alphabetically. Off: the order you arranged by hand.")); }
 					ImGui::SameLine();
