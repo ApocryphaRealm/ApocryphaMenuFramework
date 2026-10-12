@@ -138,13 +138,14 @@ namespace
 			prisma::Load();  // 2.1.6: Prisma MCM Redux menus as AMF entries
 			inipages::Load();  // 2.1.9: INI-only mods' settings (SSE Display Tweaks) as AMF entries
 			rememberedsettings::Init();  // the remembered MCM settings' active profile
-			// 2.1.9 (AmeliaZ): state files left by deleted saves go to the save folder's "AMF orphaned state" folder (never deleted)
+			// 2.1.9 (AmeliaZ): state files left by deleted saves are deleted (the owner, 2026-10-12: not moved to a backup folder)
 			if (settings::Get().cleanOrphanedState)
 			{
 				const auto tidy = persistence::CleanOrphanedState(false);
-				logger::info("start-up: orphaned save state - {} found, {} moved, {} failed", tidy.orphaned, tidy.moved, tidy.failed);
+				logger::info("start-up: orphaned save state - {} found, {} deleted, {} failed{}", tidy.orphaned, tidy.deleted, tidy.failed,
+							 tidy.error.empty() ? std::string() : " (" + tidy.error + ")");
 			}
-			else { logger::info("start-up: orphaned save state tidy-up is off (Settings > General)"); }
+			else { logger::info("start-up: orphaned save state clean-up is off (Settings > General)"); }
 			if (g_staleOldCopy.load(std::memory_order_acquire)) {
 				constexpr auto kStale = "Apocrypha Menu Framework: delete the old ApocryphaMenuFramework.dll from SKSE/Plugins (this version is !ApocryphaMenuFramework.dll).";
 #if AMF_RUNTIME_LINE == 17
