@@ -342,7 +342,7 @@ namespace theme
 		const bool changed = ImGui::Combo(a_label, a_current, a_items, a_count);
 		ImGui::PopStyleVar();
 		// 2.1.6: a dropdown draws its box itself (not through the art hook), so its hover frame is noted here
-		if (ImGui::IsItemHovered()) { renderer::NoteHoverRect(ImGui::GetWindowDrawList(), ImGui::GetItemRectMin(), ImGui::GetItemRectMax()); }
+		renderer::NoteHoveredItem();   // 2.1.9: the box only - the item rect ran on over the label
 		return changed;
 	}
 
