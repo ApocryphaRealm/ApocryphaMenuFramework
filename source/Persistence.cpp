@@ -263,14 +263,12 @@ namespace persistence
 			std::scoped_lock lock(g_lock);
 			active = g_activeSaveBaseName;
 		}
-		const fs::path backup = dir / L"AMF orphaned state";
-		r.backupFolder = U8(backup);
-
 		std::vector<fs::path> orphans;
 		for (fs::directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec))
 		{
 			std::error_code fec;
 			if (!it->is_regular_file(fec)) { continue; }
+			if (_wcsicmp(it->path().extension().c_str(), L".ess") == 0) { ++r.saves; continue; }
 			const std::wstring name = it->path().filename().wstring();
 			if (name.size() <= kSuffix.size() ||
 				_wcsicmp(name.c_str() + (name.size() - kSuffix.size()), kSuffix.data()) != 0)
@@ -295,25 +293,21 @@ namespace persistence
 			logger::warn("persistence: orphaned state - {} ({})", r.error, dirUtf8);
 			return r;
 		}
+		if (r.saves == 0)
+		{
+			// no save at all: most likely not the folder the game saves to (an MO2 profile's local saves, a moved folder) -
+			// every state file would look orphaned, so nothing is touched
+			r.error = "no saves in the save folder - probably not the folder the game saves to";
+			logger::warn("persistence: orphaned state - {} ({}; {} state file(s)); nothing deleted", r.error, dirUtf8, r.stateFiles);
+			return r;
+		}
 		r.ran = true;
 		r.orphaned = static_cast<int>(orphans.size());
 		if (orphans.empty())
 		{
-			logger::info("persistence: orphaned state - {} state file(s) in {}, none without its save", r.stateFiles, dirUtf8);
+			logger::info("persistence: orphaned state - {} state file(s) and {} save(s) in {}, none without its save", r.stateFiles,
+						 r.saves, dirUtf8);
 			return r;
-		}
-		if (!a_listOnly)
-		{
-			std::error_code mk;
-			fs::create_directories(backup, mk);
-			if (mk && !fs::is_directory(backup, mk))
-			{
-				r.error = "could not make the backup folder: " + mk.message();
-				logger::error("persistence: orphaned state - {} ({}); nothing moved", r.error, r.backupFolder);
-				r.failed = r.orphaned;
-				for (const fs::path& p : orphans) { r.files.push_back(U8(p.filename())); }
-				return r;
-			}
 		}
 		for (const fs::path& p : orphans)
 		{
@@ -324,24 +318,20 @@ namespace persistence
 				logger::info("persistence: orphaned state (list only): {} - its save is gone", shown);
 				continue;
 			}
-			fs::path target = backup / p.filename();
-			for (int n = 2; fs::exists(target, ec) && n < 1000; ++n)   // a name already backed up keeps both
+			if (DeleteFileW(p.c_str()))
 			{
-				target = backup / (p.stem().wstring() + L" (" + std::to_wstring(n) + L")" + p.extension().wstring());
-			}
-			if (MoveFileExW(p.c_str(), target.c_str(), MOVEFILE_COPY_ALLOWED | MOVEFILE_WRITE_THROUGH))
-			{
-				++r.moved;
-				logger::info("persistence: orphaned state moved: {} -> {} (its save is gone)", shown, U8(target));
+				++r.deleted;
+				logger::info("persistence: orphaned state deleted: {} (its save is gone)", shown);
 			}
 			else
 			{
 				++r.failed;
-				logger::warn("persistence: orphaned state NOT moved: {} (error {}) - left where it was", shown, GetLastError());
+				logger::warn("persistence: orphaned state NOT deleted: {} (error {}) - left where it was", shown, GetLastError());
 			}
 		}
-		logger::info("persistence: orphaned state - {} of {} state file(s) had no save; {} {}, {} failed; backup folder {}",
-					 r.orphaned, r.stateFiles, a_listOnly ? "listed" : "moved", a_listOnly ? r.orphaned : r.moved, r.failed, r.backupFolder);
+		logger::info("persistence: orphaned state - {} of {} state file(s) had no save ({} save(s) in {}); {} {}, {} failed",
+					 r.orphaned, r.stateFiles, r.saves, dirUtf8, a_listOnly ? "listed" : "deleted", a_listOnly ? r.orphaned : r.deleted,
+					 r.failed);
 		return r;
 	}
 }

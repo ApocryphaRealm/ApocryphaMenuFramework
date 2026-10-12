@@ -1943,15 +1943,16 @@ namespace renderer
 								   "appears, so a slow start can never leave you looking at nothing."));
 				ImGui::Spacing();
 
-				// 2.1.9 (AmeliaZ, 2026-10-11): state files left behind by deleted saves are moved out of the save folder at start-up
+				// 2.1.9 (AmeliaZ, 2026-10-11): state files left behind by deleted saves are deleted at start-up (the owner, 2026-10-12)
 				if (widgets::Toggle(TR("AMF_CleanState", "Tidy up save state left by deleted saves"), &values.cleanOrphanedState))
 				{
-					logger::info("settings page: tidy up orphaned save state -> {}", values.cleanOrphanedState);
+					logger::info("settings page: delete orphaned save state -> {}", values.cleanOrphanedState);
 					settings::Save();
 				}
 				ImGui::TextWrapped("%s", TR("AMF_CleanStateHelp", "On: each time the game starts, every .amf-state.ini file whose save has been "
-								   "deleted is moved into the \"AMF orphaned state\" folder inside your save folder - never deleted, so it can be "
-								   "put back. Each file is named in the log. Off: they stay beside the saves."));
+								   "deleted is deleted too - with its save gone it is of no use. A file whose save is still there is never "
+								   "touched, and nothing is deleted if no saves are found. Each file is named in the log. Off: they stay "
+								   "beside the saves."));
 				ImGui::Spacing();
 
 				if (widgets::Toggle(TR("AMF_PauseGame", "Pause the game while this menu is open"), &values.pauseGameWhileOpen))

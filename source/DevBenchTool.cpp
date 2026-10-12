@@ -408,9 +408,9 @@ namespace devbenchtool
 			}
 			else if (op == "cleanstate")
 			{
-				// 2.1.9 (AmeliaZ): report and run the orphaned-state tidy-up - every <save>.amf-state.ini whose save is gone is
-				// moved into "<save folder>\AMF orphaned state\" (never deleted). args value 1 = list only (nothing moved).
-				// Reports the switch too (state of Settings > General's "Tidy up save state left by deleted saves").
+				// 2.1.9 (AmeliaZ): report and run the orphaned-state clean-up - every <save>.amf-state.ini whose save is gone is
+				// deleted (none when the folder holds no save). args value 1 = list only (nothing deleted). Reports the switch
+				// too (Settings > General's "Tidy up save state left by deleted saves").
 				const bool listOnly = JsonNum(args, "value", 0.0) != 0.0;
 				const persistence::CleanResult c = persistence::CleanOrphanedState(listOnly);
 				std::string files;
@@ -418,8 +418,9 @@ namespace devbenchtool
 				result = std::string("{\"ok\":") + (c.ran ? "true" : "false") + ",\"op\":\"cleanstate\",\"listOnly\":" + (listOnly ? "true" : "false") +
 						 ",\"enabledAtStart\":" + (settings::Get().cleanOrphanedState ? "true" : "false") +
 						 ",\"stateFiles\":" + std::to_string(c.stateFiles) + ",\"orphaned\":" + std::to_string(c.orphaned) +
-						 ",\"moved\":" + std::to_string(c.moved) + ",\"failed\":" + std::to_string(c.failed) +
-						 ",\"saveFolder\":\"" + JsonEscape(c.saveFolder) + "\",\"backupFolder\":\"" + JsonEscape(c.backupFolder) + "\"" +
+						 ",\"saves\":" + std::to_string(c.saves) +
+						 ",\"deleted\":" + std::to_string(c.deleted) + ",\"failed\":" + std::to_string(c.failed) +
+						 ",\"saveFolder\":\"" + JsonEscape(c.saveFolder) + "\"" +
 						 (c.error.empty() ? std::string() : ",\"error\":\"" + JsonEscape(c.error) + "\"") +
 						 ",\"files\":[" + files + "]}";
 			}
@@ -723,9 +724,9 @@ namespace devbenchtool
 			"pauseHeld (the game is paused by this menu now). The wheel over a row of tabs (a mod's, or 2.1.9 Settings / Controls / Help "
 			"and the settings sub-tab rows; state.tabBars lists each bar drawn last frame as x0,y0,x1,y1, outer first): op=cursor onto it, then "
 			"op=inject device=mouse code=9 (down, next tab) or code=8 (up). "
-			"2.1.9: cleanstate reports and runs the orphaned save-state tidy-up - every <save>.amf-state.ini whose .ess is gone is MOVED into "
-			"<save folder>\\AMF orphaned state\\ (never deleted); args value=1 lists only; returns stateFiles, orphaned, moved, failed, "
-			"saveFolder, backupFolder, files and enabledAtStart (the Settings > General switch). "
+			"2.1.9: cleanstate reports and runs the orphaned save-state clean-up - every <save>.amf-state.ini whose .ess is gone is DELETED "
+			"(nothing when the folder holds no .ess); args value=1 lists only; returns saves, stateFiles, orphaned, deleted, failed, "
+			"saveFolder, files and enabledAtStart (the Settings > General switch). "
 			"2.1.9: ini drives the INI-only mods' pages (SSE Display Tweaks): do=list | get {mod} | set {mod, section, name, value} - set "
 			"writes the mod's override file exactly as the page's control does (value checked against the key's kind).\","
 			"\"inputSchema\":{\"type\":\"object\",\"properties\":{"

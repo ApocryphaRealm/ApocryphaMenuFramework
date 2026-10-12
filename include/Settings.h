@@ -172,8 +172,8 @@ namespace settings
 		// never shown. Lifts by itself on a timeout - see Curtain.cpp, where failing safe is the
 		// whole design.
 		bool startupCurtain = true;
-		// [Startup] bCleanOrphanedSaveState (2.1.9; AmeliaZ, 2026-10-11): at game start, move every <save>.amf-state.ini whose
-		// save is gone into "<save folder>\AMF orphaned state\" (persistence::CleanOrphanedState - never a delete). On by default.
+		// [Startup] bCleanOrphanedSaveState (2.1.9; AmeliaZ, 2026-10-11): at game start, delete every <save>.amf-state.ini whose
+		// save is gone (persistence::CleanOrphanedState; nothing when the folder holds no save). On by default.
 		bool cleanOrphanedState = true;
 		// [IniMenus] bEnabled (2.1.9): INI-only mods' settings (SSE Display Tweaks so far) as pages here - IniPages.h. On by default.
 		bool iniMenus = true;

@@ -56,7 +56,7 @@ WHAT CHANGED
 Version 2.1.9
 Every old FLICK mod build that could be proven now shows its page, not only Simple Timed Block: Stances NG 2.0.0, Critical Hit Tweaks 1.1.0-1.1.1, Inventory Limits 1.0.0 and 1.1.0, Static Regeneration 1.0.0 and 1.0.1, Global Variable Framework 1.0.3, Lurking Menace 4.0.0 and 4.0.1, Navigation Restrictions NG 3.0.0-3.0.2 and Exhausting Combat 1.0.0. FLICK changed its interface's order several times before its first release, so each of these is answered in its own build's order. Kill Feed 1.1.0 has its page again. Any other old FLICK build is still left unconnected (no page, no crash).
 SSE Display Tweaks gets a page here, "SSE Display Tweaks (INI)" - read from its own INI: a tab per section, a control per setting, its comments as the help. Changes go to SSEDisplayTweaks_custom.ini only (the main INI is never changed) and take effect the next time the game starts. Settings > Converted menus > INI turns these pages on or off.
-Save state left by deleted saves is tidied up at start-up: each <save>.amf-state.ini whose save is gone is moved into an "AMF orphaned state" folder in the save folder, never deleted (Settings > General, on by default).
+Save state left by deleted saves is tidied up at start-up: each <save>.amf-state.ini whose save is gone is deleted - a file whose save is still there is never touched, and nothing is deleted if the save folder holds no saves (Settings > General, on by default).
 The mouse wheel over this menu's own tabs (Settings, Controls, Help and the sub-tabs) steps them, as it does on a mod's tabs. A theme switch made through the DevBench driving tool no longer crashes. Russian: the Black-screen switch and its help are in Russian (they were in Latin letters).
 
 Version 2.1.8
