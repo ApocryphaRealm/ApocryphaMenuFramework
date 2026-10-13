@@ -57,6 +57,7 @@ namespace imguihost
 			hostcore::KeyCombo key;      // read from its config at the last refresh
 			std::string keyFrom;         // where the key was read ("OpenAnimationReplacer.ini", "SettingsUser.json" ...)
 			std::string blocked;         // why it cannot be opened from here ("" = it can)
+			bool manualPolling = false;  // OptiScaler: [Hotfix] ManualInputPolling = true (it polls keys; posted messages miss it)
 			bool keyOpensOnly = false;   // IED: its key only opens; Escape closes
 			int state = -1;              // -1 not known, 0 closed, 1 open
 			int presses = 0;
@@ -78,7 +79,9 @@ namespace imguihost
 
 		// WHICH INPUT EACH TARGET READS ITS KEY FROM (HostCore.h InputPath - the final in-game test, 2026-10-12): Open Animation
 		// Replacer, Community Shaders and IED read the game's own input events, so AMF presses their keys into the game's event
-		// list (Input.cpp, the game-key injector); OptiScaler and ENB read Windows keys, so they keep SendInput.
+		// list (Input.cpp, the game-key injector); OptiScaler and ENB read Windows keys. OptiScaler's key is POSTED to the game's
+		// window as WM_KEYDOWN / WM_KEYUP (HostCore.h SendMethodFor): its SendInput detour drops every input while its menu is open
+		// and still answers success, so a SendInput Close never closed it (owner's run, 2026-10-13 04:22). ENB keeps SendInput.
 		const std::array<hostcore::InputPath, kCount> kPaths = { hostcore::TargetPath(kIds[kOar]), hostcore::TargetPath(kIds[kCs]),
 																 hostcore::TargetPath(kIds[kIed]), hostcore::TargetPath(kIds[kOpti]),
 																 hostcore::TargetPath(kIds[kEnb]) };
@@ -176,8 +179,8 @@ namespace imguihost
 			int startFrame = 0;
 			int nextStep = 0;            // 0 modifiers down, 1 key down, 2 key up, 3 modifiers up, 4 done
 			bool modsDown = false, keyDown = false;
-			bool game = false;           // into the game's own input events (InputPath::kGameEvents), not SendInput
-			std::string sent;            // SendInput's counts / the game keys queued, for the log line
+			hostcore::SendMethod method = hostcore::SendMethod::kSendInput;   // game events / posted messages / SendInput
+			std::string sent;            // what each step handed over (SendInput's counts, messages posted, game keys queued)
 		};
 		std::optional<Press> g_press;
 		// an API call waiting for AMF's menu to be gone (render thread only)
@@ -392,6 +395,7 @@ namespace imguihost
 					if (!std::filesystem::exists(ini, ec)) { ini = L"OptiScaler.ini"; }
 					const auto c = hostcore::ParseOptiScalerIni(hostcore::ReadFileText(ini.wstring()));
 					t.key = c.key;
+					t.manualPolling = c.manualPolling;
 					t.keyFrom = "OptiScaler.ini";
 					t.configPath = ini.wstring();
 					t.blocked = c.hasKey ? std::string() : std::string(TR("AMF_ImguiNoKey", "It has no key to open its menu "
@@ -591,10 +595,36 @@ namespace imguihost
 			return game && ::GetForegroundWindow() == game;
 		}
 
-		// sends one step of the press; false when SendInput did not take every record (or the game-key injector is not in)
+		// sends one step of the press; false when the step could not be handed over (SendInput did not take every record, a
+		// message could not be posted, or the game-key injector is not in). True is NOT proof the mod saw it.
 		bool SendStep(Press& a_p, hostcore::Step a_step)
 		{
-			if (a_p.game)
+			if (a_p.method == hostcore::SendMethod::kPostMessage)
+			{
+				// straight into the game window's message queue (OptiScaler's subclassed WndProc reads WM_KEYUP): no foreground
+				// needed, and OptiScaler's SendInput detour is not on this path
+				const HWND game = static_cast<HWND>(renderer::GetGameWindow());
+				const std::vector<hostcore::KeyMessage> msgs = hostcore::StepMessages(a_p.combo, a_step);
+				if (msgs.empty()) { return true; }
+				if (!game || !::IsWindow(game))
+				{
+					logger::warn("imgui: {} - no game window to post its key to", kNames[a_p.target]);
+					return false;
+				}
+				std::size_t posted = 0;
+				for (const auto& m : msgs)
+				{
+					if (::PostMessageW(game, m.msg, static_cast<WPARAM>(m.vk), static_cast<LPARAM>(m.lParam))) { ++posted; }
+				}
+				a_p.sent += (a_p.sent.empty() ? "" : ", ") + std::to_string(posted) + "/" + std::to_string(msgs.size());
+				if (posted != msgs.size())
+				{
+					logger::warn("imgui: {} - posted {} of {} key messages (error {})", kNames[a_p.target], posted, msgs.size(), ::GetLastError());
+					return false;
+				}
+				return true;
+			}
+			if (a_p.method == hostcore::SendMethod::kGameEvents)
 			{
 				// a mod that reads the game's own input events: the step's keys go into the game's event list (Input.cpp), each
 				// edge on a dispatch of its own, a key held repeated as held until its release - as the game's keyboard sends them
@@ -633,8 +663,11 @@ namespace imguihost
 			std::scoped_lock l(g_lock);
 			Target& t = g_targets[a_p.target];
 			t.lastOutcome = a_outcome;
-			logger::info("imgui: {} - {} ({}; {} {})", kNames[a_p.target], a_outcome, hostcore::ComboName(a_p.combo),
-						 a_p.game ? "pressed into the game's input events:" : "SendInput", a_p.sent.empty() ? "nothing sent" : a_p.sent);
+			const char* how = a_p.method == hostcore::SendMethod::kGameEvents ? "queued into the game's input events:" :
+							  a_p.method == hostcore::SendMethod::kPostMessage ? "posted to the game window, messages:" :
+																				   "SendInput accepted records:";
+			logger::info("imgui: {} - {} ({}; {} {})", kNames[a_p.target], a_outcome, hostcore::ComboName(a_p.combo), how,
+						 a_p.sent.empty() ? "nothing sent" : a_p.sent);
 		}
 
 		void StepPress()
@@ -643,20 +676,23 @@ namespace imguihost
 			Press& p = *g_press;
 			const int due = p.startFrame + (p.nextStep == 0 ? 0 : p.nextStep == 1 ? 1 : p.nextStep == 2 ? 3 : 4);
 			if (g_frame < due) { return; }
+			// SendInput goes to whatever window is in front; a key queued into the game's input events or posted to its window
+			// can only reach the game
+			const bool needsFront = p.method == hostcore::SendMethod::kSendInput;
 			switch (p.nextStep)
 			{
 			case 0:
 				// SendInput goes to whatever window is in front, so it waits for the game to be there; a key pressed into the game's
 				// own input events can only reach the game, so it does not
-				if (loadguard::Blocked() || (!p.game && !GameIsForeground()))
+				if (loadguard::Blocked() || (needsFront && !GameIsForeground()))
 				{
-					FinishPress(p, loadguard::Blocked() ? "not pressed: the game is loading" : "not pressed: the game is not the foreground window");
+					FinishPress(p, loadguard::Blocked() ? "not sent: the game is loading" : "not sent: the game is not the foreground window");
 					g_press.reset();
 					return;
 				}
-				if (p.game && !input::GameKeyInjectorReady())
+				if (p.method == hostcore::SendMethod::kGameEvents && !input::GameKeyInjectorReady())
 				{
-					FinishPress(p, "not pressed: AMF's way into the game's input is not in (see the game keys lines in this log)");
+					FinishPress(p, "not sent: AMF's way into the game's input is not in (see the game keys lines in this log)");
 					g_press.reset();
 					return;
 				}
@@ -664,10 +700,10 @@ namespace imguihost
 				p.nextStep = 1;
 				return;
 			case 1:
-				if (loadguard::Blocked() || (!p.game && !GameIsForeground()))
+				if (loadguard::Blocked() || (needsFront && !GameIsForeground()))
 				{
 					if (p.modsDown) { SendStep(p, hostcore::Step::kModifiersUp); }
-					FinishPress(p, loadguard::Blocked() ? "not pressed: the game started loading" : "not pressed: the game lost the foreground");
+					FinishPress(p, loadguard::Blocked() ? "not sent: the game started loading" : "not sent: the game lost the foreground");
 					g_press.reset();
 					return;
 				}
@@ -681,7 +717,10 @@ namespace imguihost
 				return;
 			default:
 				if (p.combo.keys.size() > 1) { SendStep(p, hostcore::Step::kModifiersUp); }
-				FinishPress(p, p.keyDown ? "pressed its key" : "the key press failed");
+				// "sent", never "opened" / "closed": none of these mods can say whether its menu is open, and a hook can drop a
+				// key and still report it taken (OptiScaler's SendInput detour, 2026-10-13)
+				FinishPress(p, p.keyDown ? "sent its key (not confirmed: the mod cannot report whether its menu opened or closed)" :
+										   "the key could not be sent");
 				g_press.reset();
 				return;
 			}
@@ -737,7 +776,10 @@ namespace imguihost
 			p.target = a_id;
 			p.combo = combo;
 			p.startFrame = start;
-			p.game = kPaths[a_id] == hostcore::InputPath::kGameEvents;
+			{
+				std::scoped_lock l(g_lock);
+				p.method = hostcore::SendMethodFor(kIds[a_id], g_targets[a_id].manualPolling);
+			}
 			g_press = p;
 			return std::string();
 		}
@@ -881,7 +923,10 @@ namespace imguihost
 			const Target& t = g_targets[i];
 			if (!t.loaded) { logger::debug("imgui: {} not loaded", kNames[i]); continue; }
 			logger::info("imgui: {} loaded ({}) - key {} from {}, read from {}{}{}", kNames[i], Narrow(t.modulePath), hostcore::ComboName(t.key), t.keyFrom,
-						 kPaths[i] == hostcore::InputPath::kGameEvents ? "the game's input events (AMF presses it there)" : "Windows (AMF presses it with SendInput)",
+						 kPaths[i] == hostcore::InputPath::kGameEvents ? "the game's input events (AMF queues it there)" :
+						 hostcore::SendMethodFor(kIds[i], t.manualPolling) == hostcore::SendMethod::kPostMessage ?
+																		 "Windows messages (AMF posts it to the game window)" :
+																		 "Windows (AMF sends it with SendInput)",
 						 t.blocked.empty() ? "" : " - cannot be opened: ", t.blocked);
 			logger::info("imgui: {} {} - direct open: {} ({}) - Open uses: {}", kNames[i], hostcore::VerText(t.version),
 						 t.direct.available ? "available" : "not available", t.direct.why, hostcore::MethodName(MethodOf(t)));
@@ -1172,7 +1217,8 @@ namespace imguihost
 					   J(hostcore::ComboName(t.key)) + ",\"dik\":[" + keys + "],\"keyFrom\":" + J(t.keyFrom) + ",\"keyOpensOnly\":" +
 					   (t.keyOpensOnly ? "true" : "false") + ",\"blocked\":" + J(t.blocked) + ",\"state\":" + std::to_string(t.state) +
 					   ",\"presses\":" + std::to_string(t.presses) + ",\"lastOutcome\":" + J(t.lastOutcome) +
-					   ",\"path\":\"" + PathName(i) + "\",\"injectorReady\":" + (input::GameKeyInjectorReady() ? "true" : "false") +
+					   ",\"path\":\"" + PathName(i) + "\",\"send\":\"" + hostcore::SendMethodName(hostcore::SendMethodFor(kIds[i], t.manualPolling)) +
+					   "\",\"injectorReady\":" + (input::GameKeyInjectorReady() ? "true" : "false") +
 					   ",\"hold\":{\"applies\":" + (t.holdApplies ? "true" : "false") + ",\"available\":" + (t.holdAvailable ? "true" : "false") +
 					   ",\"held\":" + (t.held ? "true" : "false") + ",\"restored\":" + (t.restored ? "true" : "false") +
 					   ",\"amfKey\":" + J(t.holdApplies && t.hold.assigned ? hostcore::ComboName(t.hold.combo) : std::string()) +

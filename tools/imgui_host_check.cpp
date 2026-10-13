@@ -440,6 +440,65 @@ int main(int argc, char** argv)
 		Check(!o[0].held && !o[0].restored, "AMF's key with no backup: not counted as held (nothing to restore from)");
 	}
 
+	// ---- 2.2.0 OptiScaler fix (2026-10-13): its key is POSTED to the game window, with the lParam Windows itself builds ----
+	{
+		// lParam: repeat 1, scan code in 16-23, extended flag (bit 24) for an E0 key, previous state + transition on a key-up
+		Check(KeyMessageLParam(0xD2, false) == 0x01520001u, "Insert down: lParam 0x01520001 (repeat 1, scan 0x52, extended)");
+		Check(KeyMessageLParam(0xD2, true) == 0xC1520001u, "Insert up: lParam 0xC1520001 (previous state and transition set)");
+		Check(KeyMessageLParam(0x18, false) == 0x00180001u, "O down: lParam 0x00180001 (not extended)");
+		Check(KeyMessageLParam(0x67, true) == 0xC0670001u, "F16 up: lParam 0xC0670001");
+		Check(KeyMessageLParam(0x1C, false, true) == 0x201C0001u, "Enter down with Alt held: context bit 29 set");
+		KeyCombo ins;
+		ins.keys = { 0xD2 };
+		const auto d = StepMessages(ins, Step::kKeyDown);
+		const auto u = StepMessages(ins, Step::kKeyUp);
+		Check(d.size() == 1 && d[0].msg == WM_KEYDOWN && d[0].vk == VK_INSERT && d[0].lParam == 0x01520001u, "Insert key-down step: WM_KEYDOWN, wParam VK_INSERT");
+		Check(u.size() == 1 && u[0].msg == WM_KEYUP && u[0].vk == VK_INSERT && u[0].lParam == 0xC1520001u,
+			  "Insert key-up step: WM_KEYUP, wParam VK_INSERT (OptiScaler 0.9.4 toggles on WM_KEYUP == ShortcutKey)");
+		Check(StepMessages(ins, Step::kModifiersDown).empty() && StepMessages(ins, Step::kModifiersUp).empty(), "a single key posts no modifier messages");
+		KeyCombo f16;
+		f16.keys = { 0x67 };
+		Check(StepMessages(f16, Step::kKeyUp).size() == 1 && StepMessages(f16, Step::kKeyUp)[0].vk == VK_F16, "AMF's held F16 posts VK_F16");
+		KeyCombo shiftEnter;
+		shiftEnter.keys = { 0x2A, 0x1C };
+		const auto sm = StepMessages(shiftEnter, Step::kModifiersDown);
+		Check(sm.size() == 1 && sm[0].msg == WM_KEYDOWN && sm[0].vk == VK_SHIFT && sm[0].lParam == 0x002A0001u, "Shift + Enter: Shift down posted first");
+		KeyCombo altF10;
+		altF10.keys = { 0x38, 0x44 };
+		const auto ad = StepMessages(altF10, Step::kKeyDown);
+		Check(StepMessages(altF10, Step::kModifiersDown)[0].msg == WM_SYSKEYDOWN && ad.size() == 1 && ad[0].msg == WM_SYSKEYDOWN && (ad[0].lParam & (1u << 29)),
+			  "Alt + F10: WM_SYSKEYDOWN with the context bit, as Windows sends it");
+		Check(DikToVk(0xD2) == VK_INSERT && DikToVk(VkToDik(VK_END)) == VK_END && DikToVk(VkToDik('O')) == 'O' && DikToVk(0x2A) == VK_SHIFT,
+			  "DikToVk undoes VkToDik (Insert, End, O, Shift)");
+
+		// which way each target's key goes
+		Check(SendMethodFor("optiscaler") == SendMethod::kPostMessage, "OptiScaler: posted to the game window (its SendInput detour drops input while its menu is open)");
+		Check(SendMethodFor("optiscaler", true) == SendMethod::kSendInput, "OptiScaler with ManualInputPolling = true: SendInput (it polls GetAsyncKeyState)");
+		Check(SendMethodFor("enb") == SendMethod::kSendInput, "ENB: SendInput, as before");
+		Check(SendMethodFor("oar") == SendMethod::kGameEvents && SendMethodFor("cs") == SendMethod::kGameEvents && SendMethodFor("ied") == SendMethod::kGameEvents,
+			  "OAR, Community Shaders, IED: the game's input events");
+		Check(SendMethodFor("unknown") == SendMethod::kSendInput, "an unknown id: SendInput");
+		for (const char* id : { "oar", "cs", "ied", "optiscaler", "enb" })
+		{
+			Check((SendMethodFor(id) == SendMethod::kGameEvents) == (TargetPath(id) == InputPath::kGameEvents),
+				  std::string(id) + ": the send method agrees with its input path");
+		}
+		Check(!ParseOptiScalerIni("[Menu]\nShortcutKey=auto\n[Hotfix]\nManualInputPolling=auto\n").manualPolling, "ManualInputPolling=auto: its WndProc (posted messages reach it)");
+		Check(ParseOptiScalerIni("[Hotfix]\nManualInputPolling=true\n").manualPolling, "ManualInputPolling=true is read");
+		Check(!ParseOptiScalerIni("[Menu]\nManualInputPolling=true\n").manualPolling, "ManualInputPolling outside [Hotfix] is not it");
+
+		// the owner's 04:19:57 switch under Root Builder: next launch the file is back on Insert with AMF's backup beside it -
+		// restored (switch unavailable with the reason), Open uses its own key Insert, posted to the game window
+		const auto combo = [](std::initializer_list<std::uint32_t> a_k) { KeyCombo c; c.keys = a_k; return c; };
+		const auto restoredIni = ParseOptiScalerIni("[Menu]\nShortcutKey=auto\n");
+		std::vector<HoldInput> in(1);
+		in[0] = Input(true, restoredIni.key, true, OptiSpec());
+		const auto o = AssignHeldKeys(in, {});
+		Check(o[0].restored && !o[0].held && Keys(restoredIni.key) == "D2", "Root Builder put OptiScaler.ini back: restored, not held, its key Insert");
+		Check(MethodFor(false, o[0].held) == OpenMethod::kOwnKey, "restored: Open uses its own key (Insert), not AMF's F16");
+		(void) combo;
+	}
+
 	// ---- the real files ----
 	if (argc > 1)
 	{

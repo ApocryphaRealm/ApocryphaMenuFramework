@@ -189,6 +189,129 @@ namespace hostcore
 		return out;
 	}
 
+	// ---- POSTED KEY MESSAGES (2.2.0 OptiScaler fix, 2026-10-13) ------------------------------------------------------------
+	// OptiScaler 0.9.4 detours SendInput inside the game while its menu is open (menu_common.cpp, MenuCommon::hkSendInput:
+	// "if (_isVisible) return TRUE;") - the input is DROPPED and the call still answers success, so AMF's SendInput could open
+	// its menu but never close it. Its toggle is read in the WndProc it subclasses onto the swap chain's window
+	// (MenuCommon::WndProc, with Hotfix ManualInputPolling at its default false): `msg == WM_KEYUP && wParam == ShortcutKey`,
+	// before anything else, open or closed. So AMF posts WM_KEYDOWN / WM_KEYUP for its key straight to the game's window - a path
+	// it does not hook. With ManualInputPolling = true it polls GetAsyncKeyState instead, which no posted message changes: AMF
+	// then falls back to SendInput (it opens the menu; closing it needs the real key).
+	inline std::uint32_t DikToVk(std::uint32_t a_dik)
+	{
+		switch (a_dik)   // the extended keys, as VkToDik gives them
+		{
+		case 0xD2: return VK_INSERT;
+		case 0xD3: return VK_DELETE;
+		case 0xC7: return VK_HOME;
+		case 0xCF: return VK_END;
+		case 0xC9: return VK_PRIOR;
+		case 0xD1: return VK_NEXT;
+		case 0xCB: return VK_LEFT;
+		case 0xCD: return VK_RIGHT;
+		case 0xC8: return VK_UP;
+		case 0xD0: return VK_DOWN;
+		case 0xB5: return VK_DIVIDE;
+		case 0x9D: return VK_CONTROL;
+		case 0xB8: return VK_MENU;
+		case 0xB7: return VK_SNAPSHOT;
+		case kDikLShift: return VK_SHIFT;
+		case kDikLCtrl: return VK_CONTROL;
+		case kDikLAlt: return VK_MENU;
+		case 0x64: return VK_F13;
+		case 0x65: return VK_F14;
+		case 0x66: return VK_F15;
+		case 0x67: return VK_F16;
+		case 0x68: return VK_F17;
+		case 0x69: return VK_F18;
+		case 0x6A: return VK_F19;
+		case 0x6B: return VK_F20;
+		case 0x6C: return VK_F21;
+		case 0x6D: return VK_F22;
+		case 0x6E: return VK_F23;
+		case 0x76: return VK_F24;
+		default: break;
+		}
+		const UINT sc = (a_dik & 0x7F) | ((a_dik & 0x80) ? 0xE000u : 0u);
+		return ::MapVirtualKeyW(sc, MAPVK_VSC_TO_VK_EX);
+	}
+
+	// The lParam Windows gives a keyboard message: bits 0-15 repeat count (1), 16-23 scan code, 24 extended key (an E0 key such
+	// as Insert), 29 context code (Alt held - WM_SYSKEY* only), 30 previous key state (1 on a key-up; 0 on a first key-down), 31
+	// transition state (1 on a key-up).
+	inline std::uint32_t KeyMessageLParam(std::uint32_t a_dik, bool a_up, bool a_altHeld = false)
+	{
+		std::uint32_t lp = 1u;
+		lp |= (a_dik & 0x7Fu) << 16;
+		if (a_dik & 0x80u) { lp |= 1u << 24; }
+		if (a_altHeld) { lp |= 1u << 29; }
+		if (a_up) { lp |= (1u << 30) | (1u << 31); }
+		return lp;
+	}
+
+	struct KeyMessage
+	{
+		UINT msg = 0;
+		std::uint32_t vk = 0;   // wParam
+		std::uint32_t lParam = 0;
+	};
+
+	// One edge of a combo as posted messages: WM_KEYDOWN / WM_KEYUP, or WM_SYSKEYDOWN / WM_SYSKEYUP for Alt and for keys while
+	// Alt is held, as Windows sends them. A key with no virtual key is left out.
+	inline std::vector<KeyMessage> StepMessages(const KeyCombo& a_c, Step a_step)
+	{
+		std::vector<KeyMessage> out;
+		if (a_c.Empty()) { return out; }
+		const std::size_t mods = a_c.keys.size() - 1;
+		bool alt = false;
+		for (std::size_t i = 0; i < mods; ++i) { alt = alt || a_c.keys[i] == kDikLAlt || a_c.keys[i] == 0xB8; }
+		const auto one = [&](std::uint32_t a_dik, bool a_up, bool a_altHeld) {
+			const std::uint32_t vk = DikToVk(a_dik);
+			if (vk == 0) { return; }
+			const bool sys = a_altHeld || vk == VK_MENU;
+			KeyMessage m;
+			m.msg = sys ? (a_up ? WM_SYSKEYUP : WM_SYSKEYDOWN) : (a_up ? WM_KEYUP : WM_KEYDOWN);
+			m.vk = vk;
+			m.lParam = KeyMessageLParam(a_dik, a_up, a_altHeld || (vk == VK_MENU && !a_up));
+			out.push_back(m);
+		};
+		switch (a_step)
+		{
+		case Step::kModifiersDown:
+			for (std::size_t i = 0; i < mods; ++i) { one(a_c.keys[i], false, false); }
+			break;
+		case Step::kKeyDown: one(a_c.keys.back(), false, alt); break;
+		case Step::kKeyUp: one(a_c.keys.back(), true, alt); break;
+		case Step::kModifiersUp:
+			for (std::size_t i = mods; i-- > 0;) { one(a_c.keys[i], true, false); }
+			break;
+		}
+		return out;
+	}
+
+	// HOW EACH TARGET'S KEY IS SENT (the ids Framework > Other menus uses, ImguiHost.cpp kIds):
+	//   kGameEvents  - into the game's own input events (Input.cpp, the game-key injector): OAR, Community Shaders, IED.
+	//   kPostMessage - WM_KEYDOWN / WM_KEYUP posted to the game's window: OptiScaler (its WndProc reads WM_KEYUP; see above).
+	//   kSendInput   - SendInput: ENB (its public documentation does not say how it reads its editor key, its default key is a
+	//                  combination - Shift + Enter - whose modifier a posted message cannot carry, and no SendInput hook of its
+	//                  own is known), OptiScaler with ManualInputPolling = true, and any unknown id.
+	enum class SendMethod
+	{
+		kGameEvents,
+		kPostMessage,
+		kSendInput
+	};
+	inline const char* SendMethodName(SendMethod a_m)
+	{
+		return a_m == SendMethod::kGameEvents ? "game" : (a_m == SendMethod::kPostMessage ? "postmessage" : "sendinput");
+	}
+	inline SendMethod SendMethodFor(const std::string& a_id, bool a_optiManualPolling = false)
+	{
+		if (a_id == "oar" || a_id == "cs" || a_id == "ied") { return SendMethod::kGameEvents; }
+		if (a_id == "optiscaler") { return a_optiManualPolling ? SendMethod::kSendInput : SendMethod::kPostMessage; }
+		return SendMethod::kSendInput;
+	}
+
 	// ---- reading the targets' configs ----------------------------------------------------------------------------------
 	inline std::string ReadFileText(const std::wstring& a_path)
 	{
@@ -379,12 +502,15 @@ namespace hostcore
 		bool hasKey = true;    // false: ShortcutKey=-1
 		KeyCombo key;
 		std::string raw;       // the value as written ("auto" when the key is missing)
+		bool manualPolling = false;   // [Hotfix] ManualInputPolling = true: it polls GetAsyncKeyState, not its WndProc
 	};
 
 	inline OptiConfig ParseOptiScalerIni(const std::string& a_text)
 	{
 		OptiConfig c;
 		std::string v;
+		std::string poll;
+		if (IniValue(a_text, "Hotfix", "ManualInputPolling", poll)) { c.manualPolling = Lower(poll) == "true" || poll == "1"; }
 		c.raw = IniValue(a_text, "Menu", "ShortcutKey", v) ? v : std::string("auto");
 		long long vk = 0x2D;   // "auto" = Insert (OptiScaler.ini's own comment)
 		if (Lower(c.raw) != "auto")
