@@ -19,6 +19,8 @@
 //     io.KeysDown[] pattern in older prior art must not be copied (survey §2.3).
 // ============================================================================================
 
+#include "TextInputCore.h"
+
 namespace input
 {
 	// Installs the PollInputDevices call-hook (pattern-guarded like every other hook in this
@@ -85,8 +87,15 @@ namespace input
 	void QueueKey(std::uint32_t a_scancode);        // DirectInput scan code, down then up
 	void QueueStick(int a_which, float a_x, float a_y, int a_holdFrames);   // a thumbstick record held, then centred (driver)
 	void InjectPress(std::uint32_t a_device, std::uint32_t a_code, int a_holdFrames);   // REAL engine event, ahead of the hook (0 kb, 1 mouse, 2 pad)
-	void InjectText(const std::string& a_utf8);                                        // REAL CharEvents, ahead of the hook
-	void QueueText(const std::string& a_utf8);      // one character record per byte (ASCII)
+	void InjectText(const std::string& a_utf8);                                        // REAL CharEvents, ahead of the hook (one per code point)
+	void QueueText(const std::string& a_utf8);      // one character record per code point (UTF-8 decoded, 2.2.1)
+
+	// TYPING IN OTHER LANGUAGES (2.2.1; TextInput.h). One UTF-16 unit from the game window's procedure, any thread:
+	// a_source 0 = WM_CHAR from a real key, 1 = WM_CHAR with no scan code (SendInput unicode, posted), 2 = the IME's text.
+	// The render thread decides whether it or the engine's CharEvent for the same key types (TextInputCore.h CharArbiter).
+	void QueueTypedUnit(std::uint16_t a_unit, int a_source);
+	// What the arbiter typed and dropped so far, and how many engine characters wait for a WM_CHAR (thread-safe copy).
+	void GetTypingStats(textcore::ArbiterStats& a_stats, std::size_t& a_pending);
 	// 2.1.7: a RELATIVE mouse movement in raw mouse counts, queued as the same record the game's MouseMoveEvent becomes,
 	// so a driver can measure the pointer speed (cursor before / after) through the real scaling.
 	void QueueMouseMove(float a_dx, float a_dy);

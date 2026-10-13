@@ -13,6 +13,8 @@
 #include "Offsets.h"
 #include "Renderer.h"
 #include "Settings.h"
+#include "TextInput.h"
+#include "TextInputCore.h"
 #include "utils/Logger.h"
 
 #include <imgui.h>
@@ -44,8 +46,10 @@ namespace input
 				kKeyboard,
 				kGamepad,
 				kThumbstick,  // left stick, for menu nav in controller mode (x,y in [-1,1])
-				kCharacter,
+				kCharacter,   // the engine's CharEvent (source 1 = one DevBench injectchar spliced in)
 				kCursorSet,   // absolute placement from a driver (DevBench)
+				kTypedUnit,   // 2.2.1: one UTF-16 unit from the game window (source 0 WM_CHAR real key, 1 WM_CHAR synthetic, 2 IME)
+				kDirectChar,  // 2.2.1: a code point typed straight in by a driver (DevBench op=type)
 			};
 
 			Kind kind{};
@@ -53,6 +57,7 @@ namespace input
 			bool down = false;        // press (true) or release (false) transitions only
 			float x = 0.0f;           // mouse deltas / wheel direction
 			float y = 0.0f;
+			std::uint8_t source = 0;  // kCharacter / kTypedUnit: where the character came from (see the kinds)
 		};
 
 		std::mutex g_queueLock;
@@ -118,10 +123,12 @@ namespace input
 		std::unordered_set<std::uint64_t> g_gameHeldButtons;
 
 		// ---- the engine's own text entry --------------------------------------------------
-		// Skyrim's keyboard device only turns the WM_CHAR queue into RE::CharEvent while
-		// ControlMap's text-entry count is above zero (ControlMap::AllowTextInput raises and lowers
-		// it). This framework has no WndProc hook, so a CharEvent is the ONLY way a typed letter
-		// ever reaches ImGui - which is why clicking the mod search bar and typing did nothing at
+		// Skyrim's keyboard device only makes RE::CharEvents while ControlMap's text-entry count is
+		// above zero (ControlMap::AllowTextInput raises and lowers it). It makes them from DirectInput
+		// key-downs through ToUnicode and never reads WM_CHAR (2.2.1 disassembly, TextInputCore.h). Up to
+		// 2.2.0 this framework had no WndProc hook, so a CharEvent was the ONLY way a typed letter
+		// reached ImGui (2.2.1 adds WM_CHAR and the IME, TextInput.cpp; most keys still arrive both ways
+		// and CharArbiter types each once) - which is why clicking the mod search bar and typing did nothing at
 		// all, while clicking, navigation and the on-screen keyboard (which calls
 		// io.AddInputCharacter directly) all worked (phbd01, 2026-09-19: "when I click on the
 		// search bar and try to type, nothing happens").
@@ -502,6 +509,9 @@ namespace input
 		std::mutex g_lock;
 		std::vector<Press> g_presses;
 		std::vector<std::uint32_t> g_chars;
+		// The CharEvent spliced in this dispatch (game thread only), so the hook can tell it from a real one: a driver's
+		// character has no WM_CHAR to wait for and is typed at once (2.2.1).
+		const RE::InputEvent* g_splicedChar = nullptr;
 
 		void SpliceButton(RE::InputEvent** a_events, RE::INPUT_DEVICE a_device, std::uint32_t a_code, float a_value, float a_held)
 		{
@@ -522,10 +532,12 @@ namespace input
 			ev->eventType = RE::INPUT_EVENT_TYPE::kChar;
 			ev->keyCode = a_code;
 			ev->next = *a_events; *a_events = ev;
+			g_splicedChar = ev;
 		}
 		void Service(RE::InputEvent** a_events)
 		{
 			std::scoped_lock l(g_lock);
+			g_splicedChar = nullptr;
 			if (g_presses.empty() && g_chars.empty()) { return; }
 			if (!g_chars.empty()) { SpliceChar(a_events, g_chars.front()); g_chars.erase(g_chars.begin()); }  // one character per dispatch
 			for (auto it = g_presses.begin(); it != g_presses.end();) {
@@ -604,7 +616,8 @@ namespace input
 				case RE::INPUT_EVENT_TYPE::kChar:
 					{
 						const auto* character = static_cast<const RE::CharEvent*>(a_event);
-						Enqueue({ Record::Kind::kCharacter, character->keyCode, true, 0.0f, 0.0f });
+						Enqueue({ Record::Kind::kCharacter, character->keyCode, true, 0.0f, 0.0f,
+								  static_cast<std::uint8_t>(a_event == inject::g_splicedChar ? 1 : 0) });
 						break;
 					}
 				case RE::INPUT_EVENT_TYPE::kThumbstick:
@@ -1183,6 +1196,31 @@ namespace input
 		}
 	}
 
+	namespace
+	{
+		// TYPING IN OTHER LANGUAGES (2.2.1): who types each character - the engine's CharEvent or the window's WM_CHAR
+		// (TextInputCore.h). Render thread only; a copy of its counters is kept for DevBench under its own lock.
+		textcore::CharArbiter g_arbiter;
+		std::mutex g_typingStatsLock;
+		textcore::ArbiterStats g_typingStats;
+		std::size_t g_typingPending = 0;
+		bool g_typingWanted = false;          // last frame's WantsTextInput, to reset the arbiter between holds
+		bool g_imeKeyLogged = false;          // one line per hold when a key is left to the IME
+		bool g_fallbackLogged = false;        // one line per hold when engine characters had no WM_CHAR
+
+		std::uint64_t SteadyMs()
+		{
+			return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+				std::chrono::steady_clock::now().time_since_epoch()).count()) + 1;
+		}
+
+		void FeedUnits(ImGuiIO& a_io, std::vector<std::uint16_t>& a_units)
+		{
+			for (const std::uint16_t u : a_units) { a_io.AddInputCharacterUTF16(static_cast<ImWchar16>(u)); }
+			a_units.clear();
+		}
+	}
+
 	void ProcessQueuedEvents()
 	{
 		std::vector<Record> drained;
@@ -1212,6 +1250,8 @@ namespace input
 		const ImVec2 display = io.DisplaySize;
 		const bool controllerMode = UsingController();
 		ReleaseStuckKeys(io);
+		const std::uint64_t nowMs = SteadyMs();
+		std::vector<std::uint16_t> typed;   // UTF-16 units the arbiter decided to type, fed in arrival order
 
 		// A PRESS AND ITS RELEASE NEVER SHARE A FRAME (next after 2.1.9; the 2026-10-12 combined test: a second real click on a
 		// switch did not register). ImGui runs with trickling OFF and flattens a frame's events, so each mouse button, key and
@@ -1282,6 +1322,18 @@ namespace input
 			case Record::Kind::kKeyboard:
 				{
 					if (record.down) { NoteDevice(Device::kKeyboardMouse); }
+					// 2.2.1: a key the IME took (composing, or VK_PROCESSKEY for this scan code moments ago) is the IME's -
+					// Enter commits the composition, Backspace edits it - so ImGui must not also act on it. Releases still
+					// pass, so nothing is left held.
+					if (record.down && renderer::WantsTextInput() && textinput::ImeOwnsKey(record.code))
+					{
+						if (!g_imeKeyLogged)
+						{
+							g_imeKeyLogged = true;
+							logger::info("typing: key 0x{:02X} left to the IME (it is composing or took that key) - not given to the text box", record.code);
+						}
+						break;
+					}
 					// A key typed into a text field is text, not a command: F (favourite) and Page Up / Down
 					// (tabs) must not fire while the search bar or a mod's text box is being typed into.
 					// And only while OUR menu is up (2.0.4): a mod's window gets the input too now, and a
@@ -1412,9 +1464,47 @@ namespace input
 				}
 				break;
 			case Record::Kind::kCharacter:
-				io.AddInputCharacter(record.code);
+				// 2.2.1: through the arbiter - typed now, dropped because a WM_CHAR typed the same key, or held a few
+				// frames for that WM_CHAR. A character DevBench spliced in has no WM_CHAR coming and is typed at once.
+				if (record.source == 1) { g_arbiter.Direct(record.code, typed); }
+				else { g_arbiter.Engine(record.code, textinput::SubclassLive(), textinput::ImeBusy(), nowMs, typed); }
+				FeedUnits(io, typed);
+				break;
+			case Record::Kind::kTypedUnit:
+				if (record.source == 2) { g_arbiter.Ime(static_cast<std::uint16_t>(record.code), typed); }
+				else { g_arbiter.Window(static_cast<std::uint16_t>(record.code), record.source == 0, nowMs, typed); }
+				FeedUnits(io, typed);
+				break;
+			case Record::Kind::kDirectChar:
+				g_arbiter.Direct(record.code, typed);
+				FeedUnits(io, typed);
 				break;
 			}
+		}
+
+		// Engine characters whose WM_CHAR never came are typed now; between holds nothing waiting carries over.
+		{
+			g_arbiter.EndFrame(textinput::ImeBusy(), nowMs, typed);
+			FeedUnits(io, typed);
+			if (g_arbiter.FallbacksThisHold() > 0 && !g_fallbackLogged)
+			{
+				g_fallbackLogged = true;
+				logger::info("typing: an engine character had no WM_CHAR within {} frames / {} ms - typed from the engine instead "
+							 "(the window procedure is {}; if every key does this, WM_CHAR is not reaching it)",
+							 textcore::CharArbiter::kWindowFrames, textcore::CharArbiter::kWindowMs,
+							 textinput::SubclassLive() ? "installed" : "NOT installed");
+			}
+			const bool wanted = renderer::WantsTextInput();
+			if (wanted != g_typingWanted)
+			{
+				g_typingWanted = wanted;
+				g_arbiter.Reset();
+				g_imeKeyLogged = false;
+				g_fallbackLogged = false;
+			}
+			std::scoped_lock l(g_typingStatsLock);
+			g_typingStats = g_arbiter.stats;
+			g_typingPending = g_arbiter.Pending();
 		}
 
 		// One authoritative cursor position per frame, movement or not. The Win32 backend's
@@ -1444,6 +1534,7 @@ namespace input
 		std::scoped_lock lock(g_queueLock);
 		g_queue.clear();
 		g_carry.clear();
+		g_arbiter.Reset();   // 2.2.1: a character held for a WM_CHAR last time the menu was up is stale
 
 		logger::debug("menu opened: cursor centred at ({:.0f}, {:.0f}), stale queue cleared", g_cursorX, g_cursorY);
 	}
@@ -1550,8 +1641,12 @@ namespace input
 	}
 	void InjectText(const std::string& a_utf8)
 	{
+		// 2.2.1: one CharEvent per CODE POINT. Each UTF-8 byte used to be its own character, so U+51FD U+6570 arrived as six
+		// Latin-1 letters (the 2026-10-13 test's mojibake).
+		const auto points = textcore::DecodeUtf8(a_utf8);
 		std::scoped_lock l(inject::g_lock);
-		for (unsigned char c : a_utf8) { inject::g_chars.push_back(static_cast<std::uint32_t>(c)); }
+		for (const char32_t cp : points) { inject::g_chars.push_back(static_cast<std::uint32_t>(cp)); }
+		logger::debug("devbench: injectchar queued {} character(s) from {} UTF-8 byte(s)", points.size(), a_utf8.size());
 	}
 
 	void QueueKey(std::uint32_t a_scancode)
@@ -1574,11 +1669,27 @@ namespace input
 
 	void QueueText(const std::string& a_utf8)
 	{
+		// 2.2.1: decoded to code points (one record per character, not per byte), typed straight in - a driver's text has
+		// no WM_CHAR to wait for. Above U+FFFF it goes in as a surrogate pair (TextInputCore.h ToUtf16).
+		const auto points = textcore::DecodeUtf8(a_utf8);
 		std::scoped_lock lock(g_queueLock);
 		int frame = 1;
-		for (unsigned char c : a_utf8) {
-			g_deferred.push_back({ frame++, { Record::Kind::kCharacter, static_cast<std::uint32_t>(c), true, 0.0f, 0.0f } });
+		for (const char32_t cp : points) {
+			g_deferred.push_back({ frame++, { Record::Kind::kDirectChar, static_cast<std::uint32_t>(cp), true, 0.0f, 0.0f } });
 		}
+		logger::debug("devbench: type queued {} character(s) from {} UTF-8 byte(s)", points.size(), a_utf8.size());
+	}
+
+	void QueueTypedUnit(std::uint16_t a_unit, int a_source)
+	{
+		Enqueue({ Record::Kind::kTypedUnit, a_unit, true, 0.0f, 0.0f, static_cast<std::uint8_t>(a_source < 0 || a_source > 2 ? 1 : a_source) });
+	}
+
+	void GetTypingStats(textcore::ArbiterStats& a_stats, std::size_t& a_pending)
+	{
+		std::scoped_lock l(g_typingStatsLock);
+		a_stats = g_typingStats;
+		a_pending = g_typingPending;
 	}
 
 	void SetSticksCaptured(bool a_captured)

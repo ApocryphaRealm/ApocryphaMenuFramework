@@ -16,6 +16,7 @@
 #include "Settings.h"
 #include "Skin.h"
 #include "Strings.h"
+#include "TextInput.h"
 #include <cmath>
 #include <ctime>
 #include <filesystem>
@@ -326,17 +327,27 @@ namespace devbenchtool
 			}
 			else if (op == "injectchar")
 			{
-				// REAL CharEvents (what the engine makes from WM_CHAR), one per dispatch, ahead of the hook.
+				// REAL CharEvents (what the engine makes from DirectInput keys), one per dispatch, ahead of the hook. 2.2.1: one
+				// per code point of the UTF-8 text, so CJK arrives as itself (chars = code points, bytes = UTF-8 length).
 				const std::string text = JsonStr(args, "text");
 				input::InjectText(text);
-				result = "{\"ok\":true,\"op\":\"injectchar\",\"chars\":" + std::to_string(text.size()) + "}";
+				result = "{\"ok\":true,\"op\":\"injectchar\",\"chars\":" + std::to_string(textcore::DecodeUtf8(text).size()) +
+						 ",\"bytes\":" + std::to_string(text.size()) + "}";
 			}
 			else if (op == "type")
 			{
-				// Type text into whatever ImGui item is active (the real record path, from the queue on).
+				// Type text into whatever ImGui item is active (the real record path, from the queue on). 2.2.1: UTF-8 decoded,
+				// one character per code point (it used to push each byte - mojibake for anything past ASCII).
 				const std::string text = JsonStr(args, "text");
 				input::QueueText(text);
-				result = "{\"ok\":true,\"op\":\"type\",\"chars\":" + std::to_string(text.size()) + "}";
+				result = "{\"ok\":true,\"op\":\"type\",\"chars\":" + std::to_string(textcore::DecodeUtf8(text).size()) +
+						 ",\"bytes\":" + std::to_string(text.size()) + "}";
+			}
+			else if (op == "ime")
+			{
+				// TYPING IN OTHER LANGUAGES (2.2.1; TextInput.h): the window procedure, the IME and which path typed each
+				// character - read it after typing in a box to see whether WM_CHAR / the IME reached AMF.
+				result = textinput::StateJson();
 			}
 			else if (op == "stick")
 			{

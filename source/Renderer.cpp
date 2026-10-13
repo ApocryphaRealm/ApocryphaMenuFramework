@@ -28,6 +28,7 @@
 #include "Registry.h"
 #include "Settings.h"
 #include "Strings.h"
+#include "TextInput.h"
 #include "SystemRow.h"
 #include "Theme.h"
 #include "Watchdog.h"
@@ -1435,6 +1436,7 @@ namespace renderer
 
 				ImGui_ImplWin32_Init(hwnd);
 				ImGui_ImplDX11_Init(device, context);
+				textinput::Install(hwnd);   // 2.2.1: WM_CHAR and the IME reach AMF's text boxes (TextInput.h)
 				arthooks::Install();   // 2.1.6: Appearance > Art's parts drawn in place of ImGui's own shapes
 				g_swapChain = reinterpret_cast<IDXGISwapChain*>(window.swapChain);
 				g_captureContext = context;
@@ -3744,6 +3746,9 @@ namespace renderer
 						"across the bottom of the screen. The D-pad walks it, A types, B puts the highlight back "
 						"on the box, X is shift and Y is backspace. It works on every mod's page, and it can be "
 						"turned off under Settings."));
+				para(TR("AMF_ManTyping3", "Chinese, Japanese and Korean can be typed with a Windows input method (IME) in every "
+						"text box AMF draws, with its candidate list at the text cursor. Accented and Cyrillic letters type "
+						"straight from your keyboard layout."));
 				ImGui::EndTabItem();
 			}
 
@@ -5318,6 +5323,7 @@ namespace renderer
 				// navigation but not a single character (phbd01, 2026-09-19).
 				// A mod's own window counts too (2.0.4): RaceMenu Atelier's name field types through here.
 				g_wantTextInput.store(interactive && io.WantTextInput, std::memory_order_release);
+				textinput::OnFrame(interactive && io.WantTextInput);   // 2.2.1: the IME's windows follow it (TextInput.h)
 
 				// WHY THE KEYBOARD WAS LOST (1.9.5). ImGui drops ActiveId by itself when the item
 				// that holds it is NOT SUBMITTED in a frame - ActiveIdIsAlive stops matching
