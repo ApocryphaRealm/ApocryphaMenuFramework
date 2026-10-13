@@ -446,4 +446,40 @@ namespace hostcore
 		int m_next = 0;
 		int m_count = 0;
 	};
+
+	// 2.2.0: the corner graph is drawn straight onto AMF's FOREGROUND draw list (as an ImGui window it sat under AMF's own
+	// window, so with AMF open full-screen it never showed - v5 and v6 runs). With no window there is no pivot to place it,
+	// so its place and its line are computed here, where tools\imgui_host_check.cpp checks them.
+	struct CornerPos
+	{
+		float x, y;
+	};
+
+	// The widget's top-left. a_corner: 0 top-left, 1 top-right, 2 bottom-left, 3 bottom-right ([Performance] iCorner; any
+	// other value is clamped into 0-3); a_pad: the gap to the screen's edges. A widget larger than the screen starts at its
+	// left / top edge, never off it.
+	inline CornerPos CornerPlace(int a_corner, float a_displayW, float a_displayH, float a_w, float a_h, float a_pad)
+	{
+		const int c = std::clamp(a_corner, 0, 3);
+		const bool right = c == 1 || c == 3;
+		const bool bottom = c >= 2;
+		const float x = right ? a_displayW - a_pad - a_w : a_pad;
+		const float y = bottom ? a_displayH - a_pad - a_h : a_pad;
+		return { std::max(0.0f, x), std::max(0.0f, y) };
+	}
+
+	// The frame-time line inside the plot rectangle (a_x, a_y, a_w x a_h): oldest frame at the left edge, newest at the right,
+	// 0 ms at the bottom, a_top ms at the top; a frame slower than a_top is held at the top edge. Writes a_count points.
+	inline void GraphPoints(const float* a_values, int a_count, float a_x, float a_y, float a_w, float a_h, float a_top, float* a_outX,
+							float* a_outY)
+	{
+		const float top = a_top > 0.0f ? a_top : 1.0f;
+		for (int i = 0; i < a_count; ++i)
+		{
+			const float t = a_count > 1 ? static_cast<float>(i) / static_cast<float>(a_count - 1) : 1.0f;
+			const float v = std::clamp(a_values[i] / top, 0.0f, 1.0f);
+			a_outX[i] = a_x + t * a_w;
+			a_outY[i] = a_y + (1.0f - v) * a_h;
+		}
+	}
 }

@@ -835,7 +835,12 @@ namespace imguihost
 			ImGui::SameLine();
 			ImGui::TextDisabled(TR("AMF_ImguiState", "- %s"), StateText(t.state));
 			const std::string keyName = hostcore::ComboName(t.key);
-			ImGui::BeginDisabled(!t.blocked.empty());
+			// a row that cannot act is inert AND looks it (2.2.0, v6 run: OAR's Open / Close with its UI switched off read as white,
+			// like the live buttons): the theme's disabled text colour on top of ImGui's disabled fade, as for an MFM entry that
+			// cannot run (MfmPages.cpp)
+			const bool rowBlocked = !t.blocked.empty();
+			if (rowBlocked) { ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled)); }
+			ImGui::BeginDisabled(rowBlocked);
 			if (i == kOar && (g_oarV3 || HostAvailable()))
 			{
 				if (ImGui::Button(TR("AMF_ImguiOpen", "Open"))) { action = i; open = true; }
@@ -854,6 +859,7 @@ namespace imguihost
 				renderer::NoteHoveredItem();
 			}
 			ImGui::EndDisabled();
+			if (rowBlocked) { ImGui::PopStyleColor(); }
 			ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
 			ImGui::PushTextWrapPos(0.0f);
 			if (!t.blocked.empty()) { ImGui::TextUnformatted(t.blocked.c_str()); }

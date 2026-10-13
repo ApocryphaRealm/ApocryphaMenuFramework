@@ -118,25 +118,66 @@ namespace perf
 	void DrawOverlay()
 	{
 		if (!settings::Get().perfOverlay) { return; }
+		// 2.2.0: drawn straight onto the FOREGROUND draw list, not as an ImGui window. As a window it sat under AMF's own
+		// window, so with AMF open full-screen it showed in no corner (v5 and v6 runs). The foreground list is drawn after every
+		// AMF window; the pointer (ArtHooks DrawCursor) and the curtain go on the same list LATER in the frame, so they stay
+		// over it. A hosted menu (Open Animation Replacer through AMF-Host-OAR) is drawn by that mod's own ImGui after AMF's
+		// frame - the v6 run saw OAR's window on top of AMF's - so the graph stays under a hosted menu. No input: nothing here
+		// is an item.
 		const hostcore::FrameTimes t = Copy();
+		const auto s = t.Compute();
+		float values[hostcore::FrameTimes::kFrames] = {};
+		t.Ordered(values);
+		const int n = t.Count();
 		const ImGuiIO& io = ImGui::GetIO();
-		const float w = ImGui::GetFontSize() * 16.0f;
-		const float pad = ImGui::GetFontSize() * 0.6f;
-		// 0 top-left, 1 top-right, 2 bottom-left, 3 bottom-right ([Performance] iCorner); the pivot keeps the graph inside the screen
-		const int corner = std::clamp(settings::Get().perfCorner, 0, 3);
-		const bool right = corner == 1 || corner == 3;
-		const bool bottom = corner >= 2;
-		ImGui::SetNextWindowPos(ImVec2(right ? io.DisplaySize.x - pad : pad, bottom ? io.DisplaySize.y - pad : pad), ImGuiCond_Always,
-								ImVec2(right ? 1.0f : 0.0f, bottom ? 1.0f : 0.0f));
-		ImGui::SetNextWindowBgAlpha(0.75f);
-		constexpr ImGuiWindowFlags kFlags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav |
-											ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoBringToFrontOnFocus |
-											ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoDocking;
-		if (ImGui::Begin("##amf_perf_overlay", nullptr, kFlags))
+		const ImGuiStyle& st = ImGui::GetStyle();
+		const float font = ImGui::GetFontSize();
+		char overlay[64];
+		std::snprintf(overlay, sizeof(overlay), "%.0f FPS  %.1f ms", s.fpsAvg, s.avgMs);
+		char fpsLine[160];
+		std::snprintf(fpsLine, sizeof(fpsLine), TR("AMF_PerfFpsLine", "FPS - min %.0f, avg %.0f, max %.0f"), s.fpsMin, s.fpsAvg, s.fpsMax);
+		char msLine[160];
+		std::snprintf(msLine, sizeof(msLine), TR("AMF_PerfMsLine", "Frame time - min %.1f ms, avg %.1f ms, max %.1f ms"), s.minMs, s.avgMs, s.maxMs);
+		const ImVec2 fpsSize = ImGui::CalcTextSize(fpsLine);
+		const ImVec2 msSize = ImGui::CalcTextSize(msLine);
+		const float plotW = font * 16.0f;
+		const float plotH = font * 3.0f;
+		const float innerW = std::max({ plotW, fpsSize.x, msSize.x });
+		const float innerH = plotH + st.ItemSpacing.y + fpsSize.y + st.ItemSpacing.y + msSize.y;
+		const ImVec2 size(innerW + st.WindowPadding.x * 2.0f, innerH + st.WindowPadding.y * 2.0f);
+		// 0 top-left, 1 top-right, 2 bottom-left, 3 bottom-right ([Performance] iCorner), kept inside the screen
+		const auto at = hostcore::CornerPlace(settings::Get().perfCorner, io.DisplaySize.x, io.DisplaySize.y, size.x, size.y, font * 0.6f);
+		const ImVec2 boxMin(at.x, at.y);
+		const ImVec2 boxMax(at.x + size.x, at.y + size.y);
+
+		ImDrawList* draw = ImGui::GetForegroundDrawList();
+		ImVec4 bg = ImGui::GetStyleColorVec4(ImGuiCol_WindowBg);
+		bg.w = 0.75f;   // as the window's SetNextWindowBgAlpha(0.75f) was; GetColorU32 still applies the HUD opacity (style Alpha)
+		draw->AddRectFilled(boxMin, boxMax, ImGui::GetColorU32(bg), st.WindowRounding);
+		if (st.WindowBorderSize > 0.0f) { draw->AddRect(boxMin, boxMax, ImGui::GetColorU32(ImGuiCol_Border), st.WindowRounding, 0, st.WindowBorderSize); }
+		// the plot: ImGui's PlotLines look - a frame, the line inside its padding, the FPS caption centred at its top
+		const ImVec2 plotMin(boxMin.x + st.WindowPadding.x, boxMin.y + st.WindowPadding.y);
+		const ImVec2 plotMax(plotMin.x + plotW, plotMin.y + plotH);
+		draw->AddRectFilled(plotMin, plotMax, ImGui::GetColorU32(ImGuiCol_FrameBg), st.FrameRounding);
+		const ImVec2 inMin(plotMin.x + st.FramePadding.x, plotMin.y + st.FramePadding.y);
+		const ImVec2 inMax(plotMax.x - st.FramePadding.x, plotMax.y - st.FramePadding.y);
+		if (n >= 2 && inMax.x > inMin.x && inMax.y > inMin.y)
 		{
-			DrawGraph(t, w, ImGui::GetFontSize() * 3.0f);
+			// the scale holds a 60 FPS frame and the slowest frame shown, so a steady line sits mid-graph (as DrawGraph)
+			const float top = std::max(s.maxMs * 1.15f, 20.0f);
+			float xs[hostcore::FrameTimes::kFrames];
+			float ys[hostcore::FrameTimes::kFrames];
+			hostcore::GraphPoints(values, n, inMin.x, inMin.y, inMax.x - inMin.x, inMax.y - inMin.y, top, xs, ys);
+			ImVec2 points[hostcore::FrameTimes::kFrames];
+			for (int i = 0; i < n; ++i) { points[i] = ImVec2(xs[i], ys[i]); }
+			draw->AddPolyline(points, n, ImGui::GetColorU32(ImGuiCol_PlotLines), ImDrawFlags_None, 1.0f);
 		}
-		ImGui::End();
+		const ImU32 text = ImGui::GetColorU32(ImGuiCol_Text);
+		const float overlayW = ImGui::CalcTextSize(overlay).x;
+		draw->AddText(ImVec2(plotMin.x + (plotW - overlayW) * 0.5f, inMin.y), text, overlay);
+		const float line1 = plotMax.y + st.ItemSpacing.y;
+		draw->AddText(ImVec2(plotMin.x, line1), text, fpsLine);
+		draw->AddText(ImVec2(plotMin.x, line1 + fpsSize.y + st.ItemSpacing.y), text, msLine);
 	}
 
 	std::string StateJson()

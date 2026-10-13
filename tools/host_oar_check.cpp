@@ -10,6 +10,8 @@
 #include <Windows.h>
 #include <Psapi.h>
 
+#include <cfloat>
+#include <cmath>
 #include <cstddef>
 #include <cstdio>
 #include <iostream>
@@ -27,6 +29,11 @@ namespace
 	const char* const kRenderer = "imgui_impl_dx11";   // a literal in this exe's image, as OAR's is in OAR's
 	const std::string kTitle = "Open Animation Replacer 3.0.2";
 	bool g_show = true;
+	// 2.2.0: OAR's other windows - its Settings window (opened at the right edge of its main window, partly off screen in the
+	// v6 run), a large window, and a popup menu opened at the pointer
+	bool g_settings = false;
+	bool g_bigWindow = false;
+	bool g_openPopup = false;
 
 	// One of OAR's frames: nothing at all while its window is hidden (UIManager::Render's early-out)
 	void OarFrame(ImGuiContext* a_ctx, bool a_dragTo = false, ImVec2 a_drag = {})
@@ -43,8 +50,33 @@ namespace
 		{
 			ImGui::TextUnformatted("replacer list");
 			if (a_dragTo) { ImGui::SetWindowPos(a_drag); }   // the player dragging it
+			if (g_openPopup)
+			{
+				ImGui::OpenPopup("condition menu");
+				g_openPopup = false;
+			}
+			if (ImGui::BeginPopup("condition menu"))
+			{
+				ImGui::TextUnformatted("Add condition");
+				ImGui::TextUnformatted("Remove condition");
+				ImGui::EndPopup();
+			}
 		}
 		ImGui::End();
+		if (g_settings)
+		{
+			ImGui::SetNextWindowPos(ImVec2(1700.0f, 300.0f), ImGuiCond_FirstUseEver);
+			ImGui::SetNextWindowSize(ImVec2(500.0f, 400.0f), ImGuiCond_FirstUseEver);
+			if (ImGui::Begin("Settings", &g_settings)) { ImGui::TextUnformatted("OAR settings"); }
+			ImGui::End();
+		}
+		if (g_bigWindow)
+		{
+			ImGui::SetNextWindowPos(ImVec2(100.0f, 100.0f), ImGuiCond_FirstUseEver);
+			ImGui::SetNextWindowSize(ImVec2(1200.0f, 900.0f), ImGuiCond_FirstUseEver);
+			if (ImGui::Begin("Big window", &g_bigWindow)) { ImGui::TextUnformatted("a large OAR window"); }
+			ImGui::End();
+		}
 		ImGui::Render();
 	}
 
@@ -105,6 +137,142 @@ namespace
 		AMF_HostFrame old = MakeFrame(true, 600.0f, 100.0f, 800.0f, 700.0f);
 		old.size = static_cast<std::uint32_t>(offsetof(AMF_HostFrame, renderThread));   // v5's record, before the field
 		Check(!hostlogic::CheckThread(&old, 4936, s, r) && !r.fail.empty(), "thread: v5 AMF's shorter frame record - fails closed");
+	}
+
+	ImGuiWindow* FindIn(ImGuiContext* a_ctx, const char* a_name)
+	{
+		ImGuiContext* other = ImGui::GetCurrentContext();
+		ImGui::SetCurrentContext(a_ctx);
+		ImGuiWindow* w = ImGui::FindWindowByName(a_name);
+		ImGui::SetCurrentContext(other);
+		return w;
+	}
+
+	ImGuiWindow* FindPopup(ImGuiContext* a_ctx)
+	{
+		for (ImGuiWindow* w : a_ctx->Windows)
+		{
+			if (w && w->Active && (w->Flags & ImGuiWindowFlags_Popup) != 0 && (w->Flags & ImGuiWindowFlags_ChildWindow) == 0) { return w; }
+		}
+		return nullptr;
+	}
+
+	bool Inside(const ImGuiWindow* a_w, float a_x, float a_y, float a_wd, float a_ht)
+	{
+		return a_w && a_w->Pos.x >= a_x - 0.5f && a_w->Pos.y >= a_y - 0.5f && a_w->Pos.x + a_w->SizeFull.x <= a_x + a_wd + 0.5f &&
+			   a_w->Pos.y + a_w->SizeFull.y <= a_y + a_ht + 0.5f;
+	}
+
+	std::string Rect(const ImGuiWindow* a_w)
+	{
+		if (!a_w) { return "(none)"; }
+		return "(" + std::to_string(static_cast<int>(a_w->Pos.x)) + ", " + std::to_string(static_cast<int>(a_w->Pos.y)) + ") " +
+			   std::to_string(static_cast<int>(a_w->SizeFull.x)) + " x " + std::to_string(static_cast<int>(a_w->SizeFull.y));
+	}
+
+	// 2.2.0: OAR's other windows (HostLogic.h KeepOthersInside) - the v6 run's Settings window over AMF's frame, partly off
+	// screen, replayed; plus a window larger than the panel, a popup, hosting off, and the fail-closed check.
+	void OtherWindowChecks(ImGuiContext* a_oar, std::uintptr_t a_base, std::uintptr_t a_end)
+	{
+		constexpr float px = 600.0f, py = 100.0f, pw = 800.0f, ph = 700.0f;
+		g_show = true;
+		g_settings = true;
+		OarFrame(a_oar);
+		OarFrame(a_oar);
+		ImGuiWindow* settingsWin = FindIn(a_oar, "Settings");
+		Check(settingsWin && settingsWin->Pos.x + settingsWin->SizeFull.x > 1920.0f,
+			  "OAR's Settings window opens partly off screen, as in the v6 run: " + Rect(settingsWin));
+
+		// hosting off: OAR's other windows are not touched
+		{
+			hostlogic::State s0;
+			AMF_HostFrame f = MakeFrame(false, 0, 0, 0, 0);
+			const auto r = hostlogic::Frame(a_oar, &f, s0, a_base, a_end, kTitle);
+			OarFrame(a_oar);
+			Check(r.fail.empty() && settingsWin->Pos.x == 1700.0f && settingsWin->Pos.y == 300.0f, "hosting off: OAR's Settings window is left where OAR put it");
+		}
+
+		hostlogic::State s;
+		AMF_HostFrame f = MakeFrame(true, px, py, pw, ph);
+		auto r = hostlogic::Frame(a_oar, &f, s, a_base, a_end, kTitle);
+		bool logged = false;
+		for (const auto& line : r.info) { logged = logged || (line.find("\"Settings\"") != std::string::npos && line.find("AMF's page") != std::string::npos); }
+		Check(r.fail.empty() && f.placed == 1 && logged, "hosting: OAR's Settings window is moved into AMF's page, one log line");
+		OarFrame(a_oar);
+		Check(Inside(settingsWin, px, py, pw, ph) && settingsWin->SizeFull.x == 500.0f && settingsWin->SizeFull.y == 400.0f,
+			  "OAR's next frame draws its Settings window inside AMF's page at its own size: " + Rect(settingsWin));
+		Check(settingsWin->Active && !settingsWin->Hidden, "the Settings window is still shown (moved, never hidden)");
+		f = MakeFrame(true, px, py, pw, ph);
+		r = hostlogic::Frame(a_oar, &f, s, a_base, a_end, kTitle);
+		OarFrame(a_oar);
+		Check(r.fail.empty() && r.info.empty() && Inside(settingsWin, px, py, pw, ph), "the next frames: kept inside, no more log lines");
+
+		// a window larger than the panel: shrunk to the panel, inside it
+		g_bigWindow = true;
+		OarFrame(a_oar);
+		OarFrame(a_oar);
+		ImGuiWindow* big = FindIn(a_oar, "Big window");
+		f = MakeFrame(true, px, py, pw, ph);
+		r = hostlogic::Frame(a_oar, &f, s, a_base, a_end, kTitle);
+		OarFrame(a_oar);
+		Check(r.fail.empty() && Inside(big, px, py, pw, ph) && big->SizeFull.x == pw && big->SizeFull.y == ph,
+			  "a window larger than the panel (1200 x 900) is shrunk to it and kept inside: " + Rect(big));
+		g_bigWindow = false;
+
+		// a popup opened at the pointer in the bottom-right corner: ImGui keeps it in the display, the bridge moves it into the page
+		{
+			ImGuiContext* other = ImGui::GetCurrentContext();
+			ImGui::SetCurrentContext(a_oar);
+			ImGui::GetIO().MousePos = ImVec2(1900.0f, 1060.0f);
+			ImGui::SetCurrentContext(other);
+		}
+		g_openPopup = true;
+		OarFrame(a_oar);
+		OarFrame(a_oar);
+		OarFrame(a_oar);
+		ImGuiWindow* popup = FindPopup(a_oar);
+		const ImVec2 popupSize = popup ? popup->SizeFull : ImVec2();
+		Check(popup && !Inside(popup, px, py, pw, ph) && Inside(popup, 0.0f, 0.0f, 1920.0f, 1080.0f),
+			  "OAR's popup opens at the pointer, outside AMF's page: " + Rect(popup));
+		f = MakeFrame(true, px, py, pw, ph);
+		r = hostlogic::Frame(a_oar, &f, s, a_base, a_end, kTitle);
+		OarFrame(a_oar);
+		popup = FindPopup(a_oar);
+		Check(r.fail.empty() && Inside(popup, px, py, pw, ph) && popup && popup->SizeFull.x == popupSize.x && popup->SizeFull.y == popupSize.y,
+			  "the popup is moved inside AMF's page at its own size: " + Rect(popup));
+
+		// a panel too small for the Settings window and a popup that cannot shrink: kept inside the display
+		{
+			f = MakeFrame(true, 700.0f, 400.0f, 300.0f, 200.0f);
+			r = hostlogic::Frame(a_oar, &f, s, a_base, a_end, kTitle);
+			OarFrame(a_oar);
+			Check(r.fail.empty() && Inside(settingsWin, 700.0f, 400.0f, 300.0f, 200.0f),
+				  "a resizable window in a small panel is shrunk into it: " + Rect(settingsWin));
+		}
+
+		// hosting ends: the main window goes back, the others stay inside the display
+		f = MakeFrame(false, 0, 0, 0, 0);
+		r = hostlogic::Frame(a_oar, &f, s, a_base, a_end, kTitle);
+		OarFrame(a_oar);
+		Check(r.fail.empty() && Inside(settingsWin, 0.0f, 0.0f, 1920.0f, 1080.0f), "hosting ended: OAR's Settings window stays inside the display");
+
+		// FAIL CLOSED: another window's position is not a number
+		{
+			hostlogic::State s5;
+			OarFrame(a_oar);
+			settingsWin->Pos.x = std::nanf("");
+			AMF_HostFrame g = MakeFrame(true, px, py, pw, ph);
+			r = hostlogic::Frame(a_oar, &g, s5, a_base, a_end, kTitle);
+			Check(!r.fail.empty(), "another OAR window with a position that is not a number: fails closed (" + r.fail + ")");
+			settingsWin->Pos = ImVec2(700.0f, 400.0f);
+		}
+		{
+			ImGuiContext* other = ImGui::GetCurrentContext();
+			ImGui::SetCurrentContext(a_oar);
+			ImGui::GetIO().MousePos = ImVec2(-FLT_MAX, -FLT_MAX);
+			ImGui::SetCurrentContext(other);
+		}
+		g_settings = false;
 	}
 }
 
@@ -240,6 +408,8 @@ int main()
 
 	ImGui::SetCurrentContext(other);
 	ThreadChecks(oar, base, end);
+	ImGui::SetCurrentContext(other);
+	OtherWindowChecks(oar, base, end);
 
 	ImGui::DestroyContext(oar);
 	ImGui::DestroyContext(other);

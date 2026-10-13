@@ -14,6 +14,7 @@
 #include <imgui.h>
 #include <imgui_internal.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -33,6 +34,7 @@ namespace hostlogic
 		bool rectWarned = false;
 		int lastOpen = -2;
 		std::uint32_t lastThread = 0;   // the render thread AMF named last call (only for the "moved" log line)
+		std::vector<std::string> keptLogged;   // OAR's other windows already logged as kept inside, this hosting session
 	};
 
 	struct Result
@@ -43,6 +45,61 @@ namespace hostlogic
 	};
 
 	inline bool Finite(const ImVec2& a_v) { return std::isfinite(a_v.x) && std::isfinite(a_v.y); }
+
+	// One axis of a window of a_size kept inside [a_min, a_min + a_room]; one larger than the room starts at its near edge.
+	inline float KeepAxis(float a_pos, float a_size, float a_min, float a_room)
+	{
+		if (a_size >= a_room) { return a_min; }
+		return std::clamp(a_pos, a_min, a_min + a_room - a_size);
+	}
+
+	inline bool Fits(const ImVec2& a_size, const ImVec2& a_room) { return a_size.x <= a_room.x + 0.5f && a_size.y <= a_room.y + 0.5f; }
+
+	// 3b. OAR'S OTHER WINDOWS (2.2.0). OAR's own Settings window (its "Settings >" button), and any other top-level window,
+	// popup or menu it opens, opened where OAR put it - over AMF's frame and partly off screen (v6 run). While hosting, each
+	// one that showed in OAR's last frame is moved inside AMF's panel; one that cannot fit there is kept inside the display.
+	// Never hidden. A plain resizable window larger than the panel is shrunk to it (it scrolls, as ImGui windows do); a popup,
+	// a menu or a self-sizing window is never resized. Child windows move with their parent, and tooltips are left to ImGui,
+	// which places each one inside the display itself every frame. The same fail-closed rule as the main window: a window
+	// whose position or size is not a finite number stops hosting for the session (the returned reason; empty = fine).
+	inline std::string KeepOthersInside(ImGuiContext* a_ctx, ImGuiWindow* a_main, const ImVec2& a_panelPos, const ImVec2& a_panelSize,
+										const ImVec2& a_display, State& a_s, Result& a_r)
+	{
+		for (ImGuiWindow* w : a_ctx->Windows)
+		{
+			if (!w || w == a_main || !w->Active || w->Hidden || w->IsFallbackWindow) { continue; }
+			if ((w->Flags & (ImGuiWindowFlags_ChildWindow | ImGuiWindowFlags_Tooltip)) != 0) { continue; }
+			const char* name = w->Name ? w->Name : "";
+			if (!Finite(w->Pos) || !Finite(w->SizeFull))
+			{
+				return std::format("OAR's window \"{}\" has a position or size that is not a number", name);
+			}
+			const bool popup = (w->Flags & (ImGuiWindowFlags_Popup | ImGuiWindowFlags_ChildMenu)) != 0;
+			const bool selfSizing = (w->Flags & (ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoResize)) != 0;
+			ImVec2 size = w->SizeFull;
+			bool resize = false;
+			if (!popup && !selfSizing && !Fits(size, a_panelSize))
+			{
+				size = ImVec2(std::min(size.x, a_panelSize.x), std::min(size.y, a_panelSize.y));
+				resize = true;
+			}
+			const bool inPanel = Fits(size, a_panelSize);
+			const ImVec2 roomPos = inPanel ? a_panelPos : ImVec2(0.0f, 0.0f);
+			const ImVec2 room = inPanel ? a_panelSize : a_display;
+			const ImVec2 pos(KeepAxis(w->Pos.x, size.x, roomPos.x, room.x), KeepAxis(w->Pos.y, size.y, roomPos.y, room.y));
+			if (!resize && pos.x == w->Pos.x && pos.y == w->Pos.y) { continue; }
+			if (std::find(a_s.keptLogged.begin(), a_s.keptLogged.end(), name) == a_s.keptLogged.end())
+			{
+				a_s.keptLogged.emplace_back(name);
+				a_r.info.push_back(std::format("hosting: OAR's window \"{}\" at ({}, {}) {} x {} - kept inside {} at ({}, {}) {} x {}", name, w->Pos.x,
+											   w->Pos.y, w->SizeFull.x, w->SizeFull.y, inPanel ? "AMF's page" : "the display", pos.x, pos.y,
+											   size.x, size.y));
+			}
+			if (resize) { ImGui::SetWindowSize(w, size, 0); }
+			ImGui::SetWindowPos(w, pos, 0);
+		}
+		return {};
+	}
 
 	// 4a. THE THREAD (v6). AMF calls the bridge only from inside its present hook and names, in the frame record, the thread
 	// that hook is running on this frame. The call must be on exactly that thread. v5 pinned the FIRST caller's thread
@@ -148,12 +205,25 @@ namespace hostlogic
 				ImGui::SetWindowPos(window, ImVec2(a_f->x, a_f->y), 0);
 				ImGui::SetWindowSize(window, ImVec2(a_f->w, a_f->h), 0);
 				a_f->placed = 1;
+				// 3b. its other windows (Settings, popups) inside the panel too, once OAR has drawn a frame to read them from
+				if (drew)
+				{
+					const std::string why = KeepOthersInside(a_ctx, window, ImVec2(a_f->x, a_f->y), ImVec2(a_f->w, a_f->h), display, a_s, r);
+					if (!why.empty())
+					{
+						ImGui::SetCurrentContext(previous);
+						r.fail = why;
+						return r;
+					}
+				}
 			}
 		}
 		else if (!a_f->hosting && a_s.saved)
 		{
-			// hosting ended: OAR's window goes back where its player had it
+			// hosting ended: OAR's window goes back where its player had it (its other windows stay where they were kept -
+			// inside the display)
 			a_s.saved = false;
+			a_s.keptLogged.clear();
 			if (window && Finite(a_s.savedPos) && Finite(a_s.savedSize))
 			{
 				ImGui::SetWindowPos(window, a_s.savedPos, 0);

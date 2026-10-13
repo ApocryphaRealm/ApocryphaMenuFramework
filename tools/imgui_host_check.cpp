@@ -119,6 +119,33 @@ int main(int argc, char** argv)
 		t.Push(std::nanf(""));
 		Check(t.Count() == FrameTimes::kFrames, "a negative or NaN time is dropped");
 	}
+	// ---- 2.2.0: the corner graph's place and line (drawn on the foreground list, so it shows over AMF's own window) ----
+	{
+		const float dw = 1920.0f, dh = 1080.0f, w = 300.0f, h = 120.0f, pad = 10.0f;
+		const auto tl = CornerPlace(0, dw, dh, w, h, pad);
+		const auto tr = CornerPlace(1, dw, dh, w, h, pad);
+		const auto bl = CornerPlace(2, dw, dh, w, h, pad);
+		const auto br = CornerPlace(3, dw, dh, w, h, pad);
+		Check(tl.x == pad && tl.y == pad, "corner 0: top left, the gap from both edges");
+		Check(tr.x + w == dw - pad && tr.y == pad, "corner 1: top right");
+		Check(bl.x == pad && bl.y + h == dh - pad, "corner 2: bottom left");
+		Check(br.x + w == dw - pad && br.y + h == dh - pad, "corner 3: bottom right (the default)");
+		const auto low = CornerPlace(-4, dw, dh, w, h, pad);
+		const auto high = CornerPlace(9, dw, dh, w, h, pad);
+		Check(low.x == tl.x && low.y == tl.y && high.x == br.x && high.y == br.y, "a corner outside 0-3 is clamped (as the page's dropdown does)");
+		const auto huge = CornerPlace(3, 200.0f, 100.0f, w, h, pad);
+		Check(huge.x == 0.0f && huge.y == 0.0f, "a graph larger than the screen starts at its top-left edge, never off it");
+
+		const float vals[4] = { 10.0f, 20.0f, 40.0f, 0.0f };
+		float xs[4] = {}, ys[4] = {};
+		GraphPoints(vals, 4, 100.0f, 50.0f, 300.0f, 60.0f, 20.0f, xs, ys);
+		Check(xs[0] == 100.0f && xs[3] == 400.0f, "the line runs from the plot's left edge (oldest) to its right edge (newest)");
+		Check(ys[0] == 80.0f && ys[1] == 50.0f, "half the scale sits mid-plot, the top of the scale at its top edge");
+		Check(ys[2] == 50.0f && ys[3] == 110.0f, "a frame slower than the scale is held at the top edge; 0 ms sits on the bottom");
+		bool inside = true;
+		for (int i = 0; i < 4; ++i) { inside = inside && xs[i] >= 100.0f && xs[i] <= 400.0f && ys[i] >= 50.0f && ys[i] <= 110.0f; }
+		Check(inside, "every point lies inside the plot rectangle");
+	}
 
 	// ---- the real files ----
 	if (argc > 1)
