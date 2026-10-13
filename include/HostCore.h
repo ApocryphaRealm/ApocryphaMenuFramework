@@ -129,6 +129,9 @@ namespace hostcore
 			::WideCharToMultiByte(CP_UTF8, 0, buf, n, out.data(), len, nullptr, nullptr);
 			return out;
 		}
+		// F13-F24 have no name in most layouts' tables (AMF's held keys use them): named from their virtual key
+		const UINT vk = ::MapVirtualKeyW((a_dik & 0x7F) | ((a_dik & 0x80) ? 0xE000u : 0u), MAPVK_VSC_TO_VK_EX);
+		if (vk >= VK_F13 && vk <= VK_F24) { return "F" + std::to_string(13 + vk - VK_F13); }
 		char hex[16];
 		std::snprintf(hex, sizeof(hex), "0x%02X", a_dik);
 		return hex;
@@ -462,5 +465,210 @@ namespace hostcore
 		}
 		c.key.keys.push_back(dik);
 		return c;
+	}
+
+	// ---- "AMF HOLDS THIS KEY" (2.2.0; the owner, 2026-10-12: "make it so those menus' hotkey is activated from within AMF, so
+	// AMF calls them and no hotkey is needed - using AMF will free up hotkeys") ----------------------------------------------
+	// With the switch on, AMF writes a key no keyboard has (F13-F17, a different one per mod) into the mod's OWN config, in
+	// place of its menu key, and its Open button presses that key; the player's real key is then free. Only that one value
+	// changes: the edit is a byte span replaced inside the file's text, so the encoding, a byte-order mark, the line endings,
+	// comments and every other line stay exactly as they were. The file as it was is kept once as <file>.amf-key-backup, and
+	// turning the switch off writes the original value back from it. Readers that take a DirectInput scan code (Open Animation
+	// Replacer, IED, and Community Shaders, which reads the game's own key events) get F13-F15 - the only keys above F12 that
+	// DirectInput names; the readers of a virtual key (OptiScaler, ENB) get F16 and F17.
+	struct Span
+	{
+		bool found = false;
+		std::size_t begin = 0, end = 0;   // the value's bytes in the text: [begin, end)
+	};
+
+	// The value of [section] key in an INI's text: after '=', without the spaces around it, and before a ';' or '//' comment
+	// on the same line. The first such line wins (as the readers above take it).
+	inline Span IniValueSpan(const std::string& a_text, const std::string& a_section, const std::string& a_key)
+	{
+		Span s;
+		const std::string wantSection = Lower(a_section), wantKey = Lower(a_key);
+		std::string section;
+		std::size_t pos = 0;
+		while (pos < a_text.size())
+		{
+			std::size_t eol = a_text.find('\n', pos);
+			if (eol == std::string::npos) { eol = a_text.size(); }
+			std::size_t lineEnd = eol;
+			if (lineEnd > pos && a_text[lineEnd - 1] == '\r') { --lineEnd; }
+			std::size_t b = pos;
+			if (b == 0 && a_text.size() >= 3 && static_cast<unsigned char>(a_text[0]) == 0xEF && static_cast<unsigned char>(a_text[1]) == 0xBB &&
+				static_cast<unsigned char>(a_text[2]) == 0xBF)
+			{
+				b = 3;
+			}
+			while (b < lineEnd && (a_text[b] == ' ' || a_text[b] == '\t')) { ++b; }
+			if (b < lineEnd && a_text[b] == '[')
+			{
+				const std::size_t close = a_text.find(']', b);
+				section = Lower(Trim(a_text.substr(b + 1, (close == std::string::npos || close > lineEnd ? lineEnd : close) - b - 1)));
+			}
+			else if (b < lineEnd && a_text[b] != ';' && a_text[b] != '#' && a_text[b] != '/' && section == wantSection)
+			{
+				const std::size_t eq = a_text.find('=', b);
+				if (eq != std::string::npos && eq < lineEnd && Lower(Trim(a_text.substr(b, eq - b))) == wantKey)
+				{
+					std::size_t vb = eq + 1;
+					std::size_t ve = lineEnd;
+					const std::size_t sc = a_text.find(';', vb);
+					if (sc != std::string::npos && sc < ve) { ve = sc; }
+					const std::size_t sl = a_text.find("//", vb);
+					if (sl != std::string::npos && sl < ve) { ve = sl; }
+					while (vb < ve && (a_text[vb] == ' ' || a_text[vb] == '\t')) { ++vb; }
+					while (ve > vb && (a_text[ve - 1] == ' ' || a_text[ve - 1] == '\t')) { --ve; }
+					s.found = true;
+					s.begin = vb;
+					s.end = ve;
+					return s;
+				}
+			}
+			pos = eol + 1;
+		}
+		return s;
+	}
+
+	// Community Shaders' menu key: the value of "ToggleKey" directly inside the top-level "Menu" object of its settings JSON
+	// (a number, or an array of numbers for a combination) - not "CSEditorToggleKey" or any other key that ends the same way.
+	inline Span JsonMenuToggleKeySpan(const std::string& a_text)
+	{
+		Span s;
+		// walk the text once, tracking strings and depth; remember the depth at which "Menu": { opened
+		int depth = 0, menuDepth = -1;
+		std::string lastString;
+		bool lastWasKey = false;
+		for (std::size_t i = 0; i < a_text.size(); ++i)
+		{
+			const char c = a_text[i];
+			if (c == '"')
+			{
+				std::size_t j = i + 1;
+				std::string str;
+				while (j < a_text.size() && a_text[j] != '"')
+				{
+					if (a_text[j] == '\\' && j + 1 < a_text.size()) { str += a_text[j + 1]; j += 2; continue; }
+					str += a_text[j++];
+				}
+				std::size_t k = j + 1;
+				while (k < a_text.size() && std::isspace(static_cast<unsigned char>(a_text[k]))) { ++k; }
+				lastWasKey = k < a_text.size() && a_text[k] == ':';
+				lastString = str;
+				if (lastWasKey && menuDepth >= 0 && depth == menuDepth + 1 && str == "ToggleKey")
+				{
+					std::size_t vb = k + 1;
+					while (vb < a_text.size() && std::isspace(static_cast<unsigned char>(a_text[vb]))) { ++vb; }
+					std::size_t ve = vb;
+					if (vb < a_text.size() && a_text[vb] == '[')
+					{
+						ve = a_text.find(']', vb);
+						if (ve == std::string::npos) { return s; }
+						++ve;
+					}
+					else
+					{
+						while (ve < a_text.size() && (std::isdigit(static_cast<unsigned char>(a_text[ve])) || a_text[ve] == '-')) { ++ve; }
+					}
+					if (ve == vb) { return s; }
+					s.found = true;
+					s.begin = vb;
+					s.end = ve;
+					return s;
+				}
+				i = j;
+				continue;
+			}
+			if (c == '{' || c == '[')
+			{
+				if (c == '{' && lastWasKey && depth == 1 && lastString == "Menu" && menuDepth < 0) { menuDepth = depth; }
+				++depth;
+				lastWasKey = false;
+			}
+			else if (c == '}' || c == ']')
+			{
+				--depth;
+				if (menuDepth >= 0 && depth == menuDepth) { menuDepth = -2; }   // left "Menu": nothing more to find
+			}
+			else if (c == ',')
+			{
+				lastWasKey = false;
+			}
+		}
+		return s;
+	}
+
+	// A number written the way the old value was: "0x.." hex when the old one was hex or was not a number at all ("auto"),
+	// else decimal; quotes round the old value are kept.
+	inline std::string FormatLike(const std::string& a_old, std::uint32_t a_n)
+	{
+		std::string inner = a_old;
+		std::string q;
+		if (inner.size() >= 2 && (inner.front() == '"' || inner.front() == '\'') && inner.back() == inner.front())
+		{
+			q = std::string(1, inner.front());
+			inner = inner.substr(1, inner.size() - 2);
+		}
+		long long dummy = 0;
+		const bool hex = Lower(Trim(inner)).rfind("0x", 0) == 0 || !ParseInt(inner, dummy);
+		char buf[32];
+		if (hex) { std::snprintf(buf, sizeof(buf), "0x%02X", a_n); }
+		else { std::snprintf(buf, sizeof(buf), "%u", a_n); }
+		return q + buf + q;
+	}
+
+	enum class ConfigKind
+	{
+		kIni,
+		kCsJson
+	};
+
+	struct HoldSpec
+	{
+		ConfigKind kind = ConfigKind::kIni;
+		std::string section, key;   // INI: where the menu key is (ENB: KeyEditor, or KeyShowEditor in an older file)
+		std::uint32_t value = 0;    // the number written: a DIK for OAR and IED, a virtual key for the others
+		std::uint32_t dik = 0;      // the scan code that value is, as the readers above give it back
+		const char* name = "";      // "F13"
+	};
+
+	inline Span HoldSpan(const std::string& a_text, const HoldSpec& a_h)
+	{
+		return a_h.kind == ConfigKind::kCsJson ? JsonMenuToggleKeySpan(a_text) : IniValueSpan(a_text, a_h.section, a_h.key);
+	}
+
+	inline std::string WithSpan(const std::string& a_text, const Span& a_s, const std::string& a_value)
+	{
+		return a_text.substr(0, a_s.begin) + a_value + a_text.substr(a_s.end);
+	}
+
+	inline bool IsUtf16(const std::string& a_raw)
+	{
+		return a_raw.size() >= 2 && ((static_cast<unsigned char>(a_raw[0]) == 0xFF && static_cast<unsigned char>(a_raw[1]) == 0xFE) ||
+									 (static_cast<unsigned char>(a_raw[0]) == 0xFE && static_cast<unsigned char>(a_raw[1]) == 0xFF));
+	}
+
+	// The held text: the menu key's value replaced by AMF's key. False (with why) when the file has no such value to change.
+	inline bool HoldText(const std::string& a_raw, const HoldSpec& a_h, std::string& a_out, std::string& a_why)
+	{
+		if (IsUtf16(a_raw)) { a_why = "the file is UTF-16 text"; return false; }
+		const Span s = HoldSpan(a_raw, a_h);
+		if (!s.found) { a_why = a_h.kind == ConfigKind::kCsJson ? std::string("no Menu.ToggleKey") : "no [" + a_h.section + "] " + a_h.key + " line"; return false; }
+		const std::string old = a_raw.substr(s.begin, s.end - s.begin);
+		a_out = WithSpan(a_raw, s, a_h.kind == ConfigKind::kCsJson ? std::to_string(a_h.value) : FormatLike(old, a_h.value));
+		return true;
+	}
+
+	// The restored text: the menu key's value put back as the backup has it. False (with why) when either file lacks it.
+	inline bool RestoreText(const std::string& a_raw, const std::string& a_backup, const HoldSpec& a_h, std::string& a_out, std::string& a_why)
+	{
+		if (IsUtf16(a_raw) || IsUtf16(a_backup)) { a_why = "UTF-16 text"; return false; }
+		const Span now = HoldSpan(a_raw, a_h);
+		const Span was = HoldSpan(a_backup, a_h);
+		if (!now.found || !was.found) { a_why = !was.found ? "the backup has no menu key" : "the file has no menu key now"; return false; }
+		a_out = WithSpan(a_raw, now, a_backup.substr(was.begin, was.end - was.begin));
+		return true;
 	}
 }

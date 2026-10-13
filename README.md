@@ -36,6 +36,13 @@ Licence: GPL-3.0-or-later (see `LICENSE` and `NOTICE.md`). Not a fork: contains 
 - **INI files as pages.** Every `.ini` directly in `Data\SKSE\Plugins` and in `Data` gets a page "<name> (INI)" (a tab
   per section, a control per key) unless its mod has a page of its own; a change writes only that value, keeping a
   `.amf-backup` of the file. Each page has its own switch under Settings -> Converted menus -> INI.
+- **Other menus.** Open Animation Replacer, Community Shaders, Immersive Equipment Displays, OptiScaler and ENB get a
+  row under Framework -> Other menus with a button that opens their own menu; AMF closes as it does, and a mod's own key
+  pressed while AMF is open closes AMF too. "AMF holds this key" (off by default, per mod) writes a key no keyboard has
+  (F13-F17) into that mod's own config, with `<config>.amf-key-backup` kept, so its menu opens from AMF and its real key
+  is free; turning it off writes the original back. Takes effect next launch. ENB is found from its files only.
+- **Nothing while loading.** Until the main menu has opened, and while any loading screen is up, AMF does not open, takes
+  no input and queues no SKSE task; if it is open when a load starts, it closes.
 - **Converted menus.** Mod Function Menu entries run in AMF itself (Settings -> Converted menus -> MFM):
   Mod Function Menu is not needed, and mods that list it as a requirement only need their own files. If it is
   installed as well, it takes the key first: on F1 (both menus' default) only Mod Function Menu opens - uninstall it, or

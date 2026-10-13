@@ -21,8 +21,16 @@
 // Live hosting of another mod's menu inside AMF's page (AMF-Host-OAR) and the Performance page were taken out of 2.2.0 by
 // the owner's decision of 2026-10-12; that work is kept on the repository's imgui-hosting branch.
 //
+// AMF HOLDS THIS KEY (the owner, 2026-10-12: "make it so those menus' hotkey is activated from within AMF, so AMF calls them
+// and no hotkey is needed - using AMF will free up hotkeys"). A switch on each row that presses a key (all but OAR 3.2.1+,
+// which is opened through its API): on, AMF writes a key no keyboard has (F13-F17, one per mod - HostCore.h) into the mod's
+// OWN config in place of its menu key, keeping the file as it was once as <config>.amf-key-backup, and Open presses that
+// key; off writes the original value back from the backup. Off by default: it changes another mod's file, so it is the
+// player's choice. The switch shows what the config says; a mod reads its config at start-up, so until the next launch
+// AMF keeps pressing (and watching) the key the mod started with.
+//
 // Settings > Converted menus > ImGui menus: one switch per mod ([ImGuiMenus] b<Mod>).
-// DevBench amf.menu op=imgui: do = list (default) | open {id} | close {id}; ids oar, cs, ied, optiscaler, enb.
+// DevBench amf.menu op=imgui: do = list (default) | open {id} | close {id} | hold {id, on}; ids oar, cs, ied, optiscaler, enb.
 // Nothing here acts while the loading guard holds (LoadGuard.h).
 // ============================================================================================
 

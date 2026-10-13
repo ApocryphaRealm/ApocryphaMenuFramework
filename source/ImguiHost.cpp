@@ -20,7 +20,9 @@
 #include <array>
 #include <atomic>
 #include <filesystem>
+#include <fstream>
 #include <memory>
+#include <sstream>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -58,7 +60,46 @@ namespace imguihost
 			int state = -1;              // -1 not known, 0 closed, 1 open
 			int presses = 0;
 			std::string lastOutcome;
+			// "AMF holds this key" (HostCore.h): the mod's config file, and what the switch can do with it
+			std::wstring configPath;
+			bool holdApplies = false;    // the row has the switch (not OAR with its V3 API: no key is involved there)
+			bool holdAvailable = false;  // the file has a menu key AMF can change
+			std::string holdWhy;         // why not, when it applies and is not available
+			bool held = false;           // the config's key is AMF's key now
+			std::optional<hostcore::KeyCombo> pending;   // changed this session: the key the mod still uses until next launch
 		};
+
+		// AMF's key per mod: F13-F15 for the readers of a DirectInput scan code (OAR, Community Shaders - it reads the game's
+		// own key events - and IED), F16 / F17 for the readers of a virtual key (OptiScaler, ENB). Community Shaders' own
+		// defaults already take F15 (CSEditorToggleKey 126), F23 and F24, so it gets F14.
+		hostcore::HoldSpec HoldFor(int a_id, const std::string& a_configText)
+		{
+			hostcore::HoldSpec h;
+			switch (a_id)
+			{
+			case kOar: h = { hostcore::ConfigKind::kIni, "UI", "uToggleUIKey", 0x64, 0x64, "F13" }; break;
+			case kCs: h = { hostcore::ConfigKind::kCsJson, "", "", VK_F14, hostcore::VkToDik(VK_F14), "F14" }; break;
+			case kIed: h = { hostcore::ConfigKind::kIni, "GUI", "ToggleKeys", 0x66, 0x66, "F15" }; break;
+			case kOpti: h = { hostcore::ConfigKind::kIni, "Menu", "ShortcutKey", VK_F16, hostcore::VkToDik(VK_F16), "F16" }; break;
+			case kEnb:
+				h = { hostcore::ConfigKind::kIni, "INPUT", "KeyEditor", VK_F17, hostcore::VkToDik(VK_F17), "F17" };
+				if (!hostcore::IniValueSpan(a_configText, "INPUT", "KeyEditor").found) { h.key = "KeyShowEditor"; }   // an older enblocal.ini
+				break;
+			default: break;
+			}
+			return h;
+		}
+
+		bool SameKeys(const hostcore::KeyCombo& a_a, const hostcore::KeyCombo& a_b) { return a_a.keys == a_b.keys; }
+
+		std::string ReadRaw(const std::wstring& a_path)
+		{
+			std::ifstream f(a_path, std::ios::binary);
+			if (!f) { return std::string(); }
+			std::ostringstream ss;
+			ss << f.rdbuf();
+			return ss.str();
+		}
 
 		std::mutex g_lock;   // guards the targets (the render thread draws and acts, DevBench lists)
 		std::array<Target, kCount> g_targets;
@@ -100,6 +141,7 @@ namespace imguihost
 		bool g_oarSeenOpen = false;
 		int g_reopenDeadline = 0;
 		int g_pageDrawnFrame = -100;   // the last frame DrawPage ran, to refresh the keys when the page is opened
+		std::array<std::string, kCount> g_holdError;   // the last "AMF holds this key" write that failed, per row (render thread)
 
 		bool SwitchOn(int a_id)
 		{
@@ -228,6 +270,7 @@ namespace imguihost
 					const auto c = hostcore::ParseOarIni(hostcore::ReadFileText(L"Data/SKSE/Plugins/OpenAnimationReplacer.ini"));
 					t.key = c.key;
 					t.keyFrom = "OpenAnimationReplacer.ini";
+					t.configPath = L"Data/SKSE/Plugins/OpenAnimationReplacer.ini";
 					// v6: what OAR really has this session wins over what its INI says now (it reads the INI only at start-up)
 					OAR_API::UI::IUIInterface2* ui = g_oarV3 ? static_cast<OAR_API::UI::IUIInterface2*>(g_oarV3) : g_oarV2;
 					int session = -1;
@@ -261,6 +304,7 @@ namespace imguihost
 					t.key = c.key;
 					t.keyFrom = c.source == "ui" ? "IED\\Settings.json" : (c.source == "ini" ? "ImmersiveEquipmentDisplays.ini" : "IED's default");
 					t.keyOpensOnly = true;
+					t.configPath = L"Data/SKSE/Plugins/ImmersiveEquipmentDisplays.ini";
 					t.blocked = c.enabled ? std::string() : std::string(TR("AMF_ImguiIedUiOff", "Its menu is switched off in "
 						"ImmersiveEquipmentDisplays.ini ([GUI] Enabled = false)."));
 				}
@@ -284,6 +328,7 @@ namespace imguihost
 					t.key = k;
 					t.keyFrom = from;
 					t.blocked.clear();
+					t.configPath = L"Data/SKSE/Plugins/CommunityShaders/SettingsUser.json";
 				}
 			}
 			{
@@ -296,6 +341,7 @@ namespace imguihost
 					const auto c = hostcore::ParseOptiScalerIni(hostcore::ReadFileText(ini.wstring()));
 					t.key = c.key;
 					t.keyFrom = "OptiScaler.ini";
+					t.configPath = ini.wstring();
 					t.blocked = c.hasKey ? std::string() : std::string(TR("AMF_ImguiNoKey", "It has no key to open its menu "
 						"(ShortcutKey = -1 in OptiScaler.ini), so it cannot be opened from here."));
 				}
@@ -307,6 +353,7 @@ namespace imguihost
 					const auto c = hostcore::ParseEnbLocal(hostcore::ReadFileText(g_enbIni));
 					t.key = c.key;
 					t.keyFrom = "enblocal.ini";
+					t.configPath = g_enbIni;
 					if (!c.editorOn)
 					{
 						char line[320];
@@ -322,6 +369,97 @@ namespace imguihost
 					else { t.blocked.clear(); }
 				}
 			}
+			// "AMF holds this key": where the switch applies, whether the file has a key it can change, and whether it holds it now
+			for (int i = 0; i < kCount; ++i)
+			{
+				Target& t = g_targets[i];
+				t.holdApplies = t.loaded && !(i == kOar && g_oarV3);
+				t.holdAvailable = false;
+				t.holdWhy.clear();
+				t.held = false;
+				if (!t.holdApplies) { continue; }
+				const std::string raw = ReadRaw(t.configPath);
+				const hostcore::HoldSpec h = HoldFor(i, raw);
+				t.held = !t.key.Empty() && t.key.keys.back() == h.dik;
+				const std::string file = Narrow(std::filesystem::path(t.configPath).filename().wstring());
+				if (i == kIed && t.keyFrom == "IED\\Settings.json")
+				{
+					t.holdWhy = TR("AMF_HoldIedUi", "AMF cannot hold its key: it is set in IED's own menu, which wins over its INI file.");
+				}
+				else if (raw.empty() || hostcore::IsUtf16(raw) || !hostcore::HoldSpan(raw, h).found)
+				{
+					char line[320];
+					std::snprintf(line, sizeof(line), TR("AMF_HoldNoValue", "AMF cannot hold its key: %s has no menu key to change (%s)."),
+								  file.c_str(), h.kind == hostcore::ConfigKind::kCsJson ? "Menu.ToggleKey" : ("[" + h.section + "] " + h.key).c_str());
+					t.holdWhy = line;
+				}
+				else { t.holdAvailable = t.blocked.empty() || t.held; }
+				// back where it started this session (switched on and off again): nothing is pending any more
+				if (t.pending && SameKeys(*t.pending, t.key)) { t.pending.reset(); }
+			}
+		}
+
+		// The key AMF presses for a mod, and watches for: what the mod read when the game started. A mod reads its config only
+		// then, so after the switch changed it this session, the old key is still the live one until the next launch.
+		hostcore::KeyCombo LiveKey(const Target& a_t) { return a_t.pending ? *a_t.pending : a_t.key; }
+
+		// The switch: write AMF's key into the mod's own config (on), or the original back from the backup (off). Render thread
+		// (the page's switch, DevBench's do=hold). "" when done, else why not.
+		std::string HoldKey(int a_id, bool a_on)
+		{
+			if (a_id < 0 || a_id >= kCount) { return "unknown id"; }
+			if (loadguard::Blocked()) { return "the game is loading or not at its main menu"; }
+			std::scoped_lock l(g_lock);
+			RefreshKeys();
+			Target& t = g_targets[a_id];
+			if (!t.holdApplies) { return "the switch does not apply to this mod"; }
+			if (a_on == t.held) { return std::string(); }
+			if (a_on && !t.holdAvailable) { return t.holdWhy.empty() ? t.blocked : t.holdWhy; }
+			namespace fs = std::filesystem;
+			const fs::path path(t.configPath);
+			const fs::path backup(t.configPath + L".amf-key-backup");
+			const std::string raw = ReadRaw(t.configPath);
+			const hostcore::HoldSpec h = HoldFor(a_id, raw);
+			std::string text, why;
+			std::error_code ec;
+			if (a_on)
+			{
+				if (!hostcore::HoldText(raw, h, text, why)) { return why; }
+				// the file as it was, kept once (an older backup is never replaced: it holds the player's own key)
+				if (!fs::exists(backup, ec))
+				{
+					fs::copy_file(path, backup, ec);
+					if (ec) { return "could not keep a backup (" + ec.message() + ")"; }
+					logger::info("imgui: {} - {} kept as {} before AMF holds its key", kNames[a_id], Narrow(path.wstring()), Narrow(backup.wstring()));
+				}
+			}
+			else
+			{
+				const std::string saved = ReadRaw(backup.wstring());
+				if (saved.empty()) { return "no backup to restore from (" + Narrow(backup.wstring()) + ")"; }
+				if (!hostcore::RestoreText(raw, saved, h, text, why)) { return why; }
+			}
+			const fs::path tmp(t.configPath + L".amf-tmp");
+			{
+				std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+				if (!out.is_open()) { return "could not write " + Narrow(tmp.wstring()); }
+				out << text;
+				out.flush();
+				if (!out.good()) { return "the write to " + Narrow(tmp.wstring()) + " failed"; }
+			}
+			fs::rename(tmp, path, ec);
+			if (ec)
+			{
+				fs::remove(tmp, ec);
+				return "could not replace " + Narrow(path.wstring());
+			}
+			if (!t.pending) { t.pending = LiveKey(t); }   // the key the mod keeps until the next launch
+			const hostcore::KeyCombo before = t.key;
+			RefreshKeys();
+			logger::info("imgui: {} - AMF {} its menu key in {}: {} -> {} (takes effect next launch; until then {})", kNames[a_id],
+						 a_on ? "holds" : "gives back", Narrow(path.wstring()), hostcore::ComboName(before), hostcore::ComboName(t.key),
+						 t.pending ? hostcore::ComboName(*t.pending) : hostcore::ComboName(t.key));
+			return std::string();
 		}
 
 		bool GameIsForeground()
@@ -413,7 +551,7 @@ namespace imguihost
 				if (!t.loaded) { return "not loaded"; }
 				if (!t.blocked.empty()) { return t.blocked; }
 				++t.presses;
-				combo = t.key;
+				combo = LiveKey(t);
 			}
 			const bool useApi = a_id == kOar && g_oarV3;
 			if (!useApi)
@@ -489,7 +627,7 @@ namespace imguihost
 				std::scoped_lock l(g_lock);
 				for (int i = 0; i < kCount; ++i)
 				{
-					keys[i] = g_targets[i].key;
+					keys[i] = LiveKey(g_targets[i]);
 					usable[i] = g_targets[i].loaded && g_targets[i].blocked.empty() && SwitchOn(i);
 				}
 			}
@@ -605,6 +743,11 @@ namespace imguihost
 			"again with its key."));
 		ImGui::TextUnformatted(TR("AMF_OtherMenusOwnKey", "A mod's own key pressed while this menu is open closes this menu too, so "
 			"that mod's menu is shown alone."));
+		ImGui::TextUnformatted(TR("AMF_HoldHelp", "AMF holds this key (off until you turn it on, for each mod): AMF writes a key no "
+			"keyboard has (F13 to F17) into that mod's own config file in place of its menu key - only that value changes, and the "
+			"file as it was is kept once as .amf-key-backup beside it - and Open presses that key, so the mod's own key is free for "
+			"anything else. Turning it off writes the original key back. Mods read their config when the game starts, so a change "
+			"takes effect next launch."));
 		ImGui::PopTextWrapPos();
 		ImGui::PopStyleColor();
 		ImGui::Spacing();
@@ -616,6 +759,8 @@ namespace imguihost
 		}
 		int action = -1;
 		bool open = true;
+		int holdAction = -1;
+		bool holdOn = false;
 		for (int i = 0; i < kCount; ++i)
 		{
 			const Target& t = targets[i];
@@ -625,7 +770,7 @@ namespace imguihost
 			ImGui::TextUnformatted(kNames[i]);
 			ImGui::SameLine();
 			ImGui::TextDisabled(TR("AMF_ImguiState", "- %s"), StateText(t.state));
-			const std::string keyName = hostcore::ComboName(t.key);
+			const std::string keyName = hostcore::ComboName(LiveKey(t));
 			// a row that cannot act is inert AND looks it (2.2.0, v6 run: OAR's Open / Close with its UI switched off read as white,
 			// like the live buttons): the theme's disabled text colour on top of ImGui's disabled fade, as for an MFM entry that
 			// cannot run (MfmPages.cpp)
@@ -662,12 +807,40 @@ namespace imguihost
 			}
 			ImGui::PopTextWrapPos();
 			ImGui::PopStyleColor();
+			// "AMF holds this key" - the switch shows what the mod's config says now, and changes only that
+			if (t.holdApplies)
+			{
+				bool on = t.held;
+				const bool can = t.holdAvailable || t.held;
+				if (!can) { ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled)); }
+				ImGui::BeginDisabled(!can);
+				if (widgets::Toggle(TR("AMF_HoldKey", "AMF holds this key"), &on)) { holdAction = i; holdOn = on; }
+				renderer::NoteHoveredItem();
+				ImGui::EndDisabled();
+				if (!can) { ImGui::PopStyleColor(); }
+				ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
+				ImGui::PushTextWrapPos(0.0f);
+				const std::string configKey = hostcore::ComboName(t.key);
+				if (t.held) { ImGui::Text(TR("AMF_HeldBy", "Held by AMF (%s) - open it from here; its own key is free."), configKey.c_str()); }
+				else { ImGui::Text(TR("AMF_UsesOwnKey", "Uses its own key: %s."), configKey.c_str()); }
+				if (t.pending) { ImGui::Text(TR("AMF_HoldNextLaunch", "Takes effect next launch - until then its menu still opens on %s."), keyName.c_str()); }
+				if (!t.holdWhy.empty()) { ImGui::TextUnformatted(t.holdWhy.c_str()); }
+				if (!g_holdError[i].empty()) { ImGui::Text(TR("AMF_HoldWriteFailed", "The change was not written: %s"), g_holdError[i].c_str()); }
+				ImGui::PopTextWrapPos();
+				ImGui::PopStyleColor();
+			}
 			ImGui::PopID();
 		}
 		if (action >= 0)
 		{
 			const std::string why = Act(action, open);
 			if (!why.empty()) { logger::info("imgui: {} - not {}: {}", kNames[action], open ? "opened" : "closed", why); }
+		}
+		if (holdAction >= 0)
+		{
+			g_holdError[holdAction] = HoldKey(holdAction, holdOn);
+			logger::info("settings page: AMF holds {}'s key -> {}{}", kNames[holdAction], holdOn,
+						 g_holdError[holdAction].empty() ? std::string() : " - not written: " + g_holdError[holdAction]);
 		}
 	}
 
@@ -787,7 +960,13 @@ namespace imguihost
 					   J(Narrow(t.modulePath)) + ",\"method\":\"" + (i == kOar && g_oarV3 ? "api" : "key") + "\",\"key\":" +
 					   J(hostcore::ComboName(t.key)) + ",\"dik\":[" + keys + "],\"keyFrom\":" + J(t.keyFrom) + ",\"keyOpensOnly\":" +
 					   (t.keyOpensOnly ? "true" : "false") + ",\"blocked\":" + J(t.blocked) + ",\"state\":" + std::to_string(t.state) +
-					   ",\"presses\":" + std::to_string(t.presses) + ",\"lastOutcome\":" + J(t.lastOutcome) + "}";
+					   ",\"presses\":" + std::to_string(t.presses) + ",\"lastOutcome\":" + J(t.lastOutcome) +
+					   ",\"hold\":{\"applies\":" + (t.holdApplies ? "true" : "false") + ",\"available\":" + (t.holdAvailable ? "true" : "false") +
+					   ",\"held\":" + (t.held ? "true" : "false") + ",\"amfKey\":" + J(t.holdApplies ? HoldFor(i, ReadRaw(t.configPath)).name : "") +
+					   ",\"configKey\":" + J(hostcore::ComboName(t.key)) + ",\"liveKey\":" + J(hostcore::ComboName(LiveKey(t))) +
+					   ",\"pending\":" + (t.pending ? "true" : "false") + ",\"why\":" + J(t.holdWhy) + ",\"config\":" + J(Narrow(t.configPath)) +
+					   ",\"backup\":" + (!t.configPath.empty() && std::filesystem::exists(std::filesystem::path(t.configPath + L".amf-key-backup")) ? "true" : "false") +
+					   "}}";
 			}
 			return std::string("{\"ok\":true,\"op\":\"imgui\",\"do\":\"list\",\"oarApiV3\":") + (g_oarV3 ? "true" : "false") +
 				   ",\"loadGuard\":" + (loadguard::Blocked() ? "true" : "false") + ",\"targets\":[" + out + "]}";
@@ -815,6 +994,29 @@ namespace imguihost
 			return std::string("{\"ok\":") + (why->empty() ? "true" : "false") + ",\"op\":\"imgui\",\"do\":\"" + what + "\",\"id\":\"" + kIds[idx] +
 				   "\"" + (why->empty() ? std::string(",\"note\":\"started - the press runs over the next frames; read do=list\"") : ",\"error\":" + J(*why)) + "}";
 		}
-		return "{\"ok\":false,\"op\":\"imgui\",\"error\":\"do = list | open {id} | close {id}\"}";
+		if (what == "hold")
+		{
+			// "AMF holds this key" as the row's switch: {"do":"hold","id":"optiscaler","on":true|false}
+			const std::string id = str("id");
+			int idx = -1;
+			for (int i = 0; i < kCount; ++i)
+			{
+				if (id == kIds[i]) { idx = i; }
+			}
+			if (idx < 0) { return "{\"ok\":false,\"op\":\"imgui\",\"error\":\"id = oar | cs | ied | optiscaler | enb\"}"; }
+			const bool on = args.is_object() && args.contains("on") && ((args["on"].is_boolean() && args["on"].get<bool>()) ||
+																		  (args["on"].is_number() && args["on"].get<double>() != 0.0));
+			auto why = std::make_shared<std::string>();
+			auto done = std::make_shared<std::atomic<bool>>(false);
+			const bool ran = renderer::RunOnRenderThreadWait([idx, on, why, done]() {
+				*why = HoldKey(idx, on);
+				g_holdError[idx] = *why;
+				done->store(true);
+			}, 5000);
+			if (!ran || !done->load()) { return "{\"ok\":false,\"op\":\"imgui\",\"error\":\"no frame took the call within 5 s (is the game drawing?)\"}"; }
+			return std::string("{\"ok\":") + (why->empty() ? "true" : "false") + ",\"op\":\"imgui\",\"do\":\"hold\",\"id\":\"" + kIds[idx] +
+				   "\",\"on\":" + (on ? "true" : "false") + (why->empty() ? std::string(",\"note\":\"written - takes effect next launch; read do=list\"") : ",\"error\":" + J(*why)) + "}";
+		}
+		return "{\"ok\":false,\"op\":\"imgui\",\"error\":\"do = list | open {id} | close {id} | hold {id, on}\"}";
 	}
 }

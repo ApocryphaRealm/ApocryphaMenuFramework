@@ -127,6 +127,67 @@ int main(int argc, char** argv)
 		Check(!HasEnbMarker("Microsoft Windows Operating System Direct3D 11 Runtime"), "Windows' own d3d11.dll is not ENB");
 	}
 
+	// ---- 2.2.0: "AMF holds this key" - each format rewritten and restored, only the one value changing ----
+	{
+		// a hold, then a restore from the backup: the value is AMF's key, the parser reads it back, every other byte is the
+		// same, and the restore gives back the original file exactly
+		auto roundTrip = [](const std::string& a_name, const std::string& a_file, const HoldSpec& a_h, const std::string& a_expectValue,
+							auto a_parse) {
+			std::string held, why;
+			const bool ok = HoldText(a_file, a_h, held, why);
+			Check(ok, a_name + ": held (" + why + ")");
+			if (!ok) { return; }
+			const Span s = HoldSpan(held, a_h);
+			Check(s.found && held.substr(s.begin, s.end - s.begin) == a_expectValue,
+				  a_name + ": the value written is " + a_expectValue + ", got " + (s.found ? held.substr(s.begin, s.end - s.begin) : std::string("nothing")));
+			const Span o = HoldSpan(a_file, a_h);
+			Check(held.substr(0, o.begin) == a_file.substr(0, o.begin) && held.substr(s.end) == a_file.substr(o.end),
+				  a_name + ": every byte before and after the value is unchanged (encoding, BOM, line endings, comments)");
+			const KeyCombo k = a_parse(held.rfind("\xEF\xBB\xBF", 0) == 0 ? held.substr(3) : held);   // as ReadFileText gives it
+			Check(!k.Empty() && k.keys.back() == a_h.dik, a_name + ": its own reader now reads AMF's key " + a_h.name + ", got " + Keys(k));
+			std::string back;
+			Check(RestoreText(held, a_file, a_h, back, why) && back == a_file, a_name + ": restored from the backup, the file equals the backup");
+		};
+		const HoldSpec oar{ ConfigKind::kIni, "UI", "uToggleUIKey", 0x64, 0x64, "F13" };
+		const HoldSpec cs{ ConfigKind::kCsJson, "", "", VK_F14, VkToDik(VK_F14), "F14" };
+		const HoldSpec ied{ ConfigKind::kIni, "GUI", "ToggleKeys", 0x66, 0x66, "F15" };
+		const HoldSpec opti{ ConfigKind::kIni, "Menu", "ShortcutKey", VK_F16, VkToDik(VK_F16), "F16" };
+		const HoldSpec enb{ ConfigKind::kIni, "INPUT", "KeyEditor", VK_F17, VkToDik(VK_F17), "F17" };
+		const std::string bom = "\xEF\xBB\xBF";
+		roundTrip("OAR INI (UTF-8 BOM, CRLF)", bom + "[General]\r\nbEnableUI = true\r\n\r\n[UI]\r\nbEnableUI = true\r\nuToggleUIKey = 24\r\nuToggleUIKeyShift = 1\r\n",
+				  oar, "100", [](const std::string& a) { return ParseOarIni(a).key; });
+		roundTrip("IED INI (LF, # comments, hex)", "[GUI]\n# ToggleKeys=0x0E\n#\nToggleKeys=0x0E\n\n## Override keys configured via UI\nOverrideToggleKeys=false\n",
+				  ied, "0x66", [](const std::string& a) { return ParseIedConfig(a, "").key; });
+		roundTrip("IED INI with a combo", "[GUI]\r\nToggleKeys=0x2A+0x0E\r\n", ied, "0x66", [](const std::string& a) { return ParseIedConfig(a, "").key; });
+		roundTrip("OptiScaler INI (auto, BOM, CRLF)", bom + "[Menu]\r\n; -1 -> No shortcut key\r\nShortcutKey=auto\r\n\r\n[Spoofing]\r\nShortcutKey=0x08\r\n",
+				  opti, "0x7F", [](const std::string& a) { return ParseOptiScalerIni(a).key; });
+		roundTrip("OptiScaler INI (decimal)", "[Menu]\nShortcutKey=116\n", opti, "127", [](const std::string& a) { return ParseOptiScalerIni(a).key; });
+		roundTrip("ENB enblocal.ini (// comments)", "[INPUT]\r\n//shift\r\nKeyCombination=16\r\n//enter\r\nKeyEditor=13\r\n//insert\r\nKeyFPSLimit=36\r\n",
+				  enb, "128", [](const std::string& a) { return ParseEnbLocal(a).key; });
+		const std::string csJson =
+			"{\n    \"Menu\": {\n        \"AutoHideFeatureList\": false,\n        \"CSEditorToggleKey\": 126,\n        \"EffectToggleKey\": 135,\n"
+			"        \"Position\": [\n            10.0,\n            10.0\n        ],\n        \"ToggleKey\": 116,\n        \"UseResolutionFont\": true\n    },\n"
+			"    \"Performance Overlay\": {\n        \"ToggleKey\": 999\n    }\n}\n";
+		roundTrip("Community Shaders SettingsUser.json", csJson, cs, "125", [](const std::string& a) { return ParseCsSettings(a); });
+		{
+			const Span s = JsonMenuToggleKeySpan(csJson);
+			Check(s.found && csJson.substr(s.begin, s.end - s.begin) == "116", "CS: Menu.ToggleKey, not CSEditorToggleKey or another object's ToggleKey");
+			const std::string arr = "{\"Menu\":{\"ToggleKey\":[16,116]}}";
+			const Span a = JsonMenuToggleKeySpan(arr);
+			Check(a.found && arr.substr(a.begin, a.end - a.begin) == "[16,116]", "CS: a combination (an array) is the value as a whole");
+			Check(!JsonMenuToggleKeySpan("{\"Other\":{\"ToggleKey\":116}}").found, "CS: a ToggleKey outside Menu is not taken");
+		}
+		std::string out, why;
+		Check(!HoldText("[UI]\nbEnableUI=true\n", oar, out, why) && why.find("uToggleUIKey") != std::string::npos,
+			  "a file with no menu key line is not held, and says which key is missing");
+		Check(!HoldText(std::string("\xFF\xFE[\0U\0", 6), oar, out, why), "a UTF-16 file is never rewritten");
+		Check(FormatLike("\"0x0E\"", 0x66) == "\"0x66\"" && FormatLike("24", 100) == "100" && FormatLike("auto", 0x7F) == "0x7F",
+			  "the new value is written the way the old one was (quotes, hex, decimal; a word becomes hex)");
+		Check(VkToDik(VK_F13) == 0x64 && VkToDik(VK_F14) == 0x65 && VkToDik(VK_F15) == 0x66, "F13-F15 are DirectInput's 0x64-0x66 (the keys a scan-code reader can see)");
+		Check(VkToDik(VK_F16) != 0 && VkToDik(VK_F17) != 0, "F16 and F17 have scan codes to send for the virtual-key readers");
+		Check(DikName(0x64) == "F13", "F13 shows by its name, got " + DikName(0x64));
+	}
+
 	// ---- the real files ----
 	if (argc > 1)
 	{
@@ -157,6 +218,29 @@ int main(int argc, char** argv)
 		{
 			const auto c = ParseOptiScalerIni(opti);
 			Check(c.hasKey && Keys(c.key) == "D2" && c.raw == "auto", "real: OptiScaler 0.9.4's OptiScaler.ini - auto = Insert");
+		}
+		// "AMF holds this key" on the real files, in memory only (nothing on disk is written): held, read back, restored byte-exact
+		const auto realHold = [](const std::string& a_name, const std::string& a_file, const HoldSpec& a_h, auto a_parse) {
+			if (a_file.empty()) { return; }
+			std::string held, back, why;
+			const bool ok = HoldText(a_file, a_h, held, why);
+			const KeyCombo k = ok ? a_parse(held) : KeyCombo{};
+			Check(ok && !k.Empty() && k.keys.back() == a_h.dik && RestoreText(held, a_file, a_h, back, why) && back == a_file &&
+					  held.size() + 8 > a_file.size() && held.size() < a_file.size() + 8,
+				  "real hold: " + a_name + " - " + a_h.name + " written and read back, restore equals the file (" + why + ")");
+		};
+		realHold("OAR No-Main-Menu INI", oarIni, HoldSpec{ ConfigKind::kIni, "UI", "uToggleUIKey", 0x64, 0x64, "F13" },
+				 [](const std::string& a) { return ParseOarIni(a).key; });
+		realHold("IED's shipped INI", iedIni, HoldSpec{ ConfigKind::kIni, "GUI", "ToggleKeys", 0x66, 0x66, "F15" },
+				 [](const std::string& a) { return ParseIedConfig(a, "").key; });
+		realHold("IED Key Override's INI", ovr, HoldSpec{ ConfigKind::kIni, "GUI", "ToggleKeys", 0x66, 0x66, "F15" },
+				 [](const std::string& a) { return ParseIedConfig(a, "").key; });
+		realHold("OptiScaler 0.9.4's INI", opti, HoldSpec{ ConfigKind::kIni, "Menu", "ShortcutKey", VK_F16, VkToDik(VK_F16), "F16" },
+				 [](const std::string& a) { return ParseOptiScalerIni(a).key; });
+		if (!over.empty())
+		{
+			realHold("Community Shaders SettingsUser.json", ReadFileText((over / "SKSE/Plugins/CommunityShaders/SettingsUser.json").wstring()),
+					 HoldSpec{ ConfigKind::kCsJson, "", "", VK_F14, VkToDik(VK_F14), "F14" }, [](const std::string& a) { return ParseCsSettings(a); });
 		}
 	}
 
