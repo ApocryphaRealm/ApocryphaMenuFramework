@@ -4,6 +4,7 @@
 // With the folders, the real installed configs are read too (Open Animation Replacer, IED, Community Shaders, OptiScaler).
 // Prints one line per check and "imgui_host_check: N of N passed"; exits 1 on any failure.
 #include "../include/HostCore.h"
+#include "../include/GameKeysCore.h"
 
 #include <filesystem>
 #include <iostream>
@@ -29,6 +30,83 @@ namespace
 			out += (out.empty() ? "" : "+") + std::string(b);
 		}
 		return out;
+	}
+	// "AMF holds this key" specs as ImguiHost.cpp's BaseSpec builds them, and one with a key chosen
+	hostcore::HoldSpec OarSpec(std::vector<std::uint32_t> a_ownMods)
+	{
+		hostcore::HoldSpec h;
+		h.kind = hostcore::ConfigKind::kIni;
+		h.section = "UI";
+		h.key = "uToggleUIKey";
+		h.code = hostcore::KeyCode::kDik;
+		h.path = hostcore::InputPath::kGameEvents;
+		h.fixedMods = std::move(a_ownMods);
+		return h;
+	}
+	hostcore::HoldSpec CsSpec()
+	{
+		hostcore::HoldSpec h;
+		h.kind = hostcore::ConfigKind::kCsJson;
+		h.code = hostcore::KeyCode::kVk;
+		h.path = hostcore::InputPath::kGameEvents;
+		h.combos = true;
+		return h;
+	}
+	hostcore::HoldSpec IedSpec()
+	{
+		hostcore::HoldSpec h;
+		h.kind = hostcore::ConfigKind::kIni;
+		h.section = "GUI";
+		h.key = "ToggleKeys";
+		h.code = hostcore::KeyCode::kDik;
+		h.path = hostcore::InputPath::kGameEvents;
+		h.combos = true;
+		return h;
+	}
+	hostcore::HoldSpec OptiSpec()
+	{
+		hostcore::HoldSpec h;
+		h.kind = hostcore::ConfigKind::kIni;
+		h.section = "Menu";
+		h.key = "ShortcutKey";
+		h.code = hostcore::KeyCode::kVk;
+		h.path = hostcore::InputPath::kWin32;
+		return h;
+	}
+	hostcore::HoldSpec EnbSpec(std::vector<std::uint32_t> a_ownMods)
+	{
+		hostcore::HoldSpec h;
+		h.kind = hostcore::ConfigKind::kIni;
+		h.section = "INPUT";
+		h.key = "KeyEditor";
+		h.code = hostcore::KeyCode::kVk;
+		h.path = hostcore::InputPath::kWin32;
+		h.fixedMods = std::move(a_ownMods);
+		return h;
+	}
+	const hostcore::FKey kF13{ VK_F13, 0x64 }, kF14{ VK_F14, 0x65 }, kF15{ VK_F15, 0x66 }, kF16{ VK_F16, 0x67 }, kF17{ VK_F17, 0x68 };
+	hostcore::HoldSpec Chosen(hostcore::HoldSpec a_h, std::vector<std::uint32_t> a_mods, const hostcore::FKey& a_f)
+	{
+		a_h.assigned = true;
+		a_h.fkey = a_f;
+		a_h.combo.keys = std::move(a_mods);
+		a_h.combo.keys.push_back(a_f.dik);
+		return a_h;
+	}
+	hostcore::HoldInput Input(bool a_loaded, const hostcore::KeyCombo& a_current, bool a_backup, const hostcore::HoldSpec& a_spec)
+	{
+		hostcore::HoldInput in;
+		in.loaded = a_loaded;
+		in.applies = a_loaded;
+		in.current = a_current;
+		in.backup = a_backup;
+		in.spec = a_spec;
+		return in;
+	}
+	std::string csJsonForClash()
+	{
+		return "{\n    \"Menu\": {\n        \"AutoHideFeatureList\": false,\n        \"CSEditorToggleKey\": 126,\n        \"EffectToggleKey\": 135,\n"
+			   "        \"ToggleKey\": 116\n    },\n    \"Performance Overlay\": {\n        \"ToggleKey\": 999\n    }\n}\n";
 	}
 }
 
@@ -126,7 +204,6 @@ int main(int argc, char** argv)
 			  "the ENBSeries marker is found in a version string and in file bytes (any case)");
 		Check(!HasEnbMarker("Microsoft Windows Operating System Direct3D 11 Runtime"), "Windows' own d3d11.dll is not ENB");
 	}
-
 	// ---- 2.2.0: "AMF holds this key" - each format rewritten and restored, only the one value changing ----
 	{
 		// a hold, then a restore from the backup: the value is AMF's key, the parser reads it back, every other byte is the
@@ -144,15 +221,15 @@ int main(int argc, char** argv)
 			Check(held.substr(0, o.begin) == a_file.substr(0, o.begin) && held.substr(s.end) == a_file.substr(o.end),
 				  a_name + ": every byte before and after the value is unchanged (encoding, BOM, line endings, comments)");
 			const KeyCombo k = a_parse(held.rfind("\xEF\xBB\xBF", 0) == 0 ? held.substr(3) : held);   // as ReadFileText gives it
-			Check(!k.Empty() && k.keys.back() == a_h.dik, a_name + ": its own reader now reads AMF's key " + a_h.name + ", got " + Keys(k));
+			Check(!k.Empty() && k.keys.back() == a_h.fkey.dik, a_name + ": its own reader now reads AMF's key " + ComboName(a_h.combo) + ", got " + Keys(k));
 			std::string back;
 			Check(RestoreText(held, a_file, a_h, back, why) && back == a_file, a_name + ": restored from the backup, the file equals the backup");
 		};
-		const HoldSpec oar{ ConfigKind::kIni, "UI", "uToggleUIKey", 0x64, 0x64, "F13" };
-		const HoldSpec cs{ ConfigKind::kCsJson, "", "", VK_F14, VkToDik(VK_F14), "F14" };
-		const HoldSpec ied{ ConfigKind::kIni, "GUI", "ToggleKeys", 0x66, 0x66, "F15" };
-		const HoldSpec opti{ ConfigKind::kIni, "Menu", "ShortcutKey", VK_F16, VkToDik(VK_F16), "F16" };
-		const HoldSpec enb{ ConfigKind::kIni, "INPUT", "KeyEditor", VK_F17, VkToDik(VK_F17), "F17" };
+		const HoldSpec oar = Chosen(OarSpec({ 0x2A }), { 0x2A }, kF13);
+		const HoldSpec cs = Chosen(CsSpec(), {}, kF14);
+		const HoldSpec ied = Chosen(IedSpec(), {}, kF15);
+		const HoldSpec opti = Chosen(OptiSpec(), {}, kF16);
+		const HoldSpec enb = Chosen(EnbSpec({ 0x2A }), { 0x2A }, kF17);
 		const std::string bom = "\xEF\xBB\xBF";
 		roundTrip("OAR INI (UTF-8 BOM, CRLF)", bom + "[General]\r\nbEnableUI = true\r\n\r\n[UI]\r\nbEnableUI = true\r\nuToggleUIKey = 24\r\nuToggleUIKeyShift = 1\r\n",
 				  oar, "100", [](const std::string& a) { return ParseOarIni(a).key; });
@@ -169,6 +246,22 @@ int main(int argc, char** argv)
 			"        \"Position\": [\n            10.0,\n            10.0\n        ],\n        \"ToggleKey\": 116,\n        \"UseResolutionFont\": true\n    },\n"
 			"    \"Performance Overlay\": {\n        \"ToggleKey\": 999\n    }\n}\n";
 		roundTrip("Community Shaders SettingsUser.json", csJson, cs, "125", [](const std::string& a) { return ParseCsSettings(a); });
+		// a modifier AMF chose goes in as the config's own combination form, and the mod's own reader reads the whole combo back
+		{
+			const HoldSpec iedCtrl = Chosen(IedSpec(), { 0x1D }, kF13);
+			std::string held, why;
+			Check(HoldText("[GUI]\r\nToggleKeys=0x44\r\n", iedCtrl, held, why) && held == "[GUI]\r\nToggleKeys=0x1D+0x64\r\n" &&
+					  Keys(ParseIedConfig(held, "").key) == "1D+64",
+				  "IED given Ctrl + F13: written as 0x1D+0x64, read back as Ctrl + F13 - got " + Keys(ParseIedConfig(held, "").key));
+			const HoldSpec csCtrl = Chosen(CsSpec(), { 0x1D }, kF13);
+			Check(HoldText(csJson, csCtrl, held, why) && Keys(ParseCsSettings(held)) == "1D+64",
+				  "Community Shaders given Ctrl + F13: written as [17,124], read back as Ctrl + F13 - got " + Keys(ParseCsSettings(held)));
+			const HoldSpec oarShift = Chosen(OarSpec({ 0x2A }), { 0x2A }, kF13);
+			Check(HoldText("[UI]\nuToggleUIKey = 24\nuToggleUIKeyShift = 1\n", oarShift, held, why) && Keys(ParseOarIni(held).key) == "2A+64",
+				  "OAR keeps its own Shift: only uToggleUIKey is written, read back as Shift + F13");
+			HoldSpec none = IedSpec();
+			Check(!HoldText("[GUI]\nToggleKeys=0x44\n", none, held, why), "no key chosen (none free): nothing is written");
+		}
 		{
 			const Span s = JsonMenuToggleKeySpan(csJson);
 			Check(s.found && csJson.substr(s.begin, s.end - s.begin) == "116", "CS: Menu.ToggleKey, not CSEditorToggleKey or another object's ToggleKey");
@@ -184,8 +277,167 @@ int main(int argc, char** argv)
 		Check(FormatLike("\"0x0E\"", 0x66) == "\"0x66\"" && FormatLike("24", 100) == "100" && FormatLike("auto", 0x7F) == "0x7F",
 			  "the new value is written the way the old one was (quotes, hex, decimal; a word becomes hex)");
 		Check(VkToDik(VK_F13) == 0x64 && VkToDik(VK_F14) == 0x65 && VkToDik(VK_F15) == 0x66, "F13-F15 are DirectInput's 0x64-0x66 (the keys a scan-code reader can see)");
-		Check(VkToDik(VK_F16) != 0 && VkToDik(VK_F17) != 0, "F16 and F17 have scan codes to send for the virtual-key readers");
+		bool fkeysMatch = true;
+		for (const auto& f : HeldKeys(InputPath::kWin32)) { fkeysMatch = fkeysMatch && VkToDik(f.vk) == f.dik; }
+		Check(fkeysMatch, "F16-F24: the scan code AMF records for each is the one Windows maps its virtual key to");
 		Check(DikName(0x64) == "F13", "F13 shows by its name, got " + DikName(0x64));
+	}
+
+	// ---- 2.2.0 held-key fix: which input each target reads (the final in-game test, 2026-10-12) ----
+	{
+		Check(TargetPath("oar") == InputPath::kGameEvents && TargetPath("cs") == InputPath::kGameEvents && TargetPath("ied") == InputPath::kGameEvents,
+			  "OAR, Community Shaders and IED read the game's own input events (AMF presses their keys into the game's event list)");
+		Check(TargetPath("optiscaler") == InputPath::kWin32 && TargetPath("enb") == InputPath::kWin32,
+			  "OptiScaler and ENB read Windows keys (they keep SendInput)");
+		bool gameKeys = HeldKeys(InputPath::kGameEvents).size() == 3;
+		for (const auto& f : HeldKeys(InputPath::kGameEvents)) { gameKeys = gameKeys && f.dik >= 0x64 && f.dik <= 0x66; }
+		Check(gameKeys, "a game-events target is only ever given F13-F15 (the only keys above F12 DirectInput names)");
+		bool winKeys = !HeldKeys(InputPath::kWin32).empty();
+		for (const auto& f : HeldKeys(InputPath::kWin32)) { winKeys = winKeys && f.vk >= VK_F16 && f.vk <= VK_F24; }
+		Check(winKeys, "a Windows-keys target is given F16-F24");
+	}
+
+	// ---- 2.2.0 held-key fix: the game-key injector's sequencing (GameKeysCore.h) ----
+	{
+		using gamekeys::KeyEvent;
+		using gamekeys::VirtualKeys;
+		const auto show = [](const std::vector<KeyEvent>& a_e) {
+			std::string s;
+			char b[48];
+			for (const auto& e : a_e)
+			{
+				std::snprintf(b, sizeof(b), "%02X:%s", e.dik, e.value == 0.0f ? "up" : (e.heldSecs == 0.0f ? "down" : "held"));
+				s += (s.empty() ? "" : " ") + std::string(b);
+			}
+			return s.empty() ? std::string("-") : s;
+		};
+		VirtualKeys v;
+		Check(v.Idle() && v.Poll(0.0).empty(), "nothing asked: idle, no events (the game's list goes on untouched)");
+		// Shift + F13 as ImguiHost's steps ask for it, one step per frame (modifiers down, key down, -, key up, modifiers up)
+		v.Down(0x2A);
+		const auto p0 = v.Poll(1.000);
+		v.Down(0x64);
+		const auto p1 = v.Poll(1.016);
+		const auto p2 = v.Poll(1.033);
+		v.Up(0x64);
+		const auto p3 = v.Poll(1.050);
+		v.Up(0x2A);
+		const auto p4 = v.Poll(1.066);
+		const auto p5 = v.Poll(1.083);
+		Check(show(p0) == "2A:down", "Shift + F13, dispatch 1: Shift down - got " + show(p0));
+		Check(show(p1) == "2A:held 64:down", "dispatch 2: Shift held, F13 down - got " + show(p1));
+		Check(show(p2) == "2A:held 64:held", "dispatch 3: both held - got " + show(p2));
+		Check(show(p3) == "2A:held 64:up", "dispatch 4: Shift held, F13 released - got " + show(p3));
+		Check(show(p4) == "2A:up", "dispatch 5: Shift released - got " + show(p4));
+		Check(p5.empty() && v.Idle(), "dispatch 6: nothing left down, idle again");
+		Check(!p1.empty() && p1[0].heldSecs > 0.0f && p3.size() == 2 && p3[1].heldSecs > 0.03f && p3[1].value == 0.0f,
+			  "held repeats and the release carry how long the key has been down");
+		// a press and its release asked for before one dispatch still give a dispatch with the key down
+		VirtualKeys q;
+		q.Down(0x65);
+		q.Up(0x65);
+		const auto a = q.Poll(2.0), b = q.Poll(2.016), c = q.Poll(2.033);
+		Check(show(a) == "65:down" && show(b) == "65:up" && c.empty(), "down and up asked together: down on one dispatch, up on the next - got " +
+																	   show(a) + " / " + show(b));
+		VirtualKeys r;
+		r.Up(0x66);
+		Check(r.Poll(3.0).empty() && r.Idle(), "a release for a key that is not down sends nothing");
+		r.Down(0x66);
+		r.Poll(3.1);
+		r.ReleaseAll();
+		Check(show(r.Poll(3.2)) == "66:up" && r.Idle(), "ReleaseAll lets go of every key down on the next dispatch");
+	}
+
+	// ---- 2.2.0 held-key fix: clash avoidance (F15 is Community Shaders' CS Editor key in Njordlinger) ----
+	{
+		const auto combo = [](std::initializer_list<std::uint32_t> a_k) { KeyCombo c; c.keys = a_k; return c; };
+		Check(Clashes(combo({ 0x64 }), combo({ 0x2A, 0x64 })), "F13 and Shift + F13 clash (a mod bound to plain F13 opens on Shift + F13 too)");
+		Check(!Clashes(combo({ 0x2A, 0x64 }), combo({ 0x1D, 0x64 })), "Shift + F13 and Ctrl + F13 do not clash");
+		Check(Clashes(combo({ 0x2A, 0x64 }), combo({ 0x36, 0x64 })), "right Shift counts as Shift");
+		Check(Clashes(combo({ 0x2A, 0x64 }), combo({ 0x2A, 0x1D, 0x64 })), "Shift + F13 and Ctrl + Shift + F13 clash (the first opens on the second)");
+		Check(!Clashes(combo({ 0x64 }), combo({ 0x65 })), "different keys do not clash");
+		const auto csOthers = CsOtherKeys(csJsonForClash());
+		bool hasEditor = false, hasMenuKey = false;
+		for (const auto& k : csOthers)
+		{
+			hasEditor = hasEditor || Keys(k) == "66";
+			hasMenuKey = hasMenuKey || Keys(k) == "3F";
+		}
+		Check(hasEditor && !hasMenuKey, "Community Shaders' other keys: CSEditorToggleKey (F15) counted, its menu key (Menu.ToggleKey) left to the assignment");
+		const auto enbOthers = EnbOtherKeys("[INPUT]\nKeyCombination=16\nKeyUseCombination=true\nKeyEditor=13\nKeyFPSLimit=36\nKeyScreenshot=44\n");
+		Check(enbOthers.size() == 2, "ENB's other keys: KeyFPSLimit and KeyScreenshot, not the editor key or the combination settings - got " +
+										 std::to_string(enbOthers.size()));
+		Check(OptiOtherKeys("[Menu]\nShortcutKey=0x2D\nFpsShortcutKey=0x21\n").size() == 1, "OptiScaler's other keys: FpsShortcutKey, not ShortcutKey");
+
+		// Njordlinger as the 2026-10-12 test had it: OAR Shift+O, Community Shaders F5 with CS Editor on F15, IED F10, OptiScaler
+		// Insert, no ENB - nothing held yet
+		std::vector<HoldInput> in(5);
+		in[0] = Input(true, combo({ 0x2A, 0x18 }), false, OarSpec({ 0x2A }));
+		in[1] = Input(true, combo({ 0x3F }), false, CsSpec());
+		in[2] = Input(true, combo({ 0x44 }), false, IedSpec());
+		in[3] = Input(true, combo({ 0xD2 }), false, OptiSpec());
+		in[4] = HoldInput{};   // ENB not loaded
+		const auto out = AssignHeldKeys(in, csOthers);
+		Check(out[0].spec.assigned && Keys(out[0].spec.combo) == "2A+64", "OAR (keeps its own Shift) is given Shift + F13 - got " + Keys(out[0].spec.combo));
+		Check(out[1].spec.assigned && Keys(out[1].spec.combo) == "65", "Community Shaders is given F14 (plain F13 would clash with OAR's Shift + F13) - got " +
+																		   Keys(out[1].spec.combo));
+		Check(out[2].spec.assigned && out[2].spec.combo.keys.back() != 0x66, "IED is NOT given F15 (Community Shaders' CS Editor key) - got " + Keys(out[2].spec.combo));
+		Check(out[2].spec.assigned && Keys(out[2].spec.combo) == "1D+64", "IED is given Ctrl + F13 (F13-F15 alone and with Shift are all taken) - got " +
+																			  Keys(out[2].spec.combo));
+		Check(out[3].spec.assigned && Keys(out[3].spec.combo) == "67", "OptiScaler is given F16 - got " + Keys(out[3].spec.combo));
+		bool apart = true;
+		for (std::size_t i = 0; i < out.size(); ++i)
+		{
+			for (std::size_t j = i + 1; j < out.size(); ++j)
+			{
+				if (out[i].spec.assigned && out[j].spec.assigned) { apart = apart && !Clashes(out[i].spec.combo, out[j].spec.combo); }
+			}
+			for (const auto& o : csOthers)
+			{
+				if (out[i].spec.assigned) { apart = apart && !Clashes(out[i].spec.combo, o); }
+			}
+		}
+		Check(apart, "no key given clashes with another given key or with any key bound in the configs");
+		// none free: F13-F15 all bound plain elsewhere
+		const std::vector<KeyCombo> allTaken = { combo({ 0x64 }), combo({ 0x65 }), combo({ 0x66 }) };
+		const auto none = AssignHeldKeys(in, allTaken);
+		Check(!none[0].spec.assigned && !none[1].spec.assigned && !none[2].spec.assigned,
+			  "F13, F14 and F15 all bound plain in the configs: no game-events target is given a key (the switch is unavailable, with the reason)");
+		Check(none[3].spec.assigned, "...while OptiScaler still gets F16");
+		// a held target keeps its key, and the others go round it
+		std::vector<HoldInput> heldIn = in;
+		heldIn[1] = Input(true, combo({ 0x64 }), true, CsSpec());   // Community Shaders already on F13, its backup beside it
+		const auto h = AssignHeldKeys(heldIn, csOthers);
+		Check(h[1].held && Keys(h[1].spec.combo) == "64", "a held target keeps the key its config carries (F13)");
+		Check(Keys(h[0].spec.combo) != "2A+64" && h[0].spec.assigned, "OAR then goes round it - got " + Keys(h[0].spec.combo));
+		// ENB keeps its own Shift: Shift + F16 would clash with OptiScaler's F16, so it is given Shift + F17
+		std::vector<HoldInput> w = in;
+		w[4] = Input(true, combo({ 0x2A, 0x1C }), false, EnbSpec({ 0x2A }));
+		const auto we = AssignHeldKeys(w, csOthers);
+		Check(Keys(we[4].spec.combo) == "2A+68", "ENB (its own Shift) is given Shift + F17, apart from OptiScaler's F16 - got " + Keys(we[4].spec.combo));
+		// a target that cannot be held (its menu off, no key line) takes no key from the others
+		std::vector<HoldInput> blocked = in;
+		blocked[0].eligible = false;
+		const auto b = AssignHeldKeys(blocked, csOthers);
+		Check(!b[0].spec.assigned && Keys(b[1].spec.combo) == "64", "a target that cannot be held takes no key: Community Shaders then gets F13");
+	}
+
+	// ---- 2.2.0 held-key fix: a mod manager that puts the file back at launch (Root Builder, OptiScaler, 2026-10-12) ----
+	{
+		const auto combo = [](std::initializer_list<std::uint32_t> a_k) { KeyCombo c; c.keys = a_k; return c; };
+		std::vector<HoldInput> in(1);
+		in[0] = Input(true, combo({ 0xD2 }), true, OptiSpec());   // backup beside it, but the file says Insert again
+		auto o = AssignHeldKeys(in, {});
+		Check(o[0].restored && !o[0].held, "backup beside OptiScaler.ini, but the file is back on Insert: restored (the switch is unavailable, with the reason)");
+		in[0] = Input(true, combo({ 0x67 }), true, OptiSpec());   // backup, file on F16
+		o = AssignHeldKeys(in, {});
+		Check(o[0].held && !o[0].restored && Keys(o[0].spec.combo) == "67", "backup beside it and the file on F16: held");
+		in[0] = Input(true, combo({ 0xD2 }), false, OptiSpec());   // no backup, its own key: switched off (off removes the backup)
+		o = AssignHeldKeys(in, {});
+		Check(!o[0].held && !o[0].restored && o[0].spec.assigned, "no backup and its own key: simply off, the switch available");
+		in[0] = Input(true, combo({ 0x67 }), false, OptiSpec());   // F16 but no backup (deleted by hand)
+		o = AssignHeldKeys(in, {});
+		Check(!o[0].held && !o[0].restored, "AMF's key with no backup: not counted as held (nothing to restore from)");
 	}
 
 	// ---- the real files ----
@@ -225,22 +477,62 @@ int main(int argc, char** argv)
 			std::string held, back, why;
 			const bool ok = HoldText(a_file, a_h, held, why);
 			const KeyCombo k = ok ? a_parse(held) : KeyCombo{};
-			Check(ok && !k.Empty() && k.keys.back() == a_h.dik && RestoreText(held, a_file, a_h, back, why) && back == a_file &&
+			Check(ok && !k.Empty() && k.keys == a_h.combo.keys && RestoreText(held, a_file, a_h, back, why) && back == a_file &&
 					  held.size() + 8 > a_file.size() && held.size() < a_file.size() + 8,
-				  "real hold: " + a_name + " - " + a_h.name + " written and read back, restore equals the file (" + why + ")");
+				  "real hold: " + a_name + " - " + ComboName(a_h.combo) + " written and read back, restore equals the file (" + why + ")");
 		};
-		realHold("OAR No-Main-Menu INI", oarIni, HoldSpec{ ConfigKind::kIni, "UI", "uToggleUIKey", 0x64, 0x64, "F13" },
+		realHold("OAR No-Main-Menu INI", oarIni, Chosen(OarSpec({ 0x2A }), { 0x2A }, kF13),
 				 [](const std::string& a) { return ParseOarIni(a).key; });
-		realHold("IED's shipped INI", iedIni, HoldSpec{ ConfigKind::kIni, "GUI", "ToggleKeys", 0x66, 0x66, "F15" },
+		realHold("IED's shipped INI", iedIni, Chosen(IedSpec(), { 0x1D }, kF13),
 				 [](const std::string& a) { return ParseIedConfig(a, "").key; });
-		realHold("IED Key Override's INI", ovr, HoldSpec{ ConfigKind::kIni, "GUI", "ToggleKeys", 0x66, 0x66, "F15" },
+		realHold("IED Key Override's INI", ovr, Chosen(IedSpec(), { 0x1D }, kF13),
 				 [](const std::string& a) { return ParseIedConfig(a, "").key; });
-		realHold("OptiScaler 0.9.4's INI", opti, HoldSpec{ ConfigKind::kIni, "Menu", "ShortcutKey", VK_F16, VkToDik(VK_F16), "F16" },
+		realHold("OptiScaler 0.9.4's INI", opti, Chosen(OptiSpec(), {}, kF16),
 				 [](const std::string& a) { return ParseOptiScalerIni(a).key; });
 		if (!over.empty())
 		{
 			realHold("Community Shaders SettingsUser.json", ReadFileText((over / "SKSE/Plugins/CommunityShaders/SettingsUser.json").wstring()),
-					 HoldSpec{ ConfigKind::kCsJson, "", "", VK_F14, VkToDik(VK_F14), "F14" }, [](const std::string& a) { return ParseCsSettings(a); });
+					 Chosen(CsSpec(), {}, kF14), [](const std::string& a) { return ParseCsSettings(a); });
+		}
+	}
+
+	// ---- the keys AMF would give in the real instance: none clashes with anything its configs bind (CS Editor on F15 there) ----
+	if (argc > 2)
+	{
+		const std::filesystem::path mods = argv[1];
+		const std::filesystem::path over = argv[2];
+		const auto csUser = ReadFileText((over / "SKSE/Plugins/CommunityShaders/SettingsUser.json").wstring());
+		if (!csUser.empty())
+		{
+			std::vector<KeyCombo> others = CsOtherKeys(csUser);
+			const auto opti = ReadFileText((mods / "OptiScaler 0.9.4/Root/OptiScaler.ini").wstring());
+			const auto oth = OptiOtherKeys(opti);
+			others.insert(others.end(), oth.begin(), oth.end());
+			const auto oarIni = ReadFileText((mods / "Open Animation - No Main Menu GUI/SKSE/Plugins/OpenAnimationReplacer.ini").wstring());
+			auto ied = ReadFileText((mods / "IED Key Override/SKSE/Plugins/ImmersiveEquipmentDisplays.ini").wstring());
+			if (ied.empty()) { ied = ReadFileText((mods / "Immersive Equipment Displays/SKSE/Plugins/ImmersiveEquipmentDisplays.ini").wstring()); }
+			const KeyCombo oarKey = ParseOarIni(oarIni).key;
+			std::vector<std::uint32_t> oarMods(oarKey.keys.begin(), oarKey.keys.end() - 1);
+			std::vector<HoldInput> in(4);
+			in[0] = Input(true, oarKey, false, OarSpec(oarMods));
+			in[1] = Input(true, ParseCsSettings(csUser), false, CsSpec());
+			in[2] = Input(true, ParseIedConfig(ied, "").key, false, IedSpec());
+			in[3] = Input(true, ParseOptiScalerIni(opti).key, false, OptiSpec());
+			const auto out = AssignHeldKeys(in, others);
+			bool apart = true, all = true;
+			for (std::size_t i = 0; i < out.size(); ++i)
+			{
+				all = all && out[i].spec.assigned;
+				for (const auto& o : others) { apart = apart && !(out[i].spec.assigned && Clashes(out[i].spec.combo, o)); }
+				for (std::size_t j = 0; j < out.size(); ++j)
+				{
+					if (j != i && out[i].spec.assigned) { apart = apart && !Clashes(out[i].spec.combo, in[j].current) && !(out[j].spec.assigned && Clashes(out[i].spec.combo, out[j].spec.combo)); }
+				}
+			}
+			Check(all && apart, "real: Njordlinger's configs - OAR " + Keys(out[0].spec.combo) + ", CS " + Keys(out[1].spec.combo) + ", IED " +
+									Keys(out[2].spec.combo) + ", OptiScaler " + Keys(out[3].spec.combo) +
+									" - each free, none clashing with another or with any key the configs bind (" + std::to_string(others.size()) + " other keys read)");
+			Check(out[2].spec.combo.keys.back() != 0x66 || out[2].spec.combo.keys.size() > 1, "real: IED is not given plain F15 (Community Shaders' CS Editor key here)");
 		}
 	}
 

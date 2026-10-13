@@ -1,6 +1,7 @@
 #include "ImguiHost.h"
 
 #include "HostCore.h"
+#include "Input.h"
 #include "LoadGuard.h"
 #include "Renderer.h"
 #include "Settings.h"
@@ -63,31 +64,77 @@ namespace imguihost
 			// "AMF holds this key" (HostCore.h): the mod's config file, and what the switch can do with it
 			std::wstring configPath;
 			bool holdApplies = false;    // the row has the switch (not OAR with its V3 API: no key is involved there)
-			bool holdAvailable = false;  // the file has a menu key AMF can change
+			bool holdAvailable = false;  // the switch can be used now (on: a key is free and the file has a menu key to change)
 			std::string holdWhy;         // why not, when it applies and is not available
-			bool held = false;           // the config's key is AMF's key now
+			bool held = false;           // the config carries AMF's key now (and AMF's backup is beside it)
+			bool restored = false;       // AMF's backup is beside it but the config no longer carries AMF's key (Root Builder)
+			hostcore::HoldSpec hold;     // where its key is written, and the key AMF holds or would hold for it
 			std::optional<hostcore::KeyCombo> pending;   // changed this session: the key the mod still uses until next launch
 		};
 
-		// AMF's key per mod: F13-F15 for the readers of a DirectInput scan code (OAR, Community Shaders - it reads the game's
-		// own key events - and IED), F16 / F17 for the readers of a virtual key (OptiScaler, ENB). Community Shaders' own
-		// defaults already take F15 (CSEditorToggleKey 126), F23 and F24, so it gets F14.
-		hostcore::HoldSpec HoldFor(int a_id, const std::string& a_configText)
+		// WHICH INPUT EACH TARGET READS ITS KEY FROM (HostCore.h InputPath - the final in-game test, 2026-10-12): Open Animation
+		// Replacer, Community Shaders and IED read the game's own input events, so AMF presses their keys into the game's event
+		// list (Input.cpp, the game-key injector); OptiScaler and ENB read Windows keys, so they keep SendInput.
+		const std::array<hostcore::InputPath, kCount> kPaths = { hostcore::TargetPath(kIds[kOar]), hostcore::TargetPath(kIds[kCs]),
+																 hostcore::TargetPath(kIds[kIed]), hostcore::TargetPath(kIds[kOpti]),
+																 hostcore::TargetPath(kIds[kEnb]) };
+		const char* PathName(int a_id) { return kPaths[a_id] == hostcore::InputPath::kGameEvents ? "game" : "win32"; }
+
+		// Where and how each mod's menu key is written (the key itself is chosen by hostcore::AssignHeldKeys): OAR and IED take a
+		// DirectInput scan code, the others a virtual key; IED ("0x1D+0x64") and Community Shaders ([17,124]) can take a modifier
+		// with it, while OAR keeps its own Ctrl / Shift / Alt flags and ENB its KeyCombination.
+		hostcore::HoldSpec BaseSpec(int a_id, const std::string& a_configText, const hostcore::KeyCombo& a_key)
 		{
 			hostcore::HoldSpec h;
+			h.path = kPaths[a_id];
+			std::vector<std::uint32_t> ownMods;
+			if (a_key.keys.size() > 1) { ownMods.assign(a_key.keys.begin(), a_key.keys.end() - 1); }
 			switch (a_id)
 			{
-			case kOar: h = { hostcore::ConfigKind::kIni, "UI", "uToggleUIKey", 0x64, 0x64, "F13" }; break;
-			case kCs: h = { hostcore::ConfigKind::kCsJson, "", "", VK_F14, hostcore::VkToDik(VK_F14), "F14" }; break;
-			case kIed: h = { hostcore::ConfigKind::kIni, "GUI", "ToggleKeys", 0x66, 0x66, "F15" }; break;
-			case kOpti: h = { hostcore::ConfigKind::kIni, "Menu", "ShortcutKey", VK_F16, hostcore::VkToDik(VK_F16), "F16" }; break;
+			case kOar:
+				h.kind = hostcore::ConfigKind::kIni;
+				h.section = "UI";
+				h.key = "uToggleUIKey";
+				h.code = hostcore::KeyCode::kDik;
+				h.fixedMods = ownMods;
+				break;
+			case kCs:
+				h.kind = hostcore::ConfigKind::kCsJson;
+				h.code = hostcore::KeyCode::kVk;
+				h.combos = true;
+				break;
+			case kIed:
+				h.kind = hostcore::ConfigKind::kIni;
+				h.section = "GUI";
+				h.key = "ToggleKeys";
+				h.code = hostcore::KeyCode::kDik;
+				h.combos = true;
+				break;
+			case kOpti:
+				h.kind = hostcore::ConfigKind::kIni;
+				h.section = "Menu";
+				h.key = "ShortcutKey";
+				h.code = hostcore::KeyCode::kVk;
+				break;
 			case kEnb:
-				h = { hostcore::ConfigKind::kIni, "INPUT", "KeyEditor", VK_F17, hostcore::VkToDik(VK_F17), "F17" };
-				if (!hostcore::IniValueSpan(a_configText, "INPUT", "KeyEditor").found) { h.key = "KeyShowEditor"; }   // an older enblocal.ini
+				h.kind = hostcore::ConfigKind::kIni;
+				h.section = "INPUT";
+				h.key = hostcore::IniValueSpan(a_configText, "INPUT", "KeyEditor").found || !hostcore::IniValueSpan(a_configText, "INPUT", "KeyShowEditor").found ?
+							"KeyEditor" :
+							"KeyShowEditor";   // an older enblocal.ini
+				h.code = hostcore::KeyCode::kVk;
+				h.fixedMods = ownMods;
 				break;
 			default: break;
 			}
 			return h;
+		}
+
+		std::string CandidateNames(hostcore::InputPath a_path)
+		{
+			std::string out;
+			for (const auto& f : hostcore::HeldKeys(a_path)) { out += (out.empty() ? "" : ", ") + hostcore::DikName(f.dik); }
+			return out;
 		}
 
 		bool SameKeys(const hostcore::KeyCombo& a_a, const hostcore::KeyCombo& a_b) { return a_a.keys == a_b.keys; }
@@ -125,7 +172,8 @@ namespace imguihost
 			int startFrame = 0;
 			int nextStep = 0;            // 0 modifiers down, 1 key down, 2 key up, 3 modifiers up, 4 done
 			bool modsDown = false, keyDown = false;
-			std::string sent;            // SendInput's counts, for the log line
+			bool game = false;           // into the game's own input events (InputPath::kGameEvents), not SendInput
+			std::string sent;            // SendInput's counts / the game keys queued, for the log line
 		};
 		std::optional<Press> g_press;
 		// an API call waiting for AMF's menu to be gone (render thread only)
@@ -369,31 +417,86 @@ namespace imguihost
 					else { t.blocked.clear(); }
 				}
 			}
-			// "AMF holds this key": where the switch applies, whether the file has a key it can change, and whether it holds it now
+			// "AMF holds this key": where the switch applies, whether the file has a key it can change, whether AMF holds one now,
+			// whether something put the file back, and which key AMF would use - one free in every loaded mod's config (HostCore.h
+			// AssignHeldKeys; F15 is Community Shaders' CS Editor key in Njordlinger, so it is never given to IED there)
+			std::vector<hostcore::HoldInput> in(kCount);
+			std::array<bool, kCount> writable{};
+			std::array<bool, kCount> iedUi{};
+			std::vector<hostcore::KeyCombo> others;
+			const auto addOthers = [&](const std::vector<hostcore::KeyCombo>& a_keys) { others.insert(others.end(), a_keys.begin(), a_keys.end()); };
+			if (g_targets[kCs].loaded)
+			{
+				addOthers(hostcore::CsOtherKeys(hostcore::ReadFileText(L"Data/SKSE/Plugins/CommunityShaders/SettingsUser.json")));
+				addOthers(hostcore::CsOtherKeys(hostcore::ReadFileText(L"Data/SKSE/Plugins/CommunityShaders/SettingsDefault.json")));
+			}
+			if (g_targets[kOpti].loaded) { addOthers(hostcore::OptiOtherKeys(hostcore::ReadFileText(g_targets[kOpti].configPath))); }
+			if (g_targets[kEnb].loaded) { addOthers(hostcore::EnbOtherKeys(hostcore::ReadFileText(g_enbIni))); }
+			for (int i = 0; i < kCount; ++i)
+			{
+				const Target& t = g_targets[i];
+				hostcore::HoldInput& h = in[i];
+				h.loaded = t.loaded;
+				h.current = t.key;
+				h.applies = t.loaded && !(i == kOar && g_oarV3);
+				if (!h.applies) { continue; }
+				const std::string raw = ReadRaw(t.configPath);
+				h.spec = BaseSpec(i, raw, t.key);
+				std::error_code ec;
+				h.backup = !t.configPath.empty() && std::filesystem::exists(std::filesystem::path(t.configPath + L".amf-key-backup"), ec);
+				iedUi[i] = i == kIed && t.keyFrom == "IED\\Settings.json";
+				writable[i] = !iedUi[i] && !raw.empty() && !hostcore::IsUtf16(raw) && hostcore::HoldSpan(raw, h.spec).found;
+				h.eligible = writable[i] && t.blocked.empty();
+			}
+			const std::vector<hostcore::HoldOutput> out = hostcore::AssignHeldKeys(in, others);
+			static std::array<bool, kCount> s_restoredSaid{};
 			for (int i = 0; i < kCount; ++i)
 			{
 				Target& t = g_targets[i];
-				t.holdApplies = t.loaded && !(i == kOar && g_oarV3);
+				t.holdApplies = in[i].applies;
 				t.holdAvailable = false;
 				t.holdWhy.clear();
-				t.held = false;
+				t.held = out[i].held;
+				t.restored = out[i].restored;
+				t.hold = out[i].spec;
 				if (!t.holdApplies) { continue; }
-				const std::string raw = ReadRaw(t.configPath);
-				const hostcore::HoldSpec h = HoldFor(i, raw);
-				t.held = !t.key.Empty() && t.key.keys.back() == h.dik;
 				const std::string file = Narrow(std::filesystem::path(t.configPath).filename().wstring());
-				if (i == kIed && t.keyFrom == "IED\\Settings.json")
+				if (t.restored)
+				{
+					// Root Builder's copy mode puts OptiScaler.ini back over the game folder's copy at every launch (2026-10-12): the
+					// switch would quietly turn itself off each time. AMF does not fight it, and never writes into the mod
+					// manager's own folders.
+					char line[768];
+					std::snprintf(line, sizeof(line), TR("AMF_HoldRestored", "Your mod manager restored this file (%s) at launch; AMF can't hold "
+						"this key here. To try again, delete %s."), file.c_str(), (file + ".amf-key-backup").c_str());
+					t.holdWhy = line;
+					if (!s_restoredSaid[i])
+					{
+						s_restoredSaid[i] = true;
+						logger::info("imgui: {} - AMF's key is not in {} any more, but its .amf-key-backup is: something put the file back "
+									 "(a mod manager that redeploys it at launch) - AMF cannot hold this key here; the switch is unavailable",
+									 kNames[i], Narrow(t.configPath));
+					}
+				}
+				else if (iedUi[i])
 				{
 					t.holdWhy = TR("AMF_HoldIedUi", "AMF cannot hold its key: it is set in IED's own menu, which wins over its INI file.");
 				}
-				else if (raw.empty() || hostcore::IsUtf16(raw) || !hostcore::HoldSpan(raw, h).found)
+				else if (!writable[i])
 				{
 					char line[320];
 					std::snprintf(line, sizeof(line), TR("AMF_HoldNoValue", "AMF cannot hold its key: %s has no menu key to change (%s)."),
-								  file.c_str(), h.kind == hostcore::ConfigKind::kCsJson ? "Menu.ToggleKey" : ("[" + h.section + "] " + h.key).c_str());
+								  file.c_str(), t.hold.kind == hostcore::ConfigKind::kCsJson ? "Menu.ToggleKey" : ("[" + t.hold.section + "] " + t.hold.key).c_str());
 					t.holdWhy = line;
 				}
-				else { t.holdAvailable = t.blocked.empty() || t.held; }
+				else if (!t.held && !t.hold.assigned && t.blocked.empty())
+				{
+					char line[512];
+					std::snprintf(line, sizeof(line), TR("AMF_HoldNoFreeKey", "AMF cannot hold its key: every key it could use (%s) is already bound "
+						"in these mods' configs."), CandidateNames(t.hold.path).c_str());
+					t.holdWhy = line;
+				}
+				t.holdAvailable = t.held || (in[i].eligible && t.hold.assigned && !t.restored);
 				// back where it started this session (switched on and off again): nothing is pending any more
 				if (t.pending && SameKeys(*t.pending, t.key)) { t.pending.reset(); }
 			}
@@ -419,7 +522,7 @@ namespace imguihost
 			const fs::path path(t.configPath);
 			const fs::path backup(t.configPath + L".amf-key-backup");
 			const std::string raw = ReadRaw(t.configPath);
-			const hostcore::HoldSpec h = HoldFor(a_id, raw);
+			const hostcore::HoldSpec h = t.hold;   // with the key AssignHeldKeys chose for it (RefreshKeys, just now)
 			std::string text, why;
 			std::error_code ec;
 			if (a_on)
@@ -453,6 +556,14 @@ namespace imguihost
 				fs::remove(tmp, ec);
 				return "could not replace " + Narrow(path.wstring());
 			}
+			if (!a_on)
+			{
+				// the original key is back in the file: the backup goes, so a backup beside a config always means AMF holds its key
+				// there - and one beside a config without AMF's key means something put the file back (RefreshKeys: restored)
+				fs::remove(backup, ec);
+				if (ec) { logger::warn("imgui: {} - {} could not be removed ({})", kNames[a_id], Narrow(backup.wstring()), ec.message()); }
+				else { logger::info("imgui: {} - {} removed: the original key is back in {}", kNames[a_id], Narrow(backup.wstring()), Narrow(path.wstring())); }
+			}
 			if (!t.pending) { t.pending = LiveKey(t); }   // the key the mod keeps until the next launch
 			const hostcore::KeyCombo before = t.key;
 			RefreshKeys();
@@ -468,9 +579,31 @@ namespace imguihost
 			return game && ::GetForegroundWindow() == game;
 		}
 
-		// sends one step of the press; false when SendInput did not take every record
+		// sends one step of the press; false when SendInput did not take every record (or the game-key injector is not in)
 		bool SendStep(Press& a_p, hostcore::Step a_step)
 		{
+			if (a_p.game)
+			{
+				// a mod that reads the game's own input events: the step's keys go into the game's event list (Input.cpp), each
+				// edge on a dispatch of its own, a key held repeated as held until its release - as the game's keyboard sends them
+				if (!input::GameKeyInjectorReady()) { return false; }
+				const auto& k = a_p.combo.keys;
+				const std::size_t mods = k.empty() ? 0 : k.size() - 1;
+				std::size_t n = 0;
+				switch (a_step)
+				{
+				case hostcore::Step::kModifiersDown:
+					for (std::size_t i = 0; i < mods; ++i, ++n) { input::GameKeyDown(k[i]); }
+					break;
+				case hostcore::Step::kKeyDown: input::GameKeyDown(k.back()); n = 1; break;
+				case hostcore::Step::kKeyUp: input::GameKeyUp(k.back()); n = 1; break;
+				case hostcore::Step::kModifiersUp:
+					for (std::size_t i = mods; i-- > 0; ++n) { input::GameKeyUp(k[i]); }
+					break;
+				}
+				if (n > 0) { a_p.sent += (a_p.sent.empty() ? "game input " : ", ") + std::to_string(n); }
+				return true;
+			}
 			std::vector<INPUT> in = hostcore::StepInputs(a_p.combo, a_step);
 			if (in.empty()) { return true; }
 			const UINT sent = ::SendInput(static_cast<UINT>(in.size()), in.data(), sizeof(INPUT));
@@ -488,8 +621,8 @@ namespace imguihost
 			std::scoped_lock l(g_lock);
 			Target& t = g_targets[a_p.target];
 			t.lastOutcome = a_outcome;
-			logger::info("imgui: {} - {} ({}; SendInput {})", kNames[a_p.target], a_outcome, hostcore::ComboName(a_p.combo),
-						 a_p.sent.empty() ? "nothing sent" : a_p.sent);
+			logger::info("imgui: {} - {} ({}; {} {})", kNames[a_p.target], a_outcome, hostcore::ComboName(a_p.combo),
+						 a_p.game ? "pressed into the game's input events:" : "SendInput", a_p.sent.empty() ? "nothing sent" : a_p.sent);
 		}
 
 		void StepPress()
@@ -501,9 +634,17 @@ namespace imguihost
 			switch (p.nextStep)
 			{
 			case 0:
-				if (loadguard::Blocked() || !GameIsForeground())
+				// SendInput goes to whatever window is in front, so it waits for the game to be there; a key pressed into the game's
+				// own input events can only reach the game, so it does not
+				if (loadguard::Blocked() || (!p.game && !GameIsForeground()))
 				{
 					FinishPress(p, loadguard::Blocked() ? "not pressed: the game is loading" : "not pressed: the game is not the foreground window");
+					g_press.reset();
+					return;
+				}
+				if (p.game && !input::GameKeyInjectorReady())
+				{
+					FinishPress(p, "not pressed: AMF's way into the game's input is not in (see the game keys lines in this log)");
 					g_press.reset();
 					return;
 				}
@@ -511,7 +652,7 @@ namespace imguihost
 				p.nextStep = 1;
 				return;
 			case 1:
-				if (loadguard::Blocked() || !GameIsForeground())
+				if (loadguard::Blocked() || (!p.game && !GameIsForeground()))
 				{
 					if (p.modsDown) { SendStep(p, hostcore::Step::kModifiersUp); }
 					FinishPress(p, loadguard::Blocked() ? "not pressed: the game started loading" : "not pressed: the game lost the foreground");
@@ -584,6 +725,7 @@ namespace imguihost
 			p.target = a_id;
 			p.combo = combo;
 			p.startFrame = start;
+			p.game = kPaths[a_id] == hostcore::InputPath::kGameEvents;
 			g_press = p;
 			return std::string();
 		}
@@ -709,8 +851,15 @@ namespace imguihost
 		{
 			const Target& t = g_targets[i];
 			if (!t.loaded) { logger::debug("imgui: {} not loaded", kNames[i]); continue; }
-			logger::info("imgui: {} loaded ({}) - key {} from {}{}{}", kNames[i], Narrow(t.modulePath), hostcore::ComboName(t.key), t.keyFrom,
+			logger::info("imgui: {} loaded ({}) - key {} from {}, read from {}{}{}", kNames[i], Narrow(t.modulePath), hostcore::ComboName(t.key), t.keyFrom,
+						 kPaths[i] == hostcore::InputPath::kGameEvents ? "the game's input events (AMF presses it there)" : "Windows (AMF presses it with SendInput)",
 						 t.blocked.empty() ? "" : " - cannot be opened: ", t.blocked);
+			if (t.holdApplies)
+			{
+				logger::info("imgui: {} - AMF holds this key: {}{}", kNames[i],
+							 t.held ? "on, " + hostcore::ComboName(t.key) : (t.hold.assigned ? "off (AMF's key would be " + hostcore::ComboName(t.hold.combo) + ")" : std::string("off")),
+							 t.holdWhy.empty() ? std::string() : " - " + t.holdWhy);
+			}
 		}
 	}
 
@@ -744,10 +893,10 @@ namespace imguihost
 		ImGui::TextUnformatted(TR("AMF_OtherMenusOwnKey", "A mod's own key pressed while this menu is open closes this menu too, so "
 			"that mod's menu is shown alone."));
 		ImGui::TextUnformatted(TR("AMF_HoldHelp", "AMF holds this key (off until you turn it on, for each mod): AMF writes a key no "
-			"keyboard has (F13 to F17) into that mod's own config file in place of its menu key - only that value changes, and the "
-			"file as it was is kept once as .amf-key-backup beside it - and Open presses that key, so the mod's own key is free for "
-			"anything else. Turning it off writes the original key back. Mods read their config when the game starts, so a change "
-			"takes effect next launch."));
+			"keyboard has (F13 or above, one not already bound in these mods' configs) into that mod's own config file in place of "
+			"its menu key - only that value changes, and the file as it was is kept as .amf-key-backup beside it while AMF holds "
+			"the key - and Open presses that key, so the mod's own key is free for anything else. Turning it off writes the original "
+			"key back and removes the backup. Mods read their config when the game starts, so a change takes effect next launch."));
 		ImGui::PopTextWrapPos();
 		ImGui::PopStyleColor();
 		ImGui::Spacing();
@@ -910,6 +1059,20 @@ namespace imguihost
 			return;
 		}
 		g_framesSeen.fetch_add(1, std::memory_order_relaxed);
+		// the game-key injector goes in on the first frame past the loading guard (Input.cpp: installed last, so every other
+		// hook on the game's input sees the keys it presses), and only when a mod that reads the game's input is loaded
+		static bool s_injectorAsked = false;   // render thread only
+		if (!s_injectorAsked)
+		{
+			s_injectorAsked = true;
+			bool any = false;
+			{
+				std::scoped_lock l(g_lock);
+				for (int i = 0; i < kCount; ++i) { any = any || (g_targets[i].loaded && kPaths[i] == hostcore::InputPath::kGameEvents); }
+			}
+			if (any) { input::RequestGameKeyInjector(); }
+			else { logger::debug("imgui: no loaded mod reads its key from the game's input - the game-key injector is not installed"); }
+		}
 		RunApiCall();
 		StepPress();
 		WatchOwnKeys();
@@ -961,8 +1124,10 @@ namespace imguihost
 					   J(hostcore::ComboName(t.key)) + ",\"dik\":[" + keys + "],\"keyFrom\":" + J(t.keyFrom) + ",\"keyOpensOnly\":" +
 					   (t.keyOpensOnly ? "true" : "false") + ",\"blocked\":" + J(t.blocked) + ",\"state\":" + std::to_string(t.state) +
 					   ",\"presses\":" + std::to_string(t.presses) + ",\"lastOutcome\":" + J(t.lastOutcome) +
+					   ",\"path\":\"" + PathName(i) + "\",\"injectorReady\":" + (input::GameKeyInjectorReady() ? "true" : "false") +
 					   ",\"hold\":{\"applies\":" + (t.holdApplies ? "true" : "false") + ",\"available\":" + (t.holdAvailable ? "true" : "false") +
-					   ",\"held\":" + (t.held ? "true" : "false") + ",\"amfKey\":" + J(t.holdApplies ? HoldFor(i, ReadRaw(t.configPath)).name : "") +
+					   ",\"held\":" + (t.held ? "true" : "false") + ",\"restored\":" + (t.restored ? "true" : "false") +
+					   ",\"amfKey\":" + J(t.holdApplies && t.hold.assigned ? hostcore::ComboName(t.hold.combo) : std::string()) +
 					   ",\"configKey\":" + J(hostcore::ComboName(t.key)) + ",\"liveKey\":" + J(hostcore::ComboName(LiveKey(t))) +
 					   ",\"pending\":" + (t.pending ? "true" : "false") + ",\"why\":" + J(t.holdWhy) + ",\"config\":" + J(Narrow(t.configPath)) +
 					   ",\"backup\":" + (!t.configPath.empty() && std::filesystem::exists(std::filesystem::path(t.configPath + L".amf-key-backup")) ? "true" : "false") +

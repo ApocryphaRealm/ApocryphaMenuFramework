@@ -88,7 +88,8 @@ namespace renderer
 	// calls it behaves exactly as before, so no other author has to change anything.
 	int DeclareInnerTabs(int a_count, int a_current);
 
-	void SetMenuVisible(bool a_visible, bool a_nested = false);
+	// a_why: what the log line says closed or opened it, when it was not the player or a launcher (2.2.0: "closed by the loading guard")
+	void SetMenuVisible(bool a_visible, bool a_nested = false, const char* a_why = nullptr);
 	void SetSelectedNode(const std::string& a_node);
 	std::string GetSelectedNode();
 	void ActivateSelectedNode();

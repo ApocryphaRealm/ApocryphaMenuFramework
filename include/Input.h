@@ -26,6 +26,16 @@ namespace input
 	// instruction; the framework then runs render-only, exactly as M1 did.
 	bool Install();
 
+	// THE GAME-KEY INJECTOR (2.2.0 held-key fix; Input.cpp): keys pressed into the game's own input event list, for the mods
+	// that read keys there (Open Animation Replacer, Community Shaders, IED - a Windows F13-F15 never reaches them).
+	// RequestGameKeyInjector queues the install as an SKSE task (call it once the loading guard has lifted; repeat calls do
+	// nothing); Ready says it is in. Down / Up queue one edge of a DirectInput scan code (any thread); each edge goes into
+	// the list on a dispatch of its own, and a key down is repeated as held on every dispatch until its Up.
+	void RequestGameKeyInjector();
+	bool GameKeyInjectorReady();
+	void GameKeyDown(std::uint32_t a_dik);
+	void GameKeyUp(std::uint32_t a_dik);
+
 	// What the player last actually used. Fed by the input hook, read by the settings page (so
 	// the detection can be watched for accuracy) and by the auto-switch itself.
 	enum class Device

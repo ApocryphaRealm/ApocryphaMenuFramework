@@ -221,6 +221,23 @@ namespace renderer
 					g_idleCameraHeldMirror.store(true, std::memory_order_relaxed);
 					logger::debug("camera: menu open, game running - idle vanity camera held off (its own allowAutoVanityMode {}, idleTimer {:.2f})",
 								  g_savedAllowAutoVanity, g_savedIdleTimer);
+					// ALREADY CIRCLING (2.2.0, the final in-game test, 2026-10-12): the hold only stops a NEW start - if the idle
+					// camera was circling when F1 opened this menu, it went on circling behind it, since the key that would have
+					// woken it was this menu's. So a running auto vanity is ended here: the camera goes back to the third-person
+					// camera the idle camera starts from (PlayerCamera::ForceThirdPerson, the game's own function), on the main
+					// thread inside this task - the loading guard has lifted, so the game loop is running. Its idle timer is set to
+					// 0, as a key press leaves it: the timer counts the seconds since the game last saw input (the 2026-10-12 logs read
+					// 0.00-1.84 just after the player's last click, and the camera starts circling once it passes
+					// fAutoVanityModeDelay), so the run-out value saved here would set it circling again the moment the menu closed.
+					const auto* vanity = camera->GetRuntimeData().cameraStates[RE::CameraStates::kAutoVanity].get();
+					if (vanity && camera->currentState.get() == vanity)
+					{
+						const bool ended = camera->ForceThirdPerson();
+						g_savedIdleTimer = 0.0f;
+						data.idleTimer = 0.0f;
+						logger::info("camera: the idle camera was already circling as this menu opened - {} (idle timer back to 0)",
+									 ended ? "ended, the camera is back in third person" : "could not be ended (ForceThirdPerson said no)");
+					}
 				}
 				else if (!a_want && g_idleCameraHeld)
 				{
@@ -5010,7 +5027,7 @@ namespace renderer
 				if (g_windowVisible.load(std::memory_order_acquire) && loadguard::Blocked())
 				{
 					logger::info("loading guard: the game is loading - this menu closes");
-					SetMenuVisible(false);
+					SetMenuVisible(false, false, "closed by the loading guard");
 				}
 
 				const bool visible = g_windowVisible.load(std::memory_order_acquire);
@@ -5335,7 +5352,7 @@ namespace renderer
 
 	bool Install()
 	{
-		SKSE::AllocTrampoline(static_cast<std::size_t>(14) * 3);  // present + D3D init + PollInputDevices
+		SKSE::AllocTrampoline(static_cast<std::size_t>(14) * 4);  // present + D3D init + PollInputDevices + the game-key injector (2.2.0, installed later)
 
 		// ---- present: settled site, guard anyway ------------------------------------------
 		const std::uintptr_t presentSite = offsets::kPresentID.address() + offsets::kPresentOffset.offset();
@@ -5465,7 +5482,7 @@ namespace renderer
 		return (request >= 0 && request < g_innerCount) ? request : -1;
 	}
 
-	void SetMenuVisible(bool a_visible, bool a_nested)
+	void SetMenuVisible(bool a_visible, bool a_nested, const char* a_why)
 	{
 		if (a_visible && loadguard::Blocked())
 		{
@@ -5484,7 +5501,7 @@ namespace renderer
 			mcmloader::scripts::RequestDiscovery();
 		}
 		logger::info("Framework window {} ({})", a_visible ? "shown" : "hidden",
-			a_nested ? "nested in the game's System menu" : "external/DevBench");
+			a_why ? a_why : (a_nested ? "nested in the game's System menu" : "external/DevBench"));
 	}
 
 	void NoteHoverRect(ImDrawList* a_drawList, const ImVec2& a_min, const ImVec2& a_max)

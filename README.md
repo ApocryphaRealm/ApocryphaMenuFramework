@@ -27,7 +27,8 @@ Licence: GPL-3.0-or-later (see `LICENSE` and `NOTICE.md`). Not a fork: contains 
 - **Per-save persistence for registered mods** - a plain-text `<save>.amf-state.ini` beside each
   save, restored when that save loads, scoped exactly like the co-save.
 - **Keep the camera awake.** With the game left running behind the menu, the idle camera never starts circling
-  the character while it is open (Settings -> General, on by default, `[Menu] bKeepCameraAwake`).
+  the character while it is open, and one already circling stops as the menu opens (Settings -> General, on by
+  default, `[Menu] bKeepCameraAwake`).
 - **Toggles render as sliding switches**, sliders can be nudged with the arrow keys, and
   explanatory text is never drawn in the near-invisible disabled grey.
 - **Hang watchdog.** If the renderer produces no frame for 120 s (configurable, `[Watchdog]`), the
@@ -39,8 +40,11 @@ Licence: GPL-3.0-or-later (see `LICENSE` and `NOTICE.md`). Not a fork: contains 
 - **Other menus.** Open Animation Replacer, Community Shaders, Immersive Equipment Displays, OptiScaler and ENB get a
   row under Framework -> Other menus with a button that opens their own menu; AMF closes as it does, and a mod's own key
   pressed while AMF is open closes AMF too. "AMF holds this key" (off by default, per mod) writes a key no keyboard has
-  (F13-F17) into that mod's own config, with `<config>.amf-key-backup` kept, so its menu opens from AMF and its real key
-  is free; turning it off writes the original back. Takes effect next launch. ENB is found from its files only.
+  (F13 and up, one nothing in these mods' configs is bound to) into that mod's own config, with
+  `<config>.amf-key-backup` kept while it holds it, so its menu opens from AMF and its real key is free; turning it off
+  writes the original back. Takes effect next launch. OAR, Community Shaders and IED get their key pressed into the
+  game's own input events; OptiScaler and ENB by Windows. A config a mod manager puts back at launch (Root Builder) is
+  noticed and the switch says so. ENB is found from its files only.
 - **Nothing while loading.** Until the main menu has opened, and while any loading screen is up, AMF does not open, takes
   no input and queues no SKSE task; if it is open when a load starts, it closes.
 - **Converted menus.** Mod Function Menu entries run in AMF itself (Settings -> Converted menus -> MFM):

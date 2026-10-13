@@ -23,9 +23,12 @@
 //
 // AMF HOLDS THIS KEY (the owner, 2026-10-12: "make it so those menus' hotkey is activated from within AMF, so AMF calls them
 // and no hotkey is needed - using AMF will free up hotkeys"). A switch on each row that presses a key (all but OAR 3.2.1+,
-// which is opened through its API): on, AMF writes a key no keyboard has (F13-F17, one per mod - HostCore.h) into the mod's
-// OWN config in place of its menu key, keeping the file as it was once as <config>.amf-key-backup, and Open presses that
-// key; off writes the original value back from the backup. Off by default: it changes another mod's file, so it is the
+// which is opened through its API): on, AMF writes a key no keyboard has (F13 and up, one per mod, bound nowhere else in these mods'
+// configs - HostCore.h AssignHeldKeys) into the mod's
+// OWN config in place of its menu key, keeping the file as it was as <config>.amf-key-backup while it holds it, and Open presses
+// that key - into the game's own input events for OAR, Community Shaders and IED (Input.cpp's game-key injector), by SendInput for
+// OptiScaler and ENB; off writes the original value back from the backup and removes it. A backup beside a config without AMF's
+// key means a mod manager put the file back at launch (Root Builder): the switch is then unavailable, with that reason. Off by default: it changes another mod's file, so it is the
 // player's choice. The switch shows what the config says; a mod reads its config at start-up, so until the next launch
 // AMF keeps pressing (and watching) the key the mod started with.
 //

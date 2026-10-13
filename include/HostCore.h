@@ -469,13 +469,15 @@ namespace hostcore
 
 	// ---- "AMF HOLDS THIS KEY" (2.2.0; the owner, 2026-10-12: "make it so those menus' hotkey is activated from within AMF, so
 	// AMF calls them and no hotkey is needed - using AMF will free up hotkeys") ----------------------------------------------
-	// With the switch on, AMF writes a key no keyboard has (F13-F17, a different one per mod) into the mod's OWN config, in
-	// place of its menu key, and its Open button presses that key; the player's real key is then free. Only that one value
-	// changes: the edit is a byte span replaced inside the file's text, so the encoding, a byte-order mark, the line endings,
-	// comments and every other line stay exactly as they were. The file as it was is kept once as <file>.amf-key-backup, and
-	// turning the switch off writes the original value back from it. Readers that take a DirectInput scan code (Open Animation
-	// Replacer, IED, and Community Shaders, which reads the game's own key events) get F13-F15 - the only keys above F12 that
-	// DirectInput names; the readers of a virtual key (OptiScaler, ENB) get F16 and F17.
+	// With the switch on, AMF writes a key no keyboard has (F13 and above, a different one per mod, none already bound in any of
+	// these mods' configs - AssignHeldKeys) into the mod's OWN config, in place of its menu key, and its Open button presses that
+	// key; the player's real key is then free. Only that one value changes: the edit is a byte span replaced inside the file's
+	// text, so the encoding, a byte-order mark, the line endings, comments and every other line stay exactly as they were. The
+	// file as it was is kept as <file>.amf-key-backup while AMF holds the key; turning the switch off writes the original value
+	// back from it and removes it. So a backup beside a config that no longer carries AMF's key means something put the file
+	// back - a mod manager that redeploys it at every launch (Root Builder's copy mode, the 2026-10-12 test) - and the switch is
+	// then unavailable. The targets that read the game's own input events (InputPath::kGameEvents) get F13-F15, the only keys
+	// above F12 that DirectInput names, pressed into the game's event list; the readers of Windows keys get F16-F24 by SendInput.
 	struct Span
 	{
 		bool found = false;
@@ -625,13 +627,69 @@ namespace hostcore
 		kCsJson
 	};
 
+	// ---- WHICH INPUT EACH TARGET READS (2.2.0 held-key fix; the final in-game test, 2026-10-12) ----------------------------------
+	// A key AMF presses only opens a mod's menu if it arrives on the path that mod reads keys from. The test proved two paths:
+	//   kGameEvents - the game's own input events (the BSTEventSource<InputEvent*> dispatch PollInputDevices sends, DirectInput
+	//                 scan codes): Open Animation Replacer, Community Shaders and IED. After a relaunch with their keys on
+	//                 F13 / F14 / F15, a SendInput F13-F15 (scan code or virtual key) never opened them - Windows' F13-F15 do
+	//                 not reach the game's DirectInput - while the same keys spliced into the game's own event list (TestBench
+	//                 bench.input, DIK 0x64 / 0x65 / 0x66, Shift + 0x64 for OAR) opened all three. So AMF puts its key into the
+	//                 game's event list itself (Input.cpp, the game-key injector), as TestBench does.
+	//   kWin32      - Windows' own key state / messages, virtual-key codes in the config: OptiScaler (proven: a SendInput F16
+	//                 opened it, F16 closed it, Insert no longer did) and ENB (its enblocal.ini keys are virtual keys, and its
+	//                 editor is opened the way a player opens it). These keep SendInput.
+	enum class InputPath
+	{
+		kGameEvents,
+		kWin32
+	};
+	// The classification above, by the ids Framework > Other menus uses (ImguiHost.cpp kIds); an unknown id reads Windows keys.
+	inline InputPath TargetPath(const std::string& a_id)
+	{
+		return a_id == "oar" || a_id == "cs" || a_id == "ied" ? InputPath::kGameEvents : InputPath::kWin32;
+	}
+	enum class KeyCode
+	{
+		kDik,   // the config holds a DirectInput scan code (OAR, IED)
+		kVk     // the config holds a Windows virtual-key code (Community Shaders, OptiScaler, ENB)
+	};
+
+	// The F-keys AMF may write, with both codes. F13-F15 are the only keys above F12 that DirectInput names, so a game-events
+	// target gets one of those (with a modifier when all three are taken); a Win32 target gets F16-F24.
+	struct FKey
+	{
+		std::uint32_t vk, dik;
+	};
+	inline const std::vector<FKey>& HeldKeys(InputPath a_path)
+	{
+		static const std::vector<FKey> game = { { VK_F13, 0x64 }, { VK_F14, 0x65 }, { VK_F15, 0x66 } };
+		static const std::vector<FKey> win32 = { { VK_F16, 0x67 }, { VK_F17, 0x68 }, { VK_F18, 0x69 }, { VK_F19, 0x6A }, { VK_F20, 0x6B },
+												 { VK_F21, 0x6C }, { VK_F22, 0x6D }, { VK_F23, 0x6E }, { VK_F24, 0x76 } };
+		return a_path == InputPath::kGameEvents ? game : win32;
+	}
+	inline std::uint32_t ModifierVk(std::uint32_t a_dik)
+	{
+		switch (a_dik)
+		{
+		case kDikLShift: return VK_SHIFT;
+		case kDikLCtrl: return VK_CONTROL;
+		case kDikLAlt: return VK_MENU;
+		default: return 0;
+		}
+	}
+
 	struct HoldSpec
 	{
 		ConfigKind kind = ConfigKind::kIni;
 		std::string section, key;   // INI: where the menu key is (ENB: KeyEditor, or KeyShowEditor in an older file)
-		std::uint32_t value = 0;    // the number written: a DIK for OAR and IED, a virtual key for the others
-		std::uint32_t dik = 0;      // the scan code that value is, as the readers above give it back
-		const char* name = "";      // "F13"
+		KeyCode code = KeyCode::kDik;
+		InputPath path = InputPath::kGameEvents;
+		bool combos = false;                    // AMF may write a modifier with the key (IED "0x1D+0x64", Community Shaders [17,124])
+		std::vector<std::uint32_t> fixedMods;   // modifiers the mod keeps in its own config, untouched (OAR's flags, ENB's KeyCombination)
+		// the key chosen for it (AssignHeldKeys): what the mod reads after the hold - modifiers, then the F-key
+		bool assigned = false;
+		KeyCombo combo;
+		FKey fkey{};
 	};
 
 	inline Span HoldSpan(const std::string& a_text, const HoldSpec& a_h)
@@ -650,14 +708,43 @@ namespace hostcore
 									 (static_cast<unsigned char>(a_raw[0]) == 0xFE && static_cast<unsigned char>(a_raw[1]) == 0xFF));
 	}
 
+	// The text written for the chosen key. A modifier AMF chose goes in as the config's own combination form (IED "0x1D+0x64",
+	// Community Shaders [17,124]); a mod that keeps its modifiers elsewhere (OAR, ENB) gets only the F-key.
+	inline std::string HoldValue(const HoldSpec& a_h, const std::string& a_old)
+	{
+		std::vector<std::uint32_t> chosenMods;
+		if (a_h.combos && a_h.combo.keys.size() > 1) { chosenMods.assign(a_h.combo.keys.begin(), a_h.combo.keys.end() - 1); }
+		if (a_h.kind == ConfigKind::kCsJson)
+		{
+			if (chosenMods.empty()) { return std::to_string(a_h.fkey.vk); }
+			std::string out = "[";
+			for (std::uint32_t m : chosenMods) { out += std::to_string(ModifierVk(m)) + ","; }
+			return out + std::to_string(a_h.fkey.vk) + "]";
+		}
+		if (!chosenMods.empty())
+		{
+			std::string out;
+			char b[16];
+			for (std::uint32_t m : chosenMods)
+			{
+				std::snprintf(b, sizeof(b), "0x%02X+", m);
+				out += b;
+			}
+			std::snprintf(b, sizeof(b), "0x%02X", a_h.fkey.dik);
+			return out + b;
+		}
+		return FormatLike(a_old, a_h.code == KeyCode::kDik ? a_h.fkey.dik : a_h.fkey.vk);
+	}
+
 	// The held text: the menu key's value replaced by AMF's key. False (with why) when the file has no such value to change.
 	inline bool HoldText(const std::string& a_raw, const HoldSpec& a_h, std::string& a_out, std::string& a_why)
 	{
 		if (IsUtf16(a_raw)) { a_why = "the file is UTF-16 text"; return false; }
+		if (!a_h.assigned) { a_why = "no free key to hold it on"; return false; }
 		const Span s = HoldSpan(a_raw, a_h);
 		if (!s.found) { a_why = a_h.kind == ConfigKind::kCsJson ? std::string("no Menu.ToggleKey") : "no [" + a_h.section + "] " + a_h.key + " line"; return false; }
 		const std::string old = a_raw.substr(s.begin, s.end - s.begin);
-		a_out = WithSpan(a_raw, s, a_h.kind == ConfigKind::kCsJson ? std::to_string(a_h.value) : FormatLike(old, a_h.value));
+		a_out = WithSpan(a_raw, s, HoldValue(a_h, old));
 		return true;
 	}
 
@@ -670,5 +757,225 @@ namespace hostcore
 		if (!now.found || !was.found) { a_why = !was.found ? "the backup has no menu key" : "the file has no menu key now"; return false; }
 		a_out = WithSpan(a_raw, now, a_backup.substr(was.begin, was.end - was.begin));
 		return true;
+	}
+
+	// ---- KEY CLASH (2.2.0 held-key fix: F15 is also Community Shaders' CS Editor key in Njordlinger, so IED on F15 opened both) --
+	// Two bindings clash when one press could set off both: the same key, and one's modifiers are all held in the other's (no
+	// modifiers at all is inside every set). Shift+F13 and Ctrl+F13 are apart; F13 and Shift+F13 are not - a mod bound to plain
+	// F13 opens on Shift+F13 too. Right-hand modifiers count as the left-hand ones.
+	inline std::uint32_t NormalKey(std::uint32_t a_dik)
+	{
+		switch (a_dik)
+		{
+		case 0x36: return kDikLShift;   // right Shift
+		case 0x9D: return kDikLCtrl;    // right Ctrl
+		case 0xB8: return kDikLAlt;     // right Alt
+		default: return a_dik;
+		}
+	}
+	inline bool Clashes(const KeyCombo& a_a, const KeyCombo& a_b)
+	{
+		if (a_a.Empty() || a_b.Empty() || NormalKey(a_a.keys.back()) != NormalKey(a_b.keys.back())) { return false; }
+		const auto mods = [](const KeyCombo& a_c) {
+			std::vector<std::uint32_t> m;
+			for (std::size_t i = 0; i + 1 < a_c.keys.size(); ++i) { m.push_back(NormalKey(a_c.keys[i])); }
+			std::sort(m.begin(), m.end());
+			m.erase(std::unique(m.begin(), m.end()), m.end());
+			return m;
+		};
+		const auto ma = mods(a_a), mb = mods(a_b);
+		return std::includes(ma.begin(), ma.end(), mb.begin(), mb.end()) || std::includes(mb.begin(), mb.end(), ma.begin(), ma.end());
+	}
+
+	// The other keys the targets' configs bind - besides each one's menu key, which the assignment takes from the targets
+	// themselves. Read generously: a number that is not really a key only takes one candidate away.
+	//   Community Shaders: every "...Key" / "...Keys" value in its JSON (virtual keys, or arrays of them) except Menu.ToggleKey -
+	//                      CSEditorToggleKey (F15 in Njordlinger), the effect and overlay keys
+	inline void CsOtherKeysWalk(const nlohmann::json& a_j, bool a_top, std::vector<KeyCombo>& a_out)
+	{
+		if (!a_j.is_object()) { return; }
+		for (auto it = a_j.begin(); it != a_j.end(); ++it)
+		{
+			const std::string name = Lower(it.key());
+			const auto& v = it.value();
+			if (v.is_object())
+			{
+				// Menu.ToggleKey is the menu key itself: skipped by walking "Menu" one level down with the flag set
+				if (a_top && it.key() == "Menu")
+				{
+					for (auto m = v.begin(); m != v.end(); ++m)
+					{
+						if (m.key() == "ToggleKey") { continue; }
+						nlohmann::json one = nlohmann::json::object();
+						one[m.key()] = m.value();
+						CsOtherKeysWalk(one, false, a_out);
+					}
+					continue;
+				}
+				CsOtherKeysWalk(v, false, a_out);
+				continue;
+			}
+			const bool keyName = (name.size() >= 3 && name.compare(name.size() - 3, 3, "key") == 0) ||
+								 (name.size() >= 4 && name.compare(name.size() - 4, 4, "keys") == 0);
+			if (!keyName) { continue; }
+			KeyCombo c;
+			if (v.is_number_integer()) { c.keys.push_back(VkToDik(static_cast<std::uint32_t>(v.get<long long>() & 0xFF))); }
+			else if (v.is_array())
+			{
+				for (const auto& e : v)
+				{
+					if (e.is_number_integer()) { c.keys.push_back(VkToDik(static_cast<std::uint32_t>(e.get<long long>() & 0xFF))); }
+				}
+			}
+			bool ok = !c.keys.empty();
+			for (auto k : c.keys) { ok = ok && k != 0; }
+			if (ok) { a_out.push_back(c); }
+		}
+	}
+	inline std::vector<KeyCombo> CsOtherKeys(const std::string& a_json)
+	{
+		std::vector<KeyCombo> out;
+		const nlohmann::json j = nlohmann::json::parse(a_json, nullptr, false);
+		if (!j.is_discarded()) { CsOtherKeysWalk(j, true, out); }
+		return out;
+	}
+
+	// INI keys whose name passes a_take, with a number value, as virtual keys (OptiScaler: any "...Key" but [Menu] ShortcutKey;
+	// ENB: [INPUT] Key... but the editor key and the combination settings)
+	template <class Take>
+	inline std::vector<KeyCombo> IniVkKeys(const std::string& a_text, Take a_take)
+	{
+		std::vector<KeyCombo> out;
+		std::istringstream in(a_text);
+		std::string line, section;
+		while (std::getline(in, line))
+		{
+			line = Trim(line);
+			if (line.empty() || line[0] == ';' || line[0] == '#' || line[0] == '/') { continue; }
+			if (line.front() == '[')
+			{
+				const auto close = line.find(']');
+				section = Lower(Trim(line.substr(1, close == std::string::npos ? std::string::npos : close - 1)));
+				continue;
+			}
+			const auto eq = line.find('=');
+			if (eq == std::string::npos) { continue; }
+			const std::string key = Lower(Trim(line.substr(0, eq)));
+			if (!a_take(section, key)) { continue; }
+			std::string v = line.substr(eq + 1);
+			if (const auto sc = v.find(';'); sc != std::string::npos) { v = v.substr(0, sc); }
+			if (const auto sl = v.find("//"); sl != std::string::npos) { v = v.substr(0, sl); }
+			long long n = 0;
+			if (!ParseInt(v, n) || n <= 0 || n > 0xFE) { continue; }
+			const std::uint32_t dik = VkToDik(static_cast<std::uint32_t>(n));
+			if (dik == 0) { continue; }
+			KeyCombo c;
+			c.keys.push_back(dik);
+			out.push_back(c);
+		}
+		return out;
+	}
+	inline std::vector<KeyCombo> OptiOtherKeys(const std::string& a_ini)
+	{
+		return IniVkKeys(a_ini, [](const std::string& a_section, const std::string& a_key) {
+			return a_key.size() >= 3 && a_key.compare(a_key.size() - 3, 3, "key") == 0 && !(a_section == "menu" && a_key == "shortcutkey");
+		});
+	}
+	inline std::vector<KeyCombo> EnbOtherKeys(const std::string& a_ini)
+	{
+		return IniVkKeys(a_ini, [](const std::string& a_section, const std::string& a_key) {
+			return a_section == "input" && a_key.rfind("key", 0) == 0 && a_key != "keyeditor" && a_key != "keyshoweditor" &&
+				   a_key != "keycombination" && a_key != "keyusecombination";
+		});
+	}
+
+	// ---- WHICH KEY EACH TARGET GETS, AND WHETHER IT HOLDS ONE NOW ------------------------------------------------------------
+	struct HoldInput
+	{
+		bool loaded = false;    // its config's keys count as bound
+		bool applies = false;   // the row has the switch
+		KeyCombo current;       // the key its config gives it now
+		bool backup = false;    // <config>.amf-key-backup exists: AMF wrote its key into this config and has not given it back
+		bool eligible = true;   // it may be given a key (its config has a menu key AMF can change, its menu is not off)
+		HoldSpec spec;          // where and how its key is written (nothing chosen yet)
+	};
+	struct HoldOutput
+	{
+		bool held = false;       // the config carries AMF's key (and AMF's backup is there)
+		bool restored = false;   // AMF's backup is there but the config no longer carries AMF's key: something put the file back
+		HoldSpec spec;           // with the key chosen (spec.assigned), or kept when held
+	};
+
+	// True when a combo's key is one of the F-keys AMF writes for that path
+	inline bool CarriesAmfKey(const KeyCombo& a_c, InputPath a_path)
+	{
+		if (a_c.Empty()) { return false; }
+		for (const FKey& f : HeldKeys(a_path))
+		{
+			if (a_c.keys.back() == f.dik) { return true; }
+		}
+		return false;
+	}
+
+	// Held targets keep the key their config carries. Every other target that has the switch gets the first candidate - its
+	// path's F-keys, plain first, then with Shift, Ctrl or Alt where its config can say a combination (or with the modifiers
+	// it keeps itself) - that clashes with no key bound in any loaded target's config (each one's menu key, and a_others), and
+	// with no key already given to a target before it in this pass. None free: spec.assigned stays false.
+	inline std::vector<HoldOutput> AssignHeldKeys(const std::vector<HoldInput>& a_in, const std::vector<KeyCombo>& a_others)
+	{
+		std::vector<HoldOutput> out(a_in.size());
+		std::vector<KeyCombo> given(a_in.size());
+		for (std::size_t i = 0; i < a_in.size(); ++i)
+		{
+			out[i].spec = a_in[i].spec;
+			if (!a_in[i].applies) { continue; }
+			const bool carries = CarriesAmfKey(a_in[i].current, a_in[i].spec.path);
+			out[i].held = a_in[i].backup && carries;
+			out[i].restored = a_in[i].backup && !carries;
+			if (out[i].held)
+			{
+				HoldSpec& s = out[i].spec;
+				s.assigned = true;
+				s.combo = a_in[i].current;
+				for (const FKey& f : HeldKeys(s.path))
+				{
+					if (f.dik == a_in[i].current.keys.back()) { s.fkey = f; }
+				}
+				given[i] = s.combo;
+			}
+		}
+		for (std::size_t i = 0; i < a_in.size(); ++i)
+		{
+			if (!a_in[i].applies || !a_in[i].eligible || out[i].held) { continue; }
+			HoldSpec& s = out[i].spec;
+			std::vector<std::vector<std::uint32_t>> modOptions;
+			if (s.combos) { modOptions = { {}, { kDikLShift }, { kDikLCtrl }, { kDikLAlt } }; }
+			else { modOptions = { s.fixedMods }; }
+			for (const auto& mods : modOptions)
+			{
+				for (const FKey& f : HeldKeys(s.path))
+				{
+					KeyCombo cand;
+					cand.keys = mods;
+					cand.keys.push_back(f.dik);
+					bool free = true;
+					for (const KeyCombo& o : a_others) { free = free && !Clashes(cand, o); }
+					for (std::size_t j = 0; j < a_in.size() && free; ++j)
+					{
+						if (j == i) { continue; }   // its own key is the one being replaced
+						if (a_in[j].loaded) { free = !Clashes(cand, a_in[j].current); }
+						if (free && !given[j].Empty()) { free = !Clashes(cand, given[j]); }
+					}
+					if (!free) { continue; }
+					s.assigned = true;
+					s.combo = cand;
+					s.fkey = f;
+					break;
+				}
+				if (s.assigned) { break; }
+			}
+			if (s.assigned) { given[i] = s.combo; }
+		}
+		return out;
 	}
 }

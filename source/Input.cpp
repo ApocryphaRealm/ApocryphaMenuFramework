@@ -5,6 +5,7 @@
 #include <cmath>
 
 #include "Bindings.h"
+#include "GameKeysCore.h"
 #include "InputFrames.h"
 #include "LoadGuard.h"
 #include "Compat.h"
@@ -17,6 +18,7 @@
 #include <imgui.h>
 #include <imgui_internal.h>   // GImGui: the active item is asked for directly, so a text field can keep the D-pad
 
+#include <algorithm>
 #include <atomic>
 #include <mutex>
 #include <unordered_map>
@@ -1002,6 +1004,145 @@ namespace input
 					 offsets::kPollInputDevicesID.id(), offsets::kPollInputDevicesOffset.offset());
 
 		return true;
+	}
+
+	// ---- THE GAME-KEY INJECTOR (2.2.0 held-key fix) --------------------------------------------------------------------------
+	// Open Animation Replacer, Community Shaders and IED read their menu keys from the game's own input events, and a Windows
+	// F13-F15 sent with SendInput never reaches those (the final in-game test, 2026-10-12): with "AMF holds this key" on, their
+	// menus opened neither from AMF's button nor from a real F-key press, while the same keys spliced into the game's event
+	// list by TestBench's bench.input opened all three. So AMF presses those mods' keys the way bench.input does - ButtonEvents
+	// at the head of the list PollInputDevices dispatches (GameKeysCore.h sequences them: down, held, up on a later dispatch).
+	//
+	// Where: a SECOND call hook on the same PollInputDevices site, installed late - by an SKSE task on the first frame after the
+	// loading guard lifts (the Main Menu is up), on the game thread, which is the thread that runs PollInputDevices, so the call
+	// is never being executed while it is rewritten. Installed last, it is the OUTERMOST hook: every other plugin's hook on that
+	// site (those mods' own, and AMF's input hook above, installed at load) sees the key. A splice inside AMF's load-time hook
+	// would reach only the hooks installed before it - none, since AMF loads first. bench.input is installed at kInputLoaded,
+	// after every plugin's load, which is why it reached them.
+	//
+	// The game's own event slot is never pointed at AMF's nodes: the list goes on through a local head, AMF's nodes are taken
+	// out of whatever comes back, and the slot is written only when a hook further in changed the game's part of the list -
+	// so no node of AMF's can be handed back on an idle dispatch (logic library: the stale head, 2026-09-12). Nothing is spliced
+	// while the loading guard holds; a key already down is let go of after it. The nodes come from the game's heap as
+	// ButtonEvent::Create makes them and, as with bench.input, are not freed: no hook keeps an event past the dispatch, a press
+	// is a handful of 0x30-byte nodes, and freeing one that another plugin still pointed at would be worse.
+	namespace gamekeyinject
+	{
+		std::mutex g_lock;
+		gamekeys::VirtualKeys g_keys;   // guarded by g_lock
+		std::atomic<bool> g_ready{ false };
+		std::atomic<bool> g_requested{ false };
+
+		double Now()
+		{
+			using namespace std::chrono;
+			return duration<double>(steady_clock::now().time_since_epoch()).count();
+		}
+
+		RE::ButtonEvent* MakeKey(const gamekeys::KeyEvent& a_e)
+		{
+			// the user event the game gives that key on the keyboard (an F13-F15 has none), as a hardware press carries it
+			auto* controlMap = RE::ControlMap::GetSingleton();
+			const std::string_view name = controlMap ? controlMap->GetUserEventName(a_e.dik, RE::INPUT_DEVICE::kKeyboard) : std::string_view{};
+			RE::BSFixedString userEvent(name.empty() ? "" : std::string(name).c_str());
+			return RE::ButtonEvent::Create(RE::INPUT_DEVICE::kKeyboard, userEvent, a_e.dik, a_e.value, a_e.heldSecs);
+		}
+
+		struct Hook
+		{
+			static inline REL::Relocation<void(RE::BSTEventSource<RE::InputEvent*>*, RE::InputEvent**)> func;
+
+			static void thunk(RE::BSTEventSource<RE::InputEvent*>* a_dispatcher, RE::InputEvent** a_events)
+			{
+				std::vector<gamekeys::KeyEvent> events;
+				if (a_events && !loadguard::Blocked())
+				{
+					std::scoped_lock l(g_lock);
+					if (!g_keys.Idle()) { events = g_keys.Poll(Now()); }
+				}
+				if (events.empty())
+				{
+					func(a_dispatcher, a_events);
+					return;
+				}
+				RE::InputEvent* const gameHead = *a_events;
+				RE::InputEvent* list = gameHead;
+				std::vector<RE::InputEvent*> ours;
+				for (auto it = events.rbegin(); it != events.rend(); ++it)   // built back to front, so the list reads in order
+				{
+					RE::ButtonEvent* ev = MakeKey(*it);
+					if (!ev)
+					{
+						logger::warn("game keys: ButtonEvent::Create failed for key 0x{:02X}", it->dik);
+						continue;
+					}
+					ev->next = list;
+					list = ev;
+					ours.push_back(ev);
+				}
+				for (const auto& e : events)
+				{
+					if (e.value > 0.0f && e.heldSecs == 0.0f) { logger::debug("game keys: key 0x{:02X} down in the game's input", e.dik); }
+					else if (e.value == 0.0f) { logger::debug("game keys: key 0x{:02X} up in the game's input (held {:.3f} s)", e.dik, e.heldSecs); }
+				}
+				RE::InputEvent* local = list;
+				func(a_dispatcher, &local);
+				// AMF's nodes out of whatever came back; the rest is the game's own list as the hooks further in left it
+				RE::InputEvent* head = local;
+				RE::InputEvent* prev = nullptr;
+				for (RE::InputEvent* e = head; e;)
+				{
+					RE::InputEvent* next = e->next;
+					if (std::find(ours.begin(), ours.end(), e) != ours.end())
+					{
+						if (prev) { prev->next = next; }
+						else { head = next; }
+					}
+					else { prev = e; }
+					e = next;
+				}
+				if (head != gameHead) { *a_events = head; }
+			}
+		};
+	}
+
+	void RequestGameKeyInjector()
+	{
+		if (gamekeyinject::g_requested.exchange(true)) { return; }
+		auto* tasks = SKSE::GetTaskInterface();
+		if (!tasks)
+		{
+			logger::warn("game keys: no SKSE task interface - keys for mods that read the game's input cannot be pressed");
+			return;
+		}
+		tasks->AddTask([]() {
+			const std::uintptr_t site = offsets::kPollInputDevicesID.address() + offsets::kPollInputDevicesOffset.offset();
+			if (!REL::make_pattern<"E8">().match(site))
+			{
+				logger::error("game keys: PollInputDevices site 0x{:X} is not a call instruction now - the injector is NOT installed, "
+							  "keys for mods that read the game's input cannot be pressed", site);
+				return;
+			}
+			gamekeyinject::Hook::func = SKSE::GetTrampoline().write_call<5>(site, gamekeyinject::Hook::thunk);
+			gamekeyinject::g_ready.store(true, std::memory_order_release);
+			logger::info("game keys: injector installed on PollInputDevices (ID {}+0x{:X}) ahead of every other hook - the keys of mods "
+						 "that read the game's input are pressed into its own event list",
+						 offsets::kPollInputDevicesID.id(), offsets::kPollInputDevicesOffset.offset());
+		});
+	}
+
+	bool GameKeyInjectorReady() { return gamekeyinject::g_ready.load(std::memory_order_acquire); }
+
+	void GameKeyDown(std::uint32_t a_dik)
+	{
+		std::scoped_lock l(gamekeyinject::g_lock);
+		gamekeyinject::g_keys.Down(a_dik);
+	}
+
+	void GameKeyUp(std::uint32_t a_dik)
+	{
+		std::scoped_lock l(gamekeyinject::g_lock);
+		gamekeyinject::g_keys.Up(a_dik);
 	}
 
 	// ---- keys ImGui believes are held --------------------------------------------------

@@ -753,7 +753,7 @@ namespace devbenchtool
 			"method api|key, key, dik, keyFrom, blocked, state -1 not known / 0 closed / 1 open, presses, lastOutcome; loadGuard) | open {id} | close {id} "
 			"(ids oar, cs, ied, optiscaler, enb) - as the page's buttons: open closes this menu first, then OAR's API call or the mod's key "
 			"(SendInput, game in the foreground only) over the next frames; refused while the game is loading or before its main menu. "
-			"list carries each mod's hold (AMF holds this key: applies, available, held, amfKey F13-F17, configKey, liveKey, pending, why, config, backup); "
+			"list carries each mod's path (game: its key is pressed into the game's own input events; win32: SendInput), injectorReady, and hold (AMF holds this key: applies, available, held, restored - a mod manager put the file back -, amfKey - the free key AMF holds or would hold -, configKey, liveKey, pending, why, config, backup); "
 			"hold {id, on} writes AMF's key into that mod's own config (on) or the original back from <config>.amf-key-backup (off), as the row's switch.\","
 			"\"inputSchema\":{\"type\":\"object\",\"properties\":{"
 			"\"op\":{\"type\":\"string\"},\"node\":{\"type\":\"string\"},"
