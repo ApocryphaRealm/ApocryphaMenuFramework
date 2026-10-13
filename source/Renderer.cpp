@@ -3064,6 +3064,10 @@ namespace renderer
 							"already has a page here. A change is written to the file itself, only the value you change (or to its _custom.ini "
 							"when it has one), and the file as it first was is kept as .amf-backup. Mods and the game read these files when the "
 							"game starts, so a change takes effect next time. Each page has its own switch below."));
+						// 2.2.0 (the owner, 2026-10-13): each INI file's page starts off - the player turns on the ones wanted
+						ImGui::Spacing();
+						ImGui::TextWrapped("%s", TR("AMF_IniPickHelp", "Each INI file's page starts off: turn on the INI files you want below, "
+							"and only those appear in the Mods list."));
 						ImGui::Spacing();
 						inipages::DrawSettingsList();
 						ImGui::EndTabItem();

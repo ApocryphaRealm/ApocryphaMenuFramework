@@ -183,9 +183,10 @@ namespace settings
 		bool cleanOrphanedState = true;
 		// [IniMenus] bEnabled (2.1.9): INI-only mods' settings (SSE Display Tweaks so far) as pages here - IniPages.h. On by default.
 		bool iniMenus = true;
-		// [IniMenus] sOff (next after 2.1.9): the INI pages the player switched off one by one, by id ("skse/plugins/foo.ini",
-		// "data/bar.ini"), comma-separated, lower case. Empty = every page found is shown (the default).
-		std::string iniPagesOff;
+		// [IniMenus] sOn (2.2.0, replacing 2.1.9's sOff): the INI pages the player turned on one by one, by id
+		// ("skse/plugins/foo.ini", "data/bar.ini"), comma-separated, lower case. Empty = no INI page is shown (the default -
+		// each page starts off; inicore::ParseIdList / PageShown).
+		std::string iniPagesOn;
 		// [MfmMenus] bEnabled (next version after 2.1.9): Mod Function Menu entries as a menu here - MfmPages.h. On by default.
 		bool mfmMenus = true;
 		// [ImGuiMenus] (2.2.0; the owner, 2026-10-12: a row in AMF for other menus, so AMF takes over their hotkeys to call them and
