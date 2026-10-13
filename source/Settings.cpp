@@ -205,6 +205,10 @@ namespace settings
 				"; page; 0 = only the menus you switch on there (good for long lists). Your choices per menu are in\n"
 				"; ApocryphaMenuFramework\\McmImport.txt.\n"
 				"bImportNewMenus=" << (a_v.importNewMcmMenus ? 1 : 0) << "\n"
+				"; 1 = once a change on an MCM Helper or Prisma page has settled (a slider let go), the mod is told to apply it\n"
+				"; while its page stays open, as when the page is closed - so a mod such as TrueHUD changes as you set it.\n"
+				"; 0 = such mods apply a change only when you leave their page or close this menu.\n"
+				"bLiveApply=" << (a_v.liveApplyConverted ? 1 : 0) << "\n"
 				"; 1 = take the mods this menu draws in full out of SkyUI's own MCM list, so each one is\n"
 				"; set in one place. A mod with anything this menu cannot draw stays in SkyUI's list. 0 = leave\n"
 				"; SkyUI's list as it is. The list is kept in your save: to get every menu back in SkyUI without\n"
@@ -680,6 +684,7 @@ namespace settings
 			ReadBool(entries, "MCM.bLoadMcmHelperConfigs", g_values.loadMcmHelperConfigs);
 			ReadBool(entries, "MCM.bLoadSkyUIScriptMenus", g_values.loadSkyUIScriptMenus);
 			ReadBool(entries, "MCM.bImportNewMenus", g_values.importNewMcmMenus);
+			ReadBool(entries, "MCM.bLiveApply", g_values.liveApplyConverted);   // 2.2.1
 			ReadBool(entries, "FLICK.bHost", g_values.flickHost);   // 2.1.6
 			ReadNumber(entries, "Prisma.iControl", g_values.prismaControl);   // 2.1.6
 			g_values.prismaControl = std::clamp(g_values.prismaControl, 0, 2);

@@ -126,6 +126,11 @@ namespace mcmloader
 	};
 	HelperImport ImportHelperSettings(const std::string& a_modName, const std::vector<rememberedsettings::ForeignSetting>& a_settings);
 
+	// 2.2.1 live apply ([MCM] bLiveApply, LiveApplyCore.h) for DevBench amf.menu op=liveapply: the switch, the pending
+	// change, the last mod and event, the counts sent, and each mod's OnConfigClose kind once looked at; the Prisma side
+	// under "prisma". args {"on":0|1} sets and saves the switch as the settings page does. Thread-safe.
+	std::string LiveApplyJson(const std::string& a_argsJson);
+
 	// DevBench amf.mcm (rules 31 and 64). ops: list (default), get {mod,id}, set {mod,id,value},
 	// script {mod}. Thread-safe - runs on devbench's listener thread; a set is applied through the
 	// same path as the page.

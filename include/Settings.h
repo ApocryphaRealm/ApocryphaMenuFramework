@@ -148,6 +148,11 @@ namespace settings
 		// MCM loader: [MCM] bImportNewMenus - a menu the player never switched on or off comes into AMF (1) or stays in SkyUI
 		// only (0). Long lists start from none with 0 and switch on the few they use (xLenax, 2026-10-04).
 		bool importNewMcmMenus = true;
+		// 2.2.1 live apply (LiveApplyCore.h): [MCM] bLiveApply - once a change on an MCM Helper or Prisma page has settled
+		// (a slider let go), tell the mod to apply it while the page stays open: OnConfigClose then OnConfigOpen to an MCM
+		// Helper mod with an OnConfigClose of its own, Prisma_OnSettingsApplied to a Prisma one. 0: such mods apply only
+		// when their page is left or the menu closes (the behaviour before 2.2.1).
+		bool liveApplyConverted = true;
 		// 2.1.6 FLICK host: [FLICK] bHost - answer FLICK's API (FUCK.dll) so a mod written for FLICK draws its settings
 		// page here, as " (FLICK)". Read at the framework's own load, before any FLICK mod loads; a change applies after a
 		// restart. Off: FLICK mods find nothing (or the real FLICK).

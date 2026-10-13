@@ -221,6 +221,12 @@ namespace devbenchtool
 				// open / close run on the render thread, as the page's buttons do.
 				result = imguihost::ToolJson(args);
 			}
+			else if (op == "liveapply")
+			{
+				// 2.2.1: live apply on converted pages (LiveApplyCore.h) - {"op":"liveapply"} reports; {"op":"liveapply","on":0|1}
+				// also sets and saves [MCM] bLiveApply as the settings page's switch does.
+				result = mcmloader::LiveApplyJson(args);
+			}
 			else if (op == "prisma")
 			{
 				// 2.1.6: the Prisma MCM Redux menus - {"op":"prisma","do":"list|get|set|action|apply","mod":"<ModID>",...}
@@ -764,6 +770,10 @@ namespace devbenchtool
 			"Next version: mfm drives the Mod Function Menu entries: do=list (each entry's path, dll, api, type, actions, resolved, "
 			"missing; mfmLoaded = Mod Function Menu's own DLL is loaded too) | run {path} - presses the entry as the page does, on the render thread, and returns ok, type, message (the "
 			"text a Message/MessageBox function returned) and error. "
+			"2.2.1: liveapply reports live apply on converted pages ([MCM] bLiveApply): enabled, pending, pendingMod, pendingQuietFor, "
+			"inFlight, openMod, lastMod, lastEvent, lastDecision, onSettingChangeSent, liveClosesSent, liveOpensSent, skipped, dropped, "
+			"neverList, modsLookedAt (each MCM Helper mod's OnConfigClose: native, Papyrus, none of its own, unreadable) and prisma "
+			"{pending, pendingMod, appliedSent, dropped, last}; arg on=0|1 sets and saves the switch. "
 			"2.2.0: imgui drives Framework > Other menus (other mods' own menus): do=list (id, name, loaded, shown, module, "
 			"method api|key, key, dik, keyFrom, blocked, state -1 not known / 0 closed / 1 open, presses, lastOutcome; loadGuard) | open {id} | close {id} "
 			"(ids oar, cs, ied, optiscaler, enb) - as the page's buttons: open closes this menu first, then OAR's API call or the mod's key "

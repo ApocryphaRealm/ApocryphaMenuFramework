@@ -2606,6 +2606,15 @@ namespace renderer
 					}
 					ImGui::TextWrapped("%s", TR("AMF_McmLoadHelp", "On: every mod that uses MCM Helper also gets its menu here, read from "
 									   "the mod's own files. A change goes through MCM Helper exactly as it does in SkyUI's menu."));
+					// 2.2.1 live apply (the owner, 2026-10-13, from ofrose's report that TrueHUD's bars moved only once AMF closed)
+					if (widgets::Toggle(TR("AMF_McmLiveApply", "Apply changes straight away"), &values.liveApplyConverted))
+					{
+						logger::info("settings page: live apply on converted pages -> {}", values.liveApplyConverted);
+						settings::Save();
+					}
+					ImGui::TextWrapped("%s", TR("AMF_McmLiveApplyHelp", "On: once a change on an MCM Helper or Prisma page has settled (a slider "
+									   "let go), the mod is told to apply it, as when its page is closed - so a mod such as TrueHUD changes as you "
+									   "set it. Off: such mods apply a change only when you leave their page or close this menu."));
 					// phase 3: SkyUI menus written only in Papyrus (the owner, 2026-10-04: "do phase 3 for the SkyUI script menus")
 					if (widgets::Toggle(TR("AMF_McmScripts", "SkyUI script menus here"), &values.loadSkyUIScriptMenus))
 					{

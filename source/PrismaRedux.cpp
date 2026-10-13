@@ -3,6 +3,7 @@
 #include "AmfIcons.h"
 #include "HelpBar.h"
 #include "Input.h"
+#include "LiveApplyCore.h"
 #include "McmShared.h"
 #include "McmStyle.h"
 #include "PreciseSlider.h"
@@ -18,6 +19,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -88,6 +90,14 @@ namespace prisma
 
 		std::mutex g_lock;
 		std::vector<std::unique_ptr<Config>> g_configs;
+		// 2.2.1 live apply (LiveApplyCore.h, [MCM] bLiveApply), under g_lock: once a change has settled - no further change for
+		// 0.35 s, no control held, the INI written - the open page's mod gets Prisma_OnSettingsApplied (Redux's Apply) while
+		// the page stays open, instead of only when it is left.
+		liveapply::Gate g_liveGate;   // keyed on the config's index
+		int g_liveApplied = 0;
+		int g_liveDropped = 0;
+		std::string g_liveLast = "none yet";
+		double LiveNow() { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
 		std::atomic<bool> g_loaded{ false };
 		bool g_reduxLoaded = false;
 
@@ -452,6 +462,7 @@ namespace prisma
 			c.unsaved = true;
 			c.changed = true;
 			c.writeDue = ImGui::GetCurrentContext() ? ImGui::GetTime() + 0.4 : 0.0;   // a slider drag writes once it rests
+			g_liveGate.Change(static_cast<int>(a_index), LiveNow());
 			logger::info("prisma: {} {} -> {}", c.modId, a_id, a_value);
 		}
 
@@ -807,6 +818,26 @@ namespace prisma
 			{
 				if (c->unsaved && now >= c->writeDue) { WriteLocked(*c, false); }
 			}
+			// 2.2.1 live apply: after the writes above, so a change that has just been written can be applied this frame
+			if (g_liveGate.Pending())
+			{
+				const int key = g_liveGate.Key();
+				Config* c = key >= 0 && static_cast<std::size_t>(key) < g_configs.size() ? g_configs[key].get() : nullptr;
+				const auto decision = g_liveGate.Tick(LiveNow(), settings::Get().liveApplyConverted, g_open, ImGui::IsAnyItemActive(),
+					c && c->unsaved ? 1 : 0);
+				if (decision == liveapply::Decision::kFire && c)
+				{
+					logger::info("prisma: live apply - {}: change settled, Redux's Apply sent with the page open", c->modId);
+					ApplyLocked(*c);
+					++g_liveApplied;
+					g_liveLast = c->modId + ": Prisma_OnSettingsApplied";
+				}
+				else if (decision != liveapply::Decision::kWait && decision != liveapply::Decision::kIdle)
+				{
+					++g_liveDropped;
+					logger::debug("prisma: live apply - {} change {}", c ? c->modId : std::string("?"), liveapply::Name(decision));
+				}
+			}
 		}
 		if (!check || g_configs.empty()) { return; }
 		s_lastCheck = now;
@@ -863,6 +894,19 @@ namespace prisma
 		std::scoped_lock lock(g_lock);
 		ApplyVisibilityLocked();
 		logger::info("prisma: {} {} AMF", a_key, a_on ? "brought into" : "left out of");
+	}
+
+	LiveState Live()
+	{
+		std::scoped_lock lock(g_lock);
+		LiveState out;
+		out.pending = g_liveGate.Pending();
+		const int key = g_liveGate.Key();
+		if (out.pending && key >= 0 && static_cast<std::size_t>(key) < g_configs.size()) { out.pendingMod = g_configs[key]->modId; }
+		out.applied = g_liveApplied;
+		out.dropped = g_liveDropped;
+		out.last = g_liveLast;
+		return out;
 	}
 
 	std::string ToolJson(const std::string& a_argsJson)

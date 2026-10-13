@@ -52,6 +52,17 @@ namespace prisma
 	std::vector<ConfigRow> Configs();
 	void SetImported(const std::string& a_key, bool a_on);
 
+	// 2.2.1 live apply ([MCM] bLiveApply): what the Prisma side has done, for DevBench amf.menu op=liveapply. Thread-safe.
+	struct LiveState
+	{
+		bool pending = false;        // a change waiting to settle
+		std::string pendingMod;      // its ModID
+		int applied = 0;             // Prisma_OnSettingsApplied sent with the page open
+		int dropped = 0;             // pending changes dropped (page left - leaving applies - or the setting off)
+		std::string last;
+	};
+	LiveState Live();
+
 	// DevBench amf.menu op=prisma: do = list (default) | get {mod} | set {mod,id,value} | action {mod,id} | apply {mod}.
 	// mod is the ModID. Thread-safe.
 	std::string ToolJson(const std::string& a_argsJson);

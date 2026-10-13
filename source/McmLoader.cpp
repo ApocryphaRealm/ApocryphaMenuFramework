@@ -3,12 +3,14 @@
 #undef GetObject  // windows.h maps it to GetObjectW; CommonLib's Variable::GetObject is meant
 
 #include "Keyboard.h"
+#include "LiveApplyCore.h"
 #include "Input.h"
 #include "RememberedSettings.h"
 #include "McmScripts.h"
 #include "McmShared.h"
 #include "McmStyle.h"
 #include "PreciseSlider.h"
+#include "PrismaRedux.h"
 #include "Registry.h"
 #include "Settings.h"
 #include "Strings.h"
@@ -20,7 +22,9 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -31,6 +35,7 @@
 #include <optional>
 #include <set>
 #include <sstream>
+#include <string_view>
 #include <thread>
 #include <unordered_map>
 
@@ -48,6 +53,8 @@ namespace mcmloader
 		// the mod's own config script unless sourceForm/scriptName name another (MCM Helper's ValueOptionsHandler
 		// defaults). kPhase2 now means only what is still not drawable: an unknown sourceType.
 		enum class Source { kNone, kBool, kInt, kFloat, kString, kGlobal, kPropBool, kPropInt, kPropFloat, kPropString, kPhase2 };
+		// 2.2.1 live apply: what the config script's own OnConfigClose is (OwnConfigClose)
+		enum : int { kCloseNotRead = -2, kCloseUnreadable = -1, kCloseNone = 0, kClosePapyrus = 1, kCloseNative = 2 };
 
 		// A control's action (MCM Helper Config/Action.cpp): CallFunction on a script (the config script by default)
 		// or CallGlobalFunction, with params "{value}" (the control's new value), "{i}5", "{f}1.5", "{b}1", "{s}text",
@@ -124,6 +131,8 @@ namespace mcmloader
 			bool hideable = false;   // everything on it is drawable here, so SkyUI's copy may be hidden
 			bool hiddenInSkyUI = false;
 			std::string scriptState = "not looked up yet";
+			// 2.2.1 live apply, main thread: whether the config script has an OnConfigClose of its own (OwnConfigClose).
+			int ownClose = kCloseNotRead;
 		};
 
 		std::mutex g_mutex;                      // guards every Mod's values/script fields read off the main thread
@@ -696,6 +705,93 @@ namespace mcmloader
 			}
 		}
 
+		// ------------------------------------------------------- live apply (2.2.1, LiveApplyCore.h; [MCM] bLiveApply)
+		//
+		// A mod that reads its settings only in OnConfigClose (TrueHUD and the rest of ersh1's mods: "Event OnConfigClose()
+		// native"; logic library 9111) saw a change only when its page was left. With live apply on, once a change has
+		// settled - no further change for 0.35 s, no control held, its write, OnSettingChange and action finished - the
+		// mod gets OnConfigClose and then OnConfigOpen while its page stays open: the visit SkyUI plays when the page is
+		// left and entered again, which this menu already plays on every page switch. Only mods whose config script has
+		// an OnConfigClose of its own get it; for the rest OnSettingChange (sent after every change, as MCM Helper's own
+		// menu does) is all there is to tell.
+
+		// MCM Helper mods (their MCM\Config folder name) whose OnConfigClose must not be replayed while the page is open -
+		// for a mod whose close does one-shot work. Empty: none is known (the 2026-10-13 survey of 13 MCM Helper scripts
+		// with an OnConfigClose of their own found DLL reloads and settings reloads/saves only).
+		constexpr std::array<std::string_view, 0> kLiveApplyNever{};
+
+		std::mutex g_liveMutex;                 // guards the gate and the strings below
+		liveapply::Gate g_liveGate;             // keyed on the mod's index
+		std::string g_liveLastMod;
+		std::string g_liveLastEvent = "none yet";
+		std::string g_liveLastDecision = "none yet";
+		std::atomic<int> g_liveInFlight{ 0 };   // changes whose write / OnSettingChange / action has not finished
+		std::atomic<int> g_liveSettingChange{ 0 };
+		std::atomic<int> g_liveCloses{ 0 };
+		std::atomic<int> g_liveOpens{ 0 };
+		std::atomic<int> g_liveSkipped{ 0 };    // settled changes with nothing more to send (no OnConfigClose of its own, ...)
+		std::atomic<int> g_liveDropped{ 0 };    // pending changes dropped: the page was left (its close applies) or the setting is off
+
+		// Held by every step of one change; the last one to finish (or to be thrown away unrun) ends it.
+		struct LiveInFlight
+		{
+			LiveInFlight() { ++g_liveInFlight; }
+			~LiveInFlight() { --g_liveInFlight; }
+			LiveInFlight(const LiveInFlight&) = delete;
+			LiveInFlight& operator=(const LiveInFlight&) = delete;
+		};
+		using LiveToken = std::shared_ptr<LiveInFlight>;
+
+		double LiveNow()
+		{
+			return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+		}
+
+		void LiveRecord(const std::string& a_mod, std::string a_event)
+		{
+			std::scoped_lock lock(g_liveMutex);
+			g_liveLastMod = a_mod;
+			g_liveLastEvent = std::move(a_event);
+		}
+
+		const char* CloseKindName(int a_kind)
+		{
+			switch (a_kind)
+			{
+			case kCloseNone: return "none of its own";
+			case kClosePapyrus: return "Papyrus";
+			case kCloseNative: return "native";
+			case kCloseUnreadable: return "unreadable";
+			default: return "not looked at yet";
+			}
+		}
+
+		// Main thread. Whether the config script (or a script between it and MCM_ConfigBase / SKI_ConfigBase) defines
+		// OnConfigClose itself, and whether that is native (the mod's DLL). Read from the VM's own type info; the bases'
+		// empty events do not count.
+		int OwnConfigClose(const RE::BSTSmartPointer<RE::BSScript::Object>& a_script)
+		{
+			auto* type = a_script ? a_script->GetTypeInfo() : nullptr;
+			if (!type) { return kCloseUnreadable; }
+			for (; type; type = type->GetParent())
+			{
+				const char* name = type->GetName();
+				if (!name) { return kCloseUnreadable; }
+				if (_stricmp(name, "MCM_ConfigBase") == 0 || _stricmp(name, "SKI_ConfigBase") == 0) { return kCloseNone; }
+				const auto* funcs = type->GetMemberFuncIter();
+				const std::uint32_t count = funcs ? type->GetNumMemberFuncs() : 0;
+				for (std::uint32_t i = 0; i < count; ++i)
+				{
+					const auto& fn = funcs[i].func;
+					if (fn && fn->GetName().c_str() && _stricmp(fn->GetName().c_str(), "OnConfigClose") == 0)
+					{
+						return fn->GetIsNative() ? kCloseNative : kClosePapyrus;
+					}
+				}
+			}
+			return kCloseNone;
+		}
+
 		// ------------------------------------------------------- phase 2: forms, scripts, live values, actions (main thread)
 
 		// "Plugin.esp|800" (MCM Helper's FormUtil::GetFormFromIdentifier: the id is hex, relative to the plugin).
@@ -813,7 +909,8 @@ namespace mcmloader
 		// An action's argument list (MCM Helper's Function::FunctionArguments::Make) - shared with phase 3.
 		using detail::VarArgs;
 
-		void RunAction(std::size_t a_mod, const Control& a_c, const std::string& a_value)
+		// a_then (optional, 2.2.1): runs once the action has finished in Papyrus; dropped unrun when it could not be called.
+		void RunAction(std::size_t a_mod, const Control& a_c, const std::string& a_value, std::function<void()> a_then = {})
 		{
 			if (!a_c.action) { return; }
 			const Action& action = *a_c.action;
@@ -849,6 +946,7 @@ namespace mcmloader
 			}
 
 			RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> none;
+			if (a_then) { none.reset(new Then(std::move(a_then))); }
 			bool sent = false;
 			if (action.global)
 			{
@@ -931,7 +1029,17 @@ namespace mcmloader
 			const Control* control = &a_control;  // pages never change after Load, so the pointer outlives the task
 			logger::debug("MCM loader: {} {} -> {} (queued)", modName, a_control.key, a_value);
 
-			tasks->AddTask([a_mod, modName, control, a_value, a_closeAfter]() {
+			// 2.2.1 live apply: a change made on the open page (not the tool's whole visit, which closes by itself, nor the
+			// remembered-settings restore, which closes once at its end) waits to be applied once it has settled. The token
+			// is held by the write, OnSettingChange and the action, so the apply follows them.
+			LiveToken token = std::make_shared<LiveInFlight>();
+			if (!a_closeAfter && !g_memoryWriting.load())
+			{
+				std::scoped_lock lock(g_liveMutex);
+				g_liveGate.Change(static_cast<int>(a_mod), LiveNow());
+			}
+
+			tasks->AddTask([a_mod, modName, control, a_value, a_closeAfter, token]() {
 				const auto vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
 				if (!vm)
 				{
@@ -939,9 +1047,9 @@ namespace mcmloader
 					return;
 				}
 				// 2. after the value is stored: OnSettingChange, the action, and (no page open) OnConfigClose
-				auto after = [a_mod, control, a_value, a_closeAfter]() {
-					if (!control->id.empty()) { DispatchEvent(a_mod, "OnSettingChange", &control->id); }
-					RunAction(a_mod, *control, a_value);
+				auto after = [a_mod, control, a_value, a_closeAfter, token]() {
+					if (!control->id.empty() && DispatchEvent(a_mod, "OnSettingChange", &control->id, [token]() {})) { ++g_liveSettingChange; }
+					RunAction(a_mod, *control, a_value, [token]() {});
 					if (a_closeAfter) { DispatchEvent(a_mod, "OnConfigClose", nullptr); }
 					QueueRefresh(a_mod);
 				};
@@ -1773,6 +1881,118 @@ namespace mcmloader
 			g_lastDrawFrame = ImGui::GetFrameCount();
 		}
 
+		// Main thread: live apply's close-and-reopen for one mod whose change has settled (see the live apply block above).
+		void LiveReapply(std::size_t a_mod)
+		{
+			std::string modName;
+			{
+				std::scoped_lock lock(g_mutex);
+				if (a_mod >= g_mods.size()) { return; }
+				modName = g_mods[a_mod]->modName;
+			}
+			if (g_openMod.load() != static_cast<int>(a_mod))
+			{
+				logger::debug("MCM loader: live apply - {} page was left before the apply ran; its own OnConfigClose applies", modName);
+				++g_liveDropped;
+				return;
+			}
+			const auto script = EnsureScript(a_mod);
+			if (!script)
+			{
+				logger::info("MCM loader: live apply - {} not applied: no config script yet (the mod reads its settings when it next loads them)", modName);
+				++g_liveSkipped;
+				LiveRecord(modName, "none (no config script yet)");
+				return;
+			}
+			int own = kCloseNotRead;
+			{
+				std::scoped_lock lock(g_mutex);
+				own = g_mods[a_mod]->ownClose;
+			}
+			if (own == kCloseNotRead)
+			{
+				own = OwnConfigClose(script);
+				{
+					std::scoped_lock lock(g_mutex);
+					g_mods[a_mod]->ownClose = own;
+				}
+				const char* type = script->GetTypeInfo() ? script->GetTypeInfo()->GetName() : "?";
+				logger::info("MCM loader: live apply - {} ({}): OnConfigClose is {}{}", modName, type ? type : "?", CloseKindName(own),
+					own == kCloseNone ? " - OnSettingChange is all it is told after a change" : " - each settled change gets OnConfigClose then OnConfigOpen");
+			}
+			if (std::find(kLiveApplyNever.begin(), kLiveApplyNever.end(), std::string_view(modName)) != kLiveApplyNever.end())
+			{
+				logger::info("MCM loader: live apply - {} is on the never-replay list; it applies when its page is left", modName);
+				++g_liveSkipped;
+				LiveRecord(modName, "none (never-replay list)");
+				return;
+			}
+			if (own == kCloseNone)
+			{
+				logger::debug("MCM loader: live apply - {} has no OnConfigClose of its own; OnSettingChange already told it", modName);
+				++g_liveSkipped;
+				LiveRecord(modName, "none (no OnConfigClose of its own; OnSettingChange was sent)");
+				return;
+			}
+			// unreadable type info counts as "has one": the replay is the visit this menu plays on every page switch anyway
+			logger::info("MCM loader: live apply - {}: OnConfigClose then OnConfigOpen, the page stays open ({} OnConfigClose)", modName, CloseKindName(own));
+			LiveRecord(modName, "OnConfigClose");
+			if (!DispatchEvent(a_mod, "OnConfigClose", nullptr, [a_mod, modName]() {
+					// on a VM thread once the close has finished: the reopen goes back to the main thread
+					const auto tasks = SKSE::GetTaskInterface();
+					if (!tasks) { return; }
+					tasks->AddTask([a_mod, modName]() {
+						if (g_openMod.load() != static_cast<int>(a_mod))
+						{
+							logger::debug("MCM loader: live apply - {} page was left during the close; not reopened", modName);
+							return;
+						}
+						if (DispatchEvent(a_mod, "OnConfigOpen", nullptr))
+						{
+							++g_liveOpens;
+							LiveRecord(modName, "OnConfigClose + OnConfigOpen");
+						}
+						QueueRefresh(a_mod);
+					});
+				}))
+			{
+				LiveRecord(modName, "OnConfigClose NOT sent (dispatch failed)");
+				return;
+			}
+			++g_liveCloses;
+		}
+
+		// Render thread, every frame from Frame(): the gate's decision; logs and work only when it fires or drops.
+		void LiveTick()
+		{
+			liveapply::Decision decision = liveapply::Decision::kIdle;
+			int key = -1;
+			{
+				std::scoped_lock lock(g_liveMutex);
+				if (!g_liveGate.Pending()) { return; }
+				key = g_liveGate.Key();
+				decision = g_liveGate.Tick(LiveNow(), settings::Get().liveApplyConverted, g_openMod.load(), ImGui::IsAnyItemActive(), g_liveInFlight.load());
+				if (decision == liveapply::Decision::kWait) { return; }
+				g_liveLastDecision = liveapply::Name(decision);
+			}
+			std::string modName = "?";
+			{
+				std::scoped_lock lock(g_mutex);
+				if (key >= 0 && static_cast<std::size_t>(key) < g_mods.size()) { modName = g_mods[key]->modName; }
+			}
+			if (decision != liveapply::Decision::kFire)
+			{
+				++g_liveDropped;
+				logger::debug("MCM loader: live apply - {} change {}", modName, liveapply::Name(decision));
+				return;
+			}
+			logger::debug("MCM loader: live apply - {} change settled; queued", modName);
+			if (const auto tasks = SKSE::GetTaskInterface())
+			{
+				tasks->AddTask([mod = static_cast<std::size_t>(key)]() { LiveReapply(mod); });
+			}
+		}
+
 		void DrawPage(std::size_t a_mod, std::size_t a_page)
 		{
 			NoteDrawn(a_mod);
@@ -2039,6 +2259,7 @@ namespace mcmloader
 			QueueEvent(static_cast<std::size_t>(open), "OnConfigClose");
 			g_openMod.store(-1);
 		}
+		LiveTick();   // after the close above, so a change on a page just left is dropped (that close applies it)
 	}
 
 	void OnGameLoaded()
@@ -2052,10 +2273,15 @@ namespace mcmloader
 				mod->script.reset();
 				mod->scriptTried = false;
 				mod->scriptState = "not looked up yet (a game was loaded)";
+				mod->ownClose = kCloseNotRead;
 				mod->hiddenInSkyUI = false;  // what the save holds is re-established below
 			}
 		}
 		g_hiddenCount.store(0);
+		{
+			std::scoped_lock lock(g_liveMutex);
+			g_liveGate.Reset();   // a change pending from the game before belongs to its script objects
+		}
 		// No early return when both loaders are off: the give-back below still returns whatever the ledger says AMF hid.
 		if (settings::Get().hideMcmInSkyUI && (settings::Get().loadMcmHelperConfigs || settings::Get().loadSkyUIScriptMenus))
 		{
@@ -2157,6 +2383,77 @@ namespace mcmloader
 	{
 		scripts::SetEnabled(a_on);
 		QueueSyncSkyUI(settings::Get().hideMcmInSkyUI);  // their place in SkyUI's list follows the switch
+	}
+
+	std::string LiveApplyJson(const std::string& a_argsJson)
+	{
+		const json args = json::parse(a_argsJson, nullptr, false);
+		std::string error;
+		bool queuedSwitch = false;
+		if (args.is_object() && args.contains("on"))
+		{
+			const json& on = args["on"];
+			const bool want = on.is_boolean() ? on.get<bool>() : on.is_number() ? on.get<double>() != 0.0 : on.is_string() ? on.get<std::string>() != "0" : true;
+			if (const auto tasks = SKSE::GetTaskInterface())
+			{
+				// as the settings page's switch does, on the main thread where the frame reads it
+				tasks->AddTask([want]() {
+					settings::Get().liveApplyConverted = want;
+					logger::info("devbench: live apply on converted pages -> {} (saved)", want);
+					settings::Save();
+				});
+				queuedSwitch = true;
+			}
+			else { error = "no SKSE task interface"; }
+		}
+		json out;
+		out["ok"] = error.empty();
+		if (!error.empty()) { out["error"] = error; }
+		out["op"] = "liveapply";
+		out["enabled"] = settings::Get().liveApplyConverted;
+		if (queuedSwitch) { out["note"] = "the switch is applied on the next game frame; read op=liveapply again"; }
+		{
+			std::scoped_lock lock(g_liveMutex);
+			const double now = LiveNow();
+			out["pending"] = g_liveGate.Pending();
+			out["pendingQuietFor"] = g_liveGate.QuietFor(now);
+			std::string pendingMod;
+			if (g_liveGate.Pending())
+			{
+				std::scoped_lock modLock(g_mutex);
+				const int key = g_liveGate.Key();
+				if (key >= 0 && static_cast<std::size_t>(key) < g_mods.size()) { pendingMod = g_mods[key]->modName; }
+			}
+			out["pendingMod"] = pendingMod;
+			out["lastMod"] = g_liveLastMod;
+			out["lastEvent"] = g_liveLastEvent;
+			out["lastDecision"] = g_liveLastDecision;
+		}
+		out["inFlight"] = g_liveInFlight.load();
+		out["openMod"] = g_openMod.load();
+		out["onSettingChangeSent"] = g_liveSettingChange.load();
+		out["liveClosesSent"] = g_liveCloses.load();
+		out["liveOpensSent"] = g_liveOpens.load();
+		out["skipped"] = g_liveSkipped.load();
+		out["dropped"] = g_liveDropped.load();
+		out["quietSeconds"] = liveapply::Timing{}.quiet;
+		out["stuckSeconds"] = liveapply::Timing{}.stuck;
+		json never = json::array();
+		for (const auto name : kLiveApplyNever) { never.push_back(std::string(name)); }
+		out["neverList"] = never;
+		json kinds = json::array();
+		{
+			std::scoped_lock lock(g_mutex);
+			for (const auto& mod : g_mods)
+			{
+				if (mod->ownClose == kCloseNotRead) { continue; }
+				kinds.push_back({ { "mod", mod->modName }, { "onConfigClose", CloseKindName(mod->ownClose) } });
+			}
+		}
+		out["modsLookedAt"] = kinds;
+		const prisma::LiveState p = prisma::Live();
+		out["prisma"] = { { "pending", p.pending }, { "pendingMod", p.pendingMod }, { "appliedSent", p.applied }, { "dropped", p.dropped }, { "last", p.last } };
+		return out.dump();
 	}
 
 	std::string ToolJson(const std::string& a_argsJson)
