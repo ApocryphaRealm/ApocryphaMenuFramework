@@ -26,11 +26,20 @@ Licence: GPL-3.0-or-later (see `LICENSE` and `NOTICE.md`). Not a fork: contains 
   the menu; the toggle key is rebindable from Framework -> Controls (default F1).
 - **Per-save persistence for registered mods** - a plain-text `<save>.amf-state.ini` beside each
   save, restored when that save loads, scoped exactly like the co-save.
+- **Keep the camera awake.** With the game left running behind the menu, the idle camera never starts circling
+  the character while it is open (Settings -> General, on by default, `[Menu] bKeepCameraAwake`).
 - **Toggles render as sliding switches**, sliders can be nudged with the arrow keys, and
   explanatory text is never drawn in the near-invisible disabled grey.
 - **Hang watchdog.** If the renderer produces no frame for 120 s (configurable, `[Watchdog]`), the
   framework terminates the game process itself - the only thing that closes a kernel-wedged
   Skyrim, since Task Manager cannot.
+- **INI files as pages.** Every `.ini` directly in `Data\SKSE\Plugins` and in `Data` gets a page "<name> (INI)" (a tab
+  per section, a control per key) unless its mod has a page of its own; a change writes only that value, keeping a
+  `.amf-backup` of the file. Each page has its own switch under Settings -> Converted menus -> INI.
+- **Converted menus.** Mod Function Menu entries run in AMF itself (Settings -> Converted menus -> MFM):
+  Mod Function Menu is not needed, and mods that list it as a requirement only need their own files. If it is
+  installed as well, it takes the key first: on F1 (both menus' default) only Mod Function Menu opens - uninstall it, or
+  give it another key in `ccld_ModFunctionMenu.toml`.
 - **DevBench driving tools** (optional, only if DevBench is installed): `amf.menu` opens, selects
   and reads the menu headlessly (`op=systemrow` reports the journal's own category list and whether
   the framework's row is live in it); `amf.mainmenu` drives the vanilla start menu; `amf.process`
@@ -72,6 +81,11 @@ French, Spanish, Italian, Polish and Czech. The Language combo on the Framework 
 English. The font atlas takes its glyph ranges from the loaded translation and merges a system CJK or
 Hangul face where the chosen font lacks the characters. Each mod's own page is that mod's to translate - a mod that ships its own `<Mod>_<language>.txt` beside ours follows the same Language setting (`AMF_GetLanguage()` in the C API) and its characters go into the atlas automatically (1.6.5).
 Corrections from native speakers are welcome - the files are plain text.
+
+## Credits
+
+- **ccld** - Mod Function Menu (MIT). AMF shows Mod Function Menu's entries as one of its converted menus; that support
+  is a clean reimplementation from Mod Function Menu's description and public SDK header, with none of its code.
 
 ## Licence
 

@@ -4,12 +4,14 @@
 
 #include "Renderer.h"
 #include "Settings.h"
+#include "ThemeStyle.h"
 #include "utils/Logger.h"
 
 #include <imgui.h>
 
 #include <algorithm>
 #include <charconv>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <string_view>
@@ -29,6 +31,37 @@ namespace theme
 		// page's swatches and "Theme". Full alpha; ImU32 (ABGR).
 		std::uint32_t g_roleU32[kRoleCount] = {};
 		std::uint32_t g_themeRoleU32[kRoleCount] = {};
+
+		// Control outlines (next after 2.1.9, the owner 2026-10-12): never thinner than one pixel (themestyle::kMinOutlineWidth),
+		// and never closer to the panel or a control's face than this contrast ratio (WCAG's, 1 = identical, 21 = black on
+		// white). The package gate's theme-outline-gate.py holds the same figure and the same sum.
+		// v4 (the owner, 2026-10-12: outlines "faint" in Oblivion and Dear Diary, "at least visible"): 2.0 -> 4.5. WCAG's 3:1
+		// (non-text contrast, 1.4.11) is the floor for a component's boundary, but this outline is a one-pixel hairline that
+		// does not grow with the display (1 px at 1800p), and a stroke that thin reads like text, so it is held to text's 4.5:1
+		// (1.4.3). At 3:1 the two themes reported faint would still have passed (Dear Diary 3.4, Oblivion 3.6 on its parchment).
+		constexpr float kMinOutlineContrast = 4.5f;
+
+		float Luminance(const ImVec4& a_c)
+		{
+			auto lin = [](float v) { return v <= 0.04045f ? v / 12.92f : std::pow((v + 0.055f) / 1.055f, 2.4f); };
+			return 0.2126f * lin(a_c.x) + 0.7152f * lin(a_c.y) + 0.0722f * lin(a_c.z);
+		}
+
+		// a colour as it shows over an opaque one (the panel is taken as drawn over black)
+		ImVec4 Over(const ImVec4& a_top, const ImVec4& a_under)
+		{
+			const float a = std::clamp(a_top.w, 0.0f, 1.0f);
+			return ImVec4{ a_top.x * a + a_under.x * (1.0f - a), a_top.y * a + a_under.y * (1.0f - a), a_top.z * a + a_under.z * (1.0f - a), 1.0f };
+		}
+
+		// The contrast of a line drawn on a face that sits on the panel.
+		float OutlineContrast(const ImVec4& a_line, const ImVec4& a_face, const ImVec4& a_panel)
+		{
+			const ImVec4 panel = Over(a_panel, ImVec4{ 0.0f, 0.0f, 0.0f, 1.0f });
+			const ImVec4 face = Over(a_face, panel);
+			const float l1 = Luminance(Over(a_line, face)), l2 = Luminance(face);
+			return (std::max(l1, l2) + 0.05f) / (std::min(l1, l2) + 0.05f);
+		}
 
 		std::string_view Trim(std::string_view a_text)
 		{
@@ -656,10 +689,6 @@ namespace theme
 		const Palette& active = GetActiveTheme();
 
 		ImGuiStyle& style = ImGui::GetStyle();
-		style.WindowBorderSize = active.borderThickness;
-		style.FrameBorderSize = active.borderThickness;
-		style.PopupBorderSize = active.borderThickness;
-		style.ChildBorderSize = active.borderThickness;
 
 		// MARGINS FOR THE KNOTWORK ART (author, 2026-09-01, comparing Vanilla against Untarnished:
 		// "the Skyrim theme doesn't let them fully see all the corners and lines of a box with a
@@ -676,11 +705,13 @@ namespace theme
 		// the figure - its corner ornament is a fixed 26px band inside whatever rect it frames - but
 		// applying it to the plain themes too keeps the layout identical whichever theme is picked,
 		// so switching theme changes the colours and the art, never the geometry.
+		//
+		// v4: THE WHOLE STYLE IS BUILT AGAIN ON EVERY APPLY (ThemeStyle.h) - ImGui's defaults, these sizes, the borders (every
+		// control keeps an outline of at least one pixel), then the display's scale once. Until v4 start-up scaled the style
+		// once after the first Apply, and every theme switch wrote the padding back unscaled over an otherwise scaled style:
+		// the window padding shrank on any display taller than 1080 until a relaunch (Norden - Black, the v3 test).
 		constexpr float kFramePadding = static_cast<float>(knotwork::kCorner) + 8.0f;
-		style.WindowPadding = ImVec2(kFramePadding, kFramePadding);
-		style.TabBorderSize = active.borderThickness;
-		style.WindowRounding = 0.0f;
-		style.FrameRounding = 0.0f;
+		themestyle::Build(style, active.borderThickness, kFramePadding, renderer::UiScale());
 
 		{
 			static const std::array<std::string, kRoleCount> kNone{};
@@ -692,6 +723,30 @@ namespace theme
 			for (int r = 0; r < kRoleCount; ++r) { g_roleU32[r] = look.role[r]; g_themeRoleU32[r] = look.themeRole[r]; }
 			g_headerTextU32 = look.header;
 			g_helpTextU32 = look.help;
+
+			// EVERY CONTROL HAS A VISIBLE OUTLINE (the owner, 2026-10-12, Norden - Black: "the button faces don't have any kind
+			// of outline at all ... everything should have a basic minimal outline so that it's at least visible. And then the
+			// detailed art styled frame that goes around it when it's focused or hovered"). Faces sit on the background colour
+			// at rest, so a control is told from the panel by its outline alone. The outline is the Border colour; when that
+			// would not show - transparent, or within kMinOutlineContrast of the panel or a face - it is the Text colour,
+			// which every theme already makes readable on both. The same test is the package gate's
+			// (.MD\scripts\gates\theme-outline-gate.py), so a shipped theme never needs the fallback.
+			const ImVec4 panel = style.Colors[ImGuiCol_WindowBg];
+			const ImVec4 line = style.Colors[ImGuiCol_Border];
+			const float worst = std::min({ OutlineContrast(line, panel, panel),
+										   OutlineContrast(line, style.Colors[ImGuiCol_FrameBg], panel),
+										   OutlineContrast(line, style.Colors[ImGuiCol_Button], panel) });
+			if (worst < kMinOutlineContrast)
+			{
+				const ImVec4 t = style.Colors[ImGuiCol_Text];
+				style.Colors[ImGuiCol_Border] = ImVec4{ t.x, t.y, t.z, 1.0f };
+				logger::info("theme \"{}\": the border colour does not show against the panel or a control face (contrast {:.2f}, "
+							 "needs {:.1f}) - control outlines use the text colour", active.id, worst, kMinOutlineContrast);
+			}
+			else
+			{
+				logger::debug("theme \"{}\": control outline contrast {:.2f} (needs {:.1f})", active.id, worst, kMinOutlineContrast);
+			}
 			logger::debug("theme colours ({}): {}", active.id, look.picked.empty() ? std::string("all the theme's own") : "the player's " + look.picked);
 		}
 

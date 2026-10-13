@@ -81,6 +81,15 @@ ART_FOLDERS = {
 }
 
 
+def extra_line_dlls():
+    """Base names from fomod/extra-line-dlls.txt (comments and blank lines skipped)."""
+    path = os.path.join(REPO, "fomod", "extra-line-dlls.txt")
+    if not os.path.isfile(path):
+        return []
+    with open(path, encoding="utf-8") as f:
+        return [l.strip() for l in f if l.strip() and not l.lstrip().startswith("#")]
+
+
 def fail(msg):
     raise SystemExit("build-fomod: " + msg)
 
@@ -130,6 +139,15 @@ def main(out_root=None):
         pdb = os.path.join(REPO, rel, PDB)
         if os.path.isfile(pdb):                      # rule 43 - ship the symbols
             copy_into(pdb, dest)
+        # next after 2.1.9: the DLLs that ship beside AMF's in each line (fomod/extra-line-dlls.txt - AMF-Host-OAR), each
+        # from the same build tree, with its PDB; a missing one stops the package
+        for extra in extra_line_dlls():
+            for ext in (".dll", ".pdb"):
+                src = os.path.join(REPO, rel, extra + ext)
+                if not os.path.isfile(src):
+                    fail("build line '%s' has no %s%s (fomod/extra-line-dlls.txt) - build it (bridges/*/build.bat) "
+                         "before packaging" % (folder, extra, ext))
+                copy_into(src, dest)
 
     # The 1.7 line links CommonLibSSE-NG 7.x, which is GPL-3.0-or-later with a modding exception,
     # so that folder carries its own licence set. These were hand-placed in the package every

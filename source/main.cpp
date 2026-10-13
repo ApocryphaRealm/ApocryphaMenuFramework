@@ -6,6 +6,8 @@
 #include "PrismaRedux.h"
 #include "Input.h"
 #include "IniPages.h"
+#include "MfmPages.h"
+#include "ImguiHost.h"
 #include "Persistence.h"
 #include "Registry.h"
 #include "Keyboard.h"
@@ -137,6 +139,8 @@ namespace
 			mcmloader::Load();
 			prisma::Load();  // 2.1.6: Prisma MCM Redux menus as AMF entries
 			inipages::Load();  // 2.1.9: INI-only mods' settings (SSE Display Tweaks) as AMF entries
+			mfmpages::Load();  // next version: Mod Function Menu entries as one AMF menu
+			imguihost::Load();  // next version: other mods' own ImGui menus (OAR, Community Shaders, IED, OptiScaler) - the launcher
 			rememberedsettings::Init();  // the remembered MCM settings' active profile
 			// 2.1.9 (AmeliaZ): state files left by deleted saves are deleted (the owner, 2026-10-12: not moved to a backup folder)
 			if (settings::Get().cleanOrphanedState)
@@ -325,6 +329,17 @@ AMF_API std::uint32_t AMF_GetInputMode()
 	// track the pad being picked up mid-session; a saved setting could sit there saying "keyboard"
 	// while the player is on a controller.
 	return input::UsingController() ? 1u : 0u;
+}
+
+// next after 2.1.9: a bridge DLL hosting another mod's live ImGui menu in AMF's page (AMF/API.h, ImguiHost.h)
+AMF_API bool AMF_RegisterHostBridge(const char* a_target, std::uint32_t a_bridgeApi, AMF_HostFrameCallback a_callback, void* a_user)
+{
+	return imguihost::RegisterBridge(a_target, a_bridgeApi, a_callback, a_user);
+}
+
+AMF_API void AMF_HostBridgeFailed(const char* a_target, const char* a_reason)
+{
+	imguihost::BridgeFailed(a_target, a_reason);
 }
 
 SKSEPluginLoad(const SKSE::LoadInterface* a_skse)

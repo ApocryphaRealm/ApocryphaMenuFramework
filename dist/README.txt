@@ -34,6 +34,13 @@ WHAT YOU GET
     add your own (CUSTOM-MENU-ART.md).
   * Full controller navigation. Keyboard or controller is detected from whatever you last
     used - there is nothing to configure and nothing to switch on.
+  * Every INI file directly in Data\SKSE\Plugins and in Data gets a page, "<name> (INI)" - a tab
+    per section, a control per setting, the file's comments as the help - unless its mod has a
+    page here of its own. A change writes only that one value (a copy of the file as it first was
+    is kept as .amf-backup) and takes effect the next time the game starts. Settings > Converted
+    menus > INI lists them, each with its own switch, and says why any file was left out.
+  * Keep the camera awake: with the game left running behind the menu, the idle camera never
+    starts circling your character while the menu is open (Settings > General, on by default).
   * Menu-key rebinding (default F1), per-save persistence of menu state, and a hang watchdog
     so a wedged game can always be closed.
   * Every control the framework claims can be switched off or rebound - no key is taken

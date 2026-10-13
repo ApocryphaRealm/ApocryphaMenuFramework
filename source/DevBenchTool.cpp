@@ -2,6 +2,8 @@
 #include "FlickHost.h"
 #include "PrismaRedux.h"
 #include "IniPages.h"
+#include "MfmPages.h"
+#include "ImguiHost.h"
 #include "SystemRow.h"
 
 #include "DevBench/DevBenchAPI.h"
@@ -202,6 +204,18 @@ namespace devbenchtool
 				// 2.1.9: INI-only mods' pages (IniPages.h) - {"op":"ini","do":"list|get|set","mod":"SSEDisplayTweaks","section":"Render","name":"EnableVSync","value":"false"}
 				result = inipages::ToolJson(args);
 			}
+			else if (op == "mfm")
+			{
+				// next version: Mod Function Menu entries (MfmPages.h) - {"op":"mfm","do":"list|run","path":"Mod/Toggle UI/Toggle UI.toml"}.
+				// run hands the call to the render thread and waits for it (a mod's function is never called on this thread).
+				result = mfmpages::ToolJson(args);
+			}
+			else if (op == "imgui")
+			{
+				// next version: other mods' own ImGui menus (ImguiHost.h) - {"op":"imgui","do":"list|open|close","id":"oar|cs|ied|optiscaler"}.
+				// open / close run on the render thread, as the page's buttons do.
+				result = imguihost::ToolJson(args);
+			}
 			else if (op == "prisma")
 			{
 				// 2.1.6: the Prisma MCM Redux menus - {"op":"prisma","do":"list|get|set|action|apply","mod":"<ModID>",...}
@@ -366,7 +380,8 @@ namespace devbenchtool
 			else if (op == "setting")
 			{
 				// 2.1.7: set one of the Settings > General values the settings page sets, and save the INI, exactly as the
-				// page's control does. args name: pointerSpeed (value 0.25-4.00) | wheelSwitchesTabs (0/1) | pauseGame (0/1).
+				// page's control does. args name: pointerSpeed (value 0.25-4.00) | wheelSwitchesTabs (0/1) | pauseGame (0/1)
+				// | keepCameraAwake (0/1, next after 2.1.9).
 				// No name (or no value) just reports them. The write runs on the game's main thread, where the frame reads them.
 				const std::string name = JsonStr(args, "name");
 				const double value = JsonNum(args, "value", -1000.0);
@@ -374,9 +389,14 @@ namespace devbenchtool
 				std::string error;
 				if (!name.empty() && value > -999.0)
 				{
-					if (name != "pointerSpeed" && name != "wheelSwitchesTabs" && name != "pauseGame")
+					if (name != "pointerSpeed" && name != "wheelSwitchesTabs" && name != "pauseGame" && name != "keepCameraAwake" &&
+						name != "perfOverlay" && name != "perfCorner")
 					{
-						ok = false; error = "unknown setting '" + name + "' (pointerSpeed|wheelSwitchesTabs|pauseGame)";
+						ok = false; error = "unknown setting '" + name + "' (pointerSpeed|wheelSwitchesTabs|pauseGame|keepCameraAwake|perfOverlay|perfCorner)";
+					}
+					else if (name == "perfCorner" && !(value >= 0.0 && value <= 3.0))
+					{
+						ok = false; error = "perfCorner takes 0-3 (top-left, top-right, bottom-left, bottom-right)";
 					}
 					else if (name == "pointerSpeed" && !(value >= 0.25 && value <= 4.0))
 					{
@@ -388,6 +408,9 @@ namespace devbenchtool
 							auto& v = settings::Get();
 							if (name == "pointerSpeed")     { v.pointerSpeed = static_cast<float>(std::round(value * 100.0) / 100.0); }
 							else if (name == "wheelSwitchesTabs") { v.wheelSwitchesTabs = value != 0.0; }
+							else if (name == "keepCameraAwake") { v.keepCameraAwake = value != 0.0; }
+							else if (name == "perfOverlay") { v.perfOverlay = value != 0.0; }
+							else if (name == "perfCorner") { v.perfCorner = static_cast<int>(value); }
 							else                             { v.pauseGameWhileOpen = value != 0.0; }
 							logger::info("devbench: setting {} -> {} (saved)", name, value);
 							settings::Save();
@@ -404,6 +427,9 @@ namespace devbenchtool
 						 ",\"pointerSpeed\":" + std::to_string(v.pointerSpeed) +
 						 ",\"wheelSwitchesTabs\":" + (v.wheelSwitchesTabs ? "true" : "false") +
 						 ",\"pauseGame\":" + (v.pauseGameWhileOpen ? "true" : "false") +
+						 ",\"keepCameraAwake\":" + (v.keepCameraAwake ? "true" : "false") +
+						 ",\"perfOverlay\":" + (v.perfOverlay ? "true" : "false") +
+						 ",\"perfCorner\":" + std::to_string(v.perfCorner) +
 						 ",\"note\":\"a change is applied on the next game frame; read op=state or op=setting again\"}";
 			}
 			else if (op == "cleanstate")
@@ -728,7 +754,15 @@ namespace devbenchtool
 			"(nothing when the folder holds no .ess); args value=1 lists only; returns saves, stateFiles, orphaned, deleted, failed, "
 			"saveFolder, files and enabledAtStart (the Settings > General switch). "
 			"2.1.9: ini drives the INI-only mods' pages (SSE Display Tweaks): do=list | get {mod} | set {mod, section, name, value} - set "
-			"writes the mod's override file exactly as the page's control does (value checked against the key's kind).\","
+			"writes the mod's override file exactly as the page's control does (value checked against the key's kind). "
+			"Next version: mfm drives the Mod Function Menu entries: do=list (each entry's path, dll, api, type, actions, resolved, "
+			"missing; mfmLoaded = Mod Function Menu's own DLL is loaded too) | run {path} - presses the entry as the page does, on the render thread, and returns ok, type, message (the "
+			"text a Message/MessageBox function returned) and error. "
+			"Next version: imgui drives Framework > Other menus (other mods' own ImGui menus): do=list (id, name, loaded, shown, module, "
+			"method api|key, key, dik, keyFrom, blocked, state -1 not known / 0 closed / 1 open, presses, lastOutcome) | open {id} | close {id} "
+			"(ids oar, cs, ied, optiscaler) - as the page's buttons: open closes this menu first, then OAR's API call or the mod's key "
+			"(SendInput, game in the foreground only) over the next frames. state.perf is AMF's own frame timing (fps and frameMs min/avg/max "
+			"over the last 240 frames, overlay); setting name=perfOverlay value=0|1 switches the corner graph, name=perfCorner value=0-3 picks its corner.\","
 			"\"inputSchema\":{\"type\":\"object\",\"properties\":{"
 			"\"op\":{\"type\":\"string\"},\"node\":{\"type\":\"string\"},"
 			"\"mod\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"position\":{\"type\":\"string\"},"

@@ -383,6 +383,11 @@ namespace consumer
 		return id != 0 && id == static_cast<std::uint32_t>(::GetCurrentThreadId());
 	}
 
+	std::uint32_t RenderThreadId()
+	{
+		return g_renderThreadId.load(std::memory_order_acquire);
+	}
+
 	// SVG TEXTURES (2.1.3). SKSE Menu Framework mods may ship .svg icons (Walk With Me: Data/Interface/WalkWithMe/*.svg),
 	// and the WIC loader below reads only bitmaps - a user's log showed eight "could not decode" lines and the mod's
 	// icons missing (2026-10-07). nanosvg parses and rasterises the file; it is drawn at a size that stays sharp when the
@@ -697,8 +702,8 @@ void amf_BeginConsumerHeader()
 	float stock = -1.0f;
 	// ScaleAllSizes truncates (ImTrunc), so AMF's scaled padding is floor(34 x scale) - 56 at 1800p, not 56.7 - and
 	// stock ImGui scaled the same way would have floor(8 x scale): 13 at 1800p, 10 at 1440p, 8 at 1080p.
-	if (std::abs(pad - std::floor(base * scale)) < 0.5f) { stock = std::floor(8.0f * scale); }   // the start-up style
-	else if (std::abs(pad - base) < 0.5f)                { stock = 8.0f; }                       // after a theme switch: 34 unscaled
+	if (std::abs(pad - std::floor(base * scale)) < 0.5f) { stock = std::floor(8.0f * scale); }   // AMF's style (start-up and, since v4, every theme switch)
+	else if (std::abs(pad - base) < 0.5f)                { stock = 8.0f; }                       // a theme switch before v4 left 34 unscaled
 	if (stock < 0.0f) { return; }                                          // the consumer's own padding: leave it
 	g_headerWindow = window;
 	g_headerSavedPadX = pad;

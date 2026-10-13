@@ -14,6 +14,9 @@
 #include "PrismaRedux.h"
 #include "HelpBar.h"
 #include "IniPages.h"
+#include "MfmPages.h"
+#include "ImguiHost.h"
+#include "Performance.h"
 #include "McmStyle.h"
 #include "Input.h"
 #include "Offsets.h"
@@ -152,6 +155,80 @@ namespace renderer
 					logger::info("pause: released (menu closed, setting off, or a menu's scripts running) - game resumed (pause count now {})", ui->numPausesGame);
 				}
 			});
+		}
+		// KEEP THE CAMERA AWAKE (next after 2.1.9, [Menu] bKeepCameraAwake; the owner, 2026-10-12, after the Oblivion version's
+		// switch of the same name). With the game running behind our menu, nothing the player does reaches the game, so the
+		// player camera's idle timer runs out and the auto vanity camera starts circling the character. While the menu is open
+		// and our own pause is not in effect, the camera's allowAutoVanityMode (CommonLibSSE-NG's name, PlayerCamera
+		// RUNTIME_DATA2 - the value the game fills from bDisableAutoVanityMode:Camera) is held false. Its own value and its
+		// idleTimer are remembered on the way in and written back on the way out, so nothing is left changed when the menu
+		// closes, and a crash leaves nothing at all: no INI setting and no file is touched. Main thread only, once on each edge,
+		// like SyncGamePause.
+		bool g_idleCameraHeld = false;   // main thread only
+		bool g_savedAllowAutoVanity = true;   // main thread only
+		float g_savedIdleTimer = 0.0f;        // main thread only
+		std::atomic<bool> g_idleCameraHeldMirror{ false };   // for the DevBench state (listener thread)
+
+		void SyncIdleCamera(bool a_want)
+		{
+			static bool last = false;   // render thread only
+			if (a_want == last)
+			{
+				return;
+			}
+			last = a_want;
+			auto* tasks = SKSE::GetTaskInterface();
+			if (!tasks)
+			{
+				logger::warn("camera: no SKSE task interface - the idle camera is not {}", a_want ? "held off" : "released");
+				return;
+			}
+			tasks->AddTask([a_want]() {
+				auto* camera = RE::PlayerCamera::GetSingleton();
+				if (!camera)
+				{
+					logger::warn("camera: PlayerCamera not ready - idle camera {} skipped", a_want ? "hold" : "release");
+					return;
+				}
+				auto& data = camera->GetRuntimeData2();
+				if (a_want && !g_idleCameraHeld)
+				{
+					g_savedAllowAutoVanity = data.allowAutoVanityMode;
+					g_savedIdleTimer = data.idleTimer;
+					data.allowAutoVanityMode = false;
+					g_idleCameraHeld = true;
+					g_idleCameraHeldMirror.store(true, std::memory_order_relaxed);
+					logger::debug("camera: menu open, game running - idle vanity camera held off (its own allowAutoVanityMode {}, idleTimer {:.2f})",
+								  g_savedAllowAutoVanity, g_savedIdleTimer);
+				}
+				else if (!a_want && g_idleCameraHeld)
+				{
+					const float timerNow = data.idleTimer;
+					data.idleTimer = g_savedIdleTimer;
+					data.allowAutoVanityMode = g_savedAllowAutoVanity;
+					g_idleCameraHeld = false;
+					g_idleCameraHeldMirror.store(false, std::memory_order_relaxed);
+					logger::debug("camera: idle vanity camera released (menu closed, switch off or our pause on) - allowAutoVanityMode {} "
+								  "and idleTimer {:.2f} put back (it read {:.2f})",
+								  g_savedAllowAutoVanity, g_savedIdleTimer, timerNow);
+				}
+			});
+		}
+		// For the DevBench state: the switch, whether we hold the camera now, and the camera's own values as they read now
+		// (listener thread - plain reads of a float, a bool and a pointer, for reporting only).
+		std::string IdleCameraJson()
+		{
+			std::string out = std::string("{\"keepCameraAwake\":") + (settings::Get().keepCameraAwake ? "true" : "false") +
+							  ",\"idleCameraBlocked\":" + (g_idleCameraHeldMirror.load(std::memory_order_relaxed) ? "true" : "false");
+			if (auto* camera = RE::PlayerCamera::GetSingleton())
+			{
+				const auto& data = camera->GetRuntimeData2();
+				const auto* vanity = camera->GetRuntimeData().cameraStates[RE::CameraStates::kAutoVanity].get();
+				out += std::string(",\"allowAutoVanityMode\":") + (data.allowAutoVanityMode ? "true" : "false") +
+					   ",\"idleTimer\":" + std::to_string(data.idleTimer) +
+					   ",\"vanityActive\":" + (vanity && camera->currentState.get() == vanity ? "true" : "false");
+			}
+			return out + "}";
 		}
 		std::atomic<void*> g_gameWindow{ nullptr };   // the game's HWND, set at D3DInit; read by the watchdog
 		std::atomic<bool> g_justOpened{ false };  // set on the input thread, consumed on the render thread
@@ -1205,16 +1282,18 @@ namespace renderer
 					}
 				}
 
-				theme::Apply();
-				// Again now the theme registry exists: the first Reload above ran before theme::Apply
-				// had registered anything, so an active theme's own art is only found on this one.
-				skin::Reload();
-
+				// The display's scale first: theme::Apply builds the whole style at it (v4, ThemeStyle.h), so start-up and every
+				// later theme switch give the same sizes.
 				g_uiScale =window.windowHeight > 0 ? static_cast<float>(window.windowHeight) / 1080.0f : 1.0f;
 				if (g_uiScale < 1.0f)
 				{
 					g_uiScale = 1.0f;  // never shrink below the 1080p baseline
 				}
+
+				theme::Apply();
+				// Again now the theme registry exists: the first Reload above ran before theme::Apply
+				// had registered anything, so an active theme's own art is only found on this one.
+				skin::Reload();
 
 				// Text is rasterised at native size for this display (see BuildFonts) rather than
 				// magnifying the built-in bitmap font, which is what made it look pixelated.
@@ -1222,7 +1301,7 @@ namespace renderer
 				BuildFonts();
 				watchdog::Init();
 				{ std::string why; watchdog::InstallFastExit(why); }
-				ImGui::GetStyle().ScaleAllSizes(g_uiScale);
+				// (the style was scaled by theme::Apply above - ThemeStyle.h; scaling it here again would scale it twice)
 
 				ImGui::GetIO().IniFilename = "Data/SKSE/Plugins/ApocryphaMenuFramework_layout.ini";
 
@@ -1971,6 +2050,18 @@ namespace renderer
 								   "menus - nothing moves, fights or ticks down behind it. Off: the game keeps running while you change settings."));
 				ImGui::Spacing();
 
+				// next after 2.1.9 (the owner, 2026-10-12): the Oblivion version's [Menu] bKeepCameraAwake, as a switch
+				if (widgets::Toggle(TR("AMF_KeepCameraAwake", "Keep the camera awake while this menu is open"), &values.keepCameraAwake))
+				{
+					logger::info("settings page: keep the camera awake -> {}", values.keepCameraAwake);
+					settings::Save();
+				}
+				ImGui::TextWrapped("%s", TR("AMF_KeepCameraAwakeHelp", "On: with the game running behind this menu, the idle camera never starts "
+								   "circling your character, however long the menu is left open. When the menu closes the camera behaves as "
+								   "before. Off: after a while left alone, the camera starts circling as usual. With the game paused by this "
+								   "menu it changes nothing."));
+				ImGui::Spacing();
+
 				// 2.1.7: Pointer speed (Apparerus) and the wheel over the tabs (HadToRegister) - the owner, 2026-10-08
 				ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
 				precise::SliderFloat(TR("AMF_PointerSpeed", "Pointer speed"), &values.pointerSpeed, 0.25f, 4.0f, "%.2f");   // applied live
@@ -2304,7 +2395,7 @@ namespace renderer
 					static int s_mcmSub = 0;
 					// 2.1.6 (the owner, 2026-10-08: "I just want the tabs that apply to MCM menus to be within a tab called MCM"):
 					// one tab per menu system - MCM | FLICK | Prisma - and Spacing, which covers every converted page.
-					SubTabs sub("##mcmsub", 5, s_mcmSub);   // 2.1.9: MCM | FLICK | Prisma | INI | Spacing
+					SubTabs sub("##mcmsub", 7, s_mcmSub);   // 2.1.9: MCM | FLICK | Prisma | INI | Spacing; next version: MFM after INI
 					if (sub.Tab(TR("AMF_SubMcm", "MCM")))
 					{
 					static int s_mcmInner = 0;
@@ -2778,17 +2869,43 @@ namespace renderer
 					// 2.1.9: INI-only mods (SSE Display Tweaks so far) - IniPages.h
 					if (sub.Tab(TR("AMF_SubIni", "INI")))
 					{
-						if (widgets::Toggle(TR("AMF_IniLoad", "INI-only mods' settings here"), &values.iniMenus))
+						if (widgets::Toggle(TR("AMF_IniLoad", "INI files' settings here"), &values.iniMenus))
 						{
-							logger::info("settings page: INI-only mods' pages -> {}", values.iniMenus);
+							logger::info("settings page: INI pages -> {}", values.iniMenus);
 							settings::Save();
 							inipages::ApplyVisibility();
 						}
-						ImGui::TextWrapped("%s", TR("AMF_IniLoadHelp", "On: a mod whose settings live only in an INI file gets a page here, \"<name> (INI)\" - "
-							"a tab per section, a control per key, the file's own comments as the help. Changes go to the mod's override file and "
-							"its main INI is never changed. These mods read their INI when the game starts, so a change takes effect next time."));
+						// next after 2.1.9 (the owner, 2026-10-12: "any surface level ini file to have a menu" ... "add the data folder")
+						ImGui::TextWrapped("%s", TR("AMF_IniLoadHelp2", "On: every INI file directly in Data/SKSE/Plugins and in Data gets a page "
+							"here, \"<name> (INI)\" - a tab per section, a control per key, the file's own comments as the help - unless its mod "
+							"already has a page here. A change is written to the file itself, only the value you change (or to its _custom.ini "
+							"when it has one), and the file as it first was is kept as .amf-backup. Mods and the game read these files when the "
+							"game starts, so a change takes effect next time. Each page has its own switch below."));
 						ImGui::Spacing();
 						inipages::DrawSettingsList();
+						ImGui::EndTabItem();
+					}
+					// next version: Mod Function Menu entries - MfmPages.h
+					if (sub.Tab(TR("AMF_SubMfm", "MFM")))
+					{
+						if (widgets::Toggle(TR("AMF_MfmLoad", "Mod Function Menu entries here"), &values.mfmMenus))
+						{
+							logger::info("settings page: Mod Function Menu entries -> {}", values.mfmMenus);
+							settings::Save();
+							mfmpages::ApplyVisibility();
+						}
+						ImGui::TextWrapped("%s", TR("AMF_MfmLoadHelp", "On: the buttons other mods add for Mod Function Menu (Toggle UI, "
+							"Game Settings Override and others) are a menu here, \"Mod Function Menu\" - a heading for Mod and for Config, a "
+							"header per folder, a button per entry. A button calls a function of a mod that is already loaded; one whose mod "
+							"is not loaded is greyed out and says what is missing."));
+						ImGui::Spacing();
+						mfmpages::DrawSettingsList();
+						ImGui::EndTabItem();
+					}
+					// next after 2.1.9: other mods' own ImGui menus - a switch per mod for its row on Framework > Other menus (ImguiHost.h)
+					if (sub.Tab(TR("AMF_SubImgui", "ImGui menus")))
+					{
+						imguihost::DrawSettings();
 						ImGui::EndTabItem();
 					}
 					if (sub.Tab(TR("AMF_SubMcmSpacing", "Spacing")))
@@ -3916,6 +4033,9 @@ namespace renderer
 				sideItem(TR("AMF_Settings", "Settings"), "settings");
 				sideItem(TR("AMF_Controls", "Controls"), "controls");
 				sideItem(TR("AMF_Help", "Help"),     "help");
+				// next after 2.1.9: AMF's own frame-time graph, and other mods' own ImGui menus (the launcher) when one is loaded
+				sideItem(TR("AMF_Performance", "Performance"), "performance");
+				if (imguihost::AnyShown()) { sideItem(TR("AMF_OtherMenus", "Other menus"), "othermenus"); }
 				ImGui::Separator();
 				ImGui::TextDisabled("%s", TR("AMF_Mods", "Mods"));
 
@@ -4527,6 +4647,8 @@ namespace renderer
 				if (sel == "settings")      { DrawFrameworkSettingsPane(); }
 				else if (sel == "controls") { DrawControlsPane(); }
 				else if (sel == "help")     { DrawHelpPane(); }
+				else if (sel == "performance") { perf::DrawPage(); }
+				else if (sel == "othermenus" && imguihost::AnyShown()) { imguihost::DrawPage(); }
 				else if (sel == "mod" && !entries.empty())
 				{
 					const registry::Entry& entry = entries[selMod];
@@ -4791,6 +4913,7 @@ namespace renderer
 					return;
 				}
 				consumer::NoteRenderThread();   // 2.1.9 (theme-switch-fix): the immediate context's thread, for LoadTexture's mips
+				perf::NoteFrame();   // next after 2.1.9: AMF's own frame time - one present-hook call per frame the game shows
 
 				// SKSE MENU FRAMEWORK'S EVENTS (2.1.4 - NPC Preset Applier, a Nexus report 2026-10-07: its portraits were
 				// queued and never made under AMF). SMF 3 sends its RegisterEvent / RegisterEventPriority listeners four
@@ -4912,7 +5035,11 @@ namespace renderer
 					}
 					// not on top of the journal's own pause (the System row): ours there only added a count to take off again
 					const bool nestedNow = g_nested.load(std::memory_order_acquire);
-					SyncGamePause(visible && settings::Get().pauseGameWhileOpen && !nestedNow, visible && s_lifted);
+					const bool ownPause = visible && settings::Get().pauseGameWhileOpen && !nestedNow;
+					SyncGamePause(ownPause, visible && s_lifted);
+					// the idle camera only matters while time runs behind the menu: not under our own pause (lifted for a
+					// page's scripts, time runs, so it is held again)
+					SyncIdleCamera(visible && settings::Get().keepCameraAwake && !(ownPause && !s_lifted));
 				}
 
 				// Open-transition work happens HERE, not in ToggleMainWindow - the toggle is
@@ -4927,8 +5054,14 @@ namespace renderer
 					if (interactive && (!s_wasInteractive || (justOpened && !consumerOwnsInput)))
 					{
 						input::OnMenuOpened();
+						// next after 2.1.9: INI pages registered (or taken away for a mod's own page) - other plugins register
+						// after AMF's kDataLoaded, so this is checked as the menu opens
+						inipages::Sync();
 					}
 					s_wasInteractive = interactive;
+					// and whenever a page is registered (the 2026-10-12 test: Lock Interaction Overhaul registered its own page
+					// after AMF's INI pages were up) - an atomic read on a frame where nothing registered
+					inipages::SyncIfRegistryChanged();
 				}
 				if (visible) { mcmloader::LearnFromLayoutIfChanged(); }   // the sort learns from menus moved by hand
 				// Published only AFTER the rising edge has cleared the queue, so nothing the input thread
@@ -4938,6 +5071,9 @@ namespace renderer
 				// Translation runs after the backends' NewFrame (so our queued io.Add*Event
 				// calls land after, and therefore win over, the Win32 backend's own
 				// GetCursorPos-based mouse update) and before ImGui::NewFrame consumes them.
+				// next after 2.1.9: while another mod's menu is hosted in the page and open, it swallows the game's input before this
+				// framework's hook sees any - the pointer, the mouse buttons and the menu key are read from the OS instead (ImguiHost.h)
+				const bool hostedInput = interactive && imguihost::PollOsInput();
 				if (interactive)
 				{
 					input::ProcessQueuedEvents();
@@ -4951,7 +5087,14 @@ namespace renderer
 				// Software cursor while the menu (or a mod's blocking window) has the input - the game
 				// hides and recentres the OS cursor at will, so ImGui draws its own at the position we
 				// integrate. RaceMenu Atelier hides the game's own cursor for exactly this reason.
-				io.MouseDrawCursor = interactive;
+				io.MouseDrawCursor = interactive && !hostedInput;   // a hosted menu draws its own pointer, on top
+				// and a hosted menu has the keyboard: none of this framework's text fields keeps it
+				if (hostedInput && GImGui && GImGui->ActiveId != 0 && keyboard::IsTextField(GImGui->ActiveId))
+				{
+					logger::debug("input: a hosted menu is open - text field {} lets go of the keyboard", GImGui->ActiveId);
+					ImGui::ClearActiveID();
+					keyboard::Hide();
+				}
 
 				// Nav mode follows the EXPLICIT setting live (the toggle sits on the settings
 				// page itself). Never auto-detected - that is the nav-focus-drift bug.
@@ -5082,6 +5225,7 @@ namespace renderer
 				// decide through the IsOpen flag it was handed - not ours.
 				consumer::DrawHudElements();
 				consumer::DrawWindows();
+				perf::DrawOverlay();   // next after 2.1.9: the corner graph, when its switch is on (no input, no focus)
 
 				// Which stick drives ImGui follows "is an item being edited" (the controller scheme in
 				// Input.cpp). The framework window samples it while it draws; with only a mod's window
@@ -5129,6 +5273,7 @@ namespace renderer
 				ImGui::Render();
 				ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 				compat::FireMenuEvent(compat::MenuEvent::kAfterRender);   // SMF's event 4 (see the top of this frame)
+				imguihost::Frame();   // next after 2.1.9: other mods' menus - a queued key press steps on, OAR's state is read
 
 				// In-process capture: the backbuffer now holds the frame WITH the overlay.
 				{
@@ -5346,7 +5491,7 @@ namespace renderer
 		}
 		std::string n = a_node;
 		if (n.rfind("system/", 0) == 0) { n = n.substr(7); }  // pre-1.4.4 paths still accepted
-		if (n == "settings" || n == "controls" || n == "help" || n == "mod") { g_selNode = n; }
+		if (n == "settings" || n == "controls" || n == "help" || n == "mod" || n == "performance" || n == "othermenus") { g_selNode = n; }
 	}
 
 	std::string GetSelectedNode()
@@ -5404,6 +5549,11 @@ namespace renderer
 			logger::warn("theme \"{}\" queued (DevBench): no frame took it within 3 s - it applies at the next frame", a_themeId);
 		}
 		return true;
+	}
+
+	bool RunOnRenderThreadWait(std::function<void()> a_job, unsigned a_timeoutMs)
+	{
+		return RunOnRenderThread(std::move(a_job), a_timeoutMs);
 	}
 
 	bool ReloadArtOnRenderThread(unsigned a_timeoutMs)
@@ -5683,6 +5833,8 @@ namespace renderer
 			   ",\"tabBars\":[" + TabBarsJson() + "]" +   // 2.1.9: every tab bar drawn last frame, outer first (aim op=cursor at one)
 			   ",\"pauseGame\":" + (settings::Get().pauseGameWhileOpen ? "true" : "false") +
 			   ",\"pauseHeld\":" + (PauseHeld() ? "true" : "false") +
+			   ",\"idleCamera\":" + IdleCameraJson() +   // next after 2.1.9: [Menu] bKeepCameraAwake and the camera's vanity state
+			   ",\"perf\":" + perf::StateJson() +   // next after 2.1.9: AMF's own FPS / frame times (Performance.h)
 			   ",\"lastDevice\":\"" + (input::LastDevice() == input::Device::kGamepad ? "gamepad" :
 										   input::LastDevice() == input::Device::kKeyboardMouse ? "keyboard" : "none") + "\"" +
 			   ",\"customOrder\":" + (personalization::IsCustomOrder() ? "true" : "false") +

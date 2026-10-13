@@ -5,6 +5,7 @@
 #include <cmath>
 
 #include "Bindings.h"
+#include "InputFrames.h"
 #include "Compat.h"
 #include "ConsumerSurface.h"
 #include "Offsets.h"
@@ -231,6 +232,16 @@ namespace input
 			return (static_cast<std::uint64_t>(a_button->GetDevice()) << 32) | a_button->GetIDCode();
 		}
 
+		// The buttons whose press went to ImGui and whose release has not yet (input thread only) - so a release with no held
+		// time is still known for one (v4, InputFrames.h ButtonEdge).
+		inputframes::FedButtons g_fedButtons;
+
+		// A release, by value: IsUp() also wants a held time, which a click shorter than a frame never gets (v4).
+		bool IsRelease(const RE::ButtonEvent* a_button)
+		{
+			return a_button && a_button->Value() == 0.0f;
+		}
+
 		// Software cursor, owned by the render thread. The game recentres/hides the OS cursor
 		// at will, so the only trustworthy position is one we integrate ourselves from the
 		// MouseMoveEvent deltas (the Wheeler-lineage approach from the survey).
@@ -240,6 +251,8 @@ namespace input
 		// thread at the top of ProcessQueuedEvents; guarded by the same lock as the main queue.
 		struct Deferred { int framesLeft; Record record; };
 		std::vector<Deferred> g_deferred;
+		// A button's second press or release in one frame, kept for the next (InputFrames.h). Render thread only.
+		std::vector<Record> g_carry;
 
 		std::atomic<float> g_cursorMirrorX{ 0.0f };   // read by DevBench off-thread
 		std::atomic<float> g_cursorMirrorY{ 0.0f };
@@ -479,6 +492,8 @@ namespace input
 	// first look, the consume rule, the held set, ImGui, and every downstream handler. This is
 	// what the `type`/`key` record ops could not exercise (they enter at the record queue, after
 	// the first look), and the reported search-box freeze lives in exactly that gap.
+	std::atomic<std::uint64_t> g_eventsSeen{ 0 };   // next after 2.1.9: input events handed to the hook (EventsSeen)
+
 	namespace inject
 	{
 		struct Press { RE::INPUT_DEVICE device; std::uint32_t code; int framesLeft; bool downSent; };
@@ -542,11 +557,18 @@ namespace input
 
 						// Transitions only; ImGui tracks held state itself, and the raw
 						// held-repeat frames (value > 0, heldDownSecs > 0) would double-fire.
-						const bool isDown = button->IsDown();
-						const bool isUp = button->IsUp();
-						if (!isDown && !isUp)
+						// v4 (next after 2.1.9): the release is told by its VALUE, not by IsUp() - a click shorter than a
+						// frame comes back with no held time, which IsUp() does not count (InputFrames.h ButtonEdge).
+						const auto edge = g_fedButtons.Feed(ButtonKey(button), button->Value(), button->HeldDuration());
+						if (edge == inputframes::Edge::kNone)
 						{
 							break;
+						}
+						const bool isDown = edge == inputframes::Edge::kPress;
+						if (!isDown && button->HeldDuration() == 0.0f)
+						{
+							logger::debug("input: device {} code {} released with no held time (a click shorter than a frame) - passed on as its release",
+										  static_cast<std::uint32_t>(button->GetDevice()), button->GetIDCode());
 						}
 
 						switch (button->GetDevice())
@@ -649,7 +671,7 @@ namespace input
 
 				bool passThrough = false;
 
-				if (a_button && a_button->IsUp())
+				if (IsRelease(a_button))
 				{
 					// Pass the release ONLY if the game saw the press (held across the open
 					// transition). A stray release for a key the game never saw down would be a
@@ -690,6 +712,13 @@ namespace input
 				}
 
 				inject::Service(a_events);   // driver-side presses/characters, ahead of everything below
+				// next after 2.1.9: every event this hook is handed, counted - while another mod's menu is hosted (ImguiHost.h) that
+				// mod's input hook runs before this one and swallows the list, so this count standing still is the proof
+				{
+					std::uint64_t n = 0;
+					for (const RE::InputEvent* e = *a_events; e; e = e->next) { ++n; }
+					if (n) { g_eventsSeen.fetch_add(n, std::memory_order_relaxed); }
+				}
 
 				const bool menuOpen = renderer::IsMainWindowVisible();
 				// A mod's own window that is open and blocking (2.0.4), as the renderer published it. Read
@@ -847,7 +876,7 @@ namespace input
 						{
 							g_gameHeldButtons.insert(ButtonKey(button));
 						}
-						else if (button->IsUp())
+						else if (IsRelease(button))
 						{
 							g_gameHeldButtons.erase(ButtonKey(button));
 						}
@@ -1016,13 +1045,31 @@ namespace input
 					++it;
 				}
 			}
-			drained.swap(g_queue);
+			// last frame's carry first: it is older than anything queued since
+			drained.swap(g_carry);
+			drained.insert(drained.end(), g_queue.begin(), g_queue.end());
+			g_queue.clear();
 		}
 
 		ImGuiIO& io = ImGui::GetIO();
 		const ImVec2 display = io.DisplaySize;
 		const bool controllerMode = UsingController();
 		ReleaseStuckKeys(io);
+
+		// A PRESS AND ITS RELEASE NEVER SHARE A FRAME (next after 2.1.9; the 2026-10-12 combined test: a second real click on a
+		// switch did not register). ImGui runs with trickling OFF and flattens a frame's events, so each mouse button, key and
+		// pad button changes at most once per frame here; a second change waits for the next frame, ahead of newer input
+		// (InputFrames.h - the offline check tools\input_frames_check runs the same function).
+		inputframes::OneTransitionPerFrame(drained, g_carry, [](const Record& a_r) -> std::uint64_t {
+			const bool button = a_r.kind == Record::Kind::kMouseButton || a_r.kind == Record::Kind::kKeyboard || a_r.kind == Record::Kind::kGamepad;
+			return button ? ((static_cast<std::uint64_t>(a_r.kind) + 1) << 32) | a_r.code : 0;
+		});
+		for (const Record& r : g_carry)
+		{
+			logger::debug("input: {} {} {} held to the next frame - it already changed in this frame",
+						  r.kind == Record::Kind::kMouseButton ? "mouse button" : (r.kind == Record::Kind::kKeyboard ? "key" : "pad button"), r.code,
+						  r.down ? "press" : "release");
+		}
 
 		for (const Record& record : drained)
 		{
@@ -1057,6 +1104,8 @@ namespace input
 				break;
 			case Record::Kind::kMouseButton:
 				if (record.down) { NoteDevice(Device::kKeyboardMouse); }
+				// every click that reaches the menu, so a test can tell "never arrived" from "arrived and was lost"
+				logger::debug("input: mouse button {} {}", record.code, record.down ? "press" : "release");
 				if (record.code < ImGuiMouseButton_COUNT)
 				{
 					io.AddMouseButtonEvent(static_cast<int>(record.code), record.down);
@@ -1237,6 +1286,7 @@ namespace input
 
 		std::scoped_lock lock(g_queueLock);
 		g_queue.clear();
+		g_carry.clear();
 
 		logger::debug("menu opened: cursor centred at ({:.0f}, {:.0f}), stale queue cleared", g_cursorX, g_cursorY);
 	}
@@ -1317,6 +1367,11 @@ namespace input
 	float VanillaCursorSpeedSetting()
 	{
 		return g_vanillaCursorSpeedMirror.load(std::memory_order_relaxed);
+	}
+
+	std::uint64_t EventsSeen()
+	{
+		return g_eventsSeen.load(std::memory_order_relaxed);
 	}
 
 	void QueueMouseButton(std::uint32_t a_button, bool a_down)

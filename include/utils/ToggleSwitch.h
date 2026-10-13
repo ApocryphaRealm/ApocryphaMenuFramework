@@ -66,10 +66,18 @@ namespace widgets
 				drawList->AddImage(reinterpret_cast<ImTextureID>(edge), pos, ImVec2(pos.x + width, pos.y + height),
 								   ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), artTint ? static_cast<ImU32>(artTint) : IM_COL32_WHITE);
 			}
+			else
+			{
+				// next after 2.1.9: every control keeps a basic outline (the owner, 2026-10-12) - a track art with no outline layer
+				drawList->AddRect(pos, ImVec2(pos.x + width, pos.y + height), ImGui::GetColorU32(ImGuiCol_Border), 0.0f, 0,
+								  std::max(1.0f, ImGui::GetStyle().FrameBorderSize));
+			}
 		}
 		else
 		{
 			drawList->AddRectFilled(pos, ImVec2(pos.x + width, pos.y + height), trackColor, radius);
+			drawList->AddRect(pos, ImVec2(pos.x + width, pos.y + height), ImGui::GetColorU32(ImGuiCol_Border), radius, 0,
+							  std::max(1.0f, ImGui::GetStyle().FrameBorderSize));
 		}
 		// 2.1.6 (the owner, 2026-10-08: the knob "should have a different shape as well ... a separate thing ... match the frame
 		// art ... that piece that's at the corner of each frame"): a Switch knobs part draws in the frame art's colour.

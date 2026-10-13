@@ -298,6 +298,9 @@ namespace settings
 				"; world time, actors and weather stop until it closes. 0 (the default) leaves the\n"
 				"; game running behind it.\n"
 				"bPauseGame=" << (a_v.pauseGameWhileOpen ? 1 : 0) << "\n"
+				"; Keep the camera awake: 1 (the default) = while this menu is open and the game is not paused, the\n"
+				"; idle camera never starts circling your character. 0 = it does, as the game decides.\n"
+				"bKeepCameraAwake=" << (a_v.keepCameraAwake ? 1 : 0) << "\n"
 				"; How fast the mouse moves the menu's pointer (0.25-4.00). 1.00 (the default) moves it exactly as fast\n"
 				"; as the game's own menu cursor, at any screen size, following the game's own fMouseCursorSpeed.\n"
 				"fPointerSpeed=" << a_v.pointerSpeed << "\n"
@@ -368,8 +371,35 @@ namespace settings
 				"bEnabled=" << (a_v.fastExit ? 1 : 0) << "\n"
 				"\n"
 				"[IniMenus]\n"
-				"; 1 = INI-only mods' settings (SSE Display Tweaks so far) are pages in this menu (the default). 0 = they are not.\n"
+				"; 1 = every INI file directly in Data\\SKSE\\Plugins and in Data gets a page in this menu (the default). 0 = none do.\n"
 				"bEnabled=" << (a_v.iniMenus ? 1 : 0) << "\n"
+				"; The pages switched off one by one (Settings > Converted menus > INI), comma-separated. Empty = all shown.\n"
+				"sOff=" << a_v.iniPagesOff << "\n"
+				"\n"
+				"[MfmMenus]\n"
+				"; 1 = Mod Function Menu entries (the buttons other mods add under SKSE\\Plugins\\ccld_ModFunctionMenu) are a menu here,\n"
+				"; \"Mod Function Menu\" (the default). 0 = they are not. Mod Function Menu itself is not needed and not changed.\n"
+				"bEnabled=" << (a_v.mfmMenus ? 1 : 0) << "\n"
+				"\n"
+				"[ImGuiMenus]\n"
+				"; Other mods' own ImGui menus, opened from Framework > Other menus. 1 = the mod's row is shown there when the mod is\n"
+				"; loaded (the default), 0 = it is not. Nothing of these mods is changed.\n"
+				"bOpenAnimationReplacer=" << (a_v.imguiOar ? 1 : 0) << "\n"
+				"bCommunityShaders=" << (a_v.imguiCs ? 1 : 0) << "\n"
+				"bImmersiveEquipmentDisplays=" << (a_v.imguiIed ? 1 : 0) << "\n"
+				"bOptiScaler=" << (a_v.imguiOpti ? 1 : 0) << "\n"
+				"; 1 = with AMF-Host-OAR.dll installed, Open Animation Replacer's menu opens inside this menu's page, live (the default).\n"
+				"; 0 = it opens over a closed menu, as the other mods' do.\n"
+				"bHostOpenAnimationReplacer=" << (a_v.hostOar ? 1 : 0) << "\n"
+				"; 1 = when this menu opens another mod's menu on its own (not inside this menu), or that mod's key is pressed while\n"
+				"; this menu is open, this menu closes so nothing of it is behind (the default). A menu shown inside this menu keeps it open.\n"
+				"bCloseAmfOnOpen=" << (a_v.closeOnOpen ? 1 : 0) << "\n"
+				"\n"
+				"[Performance]\n"
+				"; 1 = this menu's own FPS and frame-time graph in a corner of the screen, menu open or not. 0 = not (the default).\n"
+				"bOverlay=" << (a_v.perfOverlay ? 1 : 0) << "\n"
+				"; Its corner: 0 = top-left, 1 = top-right, 2 = bottom-left, 3 = bottom-right (the default).\n"
+				"iCorner=" << a_v.perfCorner << "\n"
 				"\n"
 				"[Startup]\n"
 				"; Hold the screen black from the first frame the game draws until its main menu is\n"
@@ -653,6 +683,7 @@ namespace settings
 			ReadNumber(entries, "Input.uToggleKey", g_values.toggleKey);
 			ReadBool(entries, "Input.bOnScreenKeyboard", g_values.onScreenKeyboard);
 			ReadBool(entries, "Menu.bPauseGame", g_values.pauseGameWhileOpen);
+			ReadBool(entries, "Menu.bKeepCameraAwake", g_values.keepCameraAwake);
 			ReadNumber(entries, "Menu.fPointerSpeed", g_values.pointerSpeed);
 			ReadBool(entries, "Menu.bWheelSwitchesTabs", g_values.wheelSwitchesTabs);
 			ReadBool(entries, "Menus.bSystemMenuRow", g_values.systemMenuRow);
@@ -757,6 +788,20 @@ namespace settings
 			ReadBool(entries, "Startup.bBlackCurtain", g_values.startupCurtain);
 			ReadBool(entries, "Startup.bCleanOrphanedSaveState", g_values.cleanOrphanedState);
 			ReadBool(entries, "IniMenus.bEnabled", g_values.iniMenus);
+			{
+				auto it = entries.find("IniMenus.sOff");
+				if (it != entries.end()) { g_values.iniPagesOff = it->second; }
+			}
+			ReadBool(entries, "MfmMenus.bEnabled", g_values.mfmMenus);
+			ReadBool(entries, "ImGuiMenus.bOpenAnimationReplacer", g_values.imguiOar);
+			ReadBool(entries, "ImGuiMenus.bCommunityShaders", g_values.imguiCs);
+			ReadBool(entries, "ImGuiMenus.bImmersiveEquipmentDisplays", g_values.imguiIed);
+			ReadBool(entries, "ImGuiMenus.bOptiScaler", g_values.imguiOpti);
+			ReadBool(entries, "ImGuiMenus.bHostOpenAnimationReplacer", g_values.hostOar);
+			ReadBool(entries, "ImGuiMenus.bCloseAmfOnOpen", g_values.closeOnOpen);
+			ReadBool(entries, "Performance.bOverlay", g_values.perfOverlay);
+			ReadNumber(entries, "Performance.iCorner", g_values.perfCorner);
+			if (g_values.perfCorner < 0 || g_values.perfCorner > 3) { g_values.perfCorner = 3; }
 			ReadNumber(entries, "Startup.uTimeoutSeconds", g_values.curtainTimeoutSeconds);
 			{
 				auto it = entries.find("Startup.sCurtainImage");
