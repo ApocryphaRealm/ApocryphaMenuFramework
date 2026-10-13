@@ -1331,4 +1331,9 @@ namespace hostcore
 		void OnOwnKey() { open = false; }
 		void OnLoading() { open = false; }
 	};
+
+	// Whether a forwarding change gets its log line: any change, and every key AMF's own Open / Close sent even when the state
+	// did not change (2.2.0 fix: after OptiScaler's own Close button, which AMF cannot see, AMF still had it on and its next
+	// Open logged nothing)
+	inline bool ForwardLogNeeded(bool a_wasOn, bool a_nowOn, bool a_amfSentKey) { return a_wasOn != a_nowOn || a_amfSentKey; }
 }

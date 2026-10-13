@@ -191,10 +191,12 @@ namespace imguihost
 		hostcore::ForwardTracker g_optiTrack;
 		std::atomic<bool> g_forwardOn{ false };
 		std::atomic<bool> g_forwardLogged{ false };
-		void PublishForward(const char* a_why)
+		// a_always: AMF's own Open / Close log their line even when the state did not change (2.2.0 fix, 06:24 run: OptiScaler's
+		// own Close button, which AMF cannot see, left it "on", and the next Open logged nothing)
+		void PublishForward(const char* a_why, bool a_always = false)
 		{
 			const bool on = g_optiTrack.open;
-			if (g_forwardOn.exchange(on) == on) { return; }
+			if (!hostcore::ForwardLogNeeded(g_forwardOn.exchange(on), on, a_always)) { return; }
 			g_forwardLogged.store(false);
 			logger::info("imgui: OptiScaler - mouse forwarding to its menu {} ({})", on ? "on" : "off", a_why);
 		}
@@ -735,7 +737,7 @@ namespace imguihost
 				if (p.target == kOpti && p.method == hostcore::SendMethod::kPostMessage)
 				{
 					g_optiTrack.OnPressSent(p.keyDown, p.open);
-					PublishForward(p.open ? "AMF sent its key to open it" : "AMF sent its key to close it");
+					PublishForward(p.open ? "AMF sent its key to open it" : "AMF sent its key to close it", p.keyDown);
 				}
 				// "sent", never "opened" / "closed": none of these mods can say whether its menu is open, and a hook can drop a
 				// key and still report it taken (OptiScaler's SendInput detour, 2026-10-13)
@@ -774,7 +776,7 @@ namespace imguihost
 			// AMF's menu always goes first, so the mod's menu has the mouse, the keys and the screen, and nothing of AMF is
 			// behind it (the owner, 2026-10-12: "close automatically"). Close first, then the key or the API call two frames
 			// later: with AMF closed its input hook passes every key on.
-			const bool closeAmf = a_open && renderer::IsMainWindowVisible();
+			const bool closeAmf = (a_open || a_id == kOpti) && renderer::IsMainWindowVisible();
 			if (closeAmf)
 			{
 				logger::info("imgui: {} - closing this menu first, so its menu gets the input", kNames[a_id]);
@@ -839,6 +841,8 @@ namespace imguihost
 		// its own key by itself; AMF closes, so that menu is shown alone. Read from the OS on the frame, edge only; never while a
 		// press of AMF's own is going on, while a text field of AMF has the keyboard, or with the game in the background.
 		bool g_keyHeld[kCount] = {};
+		std::atomic<std::uint32_t> g_optiOwnKey{ 0 };   // OptiScaler's key (DIK, the main key of its combo) for the input hook
+		std::atomic<bool> g_optiOwnKeySeen{ false };    // the input hook saw that key go down as a game input event
 		void WatchOwnKeys()
 		{
 			std::array<hostcore::KeyCombo, kCount> keys;
@@ -852,13 +856,16 @@ namespace imguihost
 				}
 			}
 			const bool watch = renderer::IsMainWindowVisible() && !g_press && !renderer::WantsTextInput() && GameIsForeground();
+			g_optiOwnKey.store(usable[kOpti] && !keys[kOpti].Empty() ? keys[kOpti].keys.back() : 0u, std::memory_order_relaxed);
+			const bool optiGameKey = g_optiOwnKeySeen.exchange(false);
 			for (int i = 0; i < kCount; ++i)
 			{
 				const bool down = usable[i] && ComboDown(keys[i]);
 				const bool edge = down && !g_keyHeld[i];
 				g_keyHeld[i] = down;
-				// OptiScaler's own key toggles its menu: pressed while AMF has it open, it closes it, so the mouse stops going there
-				if (edge && i == kOpti && g_optiTrack.open && !g_press && GameIsForeground())
+				// OptiScaler's own key toggles its menu: pressed while AMF has it open, it closes it, so the mouse stops going there.
+				// Seen on the OS's key state or as a game input event (the input hook, NoteGameKey)
+				if ((edge || optiGameKey) && i == kOpti && g_optiTrack.open && !g_press && GameIsForeground())
 				{
 					g_optiTrack.OnOwnKey();
 					PublishForward("its own key closed it");
@@ -878,6 +885,12 @@ namespace imguihost
 		}
 
 		std::string J(const std::string& a_s) { return nlohmann::json(a_s).dump(-1, ' ', false, nlohmann::json::error_handler_t::replace); }
+	}
+
+	void NoteGameKey(std::uint32_t a_idCode)
+	{
+		const std::uint32_t k = g_optiOwnKey.load(std::memory_order_relaxed);
+		if (k != 0 && a_idCode == k && g_forwardOn.load(std::memory_order_acquire)) { g_optiOwnKeySeen.store(true); }
 	}
 
 	bool MouseForwardActive() { return g_forwardOn.load(std::memory_order_acquire) && !loadguard::Blocked(); }
@@ -1062,8 +1075,11 @@ namespace imguihost
 			const bool rowBlocked = !t.blocked.empty();
 			if (rowBlocked) { ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled)); }
 			ImGui::BeginDisabled(rowBlocked);
-			if (i == kOar && g_oarV3)
+			if ((i == kOar && g_oarV3) || (i == kOpti && !t.keyOpensOnly))
 			{
+				// OptiScaler (2.2.0 fix): its key toggles its menu, so one "Open / close" button could not say which way a press
+				// went - every press was an Open and the mouse stayed forwarded after closing. Open and Close say it: Open always
+				// turns the mouse forwarding on, Close always off, whatever AMF last believed (its own Close button is unseen)
 				if (ImGui::Button(icons::Label(icons::kOpen, TR("AMF_ImguiOpen", "Open")).c_str())) { action = i; open = true; }
 				renderer::NoteHoveredItem();
 				ImGui::SameLine();

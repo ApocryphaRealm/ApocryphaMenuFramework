@@ -499,6 +499,33 @@ int main(int argc, char** argv)
 			t.OnPressSent(true, true);
 			t.OnLoading();
 			Check(!t.open, "tracker: loading - closed, forwarding off");
+			// 2.2.0 fix (06:24 run): the forwarding follows AMF's Open / Close buttons, not a guess at the toggle
+			{
+				ForwardTracker f;
+				f.OnPressSent(true, true);
+				const bool wasOn = f.open;
+				f.OnPressSent(true, false);
+				Check(wasOn && !f.open && ForwardLogNeeded(wasOn, f.open, true), "fix: AMF Open then AMF Close - forwarding off, and the off line is logged");
+			}
+			{
+				ForwardTracker f;
+				f.OnPressSent(true, true);
+				// OptiScaler's own Close button: AMF cannot see it, so its state stays on
+				const bool before = f.open;
+				f.OnPressSent(true, true);
+				Check(before && f.open && ForwardLogNeeded(before, f.open, true), "fix: Open, its own Close (unseen), Open - on again, and the on line is logged though AMF thought it on");
+				Check(!ForwardLogNeeded(true, true, false), "fix: no change and no key sent by AMF - no line");
+			}
+			{
+				ForwardTracker f;
+				f.OnPressSent(true, true);
+				f.OnOwnKey();
+				Check(!f.open, "fix: Open, then its own key (seen) - off");
+				f.OnPressSent(true, true);
+				Check(f.open, "fix: then AMF Open - on again");
+				f.OnLoading();
+				Check(!f.open && ForwardLogNeeded(true, f.open, false), "fix: a load turns it off, and logs it");
+			}
 		}
 		KeyCombo f16;
 		f16.keys = { 0x67 };

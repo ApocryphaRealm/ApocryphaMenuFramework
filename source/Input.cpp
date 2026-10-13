@@ -736,6 +736,8 @@ namespace input
 					{
 						const RE::ButtonEvent* b = e->AsButtonEvent();
 						if (b && b->GetDevice() == RE::INPUT_DEVICE::kMouse) { imguihost::ForwardMouse(b->GetIDCode(), b->IsDown(), b->IsUp()); }
+						// OptiScaler's own key as a game input event: it closes its menu, so the forwarding goes off (2.2.0 fix)
+						else if (b && b->GetDevice() == RE::INPUT_DEVICE::kKeyboard && b->IsDown()) { imguihost::NoteGameKey(b->GetIDCode()); }
 					}
 				}
 

@@ -71,6 +71,10 @@ namespace imguihost
 	// OptiScaler's ImGui reads, at the OS cursor. Does nothing unless MouseForwardActive(). Observe only: the event goes on.
 	void ForwardMouse(std::uint32_t a_idCode, bool a_down, bool a_up);
 
+	// Input hook: a game keyboard key went down (DIK). OptiScaler's own key while the mouse is forwarded closes its menu, so
+	// the next frame turns the forwarding off. Observe only.
+	void NoteGameKey(std::uint32_t a_idCode);
+
 	// DevBench amf.menu op=imgui (listener thread; open / close run on the render thread).
 	std::string ToolJson(const std::string& a_argsJson);
 }
