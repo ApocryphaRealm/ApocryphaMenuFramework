@@ -1,6 +1,6 @@
 ApocryphaRealm Menu Framework
 =============================
-Version 2.1.9
+Version 2.2.0
 
 An original, GPL-3.0-or-later in-game menu framework (embedding Dear ImGui) - a one-for-one
 replacement for SKSE Menu Framework's consumer surface, plus user-friendly features that do
@@ -41,6 +41,16 @@ WHAT YOU GET
     menus > INI lists them, each with its own switch, and says why any file was left out.
   * Keep the camera awake: with the game left running behind the menu, the idle camera never
     starts circling your character while the menu is open (Settings > General, on by default).
+  * Mod Function Menu's buttons without Mod Function Menu: the buttons mods add for it (Toggle
+    UI, Game Settings Override and others) appear here as one converted menu, a button per
+    file. Mod Function Menu itself is not needed.
+  * Other menus (Framework > Other menus): mods that draw a menu of their own - Open Animation
+    Replacer, Community Shaders, Immersive Equipment Displays and OptiScaler - get a row with a
+    button that opens it. With AMF-Host-OAR.dll (included), Open Animation Replacer's menu is
+    shown live inside this menu's page, its Settings window and popups kept inside it too.
+  * Performance (Framework > Performance): this menu's own FPS and frame-time graph, with a
+    switch for a small copy in a corner of the screen (bottom right by default) that shows
+    whether or not the menu is open.
   * Menu-key rebinding (default F1), per-save persistence of menu state, and a hang watchdog
     so a wedged game can always be closed.
   * Every control the framework claims can be switched off or rebound - no key is taken
@@ -59,6 +69,13 @@ reading.
 
 WHAT CHANGED
 ------------
+
+Version 2.2.0
+Mod Function Menu's buttons work here without Mod Function Menu: the buttons mods add for it (Toggle UI, Game Settings Override and others) appear as one converted menu, "Mod Function Menu", a button per file. An entry whose function cannot be found is drawn greyed.
+Every INI file directly in Data\SKSE\Plugins and in Data gets a page, "<name> (INI)" - a tab per section, a control per setting, the file's comments as the help - unless its mod has a page of its own. Keys and names read as words.
+Other menus (Framework > Other menus): Open Animation Replacer, Community Shaders, Immersive Equipment Displays and OptiScaler get a row with a button that opens their own menu. With AMF-Host-OAR.dll (included in both game lines), Open Animation Replacer's menu is shown live inside this menu's page, its Settings window and popups kept inside it. "Close AMF when opening another menu" (on by default) leaves nothing of this menu behind a menu that opens on its own.
+Performance (Framework > Performance): this menu's own FPS and frame-time graph, with a switch for a small copy in a corner of the screen (bottom right by default, the corner is a choice), drawn over this menu as well.
+The idle camera no longer starts circling your character while the menu is open (Settings > General, "Keep the camera awake", on by default). Every control has a visible outline in every theme. A quick click or key tap, even one shorter than a frame, is never lost. Switching theme no longer changes the window's spacing.
 
 Version 2.1.9
 Every old FLICK mod build that could be proven now shows its page, not only Simple Timed Block: Stances NG 2.0.0, Critical Hit Tweaks 1.1.0-1.1.1, Inventory Limits 1.0.0 and 1.1.0, Static Regeneration 1.0.0 and 1.0.1, Global Variable Framework 1.0.3, Lurking Menace 4.0.0 and 4.0.1, Navigation Restrictions NG 3.0.0-3.0.2 and Exhausting Combat 1.0.0. FLICK changed its interface's order several times before its first release, so each of these is answered in its own build's order. Kill Feed 1.1.0 has its page again. Any other old FLICK build is still left unconnected (no page, no crash).
