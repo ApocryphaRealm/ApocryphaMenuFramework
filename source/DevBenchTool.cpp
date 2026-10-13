@@ -2,6 +2,7 @@
 #include "FlickHost.h"
 #include "PrismaRedux.h"
 #include "IniPages.h"
+#include "GsoPages.h"
 #include "MfmPages.h"
 #include "ImguiHost.h"
 #include "SystemRow.h"
@@ -213,6 +214,12 @@ namespace devbenchtool
 				// next version: Mod Function Menu entries (MfmPages.h) - {"op":"mfm","do":"list|run","path":"Mod/Toggle UI/Toggle UI.toml"}.
 				// run hands the call to the render thread and waits for it (a mod's function is never called on this thread).
 				result = mfmpages::ToolJson(args);
+			}
+			else if (op == "gso")
+			{
+				// 2.2.1: Game Settings Override's files (GsoPages.h) - {"op":"gso","do":"list|get|set","file":"GSO - No Fall Damage",
+				// "name":"fJumpFallHeightMin","value":"600.0"}. set writes and applies on the render thread, as the page's control does.
+				result = gsopages::ToolJson(args);
 			}
 			else if (op == "imgui")
 			{

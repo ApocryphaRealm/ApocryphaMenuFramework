@@ -381,6 +381,13 @@ namespace settings
 				"; \"Mod Function Menu\" (the default). 0 = they are not. Mod Function Menu itself is not needed and not changed.\n"
 				"bEnabled=" << (a_v.mfmMenus ? 1 : 0) << "\n"
 				"\n"
+				"[GsoMenus]\n"
+				"; 1 = Game Settings Override's files (SKSE\\Plugins\\ccld_GameSettingsOverride\\*.toml) can be tabs of the \"Game Settings\n"
+				"; Override\" page in this menu (the default). 0 = none are.\n"
+				"bEnabled=" << (a_v.gsoMenus ? 1 : 0) << "\n"
+				"; The files turned on one by one (Settings > Converted menus > GSO), comma-separated. Empty = none (each starts off).\n"
+				"sOn=" << a_v.gsoFilesOn << "\n"
+				"\n"
 				"[ImGuiMenus]\n"
 				"; Other mods' own menus, opened from Framework > Other menus (this menu closes as one opens, and\n"
 				"; a mod's own key pressed while this menu is open closes it too). 1 = the mod's row is shown there when the mod is\n"
@@ -783,6 +790,11 @@ namespace settings
 				if (it != entries.end()) { g_values.iniPagesOff = it->second; }
 			}
 			ReadBool(entries, "MfmMenus.bEnabled", g_values.mfmMenus);
+			ReadBool(entries, "GsoMenus.bEnabled", g_values.gsoMenus);
+			{
+				auto it = entries.find("GsoMenus.sOn");
+				if (it != entries.end()) { g_values.gsoFilesOn = it->second; }
+			}
 			ReadBool(entries, "ImGuiMenus.bOpenAnimationReplacer", g_values.imguiOar);
 			ReadBool(entries, "ImGuiMenus.bCommunityShaders", g_values.imguiCs);
 			ReadBool(entries, "ImGuiMenus.bImmersiveEquipmentDisplays", g_values.imguiIed);

@@ -188,6 +188,12 @@ namespace settings
 		std::string iniPagesOff;
 		// [MfmMenus] bEnabled (next version after 2.1.9): Mod Function Menu entries as a menu here - MfmPages.h. On by default.
 		bool mfmMenus = true;
+		// [GsoMenus] bEnabled (2.2.1): Game Settings Override's files as the "Game Settings Override" page here - GsoPages.h. On by
+		// default.
+		bool gsoMenus = true;
+		// [GsoMenus] sOn (2.2.1): the GSO files the player turned on, by id (the lower-case file name, "gso - no fall damage.toml"),
+		// comma-separated. Empty = no file's tab is shown (the default - each file starts off, as each INI page does).
+		std::string gsoFilesOn;
 		// [ImGuiMenus] (2.2.0; the owner, 2026-10-12: a row in AMF for other menus, so AMF takes over their hotkeys to call them and
 		// closes by itself) - ImguiHost.h. One switch per target: its row on Framework > Other menus (on by default). A target that
 		// is not loaded (ENB: not active) never shows, whatever this says.

@@ -37,6 +37,13 @@ Licence: GPL-3.0-or-later (see `LICENSE` and `NOTICE.md`). Not a fork: contains 
 - **INI files as pages.** Every `.ini` directly in `Data\SKSE\Plugins` and in `Data` gets a page "<name> (INI)" (a tab
   per section, a control per key) unless its mod has a page of its own; a change writes only that value, keeping a
   `.amf-backup` of the file. Each page has its own switch under Settings -> Converted menus -> INI.
+- **Game Settings Override files as a page** (2.2.1). Each `.toml` in `Data\SKSE\Plugins\ccld_GameSettingsOverride` is a
+  tab of the "Game Settings Override" page, in the order GSO loads them: a control per game setting chosen by the game
+  setting's own type (switch, number box, colour editor, text box), with the game's current value beside it, and flags
+  for a key the game does not know, a value written as another type, or a key a later file sets again. A change writes
+  only that value (comments, order, byte-order mark and line endings kept; `.amf-backup` of the file), sets the game's
+  value at once and calls GSO's own reload, showing its message. Each file starts off: turn it on under Settings ->
+  Converted menus -> GSO. GSO itself is needed for the files to apply at the next start.
 - **Other menus.** Open Animation Replacer, Community Shaders, Immersive Equipment Displays, OptiScaler and ENB get a
   row under Framework -> Other menus with a button that opens their own menu; AMF closes as it does, and a mod's own key
   pressed while AMF is open closes AMF too. "AMF holds this key" (off by default, per mod) writes a key no keyboard has
@@ -103,6 +110,8 @@ Corrections from native speakers are welcome - the files are plain text.
 
 - **ccld** - Mod Function Menu (MIT). AMF shows Mod Function Menu's entries as one of its converted menus; that support
   is a clean reimplementation from Mod Function Menu's description and public SDK header, with none of its code.
+- **ccld** - Game Settings Override (GPL-3.0). AMF reads and writes Game Settings Override's documented file format and
+  calls its exported `ReloadConfig`; none of its code is used.
 
 ## Licence
 

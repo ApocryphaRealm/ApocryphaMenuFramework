@@ -14,6 +14,7 @@
 #include "PrismaRedux.h"
 #include "HelpBar.h"
 #include "IniPages.h"
+#include "GsoPages.h"
 #include "MfmPages.h"
 #include "ImguiHost.h"
 #include "LoadGuard.h"
@@ -3083,6 +3084,24 @@ namespace renderer
 							"is not loaded is greyed out and says what is missing."));
 						ImGui::Spacing();
 						mfmpages::DrawSettingsList();
+						ImGui::EndTabItem();
+					}
+					// 2.2.1: Game Settings Override's files - GsoPages.h
+					if (sub.Tab(TR("AMF_SubGso", "GSO")))
+					{
+						if (widgets::Toggle(TR("AMF_GsoLoad", "Game Settings Override files here"), &values.gsoMenus))
+						{
+							logger::info("settings page: Game Settings Override files -> {}", values.gsoMenus);
+							settings::Save();
+							gsopages::ApplyVisibility();
+						}
+						ImGui::TextWrapped("%s", TR("AMF_GsoLoadHelp", "On: each Game Settings Override file (Data/SKSE/Plugins/"
+							"ccld_GameSettingsOverride/*.toml) can be a tab of the \"Game Settings Override\" page here - a control per game "
+							"setting, chosen by the setting's own type, with the game's current value beside it. Each file starts off: turn on "
+							"the ones you want below. A change is written into the file itself, only that value (the file as it first was is "
+							"kept as .amf-backup), set in the game at once, and Game Settings Override reloads its files."));
+						ImGui::Spacing();
+						gsopages::DrawSettingsList();
 						ImGui::EndTabItem();
 					}
 					// next after 2.1.9: other mods' own ImGui menus - a switch per mod for its row on Framework > Other menus (ImguiHost.h)
