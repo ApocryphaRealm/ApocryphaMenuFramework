@@ -6,6 +6,7 @@
 
 #include "Bindings.h"
 #include "InputFrames.h"
+#include "LoadGuard.h"
 #include "Compat.h"
 #include "ConsumerSurface.h"
 #include "Offsets.h"
@@ -492,7 +493,6 @@ namespace input
 	// first look, the consume rule, the held set, ImGui, and every downstream handler. This is
 	// what the `type`/`key` record ops could not exercise (they enter at the record queue, after
 	// the first look), and the reported search-box freeze lives in exactly that gap.
-	std::atomic<std::uint64_t> g_eventsSeen{ 0 };   // next after 2.1.9: input events handed to the hook (EventsSeen)
 
 	namespace inject
 	{
@@ -702,6 +702,29 @@ namespace input
 					return;
 				}
 
+				// THE LOADING GUARD (2.2.0; the owner, 2026-10-12: "amf shouldn't work during loading in as that can cause
+				// issues"). Before the Main Menu has opened, and while the Loading Menu is up, this hook does nothing at all:
+				// the list goes to the game untouched - no menu key, no Start, no rebind or capture, no mod's input callback,
+				// nothing consumed, no text-entry count changed, no driver press spliced in (LoadGuard.h). The menu itself is
+				// closed by the render thread on the guard's first frame.
+				if (loadguard::Blocked())
+				{
+					for (const RE::InputEvent* e = *a_events; e; e = e->next)
+					{
+						const RE::ButtonEvent* b = e->AsButtonEvent();
+						if (b && b->IsDown())
+						{
+							loadguard::NoteIgnored(b->GetDevice() == RE::INPUT_DEVICE::kKeyboard &&
+														   bindings::FromKeyboard(b->GetIDCode()) == bindings::Action::kToggleMenu ?
+													   "the menu key" :
+													   "a key or button press");
+							break;
+						}
+					}
+					func(a_dispatcher, a_events);
+					return;
+				}
+
 				SyncEngineTextInput();   // the engine makes no CharEvent unless we ask it to
 
 				// A page that took the sticks gets them taken back the moment the menu is not up,
@@ -712,13 +735,6 @@ namespace input
 				}
 
 				inject::Service(a_events);   // driver-side presses/characters, ahead of everything below
-				// next after 2.1.9: every event this hook is handed, counted - while another mod's menu is hosted (ImguiHost.h) that
-				// mod's input hook runs before this one and swallows the list, so this count standing still is the proof
-				{
-					std::uint64_t n = 0;
-					for (const RE::InputEvent* e = *a_events; e; e = e->next) { ++n; }
-					if (n) { g_eventsSeen.fetch_add(n, std::memory_order_relaxed); }
-				}
 
 				const bool menuOpen = renderer::IsMainWindowVisible();
 				// A mod's own window that is open and blocking (2.0.4), as the renderer published it. Read
@@ -1367,11 +1383,6 @@ namespace input
 	float VanillaCursorSpeedSetting()
 	{
 		return g_vanillaCursorSpeedMirror.load(std::memory_order_relaxed);
-	}
-
-	std::uint64_t EventsSeen()
-	{
-		return g_eventsSeen.load(std::memory_order_relaxed);
 	}
 
 	void QueueMouseButton(std::uint32_t a_button, bool a_down)

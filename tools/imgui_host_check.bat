@@ -1,7 +1,7 @@
 @echo off
 setlocal
-REM Compiles tools\imgui_host_check.cpp (include\HostCore.h - the other mods' menu keys, the SendInput records and the
-REM frame-time statistics) with MSVC and runs it. Optional arguments: a Mod Organizer instance's mods folder and its
+REM Compiles tools\imgui_host_check.cpp (include\HostCore.h - the other mods' menu keys, ENB's enblocal.ini and the
+REM SendInput records) with MSVC and runs it. Optional arguments: a Mod Organizer instance's mods folder and its
 REM overwrite folder, whose real Open Animation Replacer, IED, Community Shaders and OptiScaler configs are read too.
 REM nlohmann/json comes from the SE/AE line's vcpkg tree, so configure.bat must have run once.
 call "%~dp0..\find-msvc.bat"

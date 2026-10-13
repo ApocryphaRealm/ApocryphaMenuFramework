@@ -81,9 +81,6 @@ namespace input
 	// so a driver can measure the pointer speed (cursor before / after) through the real scaling.
 	void QueueMouseMove(float a_dx, float a_dy);
 	void GetCursor(float& a_x, float& a_y);
-	// next after 2.1.9: how many input events the game has handed this framework's input hook since start-up (any thread).
-	// While another mod's menu is hosted, that mod's hook runs first and swallows the list - this count stands still.
-	std::uint64_t EventsSeen();
 
 	// POINTER SPEED (2.1.7). Screen pixels the pointer moves per raw mouse count: the game's own menu-cursor speed
 	// (display width / 1280 x fMouseCursorSpeed:Interface, read from SkyrimSE.exe - see Input.cpp) times the player's

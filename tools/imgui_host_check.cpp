@@ -1,5 +1,5 @@
-// Off-game check of include/HostCore.h - the same code Framework > Other menus and the Performance page run: each mod's
-// open key read from its own config, the key -> scan code mapping, the SendInput records, and the frame-time statistics.
+// Off-game check of include/HostCore.h - the same code Framework > Other menus runs: each mod's open key read from its own
+// config (ENB's enblocal.ini included), the key -> scan code mapping, the SendInput records, and ENB's file marker.
 //   tools\imgui_host_check.bat [<a Mod Organizer instance's mods folder> [<its overwrite folder>]]
 // With the folders, the real installed configs are read too (Open Animation Replacer, IED, Community Shaders, OptiScaler).
 // Prints one line per check and "imgui_host_check: N of N passed"; exits 1 on any failure.
@@ -100,51 +100,31 @@ int main(int argc, char** argv)
 		Check(!ParseOptiScalerIni("[Menu]\nShortcutKey=-1\n").hasKey, "OptiScaler -1 = no key");
 		Check(Keys(ParseOptiScalerIni("[Spoofing]\nShortcutKey=0x08\n").key) == "D2", "a ShortcutKey in another section is not the menu's");
 	}
-	// ---- frame times ----
+	// ---- 2.2.0: ENB - enblocal.ini's editor key, and its marker in a file (files only: ENB's licence forbids reverse engineering) ----
 	{
-		FrameTimes t;
-		Check(t.Compute().count == 0, "no frames: nothing");
-		for (int i = 0; i < 100; ++i) { t.Push(16.0f); }
-		t.Push(32.0f);
-		t.Push(8.0f);
-		const auto s = t.Compute();
-		Check(s.count == 102 && s.minMs == 8.0f && s.maxMs == 32.0f, "min and max frame time");
-		Check(std::abs(s.avgMs - (1600.0f + 40.0f) / 102.0f) < 0.001f, "average frame time");
-		Check(std::abs(s.fpsMin - 31.25f) < 0.01f && std::abs(s.fpsMax - 125.0f) < 0.01f, "FPS min from the longest frame, max from the shortest");
-		for (int i = 0; i < 500; ++i) { t.Push(10.0f + static_cast<float>(i % 3)); }
-		float ordered[FrameTimes::kFrames];
-		t.Ordered(ordered);
-		Check(t.Count() == FrameTimes::kFrames && ordered[FrameTimes::kFrames - 1] == 10.0f + static_cast<float>(499 % 3), "the ring keeps the last 240, newest last");
-		t.Push(-1.0f);
-		t.Push(std::nanf(""));
-		Check(t.Count() == FrameTimes::kFrames, "a negative or NaN time is dropped");
-	}
-	// ---- 2.2.0: the corner graph's place and line (drawn on the foreground list, so it shows over AMF's own window) ----
-	{
-		const float dw = 1920.0f, dh = 1080.0f, w = 300.0f, h = 120.0f, pad = 10.0f;
-		const auto tl = CornerPlace(0, dw, dh, w, h, pad);
-		const auto tr = CornerPlace(1, dw, dh, w, h, pad);
-		const auto bl = CornerPlace(2, dw, dh, w, h, pad);
-		const auto br = CornerPlace(3, dw, dh, w, h, pad);
-		Check(tl.x == pad && tl.y == pad, "corner 0: top left, the gap from both edges");
-		Check(tr.x + w == dw - pad && tr.y == pad, "corner 1: top right");
-		Check(bl.x == pad && bl.y + h == dh - pad, "corner 2: bottom left");
-		Check(br.x + w == dw - pad && br.y + h == dh - pad, "corner 3: bottom right (the default)");
-		const auto low = CornerPlace(-4, dw, dh, w, h, pad);
-		const auto high = CornerPlace(9, dw, dh, w, h, pad);
-		Check(low.x == tl.x && low.y == tl.y && high.x == br.x && high.y == br.y, "a corner outside 0-3 is clamped (as the page's dropdown does)");
-		const auto huge = CornerPlace(3, 200.0f, 100.0f, w, h, pad);
-		Check(huge.x == 0.0f && huge.y == 0.0f, "a graph larger than the screen starts at its top-left edge, never off it");
-
-		const float vals[4] = { 10.0f, 20.0f, 40.0f, 0.0f };
-		float xs[4] = {}, ys[4] = {};
-		GraphPoints(vals, 4, 100.0f, 50.0f, 300.0f, 60.0f, 20.0f, xs, ys);
-		Check(xs[0] == 100.0f && xs[3] == 400.0f, "the line runs from the plot's left edge (oldest) to its right edge (newest)");
-		Check(ys[0] == 80.0f && ys[1] == 50.0f, "half the scale sits mid-plot, the top of the scale at its top edge");
-		Check(ys[2] == 50.0f && ys[3] == 110.0f, "a frame slower than the scale is held at the top edge; 0 ms sits on the bottom");
-		bool inside = true;
-		for (int i = 0; i < 4; ++i) { inside = inside && xs[i] >= 100.0f && xs[i] <= 400.0f && ys[i] >= 50.0f && ys[i] <= 110.0f; }
-		Check(inside, "every point lies inside the plot rectangle");
+		const std::string def = "[PROXY]\nEnableProxyLibrary=false\n\n[INPUT]\n//shift\nKeyCombination=16\n//f12\nKeyUseEffect=123\n"
+								"//enter\nKeyEditor=13\n//insert\nKeyFPSLimit=36\n";
+		const auto d = ParseEnbLocal(def);
+		Check(d.editorOn && d.hasKey && Keys(d.key) == "2A+1C", "ENB default enblocal.ini: Shift + Enter, got " + Keys(d.key));
+		Check(Keys(ParseEnbLocal("[GLOBAL]\nUsePatchSpeedhackWithoutGraphics=false\n").key) == "2A+1C",
+			  "ENB with no [INPUT] keys: the defaults, Shift + Enter");
+		const auto custom = ParseEnbLocal("[INPUT]\nKeyCombination=17\nKeyEditor=121\n");
+		Check(custom.hasKey && Keys(custom.key) == "1D+44", "ENB custom key: Ctrl (17) + F10 (121), got " + Keys(custom.key));
+		const auto noCombo = ParseEnbLocal("[INPUT]\nKeyCombination=16\nKeyUseCombination=false\nKeyEditor=36\n");
+		Check(Keys(noCombo.key) == "C7", "ENB KeyUseCombination=false: Home alone, got " + Keys(noCombo.key));
+		const auto older = ParseEnbLocal("[INPUT]\nKeyShowEditor=123\n");
+		Check(Keys(older.key) == "2A+58", "ENB older file's KeyShowEditor=123: Shift + F12, got " + Keys(older.key));
+		const auto off = ParseEnbLocal("[GLOBAL]\nEnableEditor=false\n[INPUT]\nKeyEditor=13\n");
+		Check(!off.editorOn && off.offKey == "[GLOBAL] EnableEditor", "ENB editor switched off in [GLOBAL]: blocked, naming the key - got '" + off.offKey + "'");
+		const auto offInput = ParseEnbLocal("[INPUT]\nKeyEditor=13\nUseEditor=0 // off\n");
+		Check(!offInput.editorOn && offInput.offKey == "[INPUT] UseEditor", "ENB editor switched off in [INPUT] (0, with a trailing // comment)");
+		Check(ParseEnbLocal("[WINDOW]\nEnableEditor=false\n").editorOn, "an editor key outside [GLOBAL] / [INPUT] does not switch it off");
+		Check(ParseEnbLocal("[GLOBAL]\nEnableEditor=true\n").editorOn, "EnableEditor=true leaves it on");
+		Check(!ParseEnbLocal("[INPUT]\nKeyEditor=0\n").hasKey, "ENB KeyEditor=0: no key");
+		Check(!ParseEnbLocal("[INPUT]\nKeyEditor=word\n").hasKey, "ENB KeyEditor not a number: no key");
+		Check(HasEnbMarker("Boris Vorontsov ENBSeries ") && HasEnbMarker(std::string("MZ\0\0garbage enbseries d3d11", 27)),
+			  "the ENBSeries marker is found in a version string and in file bytes (any case)");
+		Check(!HasEnbMarker("Microsoft Windows Operating System Direct3D 11 Runtime"), "Windows' own d3d11.dll is not ENB");
 	}
 
 	// ---- the real files ----

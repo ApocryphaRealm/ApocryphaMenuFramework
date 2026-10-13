@@ -2,9 +2,9 @@
 
 // ============================================================================================
 // OTHER MODS' OWN IMGUI MENUS - the part with no game and no ImGui in it, so tools\imgui_host_check.cpp runs the same
-// code offline (next version after 2.1.9; the owner, 2026-10-12: host other mods' live ImGui menus inside AMF rather
-// than converting them - 4. plans\amf-imgui-hosting\FINDINGS.md). ImguiHost.cpp draws and drives; this reads each
-// target's own config for its open key, turns a key into the presses SendInput sends, and keeps AMF's frame times.
+// code offline (2.2.0; the owner, 2026-10-12: a row in AMF for other menus, so AMF takes over their hotkeys to call them
+// and closes by itself - 4. plans\amf-imgui-hosting\FINDINGS.md). ImguiHost.cpp draws and drives; this reads each
+// target's own config for its open key and turns a key into the presses SendInput sends.
 //
 // Keys are held here as DirectInput scan codes (DIK), the codes the game's own input events carry: 0x01-0x7F as they
 // are, and an E0-prefixed ("extended") key with 0x80 added (Insert 0xD2, End 0xCF, the arrows). A target that names its
@@ -21,6 +21,8 @@
 //                            Menu.ToggleKey - a virtual-key code, or an array of them for a combo (default 35 = End)
 //   OptiScaler               OptiScaler.ini beside its DLL (the game folder): [Menu] ShortcutKey - a virtual-key code,
 //                            decimal or 0x hex; "auto" = 0x2D (Insert), -1 = no key
+//   ENB                      enblocal.ini beside SkyrimSE.exe: [INPUT] KeyEditor (virtual key, default 13 = Enter) held with
+//                            KeyCombination (default 16 = Shift) unless KeyUseCombination=false - files only, see below
 // ============================================================================================
 
 #ifndef NOMINMAX
@@ -389,97 +391,76 @@ namespace hostcore
 		return c;
 	}
 
-	// ---- AMF's own frame times (the Performance page and its corner graph) ----------------------------------------------
-	// A ring of the last kFrames frame times in milliseconds, measured between AMF's present-hook calls.
-	class FrameTimes
+	// ---- ENB (2.2.0; the owner, 2026-10-12: "Add enb detection as well so it works for that too") ----------------------------
+	// ENB's licence forbids reverse engineering it, so nothing of it is hooked, patched or read in memory: it is found from
+	// FILES only (its DLL's version resource or the "ENBSeries" text in the file, and enblocal.ini beside it), and its editor
+	// is opened the way a player opens it - its key, read from enblocal.ini, pressed with SendInput.
+	//   [INPUT] KeyEditor (older files KeyShowEditor) - a virtual-key code, default 13 (Enter)
+	//   [INPUT] KeyCombination - the key held with it, default 16 (Shift); [INPUT] KeyUseCombination=false drops it
+	//   any [GLOBAL] or [INPUT] key naming the editor (other than the key itself) set false switches the editor off
+	inline bool HasEnbMarker(const std::string& a_text)
 	{
-	public:
-		static constexpr int kFrames = 240;
-
-		void Push(float a_ms)
-		{
-			if (!std::isfinite(a_ms) || a_ms <= 0.0f) { return; }
-			m_ms[m_next] = a_ms;
-			m_next = (m_next + 1) % kFrames;
-			m_count = std::min(m_count + 1, kFrames);
-		}
-
-		int Count() const { return m_count; }
-
-		// oldest first, for PlotLines
-		void Ordered(float* a_out) const
-		{
-			const int start = (m_count < kFrames) ? 0 : m_next;
-			for (int i = 0; i < m_count; ++i) { a_out[i] = m_ms[(start + i) % kFrames]; }
-		}
-
-		struct Stats
-		{
-			float minMs = 0.0f, avgMs = 0.0f, maxMs = 0.0f;
-			float fpsMin = 0.0f, fpsAvg = 0.0f, fpsMax = 0.0f;   // fpsMin from the longest frame, fpsMax from the shortest
-			int count = 0;
-		};
-
-		Stats Compute() const
-		{
-			Stats s;
-			s.count = m_count;
-			if (m_count == 0) { return s; }
-			double sum = 0.0;
-			s.minMs = m_ms[0];
-			s.maxMs = m_ms[0];
-			for (int i = 0; i < m_count; ++i)
-			{
-				sum += m_ms[i];
-				s.minMs = std::min(s.minMs, m_ms[i]);
-				s.maxMs = std::max(s.maxMs, m_ms[i]);
-			}
-			s.avgMs = static_cast<float>(sum / m_count);
-			s.fpsAvg = s.avgMs > 0.0f ? 1000.0f / s.avgMs : 0.0f;
-			s.fpsMin = s.maxMs > 0.0f ? 1000.0f / s.maxMs : 0.0f;
-			s.fpsMax = s.minMs > 0.0f ? 1000.0f / s.minMs : 0.0f;
-			return s;
-		}
-
-	private:
-		float m_ms[kFrames] = {};
-		int m_next = 0;
-		int m_count = 0;
-	};
-
-	// 2.2.0: the corner graph is drawn straight onto AMF's FOREGROUND draw list (as an ImGui window it sat under AMF's own
-	// window, so with AMF open full-screen it never showed - v5 and v6 runs). With no window there is no pivot to place it,
-	// so its place and its line are computed here, where tools\imgui_host_check.cpp checks them.
-	struct CornerPos
-	{
-		float x, y;
-	};
-
-	// The widget's top-left. a_corner: 0 top-left, 1 top-right, 2 bottom-left, 3 bottom-right ([Performance] iCorner; any
-	// other value is clamped into 0-3); a_pad: the gap to the screen's edges. A widget larger than the screen starts at its
-	// left / top edge, never off it.
-	inline CornerPos CornerPlace(int a_corner, float a_displayW, float a_displayH, float a_w, float a_h, float a_pad)
-	{
-		const int c = std::clamp(a_corner, 0, 3);
-		const bool right = c == 1 || c == 3;
-		const bool bottom = c >= 2;
-		const float x = right ? a_displayW - a_pad - a_w : a_pad;
-		const float y = bottom ? a_displayH - a_pad - a_h : a_pad;
-		return { std::max(0.0f, x), std::max(0.0f, y) };
+		return a_text.find("ENBSeries") != std::string::npos || Lower(a_text).find("enbseries") != std::string::npos;
 	}
 
-	// The frame-time line inside the plot rectangle (a_x, a_y, a_w x a_h): oldest frame at the left edge, newest at the right,
-	// 0 ms at the bottom, a_top ms at the top; a frame slower than a_top is held at the top edge. Writes a_count points.
-	inline void GraphPoints(const float* a_values, int a_count, float a_x, float a_y, float a_w, float a_h, float a_top, float* a_outX,
-							float* a_outY)
+	struct EnbConfig
 	{
-		const float top = a_top > 0.0f ? a_top : 1.0f;
-		for (int i = 0; i < a_count; ++i)
+		KeyCombo key;
+		bool editorOn = true;
+		std::string offKey;      // the enblocal.ini key that switched the editor off ("[GLOBAL] EnableEditor")
+		bool hasKey = true;      // false: KeyEditor is 0, negative or not a key
+	};
+
+	inline EnbConfig ParseEnbLocal(const std::string& a_text)
+	{
+		EnbConfig c;
+		long long editorVk = 13, comboVk = 16;
+		std::string v;
+		if (IniValue(a_text, "INPUT", "KeyEditor", v) || IniValue(a_text, "INPUT", "KeyShowEditor", v))
 		{
-			const float t = a_count > 1 ? static_cast<float>(i) / static_cast<float>(a_count - 1) : 1.0f;
-			const float v = std::clamp(a_values[i] / top, 0.0f, 1.0f);
-			a_outX[i] = a_x + t * a_w;
-			a_outY[i] = a_y + (1.0f - v) * a_h;
+			if (!ParseInt(v, editorVk)) { editorVk = 0; }
 		}
+		if (IniValue(a_text, "INPUT", "KeyCombination", v) && !ParseInt(v, comboVk)) { comboVk = 0; }
+		const bool useCombo = IniBool(a_text, "INPUT", "KeyUseCombination", true);
+		// the editor switched off: a key in [GLOBAL] or [INPUT] whose name says editor, set false
+		{
+			std::istringstream in(a_text);
+			std::string line, section;
+			while (std::getline(in, line) && c.editorOn)
+			{
+				line = Trim(line);
+				if (line.empty() || line[0] == ';' || line[0] == '#' || line[0] == '/') { continue; }
+				if (line.front() == '[')
+				{
+					const auto close = line.find(']');
+					section = Lower(Trim(line.substr(1, close == std::string::npos ? std::string::npos : close - 1)));
+					continue;
+				}
+				if (section != "global" && section != "input") { continue; }
+				const auto eq = line.find('=');
+				if (eq == std::string::npos) { continue; }
+				const std::string key = Trim(line.substr(0, eq));
+				const std::string lk = Lower(key);
+				if (lk.find("editor") == std::string::npos || lk == "keyeditor" || lk == "keyshoweditor") { continue; }
+				std::string val = line.substr(eq + 1);
+				if (const auto sc = val.find(';'); sc != std::string::npos) { val = val.substr(0, sc); }
+				if (const auto sl = val.find("//"); sl != std::string::npos) { val = val.substr(0, sl); }
+				val = Lower(Trim(val));
+				if (val == "false" || val == "0" || val == "no" || val == "off")
+				{
+					c.editorOn = false;
+					c.offKey = "[" + std::string(section == "global" ? "GLOBAL" : "INPUT") + "] " + key;
+				}
+			}
+		}
+		const std::uint32_t dik = editorVk > 0 && editorVk <= 0xFE ? VkToDik(static_cast<std::uint32_t>(editorVk)) : 0;
+		if (dik == 0) { c.hasKey = false; return c; }
+		if (useCombo && comboVk > 0 && comboVk <= 0xFE)
+		{
+			const std::uint32_t mod = VkToDik(static_cast<std::uint32_t>(comboVk));
+			if (mod != 0 && mod != dik) { c.key.keys.push_back(mod); }
+		}
+		c.key.keys.push_back(dik);
+		return c;
 	}
 }

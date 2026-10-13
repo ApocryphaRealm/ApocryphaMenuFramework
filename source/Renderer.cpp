@@ -16,7 +16,7 @@
 #include "IniPages.h"
 #include "MfmPages.h"
 #include "ImguiHost.h"
-#include "Performance.h"
+#include "LoadGuard.h"
 #include "McmStyle.h"
 #include "Input.h"
 #include "Offsets.h"
@@ -121,6 +121,12 @@ namespace renderer
 			{
 				return;
 			}
+			// 2.2.0: no SKSE task is queued while the game is loading or before its main menu (LoadGuard.h) - the edge waits,
+			// unconsumed, and is queued on the first frame after the guard lifts, when the game loop is known to be running
+			if (loadguard::Blocked())
+			{
+				return;
+			}
 			lastOwn = a_wantOwn;
 			lastLift = a_lift;
 			auto* tasks = SKSE::GetTaskInterface();
@@ -172,10 +178,25 @@ namespace renderer
 		void SyncIdleCamera(bool a_want)
 		{
 			static bool last = false;   // render thread only
+			static bool s_waitSaid = false;   // render thread only: one line per wait
 			if (a_want == last)
 			{
 				return;
 			}
+			// 2.2.0: the hold (or its release) is queued only while the game loop is known to be running - never while the game
+			// is loading or before its main menu (LoadGuard.h; the 2.2.0 hang: a hold queued on an F1 during start-up never ran).
+			// The edge waits, unconsumed, and is queued on the first frame after the guard lifts.
+			if (loadguard::Blocked())
+			{
+				if (!s_waitSaid)
+				{
+					s_waitSaid = true;
+					logger::debug("camera: the idle-camera {} waits - the game is loading or not at its main menu (no SKSE task queued)",
+								  a_want ? "hold" : "release");
+				}
+				return;
+			}
+			s_waitSaid = false;
 			last = a_want;
 			auto* tasks = SKSE::GetTaskInterface();
 			if (!tasks)
@@ -4033,8 +4054,7 @@ namespace renderer
 				sideItem(TR("AMF_Settings", "Settings"), "settings");
 				sideItem(TR("AMF_Controls", "Controls"), "controls");
 				sideItem(TR("AMF_Help", "Help"),     "help");
-				// next after 2.1.9: AMF's own frame-time graph, and other mods' own ImGui menus (the launcher) when one is loaded
-				sideItem(TR("AMF_Performance", "Performance"), "performance");
+				// 2.2.0: other mods' own menus (the launcher) when one is loaded
 				if (imguihost::AnyShown()) { sideItem(TR("AMF_OtherMenus", "Other menus"), "othermenus"); }
 				ImGui::Separator();
 				ImGui::TextDisabled("%s", TR("AMF_Mods", "Mods"));
@@ -4647,7 +4667,6 @@ namespace renderer
 				if (sel == "settings")      { DrawFrameworkSettingsPane(); }
 				else if (sel == "controls") { DrawControlsPane(); }
 				else if (sel == "help")     { DrawHelpPane(); }
-				else if (sel == "performance") { perf::DrawPage(); }
 				else if (sel == "othermenus" && imguihost::AnyShown()) { imguihost::DrawPage(); }
 				else if (sel == "mod" && !entries.empty())
 				{
@@ -4913,7 +4932,6 @@ namespace renderer
 					return;
 				}
 				consumer::NoteRenderThread();   // 2.1.9 (theme-switch-fix): the immediate context's thread, for LoadTexture's mips
-				perf::NoteFrame();   // next after 2.1.9: AMF's own frame time - one present-hook call per frame the game shows
 
 				// SKSE MENU FRAMEWORK'S EVENTS (2.1.4 - NPC Preset Applier, a Nexus report 2026-10-07: its portraits were
 				// queued and never made under AMF). SMF 3 sends its RegisterEvent / RegisterEventPriority listeners four
@@ -4986,6 +5004,14 @@ namespace renderer
 				// Give an external launcher its say before this frame's visibility is read, so a
 				// menu it just asked for opens on the same frame rather than the next one.
 				compat::PumpExternalWindow();
+
+				// THE LOADING GUARD (2.2.0, LoadGuard.h): a load that starts with this menu open closes it - the Loading Menu
+				// takes the screen, and AMF does nothing until it has gone.
+				if (g_windowVisible.load(std::memory_order_acquire) && loadguard::Blocked())
+				{
+					logger::info("loading guard: the game is loading - this menu closes");
+					SetMenuVisible(false);
+				}
 
 				const bool visible = g_windowVisible.load(std::memory_order_acquire);
 
@@ -5071,9 +5097,6 @@ namespace renderer
 				// Translation runs after the backends' NewFrame (so our queued io.Add*Event
 				// calls land after, and therefore win over, the Win32 backend's own
 				// GetCursorPos-based mouse update) and before ImGui::NewFrame consumes them.
-				// next after 2.1.9: while another mod's menu is hosted in the page and open, it swallows the game's input before this
-				// framework's hook sees any - the pointer, the mouse buttons and the menu key are read from the OS instead (ImguiHost.h)
-				const bool hostedInput = interactive && imguihost::PollOsInput();
 				if (interactive)
 				{
 					input::ProcessQueuedEvents();
@@ -5087,14 +5110,7 @@ namespace renderer
 				// Software cursor while the menu (or a mod's blocking window) has the input - the game
 				// hides and recentres the OS cursor at will, so ImGui draws its own at the position we
 				// integrate. RaceMenu Atelier hides the game's own cursor for exactly this reason.
-				io.MouseDrawCursor = interactive && !hostedInput;   // a hosted menu draws its own pointer, on top
-				// and a hosted menu has the keyboard: none of this framework's text fields keeps it
-				if (hostedInput && GImGui && GImGui->ActiveId != 0 && keyboard::IsTextField(GImGui->ActiveId))
-				{
-					logger::debug("input: a hosted menu is open - text field {} lets go of the keyboard", GImGui->ActiveId);
-					ImGui::ClearActiveID();
-					keyboard::Hide();
-				}
+				io.MouseDrawCursor = interactive;
 
 				// Nav mode follows the EXPLICIT setting live (the toggle sits on the settings
 				// page itself). Never auto-detected - that is the nav-focus-drift bug.
@@ -5225,7 +5241,6 @@ namespace renderer
 				// decide through the IsOpen flag it was handed - not ours.
 				consumer::DrawHudElements();
 				consumer::DrawWindows();
-				perf::DrawOverlay();   // next after 2.1.9: the corner graph, when its switch is on (no input, no focus)
 
 				// Which stick drives ImGui follows "is an item being edited" (the controller scheme in
 				// Input.cpp). The framework window samples it while it draws; with only a mod's window
@@ -5364,6 +5379,11 @@ namespace renderer
 	void ToggleMainWindow()
 	{
 		const bool now = !g_windowVisible.load(std::memory_order_relaxed);
+		if (now && loadguard::Blocked())
+		{
+			loadguard::NoteIgnored("opening this menu");   // 2.2.0: never opens while the game is loading (LoadGuard.h)
+			return;
+		}
 		g_nested.store(false, std::memory_order_release);   // the hotkey opens our own window
 		g_windowVisible.store(now, std::memory_order_release);
 
@@ -5447,6 +5467,11 @@ namespace renderer
 
 	void SetMenuVisible(bool a_visible, bool a_nested)
 	{
+		if (a_visible && loadguard::Blocked())
+		{
+			loadguard::NoteIgnored(a_nested ? "opening this menu from the System menu" : "opening this menu");   // 2.2.0 (LoadGuard.h)
+			return;
+		}
 		g_nested.store(a_visible && a_nested, std::memory_order_release);
 		g_windowVisible.store(a_visible, std::memory_order_release);
 		if (a_visible)
@@ -5491,7 +5516,7 @@ namespace renderer
 		}
 		std::string n = a_node;
 		if (n.rfind("system/", 0) == 0) { n = n.substr(7); }  // pre-1.4.4 paths still accepted
-		if (n == "settings" || n == "controls" || n == "help" || n == "mod" || n == "performance" || n == "othermenus") { g_selNode = n; }
+		if (n == "settings" || n == "controls" || n == "help" || n == "mod" || n == "othermenus") { g_selNode = n; }
 	}
 
 	std::string GetSelectedNode()
@@ -5834,7 +5859,7 @@ namespace renderer
 			   ",\"pauseGame\":" + (settings::Get().pauseGameWhileOpen ? "true" : "false") +
 			   ",\"pauseHeld\":" + (PauseHeld() ? "true" : "false") +
 			   ",\"idleCamera\":" + IdleCameraJson() +   // next after 2.1.9: [Menu] bKeepCameraAwake and the camera's vanity state
-			   ",\"perf\":" + perf::StateJson() +   // next after 2.1.9: AMF's own FPS / frame times (Performance.h)
+			   ",\"loadGuard\":" + (loadguard::Blocked() ? "true" : "false") +   // 2.2.0: the game is loading or not at its main menu (LoadGuard.h)
 			   ",\"lastDevice\":\"" + (input::LastDevice() == input::Device::kGamepad ? "gamepad" :
 										   input::LastDevice() == input::Device::kKeyboardMouse ? "keyboard" : "none") + "\"" +
 			   ",\"customOrder\":" + (personalization::IsCustomOrder() ? "true" : "false") +

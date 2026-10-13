@@ -1,9 +1,7 @@
 #include "ImguiHost.h"
 
-#include "Bindings.h"
-#include "ConsumerSurface.h"
 #include "HostCore.h"
-#include "Input.h"
+#include "LoadGuard.h"
 #include "Renderer.h"
 #include "Settings.h"
 #include "Strings.h"
@@ -40,18 +38,19 @@ namespace imguihost
 			kCs,
 			kIed,
 			kOpti,
+			kEnb,
 			kCount
 		};
 
-		constexpr std::array<const char*, kCount> kIds = { "oar", "cs", "ied", "optiscaler" };
+		constexpr std::array<const char*, kCount> kIds = { "oar", "cs", "ied", "optiscaler", "enb" };
 		// the mods' own names - proper names, the same in every language
 		constexpr std::array<const char*, kCount> kNames = { "Open Animation Replacer", "Community Shaders", "Immersive Equipment Displays",
-															 "OptiScaler" };
+															 "OptiScaler", "ENB" };
 
 		struct Target
 		{
 			bool loaded = false;
-			std::wstring modulePath;     // the loaded DLL (OptiScaler: whatever name its proxy has)
+			std::wstring modulePath;     // the loaded DLL (OptiScaler: whatever name its proxy has; ENB: its d3d11.dll / dxgi.dll)
 			hostcore::KeyCombo key;      // read from its config at the last refresh
 			std::string keyFrom;         // where the key was read ("OpenAnimationReplacer.ini", "SettingsUser.json" ...)
 			std::string blocked;         // why it cannot be opened from here ("" = it can)
@@ -64,15 +63,16 @@ namespace imguihost
 		std::mutex g_lock;   // guards the targets (the render thread draws and acts, DevBench lists)
 		std::array<Target, kCount> g_targets;
 		bool g_loaded = false;
+		std::wstring g_enbIni;   // ENB: enblocal.ini beside SkyrimSE.exe
 
 		// OAR's UI interface: V3 (3.2.1+) when it answers it, else none here (3.0.2 is opened with its key)
 		OAR_API::UI::IUIInterface3* g_oarV3 = nullptr;
 		// v6: OAR's V2 interface (every OAR from 3.0.2), asked only whether OAR built an ImGui context this session - a null
 		// check, nothing of the context is read. OAR reads bEnableUI once at start-up and with it off builds no menu at all;
-		// with it on its context exists from the first frame (the v5 bridge log saw it then). So after the first frames a
-		// null context means "no menu this session", whatever the INI says now.
+		// with it on its context exists from the first frame. So after the first frames a null context means "no menu this
+		// session", whatever the INI says now.
 		OAR_API::UI::IUIInterface2* g_oarV2 = nullptr;
-		std::atomic<int> g_framesSeen{ 0 };   // Frame() calls so far (read by RefreshKeys on any thread)
+		std::atomic<int> g_framesSeen{ 0 };   // Frame() calls past the loading guard so far (read by RefreshKeys on any thread)
 		constexpr int kOarUiSettledFrames = 120;
 		int g_oarUiLogged = -2;               // the last session answer logged (-1 not known, 0 no menu, 1 menu)
 
@@ -101,59 +101,6 @@ namespace imguihost
 		int g_reopenDeadline = 0;
 		int g_pageDrawnFrame = -100;   // the last frame DrawPage ran, to refresh the keys when the page is opened
 
-		// ---- phase 2: the bridge and the hosted page (render thread unless noted) ----
-		struct Bridge
-		{
-			bool registered = false;
-			std::uint32_t api = 0;
-			AMF_HostFrameCallback callback = nullptr;
-			void* user = nullptr;
-			bool failed = false;          // set by AMF_HostBridgeFailed (any thread) or a fault in the call
-			std::string failReason;
-			int targetOpen = -1;          // what the bridge saw last frame
-			int wantsMouse = 0;
-			std::uint64_t placedFrames = 0;
-			std::uint64_t calls = 0;
-		};
-		std::mutex g_bridgeLock;          // registration and failure may come from any thread
-		Bridge g_bridge;                  // target "oar"
-
-		struct Hosting
-		{
-			bool active = false;
-			int startFrame = 0;
-			bool seenOpen = false;
-			float x = 0, y = 0, w = 0, h = 0;   // the empty rectangle, this frame (display pixels)
-			int rectFrame = -1;                 // ImGui frame the rectangle was taken on
-			std::uint64_t eventsAtOpen = 0;     // AMF's input-hook event count when OAR's menu opened
-			std::uint64_t eventsWhileOpen = 0;  // ... and how many reached AMF's hook while it was open (expected 0)
-			std::uint64_t osPresses = 0;        // mouse presses AMF took from the OS while hosting
-			std::string lastEnd;                // why the last hosting ended
-			int sessions = 0;
-		};
-		Hosting g_host;
-		bool g_osDown[3] = {};
-		bool g_osToggleDown = false;
-		bool g_osPolling = false;
-
-		Bridge BridgeCopy()
-		{
-			std::scoped_lock l(g_bridgeLock);
-			return g_bridge;
-		}
-
-		bool HostAvailable()
-		{
-			const Bridge b = BridgeCopy();
-			return b.registered && !b.failed && settings::Get().hostOar;
-		}
-
-		int OarState()
-		{
-			std::scoped_lock l(g_lock);
-			return g_targets[kOar].state;
-		}
-
 		bool SwitchOn(int a_id)
 		{
 			const auto& v = settings::Get();
@@ -163,6 +110,7 @@ namespace imguihost
 			case kCs: return v.imguiCs;
 			case kIed: return v.imguiIed;
 			case kOpti: return v.imguiOpti;
+			case kEnb: return v.imguiEnb;
 			default: return false;
 			}
 		}
@@ -176,6 +124,7 @@ namespace imguihost
 			case kCs: return &v.imguiCs;
 			case kIed: return &v.imguiIed;
 			case kOpti: return &v.imguiOpti;
+			case kEnb: return &v.imguiEnb;
 			default: return nullptr;
 			}
 		}
@@ -196,8 +145,8 @@ namespace imguihost
 			return std::wstring(buf, n);
 		}
 
-		// A module's ProductName from its version resource ("" when it has none)
-		std::wstring ProductName(const std::wstring& a_path)
+		// One string of a module's version resource ("ProductName", "FileDescription" ...; "" when it has none)
+		std::wstring VersionString(const std::wstring& a_path, const wchar_t* a_name)
 		{
 			DWORD handle = 0;
 			const DWORD size = ::GetFileVersionInfoSizeW(a_path.c_str(), &handle);
@@ -210,8 +159,8 @@ namespace imguihost
 			{
 				return std::wstring();
 			}
-			wchar_t key[64];
-			swprintf_s(key, L"\\StringFileInfo\\%04x%04x\\ProductName", langs[0].lang, langs[0].cp);
+			wchar_t key[96];
+			swprintf_s(key, L"\\StringFileInfo\\%04x%04x\\%s", langs[0].lang, langs[0].cp, a_name);
 			wchar_t* value = nullptr;
 			if (!::VerQueryValueW(data.data(), key, reinterpret_cast<void**>(&value), &len) || !value || len == 0) { return std::wstring(); }
 			return std::wstring(value);
@@ -229,11 +178,43 @@ namespace imguihost
 			{
 				const std::wstring path = ModulePath(mods[i]);
 				if (path.empty()) { continue; }
-				std::wstring product = ProductName(path);
+				std::wstring product = VersionString(path, L"ProductName");
 				for (auto& c : product) { c = static_cast<wchar_t>(::towlower(c)); }
 				if (product == L"optiscaler") { return mods[i]; }
 			}
 			return nullptr;
+		}
+
+		// ENB (2.2.0; the owner, 2026-10-12): active when enblocal.ini sits beside SkyrimSE.exe and a d3d11.dll or dxgi.dll is
+		// loaded whose file says it is ENBSeries - in its version resource, or as text in the file. FILES ONLY: ENB's licence
+		// forbids reverse engineering it, so nothing of it is hooked, patched or read in memory. "" when it is not active.
+		std::wstring FindEnb(std::string& a_how)
+		{
+			const std::filesystem::path game = std::filesystem::path(ModulePath(nullptr)).parent_path();
+			std::error_code ec;
+			const std::filesystem::path ini = game / L"enblocal.ini";
+			if (!std::filesystem::exists(ini, ec)) { return std::wstring(); }
+			for (const wchar_t* name : { L"d3d11.dll", L"dxgi.dll" })
+			{
+				HMODULE m = ::GetModuleHandleW(name);
+				if (!m) { continue; }
+				const std::wstring path = ModulePath(m);
+				std::string version;
+				for (const wchar_t* field : { L"ProductName", L"FileDescription", L"CompanyName", L"InternalName", L"LegalCopyright" })
+				{
+					version += Narrow(VersionString(path, field)) + " ";
+				}
+				if (hostcore::HasEnbMarker(version)) { a_how = "its version resource"; }
+				else if (hostcore::HasEnbMarker(hostcore::ReadFileText(path))) { a_how = "the ENBSeries text in the file"; }
+				else { continue; }
+				g_enbIni = ini.wstring();
+				if (std::filesystem::path(path).parent_path() != game)
+				{
+					logger::info("imgui: ENB's {} is loaded from {}, not from the game folder", Narrow(name), Narrow(path));
+				}
+				return path;
+			}
+			return std::wstring();
 		}
 
 		// Re-reads each loaded mod's key from its config (cheap; done when the page opens and before every press, since a
@@ -319,6 +300,28 @@ namespace imguihost
 						"(ShortcutKey = -1 in OptiScaler.ini), so it cannot be opened from here."));
 				}
 			}
+			{
+				Target& t = g_targets[kEnb];
+				if (t.loaded)
+				{
+					const auto c = hostcore::ParseEnbLocal(hostcore::ReadFileText(g_enbIni));
+					t.key = c.key;
+					t.keyFrom = "enblocal.ini";
+					if (!c.editorOn)
+					{
+						char line[320];
+						std::snprintf(line, sizeof(line), TR("AMF_ImguiEnbEditorOff", "Its editor is switched off in enblocal.ini (%s = false), "
+							"so there is nothing to open."), c.offKey.c_str());
+						t.blocked = line;
+					}
+					else if (!c.hasKey)
+					{
+						t.blocked = TR("AMF_ImguiEnbNoKey", "It has no editor key in enblocal.ini ([INPUT] KeyEditor), so it cannot be "
+							"opened from here.");
+					}
+					else { t.blocked.clear(); }
+				}
+			}
 		}
 
 		bool GameIsForeground()
@@ -360,9 +363,9 @@ namespace imguihost
 			switch (p.nextStep)
 			{
 			case 0:
-				if (!GameIsForeground())
+				if (loadguard::Blocked() || !GameIsForeground())
 				{
-					FinishPress(p, "not pressed: the game is not the foreground window");
+					FinishPress(p, loadguard::Blocked() ? "not pressed: the game is loading" : "not pressed: the game is not the foreground window");
 					g_press.reset();
 					return;
 				}
@@ -370,10 +373,10 @@ namespace imguihost
 				p.nextStep = 1;
 				return;
 			case 1:
-				if (!GameIsForeground())
+				if (loadguard::Blocked() || !GameIsForeground())
 				{
 					if (p.modsDown) { SendStep(p, hostcore::Step::kModifiersUp); }
-					FinishPress(p, "not pressed: the game lost the foreground");
+					FinishPress(p, loadguard::Blocked() ? "not pressed: the game started loading" : "not pressed: the game lost the foreground");
 					g_press.reset();
 					return;
 				}
@@ -381,7 +384,7 @@ namespace imguihost
 				p.nextStep = 2;
 				return;
 			case 2:
-				// a key that went down always comes up again, foreground or not, so nothing is left held
+				// a key that went down always comes up again, foreground or not, loading or not, so nothing is left held
 				if (p.keyDown) { SendStep(p, hostcore::Step::kKeyUp); }
 				p.nextStep = 3;
 				return;
@@ -393,63 +396,15 @@ namespace imguihost
 			}
 		}
 
-		// The hosted page ends: close OAR when asked (and when it is open) - its API's CloseMenu, else Escape (OAR closes its
-		// menu on Escape whatever its own key is).
-		void EndHosting(bool a_closeTarget, const std::string& a_why)
-		{
-			if (!g_host.active) { return; }
-			g_host.active = false;
-			{
-				std::scoped_lock l(g_bridgeLock);   // DevBench reads it from its own thread
-				g_host.lastEnd = a_why;
-			}
-			g_osPolling = false;
-			const int state = OarState();
-			logger::info("imgui: hosted Open Animation Replacer ended - {}{} (AMF's input hook got {} event(s) while it was open; {} press(es) taken from the OS)",
-						 a_why, a_closeTarget && state == 1 ? "; closing its menu" : "", g_host.eventsWhileOpen, g_host.osPresses);
-			if (!a_closeTarget || state != 1) { return; }
-			if (g_oarV3) { g_apiCall = ApiCall{ kOar, false, g_frame }; return; }
-			if (g_press) { return; }
-			Press p;
-			p.target = kOar;
-			p.combo.keys = { 0x01 };   // Escape
-			p.startFrame = g_frame;
-			g_press = p;
-		}
-
-		std::string StartHosting(const hostcore::KeyCombo& a_combo, bool a_pressKey = true)
-		{
-			if (g_press && a_pressKey) { return "a key press is still going on"; }
-			g_host.active = true;
-			g_host.startFrame = g_frame;
-			g_host.seenOpen = false;
-			g_host.eventsAtOpen = 0;
-			g_host.eventsWhileOpen = 0;
-			g_host.osPresses = 0;
-			g_host.rectFrame = -1;
-			++g_host.sessions;
-			renderer::SetSelectedNode("othermenus");   // the hosted page is Other menus (a DevBench open may come from another page)
-			const int state = OarState();
-			logger::info("imgui: hosting Open Animation Replacer in this page (session {}) - its menu is {}", g_host.sessions,
-						 state == 1 ? "already open: snapped here" : (g_oarV3 ? "opened through its API" : "opened with its key"));
-			if (state == 1 || !a_pressKey) { return std::string(); }
-			if (g_oarV3)
-			{
-				g_apiCall = ApiCall{ kOar, true, g_frame };
-				return std::string();
-			}
-			Press p;
-			p.target = kOar;
-			p.combo = a_combo;
-			p.startFrame = g_frame;
-			g_press = p;
-			return std::string();
-		}
-
 		// What a press of Open / Close does. Render thread. Returns "" when started, else why not.
 		std::string Act(int a_id, bool a_open)
 		{
 			if (a_id < 0 || a_id >= kCount) { return "unknown id"; }
+			if (loadguard::Blocked())
+			{
+				loadguard::NoteIgnored("an Other menus button");
+				return "the game is loading or not at its main menu";
+			}
 			hostcore::KeyCombo combo;
 			{
 				std::scoped_lock l(g_lock);
@@ -460,28 +415,16 @@ namespace imguihost
 				++t.presses;
 				combo = t.key;
 			}
-			// phase 2: OAR opens INSIDE this page when the bridge is there and its switch is on (AMF stays open)
-			// (only with this menu up: the page is where OAR goes - with the menu closed, Open is the launcher's)
-			if (a_id == kOar && HostAvailable() && (renderer::IsMainWindowVisible() || g_host.active))
-			{
-				if (a_open) { return g_host.active ? std::string() : StartHosting(combo); }
-				if (g_host.active)
-				{
-					EndHosting(true, "Close pressed");
-					return std::string();
-				}
-			}
 			const bool useApi = a_id == kOar && g_oarV3;
 			if (!useApi)
 			{
 				if (combo.Empty()) { return "no key"; }
 				if (g_press) { return "a key press is still going on"; }
 			}
-			// AMF's menu goes first, so the mod's menu has the mouse, the keys and the screen - and nothing of AMF is behind it
-			// (the owner, 2026-10-12: "some of these menus need to have nothing behind them so that you can see the world
-			// clearly"). Only here, on the paths where the mod's menu opens ON ITS OWN; a hosted menu keeps AMF open.
-			// Close first, then the key or the API call two frames later: with AMF closed its hook passes every key on.
-			const bool closeAmf = a_open && renderer::IsMainWindowVisible() && settings::Get().closeOnOpen;
+			// AMF's menu always goes first, so the mod's menu has the mouse, the keys and the screen, and nothing of AMF is
+			// behind it (the owner, 2026-10-12: "close automatically"). Close first, then the key or the API call two frames
+			// later: with AMF closed its input hook passes every key on.
+			const bool closeAmf = a_open && renderer::IsMainWindowVisible();
 			if (closeAmf)
 			{
 				logger::info("imgui: {} - closing this menu first, so its menu gets the input", kNames[a_id]);
@@ -521,126 +464,6 @@ namespace imguihost
 			logger::info("imgui: Open Animation Replacer - {} through its API: {}", c.open ? "OpenMenu" : "CloseMenu", ok ? "done" : "refused");
 		}
 
-		// The bridge's own code runs inside this call; a fault in it must not take the game down with it.
-		bool GuardedCall(AMF_HostFrameCallback a_cb, AMF_HostFrame* a_f, void* a_user)
-		{
-			__try
-			{
-				a_cb(a_f, a_user);
-				return true;
-			}
-			__except (EXCEPTION_EXECUTE_HANDLER)
-			{
-				return false;
-			}
-		}
-
-		// Once a frame, after AMF's frame is drawn: hand the bridge the rectangle (or "not hosting") and read back what it saw.
-		// Called only from Frame(), which only AMF's present hook calls - the one place a bridge is let at the mod's context.
-		void CallBridge()
-		{
-			AMF_HostFrameCallback cb = nullptr;
-			void* user = nullptr;
-			{
-				std::scoped_lock l(g_bridgeLock);
-				if (!g_bridge.registered || g_bridge.failed) { return; }
-				cb = g_bridge.callback;
-				user = g_bridge.user;
-			}
-			// v6: the thread the present hook stamped on entry THIS frame. v5's bridge pinned the first thread that called it,
-			// and SE 1.5.97 moves its present to another thread in the first second, so hosting switched itself off every launch.
-			const std::uint32_t renderThread = consumer::RenderThreadId();
-			if (!consumer::OnRenderThread()) { return; }   // not inside the present hook: the bridge is not called at all
-			const ImGuiIO& io = ImGui::GetIO();
-			AMF_HostFrame f{};
-			f.size = sizeof(AMF_HostFrame);
-			f.frame = static_cast<std::uint32_t>(g_frame);
-			f.hosting = (g_host.active && g_host.rectFrame == ImGui::GetFrameCount() && renderer::IsMainWindowVisible() && g_host.w > 1.0f &&
-						 g_host.h > 1.0f) ? 1 : 0;
-			f.x = g_host.x;
-			f.y = g_host.y;
-			f.w = g_host.w;
-			f.h = g_host.h;
-			f.displayW = io.DisplaySize.x;
-			f.displayH = io.DisplaySize.y;
-			f.targetOpen = -1;
-			f.wantsMouse = 0;
-			f.placed = 0;
-			f.renderThread = renderThread;
-			const bool ok = GuardedCall(cb, &f, user);
-			{
-				std::scoped_lock l(g_bridgeLock);
-				++g_bridge.calls;
-				if (!ok)
-				{
-					g_bridge.failed = true;
-					g_bridge.failReason = "the bridge faulted in its frame call";
-					logger::error("imgui: AMF-Host-OAR faulted in its frame call - hosting is off for this session");
-					return;
-				}
-				g_bridge.targetOpen = f.targetOpen;
-				g_bridge.wantsMouse = f.wantsMouse;
-				if (f.placed) { ++g_bridge.placedFrames; }
-			}
-			// one lock at a time (DevBench's list takes g_lock, then g_bridgeLock)
-			if (!g_oarV3)
-			{
-				std::scoped_lock l2(g_lock);
-				g_targets[kOar].state = f.targetOpen;   // OAR 3.0.2 has no IsMenuOpen: the bridge reads it from OAR's context
-			}
-		}
-
-		void HostingLifecycle()
-		{
-			if (!g_host.active) { return; }
-			const Bridge b = BridgeCopy();
-			const int state = g_oarV3 ? (g_oarV3->IsMenuOpen() ? 1 : 0) : b.targetOpen;
-			if (b.failed || !b.registered)
-			{
-				// fail closed: hosting stops; OAR keeps the screen as the launcher would have given it
-				const bool open = state == 1;
-				EndHosting(false, "the bridge stopped: " + b.failReason);
-				if (open && renderer::IsMainWindowVisible() && settings::Get().closeOnOpen)
-				{
-					logger::info("imgui: falling back to the launcher - this menu closes and Open Animation Replacer keeps the screen");
-					renderer::SetMenuVisible(false);
-				}
-				return;
-			}
-			if (!renderer::IsMainWindowVisible())
-			{
-				EndHosting(true, "this menu closed");
-				return;
-			}
-			// the page draws its hosted layout from the frame after the button that started it
-			if (g_host.rectFrame != ImGui::GetFrameCount() && g_frame > g_host.startFrame + 1)
-			{
-				EndHosting(true, "the page was left");
-				return;
-			}
-			if (state == 1)
-			{
-				if (!g_host.seenOpen)
-				{
-					g_host.seenOpen = true;
-					g_host.eventsAtOpen = input::EventsSeen();
-					logger::info("imgui: Open Animation Replacer's menu is open in the page - this menu now reads the pointer, the mouse "
-								 "buttons and its key from the OS");
-				}
-				g_host.eventsWhileOpen = input::EventsSeen() - g_host.eventsAtOpen;
-				return;
-			}
-			if (g_host.seenOpen)
-			{
-				EndHosting(false, "Open Animation Replacer closed its menu");
-				return;
-			}
-			if (g_frame > g_host.startFrame + 240)
-			{
-				EndHosting(false, "Open Animation Replacer's menu did not open within 4 s");
-			}
-		}
-
 		// Is every key of the combo held now (the OS's view; DIK -> virtual key through the layout)?
 		bool ComboDown(const hostcore::KeyCombo& a_c)
 		{
@@ -654,9 +477,8 @@ namespace imguihost
 			return true;
 		}
 
-		// THE MOD'S OWN KEY WHILE AMF IS OPEN (the owner, 2026-10-12). The mod's own input hook runs before AMF's and opens its
-		// menu by itself; AMF follows it: a hosted mod is snapped into the page (AMF stays open), one that opens on its own
-		// closes AMF (with the close switch on), so it is shown alone. Read from the OS on the frame, edge only; never while a
+		// THE MOD'S OWN KEY WHILE AMF IS OPEN (the owner, 2026-10-12: AMF takes over their hotkeys). The mod opens its menu on
+		// its own key by itself; AMF closes, so that menu is shown alone. Read from the OS on the frame, edge only; never while a
 		// press of AMF's own is going on, while a text field of AMF has the keyboard, or with the game in the background.
 		bool g_keyHeld[kCount] = {};
 		void WatchOwnKeys()
@@ -678,21 +500,9 @@ namespace imguihost
 				const bool edge = down && !g_keyHeld[i];
 				g_keyHeld[i] = down;
 				if (!edge || !watch) { continue; }
-				if (i == kOar && HostAvailable())
-				{
-					if (!g_host.active)
-					{
-						logger::info("imgui: Open Animation Replacer's own key with this menu open - its menu is shown inside the page");
-						StartHosting(keys[i], false);
-					}
-					continue;
-				}
-				if (settings::Get().closeOnOpen)
-				{
-					logger::info("imgui: {}'s own key ({}) with this menu open - this menu closes so its menu is shown alone", kNames[i],
-								 hostcore::ComboName(keys[i]));
-					renderer::SetMenuVisible(false);
-				}
+				logger::info("imgui: {}'s own key ({}) with this menu open - this menu closes so its menu is shown alone", kNames[i],
+							 hostcore::ComboName(keys[i]));
+				renderer::SetMenuVisible(false);
 			}
 		}
 
@@ -725,6 +535,17 @@ namespace imguihost
 		{
 			g_targets[kOpti].loaded = true;
 			g_targets[kOpti].modulePath = ModulePath(m);
+		}
+		{
+			std::string how;
+			const std::wstring enb = FindEnb(how);
+			if (!enb.empty())
+			{
+				g_targets[kEnb].loaded = true;
+				g_targets[kEnb].modulePath = enb;
+				logger::info("imgui: ENB found - {} (told by {}), enblocal.ini beside SkyrimSE.exe", Narrow(enb), how);
+			}
+			else { logger::debug("imgui: ENB not active (no enblocal.ini beside SkyrimSE.exe, or no loaded d3d11.dll / dxgi.dll that is ENBSeries)"); }
 		}
 		if (g_targets[kOar].loaded)
 		{
@@ -779,44 +600,14 @@ namespace imguihost
 		ImGui::Spacing();
 		ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
 		ImGui::PushTextWrapPos(0.0f);
-		ImGui::TextUnformatted(TR("AMF_OtherMenusHelp2", "These mods draw menus of their own. Open one from here. A menu shown inside "
-			"this menu keeps it open; one that opens on its own closes this menu first, so nothing of it is behind (Settings > "
-			"Converted menus > ImGui menus). Close a mod's menu the way the mod does - its key, or Escape."));
+		ImGui::TextUnformatted(TR("AMF_OtherMenusHelp", "These mods draw menus of their own. Open one from here: this menu closes first, "
+			"so the mod's menu has the mouse and the keys. Close it the way the mod does - its key, or Escape - and open this menu "
+			"again with its key."));
+		ImGui::TextUnformatted(TR("AMF_OtherMenusOwnKey", "A mod's own key pressed while this menu is open closes this menu too, so "
+			"that mod's menu is shown alone."));
 		ImGui::PopTextWrapPos();
 		ImGui::PopStyleColor();
 		ImGui::Spacing();
-
-		// phase 2: the HOSTED PAGE - AMF's frame and an empty rectangle that OAR's own window is moved into each frame
-		if (g_host.active)
-		{
-			ImGui::TextUnformatted(kNames[kOar]);
-			ImGui::SameLine();
-			ImGui::TextDisabled("%s", TR("AMF_HostLive", "- live in this page"));
-			ImGui::SameLine();
-			bool close = ImGui::Button(TR("AMF_ImguiClose", "Close"));
-			renderer::NoteHoveredItem();
-			ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
-			ImGui::PushTextWrapPos(0.0f);
-			ImGui::TextUnformatted(TR("AMF_HostHelp", "Open Animation Replacer draws its own menu here, with its own look and controls; "
-				"it does not take a controller. Escape or Close closes it, and this menu's key closes both."));
-			ImGui::PopTextWrapPos();
-			ImGui::PopStyleColor();
-			ImGui::BeginChild("##amf_hosted", ImVec2(0.0f, 0.0f), false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-			const ImVec2 pos = ImGui::GetWindowPos(), size = ImGui::GetWindowSize();
-			g_host.x = pos.x;
-			g_host.y = pos.y;
-			g_host.w = size.x;
-			g_host.h = size.y;
-			g_host.rectFrame = ImGui::GetFrameCount();
-			if (OarState() != 1)
-			{
-				ImGui::SetCursorPos(ImVec2(ImGui::GetStyle().WindowPadding.x, ImGui::GetStyle().WindowPadding.y));
-				ImGui::TextDisabled("%s", TR("AMF_HostOpening", "Opening Open Animation Replacer..."));
-			}
-			ImGui::EndChild();
-			if (close) { EndHosting(true, "Close pressed"); }
-			return;
-		}
 
 		std::array<Target, kCount> targets;
 		{
@@ -841,7 +632,7 @@ namespace imguihost
 			const bool rowBlocked = !t.blocked.empty();
 			if (rowBlocked) { ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled)); }
 			ImGui::BeginDisabled(rowBlocked);
-			if (i == kOar && (g_oarV3 || HostAvailable()))
+			if (i == kOar && g_oarV3)
 			{
 				if (ImGui::Button(TR("AMF_ImguiOpen", "Open"))) { action = i; open = true; }
 				renderer::NoteHoveredItem();
@@ -863,7 +654,6 @@ namespace imguihost
 			ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
 			ImGui::PushTextWrapPos(0.0f);
 			if (!t.blocked.empty()) { ImGui::TextUnformatted(t.blocked.c_str()); }
-			else if (i == kOar && HostAvailable()) { ImGui::TextUnformatted(TR("AMF_HostRowNote", "Opens inside this page, live (AMF-Host-OAR).")); }
 			else if (i == kOar && g_oarV3) { ImGui::TextUnformatted(TR("AMF_ImguiByApi", "Opened and closed through its own interface.")); }
 			else
 			{
@@ -881,15 +671,13 @@ namespace imguihost
 		}
 	}
 
-	void DrawShowInside();
-
 	void DrawSettings()
 	{
 		static int s_settingsDrawnFrame = -100;
 		if (ImGui::GetFrameCount() > s_settingsDrawnFrame + 1)
 		{
 			std::scoped_lock l(g_lock);
-			RefreshKeys();   // the tab was just opened: OAR's menu-off reason below is read fresh (v6)
+			RefreshKeys();
 		}
 		s_settingsDrawnFrame = ImGui::GetFrameCount();
 		ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
@@ -901,9 +689,11 @@ namespace imguihost
 		ImGui::PopStyleColor();
 		ImGui::Spacing();
 		std::array<bool, kCount> loaded{};
+		std::string oarBlocked;
 		{
 			std::scoped_lock l(g_lock);
 			for (int i = 0; i < kCount; ++i) { loaded[i] = g_targets[i].loaded; }
+			oarBlocked = g_targets[kOar].blocked;
 		}
 		for (int i = 0; i < kCount; ++i)
 		{
@@ -916,68 +706,39 @@ namespace imguihost
 			}
 			ImGui::SameLine();
 			ImGui::TextDisabled("(%s)", loaded[i] ? TR("AMF_ImguiLoaded", "loaded") : TR("AMF_ImguiNotLoaded", "not loaded"));
-			if (i == kOar) { DrawShowInside(); }
+			if (i == kOar && loaded[i] && !oarBlocked.empty())
+			{
+				// v6: OAR's own INI switched its menu off - said here too, not only on its greyed row
+				ImGui::Indent();
+				ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
+				ImGui::PushTextWrapPos(0.0f);
+				ImGui::TextUnformatted(oarBlocked.c_str());
+				ImGui::PopTextWrapPos();
+				ImGui::PopStyleColor();
+				ImGui::Unindent();
+			}
 		}
-		ImGui::Spacing();
-		auto& v = settings::Get();
-		if (widgets::Toggle(TR("AMF_ImguiCloseSwitch", "Close AMF when opening another menu"), &v.closeOnOpen))
-		{
-			logger::info("settings page: close this menu when another mod's menu opens on its own -> {}", v.closeOnOpen);
-			settings::Save();
-		}
-		ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
-		ImGui::PushTextWrapPos(0.0f);
-		ImGui::TextUnformatted(TR("AMF_ImguiCloseHelp", "On: when a mod's menu opens on its own - from Open on Other menus, or with "
-			"that mod's own key while this menu is open - this menu closes, so nothing of it is behind and the world shows clearly. "
-			"It never closes for a menu shown inside it. Off: this menu stays open behind."));
-		ImGui::PopTextWrapPos();
-		ImGui::PopStyleColor();
-	}
-
-	// "Show inside AMF" for Open Animation Replacer: on = hosted in the page (AMF stays open), off = it opens on its own. Off
-	// by itself, greyed, while the bridge is not there or did not validate.
-	void DrawShowInside()
-	{
-		auto& v = settings::Get();
-		const Bridge b = BridgeCopy();
-		const bool ready = b.registered && !b.failed;
-		ImGui::Indent();
-		bool off = false;
-		ImGui::BeginDisabled(!ready);
-		if (widgets::Toggle(TR("AMF_HostInside", "Show inside AMF"), ready ? &v.hostOar : &off) && ready)
-		{
-			logger::info("settings page: Open Animation Replacer shown inside AMF -> {}", v.hostOar);
-			if (!v.hostOar && g_host.active) { EndHosting(true, "Show inside AMF switched off"); }
-			settings::Save();
-		}
-		ImGui::EndDisabled();
-		ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
-		ImGui::PushTextWrapPos(0.0f);
-		ImGui::TextUnformatted(TR("AMF_HostOarHelp", "On: its Open on Other menus keeps this menu open and shows Open Animation "
-			"Replacer's own menu inside the page, live. Needs AMF-Host-OAR.dll (in this mod's package) and a version of Open "
-			"Animation Replacer it knows; otherwise it opens over a closed menu, as the others do."));
-		std::string oarBlocked;
-		{
-			std::scoped_lock l(g_lock);
-			oarBlocked = g_targets[kOar].blocked;
-		}
-		if (!oarBlocked.empty()) { ImGui::TextUnformatted(oarBlocked.c_str()); }   // v6: OAR's own INI switched its menu off
-		else if (!b.registered) { ImGui::TextUnformatted(TR("AMF_HostNoBridge", "AMF-Host-OAR.dll is not installed or not loaded.")); }
-		else if (b.failed) { ImGui::Text(TR("AMF_HostStopped", "Hosting is off for this session: %s"), b.failReason.c_str()); }
-		else { ImGui::TextUnformatted(TR("AMF_HostReady", "AMF-Host-OAR.dll is loaded and ready.")); }
-		ImGui::PopTextWrapPos();
-		ImGui::PopStyleColor();
-		ImGui::Unindent();
 	}
 
 	void Frame()
 	{
 		++g_frame;
-		g_framesSeen.store(g_frame, std::memory_order_relaxed);
+		// THE LOADING GUARD (2.2.0, LoadGuard.h): while the game loads or is not at its main menu, nothing is started, no
+		// mod's API is called and no key is watched - only a key press already under way is let go of, so nothing stays held.
+		if (loadguard::Blocked())
+		{
+			if (g_apiCall)
+			{
+				logger::info("imgui: Open Animation Replacer - {} through its API dropped: the game started loading", g_apiCall->open ? "OpenMenu" : "CloseMenu");
+				g_apiCall.reset();
+			}
+			g_reopenAfterOar = false;
+			StepPress();
+			return;
+		}
+		g_framesSeen.fetch_add(1, std::memory_order_relaxed);
 		RunApiCall();
 		StepPress();
-		CallBridge();
-		HostingLifecycle();
 		WatchOwnKeys();
 		if (g_oarV3)
 		{
@@ -1028,25 +789,8 @@ namespace imguihost
 					   (t.keyOpensOnly ? "true" : "false") + ",\"blocked\":" + J(t.blocked) + ",\"state\":" + std::to_string(t.state) +
 					   ",\"presses\":" + std::to_string(t.presses) + ",\"lastOutcome\":" + J(t.lastOutcome) + "}";
 			}
-			const Bridge b = BridgeCopy();
-			std::string lastEnd;
-			{
-				std::scoped_lock l2(g_bridgeLock);
-				lastEnd = g_host.lastEnd;
-			}
-			const std::string hosting = std::string("{\"bridge\":") + (b.registered ? "true" : "false") + ",\"bridgeFailed\":" +
-										(b.failed ? "true" : "false") + ",\"failReason\":" + J(b.failReason) + ",\"switch\":" +
-										(settings::Get().hostOar ? "true" : "false") + ",\"active\":" + (g_host.active ? "true" : "false") +
-										",\"targetOpen\":" + std::to_string(b.targetOpen) + ",\"wantsMouse\":" + std::to_string(b.wantsMouse) +
-										",\"placedFrames\":" + std::to_string(b.placedFrames) + ",\"calls\":" + std::to_string(b.calls) +
-										",\"rect\":[" + std::to_string(static_cast<int>(g_host.x)) + "," + std::to_string(static_cast<int>(g_host.y)) + "," +
-										std::to_string(static_cast<int>(g_host.w)) + "," + std::to_string(static_cast<int>(g_host.h)) + "]" +
-										",\"osPolling\":" + (g_osPolling ? "true" : "false") +
-										",\"amfEventsWhileOpen\":" + std::to_string(g_host.eventsWhileOpen) + ",\"osPresses\":" +
-										std::to_string(g_host.osPresses) + ",\"sessions\":" + std::to_string(g_host.sessions) + ",\"lastEnd\":" +
-										J(lastEnd) + "}";
 			return std::string("{\"ok\":true,\"op\":\"imgui\",\"do\":\"list\",\"oarApiV3\":") + (g_oarV3 ? "true" : "false") +
-				   ",\"targets\":[" + out + "],\"hosting\":" + hosting + "}";
+				   ",\"loadGuard\":" + (loadguard::Blocked() ? "true" : "false") + ",\"targets\":[" + out + "]}";
 		}
 		if (what == "open" || what == "close")
 		{
@@ -1056,7 +800,7 @@ namespace imguihost
 			{
 				if (id == kIds[i]) { idx = i; }
 			}
-			if (idx < 0) { return "{\"ok\":false,\"op\":\"imgui\",\"error\":\"id = oar | cs | ied | optiscaler\"}"; }
+			if (idx < 0) { return "{\"ok\":false,\"op\":\"imgui\",\"error\":\"id = oar | cs | ied | optiscaler | enb\"}"; }
 			auto why = std::make_shared<std::string>();
 			auto done = std::make_shared<std::atomic<bool>>(false);
 			const bool open = what == "open";
@@ -1072,96 +816,5 @@ namespace imguihost
 				   "\"" + (why->empty() ? std::string(",\"note\":\"started - the press runs over the next frames; read do=list\"") : ",\"error\":" + J(*why)) + "}";
 		}
 		return "{\"ok\":false,\"op\":\"imgui\",\"error\":\"do = list | open {id} | close {id}\"}";
-	}
-
-	bool PollOsInput()
-	{
-		const bool active = g_host.active && g_host.seenOpen && BridgeCopy().targetOpen != 0;
-		if (!active)
-		{
-			if (g_osPolling)
-			{
-				// whatever AMF still holds from the OS is let go, so nothing stays down when the game's input comes back
-				for (int b = 0; b < 3; ++b)
-				{
-					if (g_osDown[b]) { input::QueueMouseButton(static_cast<std::uint32_t>(b), false); }
-					g_osDown[b] = false;
-				}
-				g_osPolling = false;
-			}
-			g_osToggleDown = false;
-			return false;
-		}
-		g_osPolling = true;
-		const HWND game = static_cast<HWND>(renderer::GetGameWindow());
-		if (!game || ::GetForegroundWindow() != game) { return true; }
-		POINT pt{};
-		RECT rc{};
-		if (::GetCursorPos(&pt) && ::ScreenToClient(game, &pt) && ::GetClientRect(game, &rc) && rc.right > 0 && rc.bottom > 0)
-		{
-			// the client area onto the back buffer AMF draws in (they differ when the game renders smaller than its window)
-			const ImGuiIO& io = ImGui::GetIO();
-			input::SetCursorAbsolute(static_cast<float>(pt.x) * io.DisplaySize.x / static_cast<float>(rc.right),
-									 static_cast<float>(pt.y) * io.DisplaySize.y / static_cast<float>(rc.bottom));
-		}
-		const int wants = BridgeCopy().wantsMouse;
-		constexpr int kVk[3] = { VK_LBUTTON, VK_RBUTTON, VK_MBUTTON };
-		for (int b = 0; b < 3; ++b)
-		{
-			const bool down = (::GetAsyncKeyState(kVk[b]) & 0x8000) != 0;
-			if (down == g_osDown[b]) { continue; }
-			if (down && wants) { continue; }   // a press OAR's window or popup is under: OAR's alone
-			g_osDown[b] = down;
-			input::QueueMouseButton(static_cast<std::uint32_t>(b), down);
-			if (down) { ++g_host.osPresses; }
-		}
-		// AMF's own menu key, which never reaches AMF's hook while OAR's menu is open
-		const std::int32_t dik = bindings::ToggleKeyboardCode();
-		if (dik > 0)
-		{
-			const UINT sc = static_cast<UINT>(dik & 0x7F) | ((dik & 0x80) ? 0xE000u : 0u);
-			const UINT vk = ::MapVirtualKeyW(sc, MAPVK_VSC_TO_VK_EX);
-			const bool down = vk != 0 && (::GetAsyncKeyState(static_cast<int>(vk)) & 0x8000) != 0;
-			if (down && !g_osToggleDown)
-			{
-				logger::info("imgui: this menu's key, read from the OS while Open Animation Replacer is hosted - closing both");
-				renderer::SetMenuVisible(false);
-			}
-			g_osToggleDown = down;
-		}
-		return true;
-	}
-
-	bool RegisterBridge(const char* a_target, std::uint32_t a_api, AMF_HostFrameCallback a_callback, void* a_user)
-	{
-		const std::string target = a_target ? a_target : "";
-		std::scoped_lock l(g_bridgeLock);
-		if (target != "oar" || a_api != AMF_HOST_BRIDGE_API || !a_callback || g_bridge.registered)
-		{
-			logger::warn("imgui: a host bridge for \"{}\" (api {}) was refused - {}", target, a_api,
-						 target != "oar" ? "only \"oar\" is hosted" : a_api != AMF_HOST_BRIDGE_API ? "unknown bridge api" :
-						 !a_callback ? "no callback" : "one is registered already");
-			return false;
-		}
-		g_bridge.registered = true;
-		g_bridge.api = a_api;
-		g_bridge.callback = a_callback;
-		g_bridge.user = a_user;
-		logger::info("imgui: host bridge for Open Animation Replacer registered (api {})", a_api);
-		return true;
-	}
-
-	void BridgeFailed(const char* a_target, const char* a_reason)
-	{
-		const std::string reason = a_reason ? a_reason : "(no reason given)";
-		std::scoped_lock l(g_bridgeLock);
-		if (!a_target || std::string(a_target) != "oar") { return; }
-		if (!g_bridge.failed)
-		{
-			g_bridge.failed = true;
-			g_bridge.failReason = reason;
-			logger::warn("imgui: the host bridge for Open Animation Replacer stopped - {}; hosting is off for this session and Open "
-						 "falls back to the launcher", reason);
-		}
 	}
 }

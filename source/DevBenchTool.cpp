@@ -212,7 +212,7 @@ namespace devbenchtool
 			}
 			else if (op == "imgui")
 			{
-				// next version: other mods' own ImGui menus (ImguiHost.h) - {"op":"imgui","do":"list|open|close","id":"oar|cs|ied|optiscaler"}.
+				// 2.2.0: other mods' own menus (ImguiHost.h) - {"op":"imgui","do":"list|open|close","id":"oar|cs|ied|optiscaler|enb"}.
 				// open / close run on the render thread, as the page's buttons do.
 				result = imguihost::ToolJson(args);
 			}
@@ -389,14 +389,9 @@ namespace devbenchtool
 				std::string error;
 				if (!name.empty() && value > -999.0)
 				{
-					if (name != "pointerSpeed" && name != "wheelSwitchesTabs" && name != "pauseGame" && name != "keepCameraAwake" &&
-						name != "perfOverlay" && name != "perfCorner")
+					if (name != "pointerSpeed" && name != "wheelSwitchesTabs" && name != "pauseGame" && name != "keepCameraAwake")
 					{
-						ok = false; error = "unknown setting '" + name + "' (pointerSpeed|wheelSwitchesTabs|pauseGame|keepCameraAwake|perfOverlay|perfCorner)";
-					}
-					else if (name == "perfCorner" && !(value >= 0.0 && value <= 3.0))
-					{
-						ok = false; error = "perfCorner takes 0-3 (top-left, top-right, bottom-left, bottom-right)";
+						ok = false; error = "unknown setting '" + name + "' (pointerSpeed|wheelSwitchesTabs|pauseGame|keepCameraAwake)";
 					}
 					else if (name == "pointerSpeed" && !(value >= 0.25 && value <= 4.0))
 					{
@@ -409,8 +404,6 @@ namespace devbenchtool
 							if (name == "pointerSpeed")     { v.pointerSpeed = static_cast<float>(std::round(value * 100.0) / 100.0); }
 							else if (name == "wheelSwitchesTabs") { v.wheelSwitchesTabs = value != 0.0; }
 							else if (name == "keepCameraAwake") { v.keepCameraAwake = value != 0.0; }
-							else if (name == "perfOverlay") { v.perfOverlay = value != 0.0; }
-							else if (name == "perfCorner") { v.perfCorner = static_cast<int>(value); }
 							else                             { v.pauseGameWhileOpen = value != 0.0; }
 							logger::info("devbench: setting {} -> {} (saved)", name, value);
 							settings::Save();
@@ -428,8 +421,6 @@ namespace devbenchtool
 						 ",\"wheelSwitchesTabs\":" + (v.wheelSwitchesTabs ? "true" : "false") +
 						 ",\"pauseGame\":" + (v.pauseGameWhileOpen ? "true" : "false") +
 						 ",\"keepCameraAwake\":" + (v.keepCameraAwake ? "true" : "false") +
-						 ",\"perfOverlay\":" + (v.perfOverlay ? "true" : "false") +
-						 ",\"perfCorner\":" + std::to_string(v.perfCorner) +
 						 ",\"note\":\"a change is applied on the next game frame; read op=state or op=setting again\"}";
 			}
 			else if (op == "cleanstate")
@@ -758,11 +749,10 @@ namespace devbenchtool
 			"Next version: mfm drives the Mod Function Menu entries: do=list (each entry's path, dll, api, type, actions, resolved, "
 			"missing; mfmLoaded = Mod Function Menu's own DLL is loaded too) | run {path} - presses the entry as the page does, on the render thread, and returns ok, type, message (the "
 			"text a Message/MessageBox function returned) and error. "
-			"Next version: imgui drives Framework > Other menus (other mods' own ImGui menus): do=list (id, name, loaded, shown, module, "
-			"method api|key, key, dik, keyFrom, blocked, state -1 not known / 0 closed / 1 open, presses, lastOutcome) | open {id} | close {id} "
-			"(ids oar, cs, ied, optiscaler) - as the page's buttons: open closes this menu first, then OAR's API call or the mod's key "
-			"(SendInput, game in the foreground only) over the next frames. state.perf is AMF's own frame timing (fps and frameMs min/avg/max "
-			"over the last 240 frames, overlay); setting name=perfOverlay value=0|1 switches the corner graph, name=perfCorner value=0-3 picks its corner.\","
+			"2.2.0: imgui drives Framework > Other menus (other mods' own menus): do=list (id, name, loaded, shown, module, "
+			"method api|key, key, dik, keyFrom, blocked, state -1 not known / 0 closed / 1 open, presses, lastOutcome; loadGuard) | open {id} | close {id} "
+			"(ids oar, cs, ied, optiscaler, enb) - as the page's buttons: open closes this menu first, then OAR's API call or the mod's key "
+			"(SendInput, game in the foreground only) over the next frames; refused while the game is loading or before its main menu.\","
 			"\"inputSchema\":{\"type\":\"object\",\"properties\":{"
 			"\"op\":{\"type\":\"string\"},\"node\":{\"type\":\"string\"},"
 			"\"mod\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"position\":{\"type\":\"string\"},"

@@ -1,7 +1,0 @@
-# DLLs that ship in each build line's SKSE\Plugins beside the mod's own DLL, one base name per line (no .dll).
-# Each is taken, with its PDB, from the same build tree as the mod's DLL (build\relwithdebinfo-se-only, build\relwithdebinfo-17)
-# by tools\build-fomod.py and by the pipeline's repack-fomod.ps1; a missing one stops the package.
-#
-# AMF-Host-OAR: hosts Open Animation Replacer's live menu in AMF's page (bridges\oar - built against OAR's Dear ImGui
-# 1.89.6; bridges\oar\build.bat builds both lines and copies each into AMF's build tree).
-AMF-Host-OAR

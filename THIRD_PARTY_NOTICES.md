@@ -59,19 +59,14 @@ Maxim Shemanarev (McSeem); the rasteriser on stb_truetype's by Sean Barrett.
 
 MIT - the notice is `include/DevBench/DevBenchAPI.LICENSE.txt`, kept with the files.
 
-## Open Animation Replacer's public UI API header (`include/OAR/OpenAnimationReplacerAPI-UI.h`, next version after 2.1.9)
+## Open Animation Replacer's public UI API header (`include/OAR/OpenAnimationReplacerAPI-UI.h`, 2.2.0)
 
 Copied verbatim from github.com/ersh1/OpenAnimationReplacer (src/API, commit f4e7688, Version 3.2.1), as the header itself
 invites ("Copy this file into your own project if you wish to use this API"). Copyright (c) Ersh; GPL-3.0-or-later WITH
 the author's Modding Exception and GPL-3.0 Linking Exception (the repository's COPYING and EXCEPTIONS). Only the
 declarations are used, to call Open Animation Replacer's RequestPluginAPI_UI export and its UI interface's open / close /
-is-open functions when Open Animation Replacer is loaded; nothing of Open Animation Replacer is shipped.
-
-## AMF-Host-OAR.dll (`bridges/oar`, next version after 2.1.9)
-
-The bridge that hosts Open Animation Replacer's menu is part of this mod (GPL-3.0-or-later). It links Dear ImGui 1.89.6
-(MIT, https://github.com/ocornut/imgui - vcpkg's port, unmodified, the version Open Animation Replacer pins) and the same
-CommonLibSSE-NG as the DLL of its line (above). It uses Open Animation Replacer's public UI API header (above).
+is-open functions (and whether it built a menu this session) when Open Animation Replacer is loaded; nothing of Open
+Animation Replacer is shipped.
 
 ## Notes carried from the previous licence file
 

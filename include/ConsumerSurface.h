@@ -105,8 +105,6 @@ namespace consumer
 	// the first frame has been stamped.
 	void NoteRenderThread();
 	bool OnRenderThread();
-	// v6: the thread the present hook stamped this frame (0 = none yet) - handed to a host bridge in AMF_HostFrame::renderThread.
-	std::uint32_t RenderThreadId();
 
 	// Counts for the DevBench tool, so a live run can be checked without reading the log.
 	std::size_t WindowCount();

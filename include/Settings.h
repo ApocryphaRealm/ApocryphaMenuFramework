@@ -188,26 +188,14 @@ namespace settings
 		std::string iniPagesOff;
 		// [MfmMenus] bEnabled (next version after 2.1.9): Mod Function Menu entries as a menu here - MfmPages.h. On by default.
 		bool mfmMenus = true;
-		// [ImGuiMenus] (next version after 2.1.9; the owner, 2026-10-12: host other mods' own ImGui menus) - ImguiHost.h. One switch per
-		// target: its row on Framework > Other menus (on by default). A target that is not loaded never shows, whatever this says.
+		// [ImGuiMenus] (2.2.0; the owner, 2026-10-12: a row in AMF for other menus, so AMF takes over their hotkeys to call them and
+		// closes by itself) - ImguiHost.h. One switch per target: its row on Framework > Other menus (on by default). A target that
+		// is not loaded (ENB: not active) never shows, whatever this says.
 		bool imguiOar = true;      // bOpenAnimationReplacer
 		bool imguiCs = true;       // bCommunityShaders
 		bool imguiIed = true;      // bImmersiveEquipmentDisplays
 		bool imguiOpti = true;     // bOptiScaler
-		// [ImGuiMenus] bHostOpenAnimationReplacer: with AMF-Host-OAR.dll installed, OAR's menu opens INSIDE this menu's page (live,
-		// snapped into its content area) instead of over a closed menu. On by default; off = the launcher only.
-		bool hostOar = true;
-		// [ImGuiMenus] bCloseAmfOnOpen (the owner, 2026-10-12): when AMF opens another mod's menu ON ITS OWN (not hosted in AMF's
-		// page), or that mod's own key is pressed while AMF is open, AMF closes so nothing of it is behind that menu. A hosted menu
-		// never closes AMF. On by default.
-		bool closeOnOpen = true;
-		// [Performance] bOverlay (next version after 2.1.9): AMF's own FPS / frame-time graph in the screen's corner - Performance.h. Off by default.
-		bool perfOverlay = false;
-		// [Performance] iCorner (v6): the corner the graph sits in - 0 top-left, 1 top-right, 2 bottom-left, 3 bottom-right. Default
-		// bottom-right: in the v5 capture of Njordlinger the minimap held top-right, the player bars bottom-left and OptiScaler's
-		// counter top-left; vanilla puts its notifications top-left and the compass top-centre, and its stamina bar ends short of
-		// the bottom-right corner, so that corner is the one the usual HUD leaves empty.
-		int perfCorner = 3;
+		bool imguiEnb = true;      // bENB
 		// How long the curtain may stay up before it gives up and lifts anyway. INI-only, because
 		// it is a safety valve rather than a preference. 30 proved too short on a heavy list.
 		std::uint32_t curtainTimeoutSeconds = 120;
