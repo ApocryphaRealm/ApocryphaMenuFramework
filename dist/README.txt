@@ -20,10 +20,12 @@ WHAT YOU GET
   * Your list, your way: rename any mod's entry and set the order of the list. It starts
     alphabetical and every entry shows its number; type a new number and the rest re-flow
     around it. One button puts it back.
-  * Seven themes - Skyrim (the knotwork frame, the default), Untarnished (the same layout with
+  * Eleven themes - Skyrim (the knotwork frame, the default), Untarnished (the same layout with
     clean lines and no frame art), Oblivion (the Oblivion Remastered port's paper look: a
-    map-edge frame on parchment), and four made to sit beside other interfaces: Vel'dun,
-    Oathvein, Norden and Norden - Black - plus a font picker (drop a .ttf into
+    map-edge frame on parchment), four made to sit beside other interfaces: Vel'dun,
+    Oathvein, Norden and Norden - Black, and four inspired by popular UI overhauls, each with
+    its own pointer and hover frame: Edge, Nordic, Dear Diary and Dear Diary - Dark - plus a
+    font picker (drop a .ttf into
     Data/SKSE/Plugins/ApocryphaMenuFramework/fonts) and a text-size slider.
   * Build your own look: every piece of the menu's art is a part in an art library (assets
     folder) - the frame, background, popups, highlight frame, boxes, buttons, tick boxes,
