@@ -32,6 +32,7 @@
 #include "Theme.h"
 #include "Watchdog.h"
 #include "GlyphCore.h"
+#include "ListCore.h"
 #include "utils/ToggleSwitch.h"
 #include "utils/Logger.h"
 
@@ -2462,7 +2463,8 @@ namespace renderer
 					ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
 					if (precise::SliderFloat(TR("AMF_TextSize", "Text size"), &values.textScale, 1.0f, 2.0f, "%.2f"))
 					{
-						// applied live via FontGlobalScale each frame
+						// not applied while the slider is held: the atlas is rebuilt at the new size once, on the release below,
+						// so a drag never loses its item to a rebuild (tools\slider_drag_check)
 					}
 					if (ImGui::IsItemDeactivatedAfterEdit())
 					{
@@ -4439,11 +4441,9 @@ namespace renderer
 					g_activeIdMirror.store(GImGui ? GImGui->ActiveId : 0u);   // imgui_internal: which item holds keyboard input
 				}
 
-				const auto lower = [](std::string a_in) {
-					std::transform(a_in.begin(), a_in.end(), a_in.begin(),
-								   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-					return a_in;
-				};
+				// 2.2.0: ListCore.h's fold - whole UTF-8 characters, no locale - so a Cyrillic or Polish name is found
+				// whatever its letter case, and a CJK name byte for byte (tools\list_order_check)
+				const auto lower = [](const std::string& a_in) { return listcore::Fold(a_in); };
 				const std::string needle = lower(s_modFilter);
 				// 2.1.5: the Filter button's saved words - + words show only matching rows (all of them or any one), - words hide
 				std::vector<std::string> filterIn, filterOutWords;
@@ -5448,6 +5448,23 @@ namespace renderer
 				if (ImGui::GetIO().MouseDrawCursor && ImGui::GetMouseCursor() == ImGuiMouseCursor_Arrow && arthooks::DrawCursor(true))
 				{
 					ImGui::GetIO().MouseDrawCursor = false;
+				}
+
+				// 2.2.0 (the final5 test: four real presses on the Text size slider reached ImGui and changed nothing, while
+				// DevBench's op=click at the test's chosen point set it; tools\slider_drag_check passes the same drag offline):
+				// WHERE a click landed, in the pointer's own coordinates, and what ImGui made of it - the item under the
+				// pointer, the window, and the item the press made active with its input source. The pointer art is drawn at
+				// this same position (ArtHooks.cpp DrawCursor), so this is the point the player sees the arrow's tip on.
+				if (GImGui && (ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::IsMouseReleased(ImGuiMouseButton_Left)))
+				{
+					const ImGuiContext& gc = *GImGui;
+					const ImVec2 at = ImGui::GetIO().MousePos;
+					logger::debug("input: left {} at ({:.0f}, {:.0f}) - over item {} in \"{}\", active item {} (source {})",
+								  ImGui::IsMouseClicked(ImGuiMouseButton_Left) ? "press" : "release", at.x, at.y, gc.HoveredId,
+								  gc.HoveredWindow && gc.HoveredWindow->Name ? gc.HoveredWindow->Name : "(none)", gc.ActiveId,
+								  gc.ActiveIdSource == ImGuiInputSource_Mouse ? "mouse" :
+								  gc.ActiveIdSource == ImGuiInputSource_Keyboard ? "keyboard" :
+								  gc.ActiveIdSource == ImGuiInputSource_Gamepad ? "gamepad" : "none");
 				}
 
 				flick::EndFrame();   // 2.1.6: a FLICK page left (or the menu closed) gets its OnClose

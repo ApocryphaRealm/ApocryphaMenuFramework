@@ -1,5 +1,6 @@
 #include "Personalization.h"
 
+#include "ListCore.h"
 #include "utils/Logger.h"
 
 #include <algorithm>
@@ -40,11 +41,6 @@ namespace personalization
 		// What the non-favourite remainder is sorted by (the sidebar's two toggles).
 		SortMode g_sortMode = SortMode::kListOrder;
 
-		std::string Lower(std::string a_text)
-		{
-			for (char& c : a_text) { c = static_cast<char>(std::tolower(static_cast<unsigned char>(c))); }
-			return a_text;
-		}
 
 		// Constant-initialised, so the sort's registration at DLL load can never run before it exists.
 		SeparatorNameFilter g_separatorNameFilter = nullptr;
@@ -64,11 +60,12 @@ namespace personalization
 		}
 
 		// Alphabetical by display name, case-insensitive, ties broken by the mod's own name so
-		// the order is total and stable.
+		// the order is total and stable. 2.2.0: folded by ListCore.h - whole UTF-8 characters, no locale - so a name in any
+		// script has one place: Latin, then Greek, then Cyrillic, then kana, CJK and Hangul (code point order).
 		bool AlphaLess(const std::string& a_lhs, const std::string& a_rhs)
 		{
-			const std::string l = Lower(DisplayNameLocked(a_lhs));
-			const std::string r = Lower(DisplayNameLocked(a_rhs));
+			const std::string l = listcore::Fold(DisplayNameLocked(a_lhs));
+			const std::string r = listcore::Fold(DisplayNameLocked(a_rhs));
 			return l != r ? l < r : a_lhs < a_rhs;
 		}
 
