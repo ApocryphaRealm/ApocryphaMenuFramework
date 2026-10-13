@@ -1,5 +1,6 @@
 #include "ImguiHost.h"
 
+#include "AmfIcons.h"
 #include "HostCore.h"
 #include "Input.h"
 #include "LoadGuard.h"
@@ -958,7 +959,7 @@ namespace imguihost
 		}
 		g_pageDrawnFrame = ImGui::GetFrameCount();
 
-		ImGui::TextUnformatted(TR("AMF_OtherMenus", "Other menus"));
+		ImGui::TextUnformatted(icons::Label(icons::kWindow, TR("AMF_OtherMenus", "Other menus")).c_str());
 		ImGui::Separator();
 		ImGui::Spacing();
 		ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
@@ -1015,10 +1016,10 @@ namespace imguihost
 			ImGui::BeginDisabled(rowBlocked);
 			if (i == kOar && g_oarV3)
 			{
-				if (ImGui::Button(TR("AMF_ImguiOpen", "Open"))) { action = i; open = true; }
+				if (ImGui::Button(icons::Label(icons::kOpen, TR("AMF_ImguiOpen", "Open")).c_str())) { action = i; open = true; }
 				renderer::NoteHoveredItem();
 				ImGui::SameLine();
-				if (ImGui::Button(TR("AMF_ImguiClose", "Close"))) { action = i; open = false; }
+				if (ImGui::Button(icons::Label(icons::kClear, TR("AMF_ImguiClose", "Close")).c_str())) { action = i; open = false; }
 				renderer::NoteHoveredItem();
 			}
 			else
