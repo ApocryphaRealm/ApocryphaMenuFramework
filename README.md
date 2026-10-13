@@ -44,7 +44,11 @@ Licence: GPL-3.0-or-later (see `LICENSE` and `NOTICE.md`). Not a fork: contains 
   `<config>.amf-key-backup` kept while it holds it, so its menu opens from AMF and its real key is free; turning it off
   writes the original back. Takes effect next launch. OAR, Community Shaders and IED get their key pressed into the
   game's own input events; OptiScaler and ENB by Windows. A config a mod manager puts back at launch (Root Builder) is
-  noticed and the switch says so. ENB is found from its files only.
+  noticed and the switch says so. ENB is found from its files only. **Opens directly** where a mod has a published call
+  for it and its build is on AMF's checked list (today Open Animation Replacer 3.2.1, interface V3): no key is pressed,
+  so that mod's own key can be unbound entirely. Every other mod, or a build AMF has not checked, uses its key (AMF's held
+  key, else its own); Community Shaders, IED and OptiScaler have no such call, and ENB's licence rules it out. Each row
+  says which: "opens directly" or "uses its key: X".
 - **Nothing while loading.** Until the main menu has opened, and while any loading screen is up, AMF does not open, takes
   no input and queues no SKSE task; if it is open when a load starts, it closes.
 - **Converted menus.** Mod Function Menu entries run in AMF itself (Settings -> Converted menus -> MFM):

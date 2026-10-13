@@ -536,6 +536,60 @@ int main(int argc, char** argv)
 		}
 	}
 
+	// ---- direct open (HostCore.h DirectTable) ----
+	{
+		const std::string h321 = "DB61B8B691E709BEDE355514871918BAA63EABE8F6D0734BF17FFCF793B4C894";
+		const std::string h302 = "A433CF83AF7878DCAD14177FD6FF209FBE5DBA5059741F18B4DF82E24400AF4E";
+		const auto v = DirectOpen("oar", { 3, 2, 1, 0 }, h321, true);
+		Check(v.available, "direct: OAR 3.2.1 (allowlisted hash) that answers V3 opens directly (" + v.why + ")");
+		const auto later = DirectOpen("oar", { 3, 3, 0, 0 }, "00", true);
+		Check(!later.available, "direct: a later OAR whose hash is not on the allowlist falls back to its key - " + later.why);
+		Check(!DirectOpen("oar", { 3, 0, 2, 0 }, h302, false).available, "direct: OAR 3.0.2 (no V3) falls back to its key - " + DirectOpen("oar", { 3, 0, 2, 0 }, h302, false).why);
+		Check(!DirectOpen("oar", { 3, 0, 2, 0 }, h321, true).available, "direct: a file saying 3.0.2 is refused even with an allowlisted hash and a V3 answer (the version gate)");
+		Check(!DirectOpen("oar", { 3, 2, 1, 0 }, h321, false).available, "direct: OAR 3.2.1 that did not answer V3 falls back to its key");
+		Check(!DirectOpen("oar", {}, h321, true).available, "direct: an OAR whose file version can't be read falls back to its key");
+		Check(!DirectOpen("oar", { 3, 2, 1, 0 }, "", true).available, "direct: an OAR whose hash can't be read falls back to its key");
+		Check(DirectBuildKnown("oar", { 3, 2, 1, 0 }, h321) && !DirectBuildKnown("oar", { 3, 0, 2, 0 }, h302), "direct: V3 is asked for only from a known build");
+		bool none = true;
+		for (const char* id : { "cs", "ied", "optiscaler", "enb", "somethingelse" }) { none = none && !DirectOpen(id, { 9, 9, 9, 9 }, h321, true).available; }
+		Check(none, "direct: Community Shaders, IED, OptiScaler, ENB and an unknown id never open directly (" + DirectOpen("cs", { 1, 8, 4, 0 }, "", false).why + "; ENB: " +
+						DirectOpen("enb", {}, "", false).why + ")");
+		Check(std::string(MethodName(MethodFor(true, true))) == "direct" && std::string(MethodName(MethodFor(false, true))) == "held key" &&
+				  std::string(MethodName(MethodFor(false, false))) == "own key",
+			  "direct: the method is direct before a held key, a held key before the mod's own key");
+		Check(VerAtLeast({ 3, 2, 1, 0 }, { 3, 2, 1, 0 }) && VerAtLeast({ 3, 10, 0, 0 }, { 3, 2, 1, 0 }) && !VerAtLeast({ 3, 2, 0, 9 }, { 3, 2, 1, 0 }),
+			  "direct: version compare is per field (3.10 > 3.2, 3.2.0.9 < 3.2.1)");
+	}
+	if (argc >= 2)
+	{
+		// the real installed DLLs (read only): each one's file version, and what the table makes of it
+		const std::filesystem::path mods = argv[1];
+		const auto oar = FileVersionOf((mods / "Open Animation Replacer/SKSE/Plugins/OpenAnimationReplacer.dll").wstring());
+		const auto cs = FileVersionOf((mods / "Community Shaders/SKSE/Plugins/CommunityShaders.dll").wstring());
+		const auto opti = FileVersionOf((mods / "OptiScaler 0.9.4/Root/dxgi.dll").wstring());
+		if (oar != FileVer{})
+		{
+			// the installed 3.0.2 answers V3 with nullptr; the gate refuses it before the handshake is even asked
+			const std::string h = Sha256OfFile((mods / "Open Animation Replacer/SKSE/Plugins/OpenAnimationReplacer.dll").wstring());
+			const auto d = DirectOpen("oar", oar, h, false);
+			Check(!d.available && !DirectBuildKnown("oar", oar, h), "real: installed OAR " + VerText(oar) + " - direct open not available (" + d.why + "), opens with its key");
+		}
+		if (cs != FileVer{}) { Check(!DirectOpen("cs", cs, "", false).available, "real: installed Community Shaders " + VerText(cs) + " - opens with its key"); }
+		if (opti != FileVer{}) { Check(!DirectOpen("optiscaler", opti, "", false).available, "real: installed OptiScaler " + VerText(opti) + " - opens with its key"); }
+	}
+	if (argc >= 4)
+	{
+		// a downloaded OAR 3.2.1 (read only): its file version and hash pass the gate, and it exports RequestPluginAPI_UI
+		const std::wstring dll = std::filesystem::path(argv[3]).wstring();
+		const auto ver = FileVersionOf(dll);
+		const std::string h = Sha256OfFile(dll);
+		Check(DirectBuildKnown("oar", ver, h), "real: OAR at argv[3] - " + VerText(ver) + ", SHA-256 " + h + " is a known build (V3 will be asked for)");
+		HMODULE m = ::LoadLibraryExW(dll.c_str(), nullptr, DONT_RESOLVE_DLL_REFERENCES);
+		Check(m && ::GetProcAddress(m, "RequestPluginAPI_UI") != nullptr, "real: OAR at argv[3] exports RequestPluginAPI_UI (mapped without running it)");
+		if (m) { ::FreeLibrary(m); }
+		Check(DirectOpen("oar", ver, h, true).available, "real: OAR at argv[3] answering V3 opens directly");
+	}
+
 	std::cout << "imgui_host_check: " << g_pass << " of " << (g_pass + g_fail) << " passed\n";
 	return g_fail == 0 ? 0 : 1;
 }

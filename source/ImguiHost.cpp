@@ -70,6 +70,10 @@ namespace imguihost
 			bool restored = false;       // AMF's backup is beside it but the config no longer carries AMF's key (Root Builder)
 			hostcore::HoldSpec hold;     // where its key is written, and the key AMF holds or would hold for it
 			std::optional<hostcore::KeyCombo> pending;   // changed this session: the key the mod still uses until next launch
+			// DIRECT OPEN (HostCore.h DirectTable): the loaded DLL's file version, and whether its row's call passed the gate
+			hostcore::FileVer version{};
+			std::string sha256;
+			hostcore::DirectVerdict direct;
 		};
 
 		// WHICH INPUT EACH TARGET READS ITS KEY FROM (HostCore.h InputPath - the final in-game test, 2026-10-12): Open Animation
@@ -506,6 +510,14 @@ namespace imguihost
 		// then, so after the switch changed it this session, the old key is still the live one until the next launch.
 		hostcore::KeyCombo LiveKey(const Target& a_t) { return a_t.pending ? *a_t.pending : a_t.key; }
 
+		// How Open reaches the mod now: its direct call, else the key it reads this session - AMF's held key (switched on before
+		// this launch, or switched off this session and so still live until the next), else its own key
+		hostcore::OpenMethod MethodOf(const Target& a_t)
+		{
+			const bool heldLive = a_t.pending ? !a_t.held : a_t.held;
+			return hostcore::MethodFor(a_t.direct.available, heldLive);
+		}
+
 		// The switch: write AMF's key into the mod's own config (on), or the original back from the backup (off). Render thread
 		// (the page's switch, DevBench's do=hold). "" when done, else why not.
 		std::string HoldKey(int a_id, bool a_on)
@@ -736,12 +748,15 @@ namespace imguihost
 			const ApiCall c = *g_apiCall;
 			g_apiCall.reset();
 			if (!g_oarV3) { return; }
+			// OAR 3.2.1: OpenMenu / CloseMenu are SetShowMain(true / false), which answer false only when the menu is already so
 			bool ok = false;
 			if (c.open) { ok = g_oarV3->OpenMenu(); }
 			else { ok = g_oarV3->CloseMenu(); }
+			const bool openNow = g_oarV3->IsMenuOpen();
+			const char* result = ok ? "done" : (openNow == c.open ? (c.open ? "it was already open" : "it was already closed") : "refused");
 			std::scoped_lock l(g_lock);
-			g_targets[kOar].lastOutcome = std::string(c.open ? "OpenMenu" : "CloseMenu") + (ok ? " - done" : " - OAR said no");
-			logger::info("imgui: Open Animation Replacer - {} through its API: {}", c.open ? "OpenMenu" : "CloseMenu", ok ? "done" : "refused");
+			g_targets[kOar].lastOutcome = std::string(c.open ? "OpenMenu" : "CloseMenu") + " (direct) - " + result;
+			logger::info("imgui: Open Animation Replacer - {} directly, through its UI interface V3: {}", c.open ? "OpenMenu" : "CloseMenu", result);
 		}
 
 		// Is every key of the combo held now (the OS's view; DIK -> virtual key through the layout)?
@@ -832,19 +847,33 @@ namespace imguihost
 			using Request = OAR_API::UI::IUIInterface* (*)(OAR_API::UI::InterfaceVersion, const char*, REL::Version);
 			HMODULE oar = ::GetModuleHandleW(L"OpenAnimationReplacer.dll");
 			const auto request = oar ? reinterpret_cast<Request>(::GetProcAddress(oar, "RequestPluginAPI_UI")) : nullptr;
+			Target& oarT = g_targets[kOar];
+			oarT.version = hostcore::FileVersionOf(oarT.modulePath);
+			oarT.sha256 = hostcore::Sha256OfFile(oarT.modulePath);
+			// the version and hash gate first (HostCore.h DirectTable): V3 is asked for only from a build on the allowlist
+			const bool versionOk = hostcore::DirectBuildKnown("oar", oarT.version, oarT.sha256);
 			if (request)
 			{
 				// OAR 3.0.2 knows only V2 and answers V3 with nullptr (and a warning in its own log)
-				g_oarV3 = request(OAR_API::UI::InterfaceVersion::V3, "ApocryphaMenuFramework", REL::Version(2, 2, 0, 0));
+				if (versionOk) { g_oarV3 = request(OAR_API::UI::InterfaceVersion::V3, "ApocryphaMenuFramework", REL::Version(2, 2, 0, 0)); }
 				if (!g_oarV3)
 				{
 					g_oarV2 = static_cast<OAR_API::UI::IUIInterface2*>(
 						request(OAR_API::UI::InterfaceVersion::V2, "ApocryphaMenuFramework", REL::Version(2, 2, 0, 0)));
 				}
 			}
+			if (!hostcore::DirectOpen("oar", oarT.version, oarT.sha256, g_oarV3 != nullptr).available) { g_oarV3 = nullptr; }   // fails closed: the key
 			logger::info("imgui: Open Animation Replacer - {}", !request ? "no RequestPluginAPI_UI export: opened with its key" :
 						 g_oarV3 ? "UI interface V3: opened and closed through its API" :
 								   "no UI interface V3 (OAR before 3.2.1): opened with its key");
+		}
+		// DIRECT OPEN, decided once per loaded target (HostCore.h DirectTable); logged below with the key
+		for (int i = 0; i < kCount; ++i)
+		{
+			Target& t = g_targets[i];
+			if (!t.loaded) { continue; }
+			if (i != kOar) { t.version = hostcore::FileVersionOf(t.modulePath); }   // OAR's (and its hash) were read above
+			t.direct = hostcore::DirectOpen(kIds[i], t.version, t.sha256, i == kOar && g_oarV3 != nullptr);
 		}
 		RefreshKeys();
 		for (int i = 0; i < kCount; ++i)
@@ -854,6 +883,8 @@ namespace imguihost
 			logger::info("imgui: {} loaded ({}) - key {} from {}, read from {}{}{}", kNames[i], Narrow(t.modulePath), hostcore::ComboName(t.key), t.keyFrom,
 						 kPaths[i] == hostcore::InputPath::kGameEvents ? "the game's input events (AMF presses it there)" : "Windows (AMF presses it with SendInput)",
 						 t.blocked.empty() ? "" : " - cannot be opened: ", t.blocked);
+			logger::info("imgui: {} {} - direct open: {} ({}) - Open uses: {}", kNames[i], hostcore::VerText(t.version),
+						 t.direct.available ? "available" : "not available", t.direct.why, hostcore::MethodName(MethodOf(t)));
 			if (t.holdApplies)
 			{
 				logger::info("imgui: {} - AMF holds this key: {}{}", kNames[i],
@@ -890,6 +921,9 @@ namespace imguihost
 		ImGui::TextUnformatted(TR("AMF_OtherMenusHelp", "These mods draw menus of their own. Open one from here: this menu closes first, "
 			"so the mod's menu has the mouse and the keys. Close it the way the mod does - its key, or Escape - and open this menu "
 			"again with its key."));
+		ImGui::TextUnformatted(TR("AMF_OtherMenusDirect", "Opens directly: AMF tells the mod to open its menu through the mod's own "
+			"interface, and no key is pressed - so you may unbind that mod's own key entirely and AMF still opens it. Where a mod has "
+			"no such interface (or its version is not one AMF knows), AMF presses its key instead."));
 		ImGui::TextUnformatted(TR("AMF_OtherMenusOwnKey", "A mod's own key pressed while this menu is open closes this menu too, so "
 			"that mod's menu is shown alone."));
 		ImGui::TextUnformatted(TR("AMF_HoldHelp", "AMF holds this key (off until you turn it on, for each mod): AMF writes a key no "
@@ -920,6 +954,14 @@ namespace imguihost
 			ImGui::SameLine();
 			ImGui::TextDisabled(TR("AMF_ImguiState", "- %s"), StateText(t.state));
 			const std::string keyName = hostcore::ComboName(LiveKey(t));
+			ImGui::SameLine();
+			if (t.direct.available) { ImGui::TextDisabled("- %s", TR("AMF_MethodDirect", "opens directly")); }
+			else
+			{
+				char method[160];
+				std::snprintf(method, sizeof(method), TR("AMF_MethodKey", "uses its key: %s"), keyName.c_str());
+				ImGui::TextDisabled("- %s", method);
+			}
 			// a row that cannot act is inert AND looks it (2.2.0, v6 run: OAR's Open / Close with its UI switched off read as white,
 			// like the live buttons): the theme's disabled text colour on top of ImGui's disabled fade, as for an MFM entry that
 			// cannot run (MfmPages.cpp)
@@ -948,7 +990,11 @@ namespace imguihost
 			ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
 			ImGui::PushTextWrapPos(0.0f);
 			if (!t.blocked.empty()) { ImGui::TextUnformatted(t.blocked.c_str()); }
-			else if (i == kOar && g_oarV3) { ImGui::TextUnformatted(TR("AMF_ImguiByApi", "Opened and closed through its own interface.")); }
+			else if (i == kOar && g_oarV3)
+			{
+				ImGui::TextUnformatted(TR("AMF_ImguiByApi", "Opened and closed directly, through its own interface - no key is pressed, so "
+					"its own key may be unbound and AMF still opens it."));
+			}
 			else
 			{
 				ImGui::Text(TR("AMF_ImguiKeyFrom", "Pressed for you: %s, the key it reads from %s."), keyName.c_str(), t.keyFrom.c_str());
@@ -1120,7 +1166,9 @@ namespace imguihost
 				for (std::uint32_t k : t.key.keys) { keys += (keys.empty() ? "" : ",") + std::to_string(k); }
 				out += (out.empty() ? "" : ",") + std::string("{\"id\":\"") + kIds[i] + "\",\"name\":" + J(kNames[i]) + ",\"loaded\":" +
 					   (t.loaded ? "true" : "false") + ",\"shown\":" + (t.loaded && SwitchOn(i) ? "true" : "false") + ",\"module\":" +
-					   J(Narrow(t.modulePath)) + ",\"method\":\"" + (i == kOar && g_oarV3 ? "api" : "key") + "\",\"key\":" +
+					   J(Narrow(t.modulePath)) + ",\"version\":" + J(hostcore::VerText(t.version)) + ",\"method\":\"" +
+					   hostcore::MethodName(MethodOf(t)) + "\",\"direct\":{\"available\":" + (t.direct.available ? "true" : "false") +
+					   ",\"why\":" + J(t.direct.why) + "},\"key\":" +
 					   J(hostcore::ComboName(t.key)) + ",\"dik\":[" + keys + "],\"keyFrom\":" + J(t.keyFrom) + ",\"keyOpensOnly\":" +
 					   (t.keyOpensOnly ? "true" : "false") + ",\"blocked\":" + J(t.blocked) + ",\"state\":" + std::to_string(t.state) +
 					   ",\"presses\":" + std::to_string(t.presses) + ",\"lastOutcome\":" + J(t.lastOutcome) +

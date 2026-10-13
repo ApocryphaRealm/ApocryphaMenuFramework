@@ -3,6 +3,12 @@
 // ============================================================================================
 // OTHER MODS' OWN MENUS - THE LAUNCHER (2.2.0; the owner, 2026-10-12: "just add a row in AMF for other menus so that AMF can
 // take over their hotkeys to call them and close automatically" - 4. plans\amf-imgui-hosting\FINDINGS.md method c).
+// DIRECT OPEN (the owner, 2026-10-12: "AMF tells these other menus to activate when the button is pressed, and closes AMF"):
+// where a mod has a published call that opens its menu and its version passes the gate (HostCore.h DirectTable - today only
+// OAR 3.2.1+, interface V3), Open calls it and presses no key, so the player may unbind that mod's own key. Every other row
+// fails closed to a key: AMF's held key when that switch is on, else the mod's own. The row shows "opens directly" or "uses
+// its key: X"; the start-up log has one "direct open:" line per loaded mod, and DevBench do=list a "method" per target
+// ("direct", "held key" or "own key").
 // Framework > Other menus lists each supported mod that is loaded, with Open / Close and what is known of its state:
 //   Open Animation Replacer   through its own API (RequestPluginAPI_UI, interface V3: OpenMenu / CloseMenu / IsMenuOpen -
 //                             include\OAR\OpenAnimationReplacerAPI-UI.h). OAR 3.0.2 (the one installed in Njordlinger) has

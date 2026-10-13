@@ -29,10 +29,14 @@
 #	define NOMINMAX
 #endif
 #include <Windows.h>
+#include <bcrypt.h>
+#pragma comment(lib, "version.lib")   // FileVersionOf (DIRECT OPEN, below)
+#pragma comment(lib, "bcrypt.lib")    // Sha256OfFile (DIRECT OPEN, below)
 
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
 #include <cstdint>
@@ -977,5 +981,172 @@ namespace hostcore
 			if (s.assigned) { given[i] = s.combo; }
 		}
 		return out;
+	}
+
+	// ---- DIRECT OPEN (2.2.0; the owner, 2026-10-12: "I'd rather it be that AMF tells these other menus to activate when the
+	// button is pressed, and closes AMF to view the other menu that we opened") -------------------------------------------------
+	// One row per target: the call that opens its menu with no key involved, and the gate that must pass before AMF uses it. A
+	// target without a row's call, or whose gate fails, FAILS CLOSED to a key - AMF's held key when "AMF holds this key" is on,
+	// else the mod's own key. A new mod version that adds a call needs a row here, nothing else.
+	//   oar          Open Animation Replacer's published UI interface V3 (RequestPluginAPI_UI): OpenMenu / CloseMenu /
+	//                IsMenuOpen. Read at 3.2.1 (ersh1/OpenAnimationReplacer f4e7688, src/ModAPI.cpp and src/UI/UIManager.cpp):
+	//                OpenMenu is UIManager::SetShowMain(true), which sets the same bShowMain the menu key sets, and it never
+	//                reads the key (uToggleUIKeyData) - so it opens OAR with its key unbound, and Escape still closes it. The gate
+	//                has three parts, all needed: the DLL's file version at or above 3.2.1, its SHA-256 on the row's allowlist
+	//                (builds checked offline: 3.2.1 from its Nexus download), and OAR's own handshake answering V3 (3.0.2
+	//                answers nullptr). A later OAR build is a new hash on the row.
+	//   cs, ied,     No published call that opens their menus (Community Shaders 1.8.4, Immersive Equipment Displays 1.7.4,
+	//   optiscaler   OptiScaler 0.9.4): AMF does not reach into their code, so they open with their key.
+	//   enb          ENB's licence forbids hooking or reverse engineering it, and its SDK has no call that opens its editor.
+	enum class OpenMethod
+	{
+		kDirect,    // the row's call, no key
+		kHeldKey,   // the key AMF holds in the mod's config (F13 and up)
+		kOwnKey     // the mod's own key, as its config has it
+	};
+	inline const char* MethodName(OpenMethod a_m)
+	{
+		return a_m == OpenMethod::kDirect ? "direct" : (a_m == OpenMethod::kHeldKey ? "held key" : "own key");
+	}
+	inline OpenMethod MethodFor(bool a_direct, bool a_held)
+	{
+		return a_direct ? OpenMethod::kDirect : (a_held ? OpenMethod::kHeldKey : OpenMethod::kOwnKey);
+	}
+
+	using FileVer = std::array<std::uint16_t, 4>;
+	inline std::string VerText(const FileVer& a_v)
+	{
+		return std::to_string(a_v[0]) + "." + std::to_string(a_v[1]) + "." + std::to_string(a_v[2]) + "." + std::to_string(a_v[3]);
+	}
+	inline bool VerAtLeast(const FileVer& a_v, const FileVer& a_min)
+	{
+		for (std::size_t i = 0; i < 4; ++i)
+		{
+			if (a_v[i] != a_min[i]) { return a_v[i] > a_min[i]; }
+		}
+		return true;
+	}
+	// A DLL's file version from its version resource ({0,0,0,0} when it has none or cannot be read)
+	inline FileVer FileVersionOf(const std::wstring& a_path)
+	{
+		FileVer v{};
+		DWORD handle = 0;
+		const DWORD size = ::GetFileVersionInfoSizeW(a_path.c_str(), &handle);
+		if (size == 0) { return v; }
+		std::vector<BYTE> data(size);
+		if (!::GetFileVersionInfoW(a_path.c_str(), 0, size, data.data())) { return v; }
+		VS_FIXEDFILEINFO* info = nullptr;
+		UINT len = 0;
+		if (!::VerQueryValueW(data.data(), L"\\", reinterpret_cast<void**>(&info), &len) || !info || len < sizeof(VS_FIXEDFILEINFO)) { return v; }
+		v = { HIWORD(info->dwFileVersionMS), LOWORD(info->dwFileVersionMS), HIWORD(info->dwFileVersionLS), LOWORD(info->dwFileVersionLS) };
+		return v;
+	}
+
+	// A file's SHA-256 as 64 upper-case hex digits ("" when it cannot be read)
+	inline std::string Sha256OfFile(const std::wstring& a_path)
+	{
+		std::ifstream f(a_path, std::ios::binary);
+		if (!f) { return std::string(); }
+		BCRYPT_ALG_HANDLE alg = nullptr;
+		BCRYPT_HASH_HANDLE hash = nullptr;
+		if (::BCryptOpenAlgorithmProvider(&alg, BCRYPT_SHA256_ALGORITHM, nullptr, 0) != 0) { return std::string(); }
+		std::string out;
+		if (::BCryptCreateHash(alg, &hash, nullptr, 0, nullptr, 0, 0) == 0)
+		{
+			std::vector<char> buf(1 << 20);
+			bool ok = true;
+			while (ok && f)
+			{
+				f.read(buf.data(), static_cast<std::streamsize>(buf.size()));
+				const auto n = static_cast<ULONG>(f.gcount());
+				if (n > 0) { ok = ::BCryptHashData(hash, reinterpret_cast<PUCHAR>(buf.data()), n, 0) == 0; }
+			}
+			UCHAR digest[32] = {};
+			if (ok && ::BCryptFinishHash(hash, digest, sizeof(digest), 0) == 0)
+			{
+				char hex[3];
+				for (UCHAR b : digest)
+				{
+					std::snprintf(hex, sizeof(hex), "%02X", b);
+					out += hex;
+				}
+			}
+			::BCryptDestroyHash(hash);
+		}
+		::BCryptCloseAlgorithmProvider(alg, 0);
+		return out;
+	}
+
+	struct DirectRow
+	{
+		const char* id;
+		const char* call;                   // what AMF calls ("" = none)
+		FileVer minVersion;                 // the first file version that has it
+		std::vector<const char*> hashes;    // the builds checked offline (SHA-256 of the DLL file)
+		const char* noneWhy;                // why there is no direct open (when call is "")
+	};
+	inline const std::vector<DirectRow>& DirectTable()
+	{
+		static const std::vector<DirectRow> rows = {
+			{ "oar", "its UI interface V3 (RequestPluginAPI_UI): OpenMenu / CloseMenu / IsMenuOpen", { 3, 2, 1, 0 },
+			  { "DB61B8B691E709BEDE355514871918BAA63EABE8F6D0734BF17FFCF793B4C894" /* OAR 3.2.1 */ }, "" },
+			{ "cs", "", {}, {}, "it has no published call that opens its menu" },
+			{ "ied", "", {}, {}, "it has no published call that opens its menu" },
+			{ "optiscaler", "", {}, {}, "it has no published call that opens its menu" },
+			{ "enb", "", {}, {}, "its licence forbids hooking it, and its SDK has no call that opens its editor" },
+		};
+		return rows;
+	}
+	struct DirectVerdict
+	{
+		bool available = false;
+		std::string why;   // available: the call used; not: the reason it falls back to a key
+	};
+	inline const DirectRow* DirectRowFor(const std::string& a_id)
+	{
+		for (const auto& r : DirectTable())
+		{
+			if (a_id == r.id) { return &r; }
+		}
+		return nullptr;
+	}
+	// The version and hash parts of the gate - what must pass before AMF even asks the mod for its interface
+	inline bool DirectBuildKnown(const std::string& a_id, const FileVer& a_version, const std::string& a_sha256)
+	{
+		const DirectRow* row = DirectRowFor(a_id);
+		if (!row || row->call[0] == '\0' || a_version == FileVer{} || !VerAtLeast(a_version, row->minVersion)) { return false; }
+		for (const char* h : row->hashes)
+		{
+			if (a_sha256 == h) { return true; }
+		}
+		return false;
+	}
+	// a_version / a_sha256: the loaded DLL's file version and hash; a_answered: the mod's own handshake gave AMF the interface
+	inline DirectVerdict DirectOpen(const std::string& a_id, const FileVer& a_version, const std::string& a_sha256, bool a_answered)
+	{
+		DirectVerdict d;
+		const DirectRow* row = nullptr;
+		for (const auto& r : DirectTable())
+		{
+			if (a_id == r.id) { row = &r; }
+		}
+		if (!row) { d.why = "no row for this mod"; return d; }
+		if (row->call[0] == '\0') { d.why = row->noneWhy; return d; }
+		if (a_version == FileVer{}) { d.why = "its DLL's file version could not be read"; return d; }
+		if (!VerAtLeast(a_version, row->minVersion))
+		{
+			d.why = "version " + VerText(a_version) + " is older than " + VerText(row->minVersion) + ", the first with " + row->call;
+			return d;
+		}
+		if (!DirectBuildKnown(a_id, a_version, a_sha256))
+		{
+			d.why = "version " + VerText(a_version) + " is not a build AMF has checked (SHA-256 " + (a_sha256.empty() ? std::string("not read") : a_sha256.substr(0, 12) + "...") +
+					" is not on its allowlist)";
+			return d;
+		}
+		if (!a_answered) { d.why = "version " + VerText(a_version) + " did not answer " + row->call; return d; }
+		d.available = true;
+		d.why = row->call;
+		return d;
 	}
 }
