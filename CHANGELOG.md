@@ -21,6 +21,11 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## 2.2.1 - unreleased
+
+### Font Awesome
+- Font Awesome icons on AMF's own pages (the owner, 2026-10-13: "Build in the Font Awesome in AMF's own pages"). The side list (Framework, Settings, Controls, Help, Other menus, Mods), the page headings, the Settings, Controls and Help tabs, the Appearance sub-tabs, the Help sections, the Search box and Filter button, Fold, Rename, and the buttons (Apply, Discard, Save, Load, Delete, Reset, Undo, Sort, Add, Rebind, Unbind, Back up, Restore, Import, Forget, and Open / Close on Other menus) now carry a small icon in front of their text. The icons come from the Font Awesome file AMF already ships and are merged into the text face the same way as on converted MCM pages, so they take each theme's text colour and the text size; converted pages keep the icons they had (info, keyboard, clear, reset, pen, colour, lock). The text and its eleven translations are unchanged. If the icon file is missing, the labels draw as plain text instead of with a "?" in front.
+
 ## 2.2.0 - 2026-10-13 - untested - Mod Function Menu buttons; a page for every INI file; other mods' own menus opened from here (directly where the mod has a call for it, ENB's too), their keys held by AMF if you want; nothing during loading; the idle camera held off
 
 ### Added
