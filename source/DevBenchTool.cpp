@@ -166,7 +166,11 @@ namespace devbenchtool
 					"\",\"builds\":" + std::to_string(p.builds) + ",\"glyphs\":" + std::to_string(p.glyphs) +
 					",\"atlas\":[" + std::to_string(p.atlasWidth) + "," + std::to_string(p.atlasHeight) + "]" +
 					",\"hasKana\":" + (p.hasKana ? "true" : "false") + ",\"hasHangul\":" + (p.hasHangul ? "true" : "false") +
-					",\"hasHanzi\":" + (p.hasHanzi ? "true" : "false") + ",\"hasCyrillic\":" + (p.hasCyrillic ? "true" : "false") + "}";
+					",\"hasHanzi\":" + (p.hasHanzi ? "true" : "false") + ",\"hasCyrillic\":" + (p.hasCyrillic ? "true" : "false") +
+					",\"hasHanziTraditional\":" + (p.hasHanziTraditional ? "true" : "false") + ",\"hasHanziRare\":" + (p.hasHanziRare ? "true" : "false") +
+					",\"hasLatinExtA\":" + (p.hasLatinExtA ? "true" : "false") + ",\"fitStep\":" + std::to_string(p.fitStep) +
+					",\"rangeLevel\":" + std::to_string(p.rangeLevel) + ",\"oversampleH\":" + std::to_string(p.oversampleH) +
+					",\"onDemand\":" + std::to_string(p.onDemand) + "}";
 			}
 			else if (op == "theme")
 			{

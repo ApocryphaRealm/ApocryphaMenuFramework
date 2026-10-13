@@ -93,8 +93,10 @@ The framework's own text - its Settings, Controls and Help pages and the window 
 `sLanguage`), the same file format SkyUI uses. Shipped: English, Japanese, Korean, Chinese, Russian, German,
 French, Spanish, Italian, Polish and Czech. The Language combo on the Framework Settings page (or
 `sLanguage=` in the INI) forces one; switching is live. A translation that lacks a line falls back to
-English. The font atlas takes its glyph ranges from the loaded translation and merges a system CJK or
-Hangul face where the chosen font lacks the characters. Each mod's own page is that mod's to translate - a mod that ships its own `<Mod>_<language>.txt` beside ours follows the same Language setting (`AMF_GetLanguage()` in the C API) and its characters go into the atlas automatically (1.6.5).
+English. The font atlas holds Latin Extended and Cyrillic always, the full set of the language's script (the whole CJK block for
+Chinese and Japanese, every Hangul syllable for Korean) where it fits, every character of the loaded translations, and every
+character a page draws that it lacked (added at the next frame); a Windows CJK, Hangul or Segoe UI face is merged into any
+face, a picked one included, that lacks a character it must draw. The atlas is fitted to the D3D11 limit (2.2.0). Each mod's own page is that mod's to translate - a mod that ships its own `<Mod>_<language>.txt` beside ours follows the same Language setting (`AMF_GetLanguage()` in the C API) and its characters go into the atlas automatically (1.6.5).
 Corrections from native speakers are welcome - the files are plain text.
 
 ## Credits

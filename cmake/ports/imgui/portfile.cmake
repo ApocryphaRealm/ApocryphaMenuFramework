@@ -15,7 +15,9 @@ if ("docking-experimental" IN_LIST FEATURES)
         # ImGui's boxes, buttons, tick boxes, slider grabs, scroll bars, section lines, tabs, arrows and popups.
         # AMF 2.1.8 - CJK line breaking (amf-cjk-wrap.patch, ImFont::CalcWordWrapPositionA): Japanese and Chinese break
         # between characters with the kinsoku rules instead of only at spaces; text with no CJK wraps as before.
-        PATCHES amf-art-hooks.patch amf-cjk-wrap.patch
+        # AMF 2.2.0 - glyph misses (amf-glyph-miss.patch, ImFont::FindGlyph): one global function pointer called when a font
+        # has no glyph for a character, so the framework adds every character a page drew to its atlas. No struct change.
+        PATCHES amf-art-hooks.patch amf-cjk-wrap.patch amf-glyph-miss.patch
         HEAD_REF docking
     )
 else()

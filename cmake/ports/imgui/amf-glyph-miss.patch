@@ -1,0 +1,41 @@
+diff --git a/imgui_draw.cpp b/imgui_draw.cpp
+index 125c25c..b4f2b39 100644
+--- a/imgui_draw.cpp
++++ b/imgui_draw.cpp
+@@ -3784,13 +3784,23 @@ void ImFont::AddRemapChar(ImWchar dst, ImWchar src, bool overwrite_dst)
+     IndexAdvanceX[dst] = (src < index_size) ? IndexAdvanceX.Data[src] : 1.0f;
+ }
+ 
++ImGuiGlyphMissHookFn GImGuiGlyphMissHook = NULL;   // AMF glyph misses (imgui_internal.h)
++
+ const ImFontGlyph* ImFont::FindGlyph(ImWchar c) const
+ {
+     if (c >= (size_t)IndexLookup.Size)
++    {
++        if (GImGuiGlyphMissHook)
++            GImGuiGlyphMissHook(this, c);
+         return FallbackGlyph;
++    }
+     const ImWchar i = IndexLookup.Data[c];
+     if (i == (ImWchar)-1)
++    {
++        if (GImGuiGlyphMissHook)
++            GImGuiGlyphMissHook(this, c);
+         return FallbackGlyph;
++    }
+     return &Glyphs.Data[i];
+ }
+ 
+diff --git a/imgui_internal.h b/imgui_internal.h
+index 9f0eadb..d1d241f 100644
+--- a/imgui_internal.h
++++ b/imgui_internal.h
+@@ -3943,4 +3943,8 @@ enum ImGuiArtPart_
+ typedef bool (*ImGuiArtHookFn)(ImDrawList* draw_list, int part, const ImRect& bb, ImU32 col, int arg);
+ extern IMGUI_API ImGuiArtHookFn GImGuiArtHook;
+ extern IMGUI_API int            GImGuiArtFrameHint;   // set by a widget around its own RenderFrame call; -1 = none
++// AMF 2.2.0 - glyph misses: ImFont::FindGlyph calls this when a font has no glyph for a character and falls back, so the
++// framework can add every character a page actually drew to its atlas (a mod's own text included). NULL = off.
++typedef void (*ImGuiGlyphMissHookFn)(const ImFont* font, ImWchar c);
++extern IMGUI_API ImGuiGlyphMissHookFn GImGuiGlyphMissHook;
+ extern IMGUI_API float          GImGuiScrollbarInset; // set around a window's Begin: its scroll bars sit this far in from its edges (clear of a frame drawn round it); 0 = none

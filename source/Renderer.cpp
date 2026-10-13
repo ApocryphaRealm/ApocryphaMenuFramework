@@ -31,6 +31,7 @@
 #include "SystemRow.h"
 #include "Theme.h"
 #include "Watchdog.h"
+#include "GlyphCore.h"
 #include "utils/ToggleSwitch.h"
 #include "utils/Logger.h"
 
@@ -738,6 +739,39 @@ namespace renderer
 		float g_lastFontPx = 0.0f;
 		bool g_iconFaceBuilt[consumer::kIconFaceCount] = {};
 
+		// GLYPHS ON DEMAND (2.2.0, a Simplified Chinese player's report - see GlyphCore.h). The ImGui overlay port calls
+		// OnGlyphMiss when a font has no glyph for a character it is asked to draw; the character joins g_onDemand and the
+		// atlas is rebuilt IN PLACE at the next frame start (the add-only path: nothing anyone holds is freed). Each
+		// character is asked for once per session, so one no face has costs one rebuild, never a loop. Render thread.
+		std::mutex g_onDemandLock;
+		std::vector<ImWchar> g_onDemand;         // every character a page drew that the atlas lacked
+		std::vector<bool> g_onDemandAsked(0x10000, false);
+		std::atomic<bool> g_glyphAddPending{ false };
+		ImVector<ImWchar> g_textRanges;          // the text faces' ranges - one buffer for the session (GlyphCore.h)
+		ImVector<ImWchar> g_iconTextRanges;      // the icon faces' text ranges - likewise
+		ImFont* g_textFace = nullptr;            // the face every page draws in by default
+		ImFont* g_iconFaces[consumer::kIconFaceCount] = {};   // the Font Awesome faces in this atlas (null = not built)
+		std::vector<std::pair<const ImFont*, std::string>> g_fallbackMerged;   // (font, Windows face) merges in this atlas
+		std::string g_fallbackFace;              // that Windows face's file ("" = none found)
+		std::string g_lastLang, g_lastGameLang;  // the languages the last full build used
+		int g_fitStep = 0;                       // GlyphCore kFitSteps index the last build ended on
+
+		void OnGlyphMiss(const ImFont*, ImWchar a_c)
+		{
+			if (a_c < 0x20 || a_c == 0x7F || (a_c >= 0xE000 && a_c <= 0xF8FF) || a_c == 0xFFFD) { return; }   // icons are not text
+			std::scoped_lock l(g_onDemandLock);
+			if (g_onDemandAsked[a_c]) { return; }
+			g_onDemandAsked[a_c] = true;
+			g_onDemand.push_back(a_c);
+			g_glyphAddPending = true;
+		}
+
+		std::vector<ImWchar> OnDemandSnapshot()
+		{
+			std::scoped_lock l(g_onDemandLock);
+			return g_onDemand;
+		}
+
 		// When Save was last pressed, so "saved" can appear beside the button for a few seconds
 		// rather than the press doing nothing visible. settings::Save() returns nothing, so there
 		// is no honest success/failure to report here - only that the write was asked for.
@@ -862,13 +896,66 @@ namespace renderer
 			logger::info("font picker: {} face(s) available", g_fontChoices.size());
 		}
 
+		// The Windows CJK face merged into a_dst for what it lacks within a_ranges (2.2.0: any font, at any time - the text
+		// face at a full build, an icon face or the text face again when the on-demand set first needs it). MergeMode adds
+		// only the characters a_dst's own face does not have. Once per font per atlas; DstFont is named, so it works after
+		// other fonts were added.
+		std::vector<std::string> MergedInto(const ImFont* a_dst)
+		{
+			std::vector<std::string> v;
+			for (const auto& m : g_fallbackMerged) { if (m.first == a_dst) { v.push_back(m.second); } }
+			return v;
+		}
+
+		bool MergeFace(ImFont* a_dst, const std::string& a_face, const ImWchar* a_ranges, float a_px, int a_oversampleH)
+		{
+			const std::vector<std::string> already = MergedInto(a_dst);
+			if (!a_dst || a_face.empty() || std::find(already.begin(), already.end(), a_face) != already.end()) { return false; }
+			ImFontConfig merge;
+			merge.MergeMode = true;
+			merge.PixelSnapH = true;
+			merge.OversampleH = a_oversampleH;
+			merge.DstFont = a_dst;
+			g_fallbackMerged.emplace_back(a_dst, a_face);   // tried once per font per atlas, loaded or not
+			if (ImGui::GetIO().Fonts->AddFontFromFileTTF(a_face.c_str(), a_px, &merge, a_ranges))
+			{
+				logger::info("font: merged \"{}\" into a face at {:.1f}px for the characters it lacks", a_face, a_px);
+				return true;
+			}
+			logger::warn("font: \"{}\" could not be merged - characters the face lacks draw as \"?\"", a_face);
+			return false;
+		}
+
+		void MergeFallback(ImFont* a_dst, const ImWchar* a_ranges, float a_px, int a_oversampleH)
+		{
+			if (!a_dst || g_fallbackFace.empty() || !glyphcore::NeedsFallbackFace(a_ranges)) { return; }
+			MergeFace(a_dst, g_fallbackFace, a_ranges, a_px, a_oversampleH);
+		}
+
+		// AFTER a build: the characters known to be drawn (a_text, a_extra) that a_dst and its merges still lack get the
+		// Windows face for their script merged in (GlyphCore FacesToAdd - Segoe UI for Latin/Cyrillic a picked CJK face
+		// lacks, Malgun Gothic for Hangul, YaHei for a hanzi a Japanese face lacks...). True when anything was merged: the
+		// caller builds once more. One pass, so a character no Windows face has never loops.
+		bool FillMissing(ImFont* a_dst, const ImWchar* a_ranges, float a_px, int a_oversampleH, const std::string& a_text, const std::vector<ImWchar>& a_extra)
+		{
+			if (!a_dst) { return false; }
+			const std::vector<ImWchar> missing = glyphcore::MissingIn(a_dst, a_text, a_extra);
+			if (missing.empty()) { return false; }
+			bool merged = false;
+			for (const std::string& face : glyphcore::FacesToAdd(missing, MergedInto(a_dst), [](const std::string& f) { std::error_code ec; return std::filesystem::exists(f, ec); }))
+			{
+				merged = MergeFace(a_dst, face, a_ranges, a_px, a_oversampleH) || merged;
+			}
+			if (!merged) { logger::info("font: {} character(s) known to be drawn have no glyph in any face (first U+{:04X})", missing.size(), static_cast<unsigned>(missing[0])); }
+			return merged;
+		}
+
 		// One Font Awesome face (2.0.4): the text face (Latin, Latin Extended-A, Cyrillic) with that style's icons merged
 		// in, added to io.Fonts. nullptr when the icon file is missing or the text face cannot be read. Shared by the full
 		// build and by the add-only path (AddIconFaces, 2.1.3).
 		ImFont* AddIconFace(int a_face, const std::string& a_textFace, float a_px)
 		{
 			static constexpr const char* kIconFiles[consumer::kIconFaceCount] = { "fa-solid-900.ttf", "fa-regular-400.ttf", "fa-brands-400.ttf" };
-			static const ImWchar kIconTextRanges[] = { 0x0020, 0x00FF, 0x0100, 0x017F, 0x0400, 0x04FF, 0 };
 			static const ImWchar kIconRanges[] = { 0xE000, 0xF8FF, 0 };
 			static bool s_missingLogged[consumer::kIconFaceCount] = {};
 			if (a_face < 0 || a_face >= consumer::kIconFaceCount || a_textFace.empty())
@@ -889,7 +976,10 @@ namespace renderer
 				}
 				return nullptr;
 			}
-			ImFont* const iconFont = io.Fonts->AddFontFromFileTTF(a_textFace.c_str(), a_px, nullptr, kIconTextRanges);
+			// 2.2.0: the label part also carries the on-demand set (a Chinese label beside an icon), with the Windows CJK
+			// face merged in below for it when the text face lacks those characters.
+			if (g_iconTextRanges.Size == 0) { glyphcore::BuildIconTextRanges(g_iconTextRanges, OnDemandSnapshot()); }
+			ImFont* const iconFont = io.Fonts->AddFontFromFileTTF(a_textFace.c_str(), a_px, nullptr, g_iconTextRanges.Data);
 			if (!iconFont)
 			{
 				return nullptr;
@@ -903,10 +993,94 @@ namespace renderer
 			{
 				logger::warn("font: \"{}\" could not be read as a font - that icon face stays text only", path);
 			}
+			MergeFallback(iconFont, g_iconTextRanges.Data, a_px, 1);
 			return iconFont;
 		}
 
 		void BuildFonts();
+
+		// The text ranges at a fit level, written into the session's one buffer (GlyphCore.h) from the languages of the last
+		// full build, every loaded translation and the on-demand set.
+		void SetTextLevel(int a_level)
+		{
+			glyphcore::BuildTextRanges(g_textRanges, *ImGui::GetIO().Fonts, g_lastLang, g_lastGameLang, strings::AllText(), OnDemandSnapshot(), a_level);
+		}
+
+		// What the atlas can draw, read back by DevBench op=font (1.8.9; 2.2.0 adds a Traditional-only hanzi, a Polish
+		// letter, the fit step and the on-demand count): proves a language switch or a rebuild from the atlas, not a capture.
+		void RecordFontProbe(const glyphcore::FitResult& a_fit)
+		{
+			if (!g_textFace) { return; }
+			FontProbe probe;
+			probe.language = g_lastLang;
+			probe.gameLanguage = g_lastGameLang;
+			probe.glyphs = g_textFace->Glyphs.Size;
+			probe.hasKana = g_textFace->FindGlyphNoFallback(0x3042) != nullptr;
+			probe.hasHangul = g_textFace->FindGlyphNoFallback(0xD55C) != nullptr;
+			probe.hasHanzi = g_textFace->FindGlyphNoFallback(0x6C34) != nullptr;
+			probe.hasHanziTraditional = g_textFace->FindGlyphNoFallback(0x9019) != nullptr;   // 這 - not in the Simplified common set
+			probe.hasCyrillic = g_textFace->FindGlyphNoFallback(0x0416) != nullptr;
+			probe.hasHanziRare = g_textFace->FindGlyphNoFallback(0x954D) != nullptr;          // 镍 - Simplified, outside the common set
+			probe.hasLatinExtA = g_textFace->FindGlyphNoFallback(0x0142) != nullptr;          // ł
+			probe.fitStep = a_fit.step;
+			probe.rangeLevel = glyphcore::kFitSteps[a_fit.step].level;
+			probe.oversampleH = glyphcore::kFitSteps[a_fit.step].oversampleH;
+			probe.onDemand = static_cast<int>(OnDemandSnapshot().size());
+			// GetTexDataAsRGBA32 writes through its pixel pointer unconditionally - a null there is a crash at the first
+			// atlas build (boot, 2026-09-17 14:24), not a "skip".
+			unsigned char* pixels = nullptr;
+			ImGui::GetIO().Fonts->GetTexDataAsRGBA32(&pixels, &probe.atlasWidth, &probe.atlasHeight);
+			std::scoped_lock l(g_fontProbeLock);
+			probe.builds = g_fontProbe.builds + 1;
+			g_fontProbe = probe;
+			logger::info("font: atlas {} built for \"{}\" (game \"{}\"): {} glyphs, {}x{} (fit step {} of {}: {} sets, {}x oversampling, "
+						 "{} tries{}), {} on demand, kana {} hangul {} hanzi {} traditional {} cyrillic {} latin-ext-a {}",
+				probe.builds, probe.language, probe.gameLanguage, probe.glyphs, probe.atlasWidth, probe.atlasHeight, a_fit.step + 1,
+				glyphcore::kFitStepCount, probe.rangeLevel == 2 ? "full" : probe.rangeLevel == 1 ? "common" : "in-use", probe.oversampleH,
+				a_fit.attempts, a_fit.fits ? "" : ", STILL OVER THE BUDGET", probe.onDemand, probe.hasKana, probe.hasHangul, probe.hasHanzi,
+				probe.hasHanziTraditional, probe.hasCyrillic, probe.hasLatinExtA);
+		}
+
+		// Builds the atlas in place from the fit step the last build ended on (never larger), stepping down if it grew past
+		// the budget. Every ImFont stays the same object.
+		glyphcore::FitResult RebuildInPlace()
+		{
+			const glyphcore::FitResult fit = glyphcore::BuildFitted(*ImGui::GetIO().Fonts, g_textRanges.Data, SetTextLevel, g_fitStep, g_lastFontPx);
+			g_fitStep = fit.step;
+			RecordFontProbe(fit);
+			return fit;
+		}
+
+		// THE ON-DEMAND PATH (2.2.0): the characters pages drew that the atlas lacked are added to the text and icon ranges
+		// (in place - same buffers), the Windows CJK face is merged into any face that now needs it, and the atlas is built
+		// again without Clear(), like AddIconFaces. Call OUTSIDE a frame, device objects invalidated.
+		void AddMissedGlyphs()
+		{
+			ImGuiIO& io = ImGui::GetIO();
+			if (g_lastTextFacePath.empty() || g_lastFontPx <= 0.0f || io.Fonts->Fonts.Size == 0 || !g_textFace || g_textRanges.Size == 0)
+			{
+				BuildFonts();
+				return;
+			}
+			const std::vector<ImWchar> onDemand = OnDemandSnapshot();
+			SetTextLevel(glyphcore::kFitSteps[g_fitStep].level);
+			glyphcore::BuildIconTextRanges(g_iconTextRanges, onDemand);
+			MergeFallback(g_textFace, g_textRanges.Data, g_lastFontPx, glyphcore::kFitSteps[g_fitStep].oversampleH);
+			for (int f = 0; f < consumer::kIconFaceCount; ++f)
+			{
+				if (ImFont* face = g_iconFaces[f]) { MergeFallback(face, g_iconTextRanges.Data, g_lastFontPx, 1); }
+			}
+			const ImFont* const textFace = g_textFace;
+			glyphcore::FitResult fit = RebuildInPlace();
+			bool again = FillMissing(g_textFace, g_textRanges.Data, g_lastFontPx, glyphcore::kFitSteps[g_fitStep].oversampleH, std::string(), onDemand);
+			for (int f = 0; f < consumer::kIconFaceCount; ++f)
+			{
+				if (g_iconFaces[f]) { again = FillMissing(g_iconFaces[f], g_iconTextRanges.Data, g_lastFontPx, 1, std::string(), onDemand) || again; }
+			}
+			if (again) { fit = RebuildInPlace(); }
+			logger::info("font: {} character(s) pages drew added to the atlas in place ({}x{}); the text face is {}", onDemand.size(),
+				fit.width, fit.height, io.Fonts->Fonts.Size > 0 && io.Fonts->Fonts[0] == textFace ? "the same object" : "NOT the same object");
+		}
 
 		// THE ADD-ONLY PATH (2.1.3, KnightQueen1's freeze - see g_iconFaceAddPending). The faces a mod asked for that the
 		// atlas lacks are ADDED to it and the atlas is built again: no Clear(), so no ImFont anyone holds is freed - ImGui
@@ -931,6 +1105,7 @@ namespace renderer
 				if (ImFont* face = AddIconFace(f, g_lastTextFacePath, g_lastFontPx))
 				{
 					consumer::SetIconFont(f, face);   // handed over AFTER the build below, before the next frame uses it
+					g_iconFaces[f] = face;
 					added = true;
 				}
 			}
@@ -940,8 +1115,12 @@ namespace renderer
 			}
 			const int fontsBefore = io.Fonts->Fonts.Size;
 			ImFont* const textFace = io.Fonts->Fonts[0];   // what a mod that kept GetFont() holds
-			io.Fonts->ClearTexData();
-			io.Fonts->Build();
+			if (g_textRanges.Size > 0) { RebuildInPlace(); }   // 2.2.0: fitted to the D3D11 limit and the budget, like every build
+			else
+			{
+				io.Fonts->ClearTexData();
+				io.Fonts->Build();
+			}
 			// the proof the fix rests on: the face a mod may hold is the same object, filled again, after the build
 			logger::info("font: the text face a mod may hold is {} after the build ({} glyphs)",
 						 io.Fonts->Fonts[0] == textFace && textFace->Glyphs.Size > 0 ? "the same object, rebuilt in place" : "NOT the same object",
@@ -969,84 +1148,52 @@ namespace renderer
 			ImFont* loaded = nullptr;
 			std::string loadedPath;   // the text face's file, which every icon face is built on (2.0.4)
 			// Clear() freed every ImFont - a consumer must not be handed a dead icon face.
-			for (int f = 0; f < consumer::kIconFaceCount; ++f) { consumer::SetIconFont(f, nullptr); }
+			for (int f = 0; f < consumer::kIconFaceCount; ++f) { consumer::SetIconFont(f, nullptr); g_iconFaces[f] = nullptr; }
 			ImFont* iconFonts[consumer::kIconFaceCount] = {};
+			g_textFace = nullptr;
+			g_fallbackMerged.clear();
+			g_glyphAddPending = false;   // this build takes the whole on-demand set
+			GImGuiGlyphMissHook = &OnGlyphMiss;   // 2.2.0: the overlay port reports every character a page draws that a font lacks
 
-			// GLYPH RANGES (1.6.4, language support): the atlas holds the default Latin set plus
-			// every character that appears in the loaded translation - Cyrillic, Polish and Czech
-			// letters, kana, hanzi - built from the strings themselves, so no per-language table
-			// can be wrong or incomplete. Static so the ranges outlive Build().
-			// 1.8.9 (littlefot's Wheeler report, 2026-09-17, the same class checked here): the atlas
-			// also holds the BUILT-IN ranges of the scripts in play - the framework's language AND the
-			// game's own sLanguage - because not every character a page draws comes from a translation
-			// file: a Japanese game lists Japanese item names in Item Explorer whatever language the
-			// framework's pages are set to, and those kanji were in no file the builder had read.
-			static ImVector<ImWchar> s_ranges;
+			// GLYPH RANGES (1.6.4, language support; 1.8.9 the scripts of the framework's AND the game's language; 2.2.0
+			// full sets, Latin Extended and Cyrillic always, the script of the translation text itself, the characters pages
+			// drew, and an atlas fitted to the D3D11 limit). The rules live in GlyphCore.h, where tools/glyph_coverage_check
+			// runs them off-game. The buffer is the session's one g_textRanges, so the on-demand path can grow it in place.
 			const std::string lang = strings::Language();
 			const std::string gameLang = strings::GameLanguageSetting();
-			{
-				ImFontGlyphRangesBuilder builder;
-				builder.AddRanges(io.Fonts->GetGlyphRangesDefault());
-				for (const std::string& l : { lang, gameLang })
-				{
-					const ImWchar* r = nullptr;
-					if (l == "japanese") { r = io.Fonts->GetGlyphRangesJapanese(); }
-					else if (l == "korean") { r = io.Fonts->GetGlyphRangesKorean(); }
-					else if (l == "chinese" || l == "schinese" || l == "tchinese") { r = io.Fonts->GetGlyphRangesChineseSimplifiedCommon(); }
-					else if (l == "russian" || l == "ukrainian" || l == "bulgarian") { r = io.Fonts->GetGlyphRangesCyrillic(); }
-					else if (l == "thai") { r = io.Fonts->GetGlyphRangesThai(); }
-					else if (l == "vietnamese") { r = io.Fonts->GetGlyphRangesVietnamese(); }
-					if (r) { builder.AddRanges(r); }
-				}
-				builder.AddText(strings::AllText().c_str());
-				s_ranges.clear();
-				builder.BuildRanges(&s_ranges);
-			}
+			g_lastLang = lang;
+			g_lastGameLang = gameLang;
+			g_fitStep = 0;
+			SetTextLevel(glyphcore::kFitSteps[0].level);
+			glyphcore::BuildIconTextRanges(g_iconTextRanges, OnDemandSnapshot());
 
 			const std::string& custom = settings::Get().fontPath;
 			if (!custom.empty())
 			{
-				loaded = io.Fonts->AddFontFromFileTTF(custom.c_str(), px, nullptr, s_ranges.Data);
+				loaded = io.Fonts->AddFontFromFileTTF(custom.c_str(), px, nullptr, g_textRanges.Data);
 				if (!loaded) { logger::warn("font: sFontPath \"{}\" could not be loaded; falling back", custom); }
-				else { loadedPath = custom; }
+				else { loadedPath = custom; logger::info("font: rasterised the picked face \"{}\" at {:.1f}px", custom, px); }
 			}
 			for (const char* cand : kFontCandidates)
 			{
 				if (loaded) { break; }
-				loaded = io.Fonts->AddFontFromFileTTF(cand, px, nullptr, s_ranges.Data);
+				loaded = io.Fonts->AddFontFromFileTTF(cand, px, nullptr, g_textRanges.Data);
 				if (loaded) { loadedPath = cand; logger::info("font: rasterised \"{}\" at {:.1f}px", cand, px); }
 			}
-			// A FALLBACK FACE merged in for the glyphs the chosen face lacks (MergeMode adds only what
-			// is missing): the Latin faces above carry Cyrillic and Latin Extended but no kana or
-			// hanzi, so Japanese and Chinese draw from a system CJK face. Harmless for English.
+			g_textFace = loaded;
+			// A FALLBACK FACE merged in for the glyphs the chosen face lacks (MergeMode adds only what is missing): the Latin
+			// faces carry Cyrillic and Latin Extended but no kana, hanzi or Hangul, and a picked CJK face may lack the other
+			// CJK scripts. Merged whenever the ranges hold anything past Cyrillic (GlyphCore NeedsFallbackFace) - so not for
+			// English - and later into any face the on-demand set reaches (MergeFallback).
+			g_fallbackFace.clear();
+			for (const std::string& face : glyphcore::FallbackFaces(glyphcore::CjkLanguage(lang, gameLang, strings::AllText())))
+			{
+				std::error_code ec;
+				if (std::filesystem::exists(face, ec)) { g_fallbackFace = face; break; }
+			}
 			if (loaded)
 			{
-				// The script that picks the preferred face: the framework's language when it is CJK,
-				// otherwise the game's (1.8.9 - a Japanese game with English pages still needs kana).
-				auto isCjk = [](const std::string& l) { return l == "japanese" || l == "korean" || l == "chinese" || l == "schinese" || l == "tchinese"; };
-				const std::string cjkLang = isCjk(lang) ? lang : isCjk(gameLang) ? gameLang : lang;
-				// Per language first (the owner's priority order: Japanese, Korean, Chinese, Russian), then
-				// every CJK/Hangul face Windows ships, so a missing preferred face still finds glyphs.
-				const char* const cjk[] = {
-					cjkLang == "japanese" ? "C:/Windows/Fonts/meiryo.ttc" : cjkLang == "korean" ? "C:/Windows/Fonts/malgun.ttf" : "C:/Windows/Fonts/msyh.ttc",
-					cjkLang == "japanese" ? "C:/Windows/Fonts/YuGothM.ttc" : cjkLang == "korean" ? "C:/Windows/Fonts/malgunbd.ttf" : "C:/Windows/Fonts/simsun.ttc",
-					"C:/Windows/Fonts/msyh.ttc", "C:/Windows/Fonts/meiryo.ttc", "C:/Windows/Fonts/malgun.ttf", "C:/Windows/Fonts/YuGothM.ttc", "C:/Windows/Fonts/msgothic.ttc", "C:/Windows/Fonts/simsun.ttc" };
-				if (lang != "english" || gameLang != "english")
-				{
-					ImFontConfig merge;
-					merge.MergeMode = true;
-					merge.PixelSnapH = true;
-					for (const char* face : cjk)
-					{
-						std::error_code ec;
-						if (!std::filesystem::exists(face, ec)) { continue; }
-						if (io.Fonts->AddFontFromFileTTF(face, px, &merge, s_ranges.Data))
-						{
-							logger::info("font: merged \"{}\" for the glyphs \"{}\" (game \"{}\") needs", face, lang, gameLang);
-							break;
-						}
-					}
-				}
+				MergeFallback(loaded, g_textRanges.Data, px, glyphcore::kFitSteps[0].oversampleH);
 
 				// AMF'S OWN ICONS (2.1.5, the owner: "include Font Awesome for the generated menus"). The ten solid glyphs in
 				// AmfIcons.h, merged into the TEXT face itself (MergeMode adds to the last font added, which is still the
@@ -1104,7 +1251,7 @@ namespace renderer
 				// behaviour (the current font is pushed).
 				for (int f = 0; f < consumer::kIconFaceCount; ++f)
 				{
-					iconFonts[f] = consumer::IconFaceWanted(f) ? AddIconFace(f, loadedPath, px) : nullptr;
+					g_iconFaces[f] = iconFonts[f] = consumer::IconFaceWanted(f) ? AddIconFace(f, loadedPath, px) : nullptr;
 				}
 			}
 			g_lastTextFacePath = loaded ? loadedPath : std::string();
@@ -1113,6 +1260,7 @@ namespace renderer
 			if (!loaded)
 			{
 				// Never fail to render: fall back to the built-in face, magnified as before.
+				GImGuiGlyphMissHook = nullptr;   // the bitmap face lacks most of what it is asked for - nothing to add it from
 				io.Fonts->AddFontDefault();
 				io.FontGlobalScale = g_uiScale * settings::Get().textScale;
 				logger::warn("font: no TrueType face could be loaded; using the built-in bitmap font");
@@ -1126,7 +1274,23 @@ namespace renderer
 			// 2048x4096 -> 2048x2857). D3D11 takes any texture height, so this also trims the CJK atlas
 			// every Japanese and Chinese player already had.
 			io.Fonts->Flags |= ImFontAtlasFlags_NoPowerOfTwoHeight;
-			io.Fonts->Build();
+			glyphcore::FitResult fit = glyphcore::BuildFitted(*io.Fonts, g_textRanges.Data, SetTextLevel, 0, px);
+			g_fitStep = fit.step;
+			// The characters known to be drawn that the faces still lack get the Windows face for their script, then one
+			// more build (a picked CJK face with no Cyrillic, a Hangul word on a Chinese page...).
+			{
+				const std::vector<ImWchar> onDemand = OnDemandSnapshot();
+				bool again = FillMissing(loaded, g_textRanges.Data, px, glyphcore::kFitSteps[fit.step].oversampleH, strings::AllText(), onDemand);
+				for (int f = 0; f < consumer::kIconFaceCount; ++f)
+				{
+					if (iconFonts[f]) { again = FillMissing(iconFonts[f], g_iconTextRanges.Data, px, 1, std::string(), onDemand) || again; }
+				}
+				if (again)
+				{
+					fit = glyphcore::BuildFitted(*io.Fonts, g_textRanges.Data, SetTextLevel, g_fitStep, px);
+					g_fitStep = fit.step;
+				}
+			}
 
 			// Hand the icon faces to the consumer surface and say once per atlas which are in it. Atlas
 			// builds are rare (start-up, a language, face or size change, a face first asked for), so
@@ -1145,28 +1309,7 @@ namespace renderer
 				if (!faces.empty()) { logger::info("font: Font Awesome icon faces in the atlas: {}", faces); }
 			}
 
-			// What the atlas can draw, one probe glyph per script (1.8.9): hiragana A, hangul HAN, the
-			// hanzi for water, Cyrillic ZHE. Read back by the driving tool so a language switch is
-			// proved by the atlas rather than a capture.
-			{
-				FontProbe probe;
-				probe.language = lang;
-				probe.gameLanguage = gameLang;
-				probe.glyphs = loaded->Glyphs.Size;
-				probe.hasKana = loaded->FindGlyphNoFallback(0x3042) != nullptr;
-				probe.hasHangul = loaded->FindGlyphNoFallback(0xD55C) != nullptr;
-				probe.hasHanzi = loaded->FindGlyphNoFallback(0x6C34) != nullptr;
-				probe.hasCyrillic = loaded->FindGlyphNoFallback(0x0416) != nullptr;
-				// GetTexDataAsRGBA32 writes through its pixel pointer unconditionally - a null there is a
-				// crash at the first atlas build (boot, 2026-09-17 14:24), not a "skip".
-				unsigned char* pixels = nullptr;
-				io.Fonts->GetTexDataAsRGBA32(&pixels, &probe.atlasWidth, &probe.atlasHeight);
-				std::scoped_lock l(g_fontProbeLock);
-				probe.builds = g_fontProbe.builds + 1;
-				g_fontProbe = probe;
-				logger::info("font: atlas {} built for \"{}\" (game \"{}\"): {} glyphs, {}x{}, kana {} hangul {} hanzi {} cyrillic {}",
-					probe.builds, lang, gameLang, probe.glyphs, probe.atlasWidth, probe.atlasHeight, probe.hasKana, probe.hasHangul, probe.hasHanzi, probe.hasCyrillic);
-			}
+			RecordFontProbe(fit);   // what the atlas can draw, one probe glyph per script - read back by DevBench op=font
 		}
 
 		// -----------------------------------------------------------------------------------
@@ -4985,6 +5128,13 @@ namespace renderer
 				{
 					ImGui_ImplDX11_InvalidateDeviceObjects();
 					AddIconFaces();
+				}
+				// 2.2.0: characters the last frame drew that the atlas lacked - added in place, the same rules as the icon
+				// faces (nothing anyone holds is freed). A full build above already took the whole on-demand set.
+				if (g_glyphAddPending.exchange(false) && g_textFace)
+				{
+					ImGui_ImplDX11_InvalidateDeviceObjects();
+					AddMissedGlyphs();
 				}
 
 				ImGui_ImplDX11_NewFrame();
