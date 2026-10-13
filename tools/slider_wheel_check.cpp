@@ -36,6 +36,7 @@ namespace
 	ImRect g_rectText, g_rectCount, g_rectScale;
 	float  g_scrollY = 0.0f;
 	ImVec2 g_pointer{ 5, 5 };
+	int    g_outlineVerts = 0, g_outlineEdgeVerts = 0, g_outlineTextVerts = 0;   // precise::OutlineValue on the Text size slider
 
 	void BuildFonts()
 	{
@@ -64,6 +65,22 @@ namespace
 		g_retText = precise::SliderFloat("Text size", &g_text, 1.0f, 2.0f, "%.2f");
 		g_editedText = ImGui::IsItemEdited();
 		g_rectText = ImRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
+		{
+			// the value outline (2.2.0): drawn again here to count what it adds - glyphs in the window colour, then in the text colour
+			ImDrawList* dl = ImGui::GetWindowDrawList();
+			const int before = dl->VtxBuffer.Size;
+			precise::OutlineValue(ImGuiDataType_Float, &g_text, "%.2f");
+			ImVec4 edgeC = ImGui::GetStyle().Colors[ImGuiCol_WindowBg];
+			edgeC.w = ImGui::GetStyle().Colors[ImGuiCol_Text].w;
+			const ImU32 edge = ImGui::GetColorU32(edgeC), text = ImGui::GetColorU32(ImGuiCol_Text);
+			g_outlineVerts = dl->VtxBuffer.Size - before;
+			g_outlineEdgeVerts = g_outlineTextVerts = 0;
+			for (int i = before; i < dl->VtxBuffer.Size; ++i)
+			{
+				if (dl->VtxBuffer[i].col == edge) { ++g_outlineEdgeVerts; }
+				else if (dl->VtxBuffer[i].col == text) { ++g_outlineTextVerts; }
+			}
+		}
 		ImGui::SetNextItemWidth(600);
 		precise::SliderInt("Window opacity", &g_opacity, 5, 100, "%d%%");
 		// the generated igSliderInt / igSliderScalar bodies: ImGui's slider, then the wheel with the format's step
@@ -122,6 +139,11 @@ int main()
 	BuildFonts();
 	Frame();
 	Frame();
+
+	// 2b. the value outline over the grab (HadToRegister): eight copies in the window colour, then the value in the text colour
+	Check(g_outlineVerts > 0 && g_outlineEdgeVerts == 8 * g_outlineTextVerts && g_outlineTextVerts > 0,
+		  "the Text size value is drawn outlined: " + std::to_string(g_outlineEdgeVerts) + " outline vertices, " +
+			  std::to_string(g_outlineTextVerts) + " text vertices");
 
 	// 3. AMF's own slider: hover, then a notch each way
 	g_pointer = Mid(g_rectText);

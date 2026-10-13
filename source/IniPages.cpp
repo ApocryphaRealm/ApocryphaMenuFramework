@@ -403,7 +403,7 @@ namespace inipages
 			// never write a file that does not read cleanly NOW (it may have changed since the game started)
 			if (existed)
 			{
-				std::string problem = utf16 ? std::string("UTF-16 text") : CleanProblem(lines);
+				std::string problem = utf16 ? std::string(strings::TR("AMF_IniWhyUtf16", "UTF-16 text, which this reader does not take")) : CleanProblem(lines);
 				if (!problem.empty())
 				{
 					a_error = path + " does not read cleanly (" + problem + ")";
@@ -803,7 +803,8 @@ namespace inipages
 						std::vector<std::string> cl;
 						bool ccrlf = false, cutf16 = false;
 						const bool read = ReadLines(custom.string(), cl, ccrlf, nullptr, &cutf16);
-						const std::string problem = !read ? std::string("could not be opened") : (cutf16 ? std::string("UTF-16 text") : CleanProblem(cl));
+						const std::string problem = !read ? std::string(strings::TR("AMF_IniWhyUnread", "could not be opened"))
+														  : (cutf16 ? std::string(strings::TR("AMF_IniWhyUtf16", "UTF-16 text, which this reader does not take")) : CleanProblem(cl));
 						if (!problem.empty())
 						{
 							std::snprintf(buf, sizeof(buf), strings::TR("AMF_IniWhyCustomBad", "its %s does not read cleanly (%s)"),
