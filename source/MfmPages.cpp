@@ -414,6 +414,18 @@ namespace mfmpages
 		ImGui::PopStyleColor();
 	}
 
+	std::vector<refreshcore::Decl> Declarations()
+	{
+		std::scoped_lock l(g_lock);
+		std::vector<refreshcore::Decl> out;
+		for (const State& s : g_states)
+		{
+			if (!s.readError.empty()) { continue; }
+			out.push_back({ s.rel, s.f.dll, s.f.api, static_cast<int>(s.f.type) });
+		}
+		return out;
+	}
+
 	std::string ToolJson(const std::string& a_argsJson)
 	{
 		const nlohmann::json args = nlohmann::json::parse(a_argsJson.empty() ? std::string("{}") : a_argsJson, nullptr, false);

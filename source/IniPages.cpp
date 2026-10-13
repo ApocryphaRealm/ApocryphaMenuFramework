@@ -2,6 +2,7 @@
 
 #include "HelpBar.h"
 #include "IniCore.h"
+#include "PageRefresh.h"
 #include "Registry.h"
 #include "Settings.h"
 #include "Strings.h"
@@ -89,6 +90,14 @@ namespace inipages
 			bool backupTaken = false;
 			int writes = 0;
 			std::string lastError;
+			// 2.2.1 - how a change takes effect (PageRefresh.h), looked up the first time the page is drawn or a value set
+			bool refreshLooked = false;
+			pagerefresh::Reload reload;   // the mod's declared in-game reload (its Mod Function Menu Config entry), if any
+			bool engine = false;          // the game's own INI settings: set live in the engine's INI collections
+			std::vector<std::pair<std::string, std::string>> pendingLive;   // (section, key) saved, to set in the engine next frame
+			bool reloadPending = false;
+			double pendingSince = 0.0;
+			std::string lastApply;
 		};
 
 		struct Skipped
@@ -524,7 +533,96 @@ namespace inipages
 			a_s.custom = !a_mod.customIni.empty();
 			if (a_s.kind == Kind::kText) { std::snprintf(a_s.text, sizeof(a_s.text), "%s", a_value.c_str()); }
 			a_mod.lastError.clear();
+			// 2.2.1: the change takes effect the page's way - set in the engine, and / or the mod's declared reload - on the
+			// render thread, by RefreshTick (a DevBench set arrives on its listener thread)
+			if (a_mod.engine) { a_mod.pendingLive.emplace_back(a_sec.name, a_s.key); }
+			if (a_mod.reload.found)
+			{
+				a_mod.reloadPending = true;
+				a_mod.pendingSince = ImGui::GetCurrentContext() ? ImGui::GetTime() : 0.0;
+			}
 			return true;
+		}
+
+		// 2.2.1: the page's declared reload and whether it is the game's own INI settings, found once. The game's own: a Data INI
+		// beside its plugin (the game reads it as that plugin's game settings), or an INI whose every key is one of the
+		// engine's INI settings ("<key>:<section>"). Called with g_lock held, once the game's settings exist (kDataLoaded on).
+		void LookRefresh(Mod& a_mod)
+		{
+			if (a_mod.refreshLooked) { return; }
+			a_mod.refreshLooked = true;
+			a_mod.reload = pagerefresh::Find(refreshcore::Candidates(a_mod.base, ""));
+			std::size_t keys = 0, known = 0;
+			for (const Section& sec : a_mod.sections)
+			{
+				for (const Setting& s : sec.settings)
+				{
+					++keys;
+					known += pagerefresh::EngineIni(s.key, sec.name) ? 1 : 0;
+				}
+			}
+			a_mod.engine = a_mod.gameSettings || (keys > 0 && known == keys);
+			logger::info("ini pages: {} - {}{} ({} of {} key(s) are the game's own INI settings)", a_mod.entry,
+						 a_mod.reload.found ? "reloads in game via " + a_mod.reload.decl.dll + " ! " + a_mod.reload.decl.api : std::string("no declared reload"),
+						 a_mod.engine ? ", set live in the game's INI settings" : "", known, keys);
+		}
+
+		pagerefresh::Kind KindOf(Mod& a_mod)
+		{
+			LookRefresh(a_mod);
+			if (a_mod.reload.found && pagerefresh::Loaded(a_mod.reload)) { return pagerefresh::Kind::kReload; }
+			return a_mod.engine ? pagerefresh::Kind::kLive : pagerefresh::Kind::kNextLaunch;
+		}
+
+		const Setting* FindSetting(const Mod& a_mod, const std::string& a_section, const std::string& a_key)
+		{
+			for (const Section& sec : a_mod.sections)
+			{
+				if (sec.name != a_section) { continue; }
+				for (const Setting& s : sec.settings) { if (s.key == a_key) { return &s; } }
+			}
+			return nullptr;
+		}
+
+		// The saved values into the engine, now. Render thread, g_lock held.
+		void ApplyLive(Mod& a_mod)
+		{
+			if (a_mod.pendingLive.empty()) { return; }
+			std::string now, next;
+			for (const auto& [section, key] : a_mod.pendingLive)
+			{
+				const Setting* s = FindSetting(a_mod, section, key);
+				RE::Setting* engine = pagerefresh::EngineIni(key, section);
+				const bool set = s && engine && pagerefresh::SetFromText(engine, s->value);
+				std::string& list = set ? now : next;
+				if (list.find("[" + section + "] " + key) == std::string::npos) { list += (list.empty() ? "" : ", ") + ("[" + section + "] " + key); }
+				logger::info("ini pages: {} [{}] {} = {} - {}", a_mod.id, section, key, s ? s->value : std::string("?"),
+							 set ? "set in the game's INI settings now" : "not one the game holds (or no plain value) - applies the next time the game starts");
+			}
+			a_mod.pendingLive.clear();
+			char buf[1024];
+			a_mod.lastApply.clear();
+			if (!now.empty())
+			{
+				std::snprintf(buf, sizeof(buf), strings::TR("AMF_RefreshLiveSet", "Set in the game now: %s."), now.c_str());
+				a_mod.lastApply = buf;
+			}
+			if (!next.empty())
+			{
+				std::snprintf(buf, sizeof(buf), strings::TR("AMF_RefreshLiveNot", "Applies the next time the game starts: %s."), next.c_str());
+				a_mod.lastApply += (a_mod.lastApply.empty() ? "" : " ") + std::string(buf);
+			}
+		}
+
+		// The mod's declared reload, now. Render thread, g_lock held.
+		void RunReload(Mod& a_mod, const char* a_why)
+		{
+			a_mod.reloadPending = false;
+			if (!a_mod.reload.found) { return; }
+			const pagerefresh::Called c = pagerefresh::Call(a_mod.reload);
+			const std::string text = pagerefresh::CalledText(a_mod.reload, c);
+			a_mod.lastApply += (a_mod.lastApply.empty() ? "" : " ") + text;
+			logger::info("ini pages: {} - reload ({}): {}", a_mod.entry, a_why, text);
 		}
 
 		std::string FormatFloat(double a_v, int a_decimals)
@@ -544,9 +642,13 @@ namespace inipages
 			auto sec = std::find_if(mod.sections.begin(), mod.sections.end(), [&](const Section& s) { return s.name == a_section; });
 			if (sec == mod.sections.end()) { ImGui::TextUnformatted("?"); return; }
 			helpbar::Want("ini|" + mod.id + "|" + a_section);
+			LookRefresh(mod);
 
 			ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
-			if (mod.gameSettings)
+			// 2.2.1: how a change takes effect - reloaded in game, set live, or the next time the game starts (PageRefresh.h)
+			const pagerefresh::Kind kind = KindOf(mod);
+			if (kind != pagerefresh::Kind::kNextLaunch) { ImGui::TextWrapped("%s", pagerefresh::MethodText(kind, mod.reload.via).c_str()); }
+			else if (mod.gameSettings)
 			{
 				ImGui::TextWrapped(strings::TR("AMF_IniGameRestart", "The game reads this file as %s's game settings when it starts: a change takes "
 								   "effect the next time you start the game."), mod.name.c_str());
@@ -571,7 +673,19 @@ namespace inipages
 			{
 				ImGui::TextWrapped(strings::TR("AMF_IniError", "Not saved: %s"), mod.lastError.c_str());
 			}
+			if (!mod.lastApply.empty()) { ImGui::TextWrapped("%s", mod.lastApply.c_str()); }
 			ImGui::PopStyleColor();
+			if (mod.reload.found)
+			{
+				const bool loaded = pagerefresh::Loaded(mod.reload);
+				if (!loaded) { ImGui::BeginDisabled(); }
+				if (ImGui::Button(strings::TR("AMF_RefreshButton", "Reload")))
+				{
+					mod.lastApply.clear();
+					RunReload(mod, "Reload button");
+				}
+				if (!loaded) { ImGui::EndDisabled(); }
+			}
 			ImGui::Spacing();
 
 			const char* customMark = strings::TR("AMF_IniCustomMark", "(changed)");
@@ -919,6 +1033,21 @@ namespace inipages
 		if (changed) { ApplyVisibilityLocked(); }
 	}
 
+	std::string DllProductName(const std::string& a_base) { return DllName(fs::path(a_base + ".dll").wstring(), a_base + ".dll"); }
+
+	void RefreshTick()
+	{
+		if (!ImGui::GetCurrentContext()) { return; }
+		std::scoped_lock l(g_lock);
+		const double t = ImGui::GetTime();
+		for (Mod& m : g_mods)
+		{
+			if (!m.pendingLive.empty()) { LookRefresh(m); ApplyLive(m); }
+			// the reload once the controls are let go and the last change has rested: one call for a run of changes
+			if (m.reloadPending && !ImGui::IsAnyItemActive() && t - m.pendingSince >= 0.4) { RunReload(m, "after a save"); }
+		}
+	}
+
 	void SyncIfRegistryChanged()
 	{
 		static std::uint64_t s_seen = 0;   // render thread only
@@ -1076,6 +1205,7 @@ namespace inipages
 				{
 					if (Lower(st.key) != Lower(name)) { continue; }
 					std::string error;
+					LookRefresh(*mod);   // 2.2.1: so the save is applied the page's way (RefreshTick, next frame)
 					const bool ok = SetValue(*mod, s, st, value, error);
 					return std::string("{\"ok\":") + (ok ? "true" : "false") + ",\"op\":\"ini\",\"do\":\"set\",\"section\":" + J(s.name) + ",\"name\":" + J(st.key) +
 						   ",\"value\":" + J(st.value) + ",\"file\":" + J(mod->customIni.empty() ? mod->mainIni : mod->customIni) +

@@ -21,36 +21,73 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
-## 2.2.1 - unreleased - untested - Game Settings Override's files as a page
+## 2.2.1 - unreleased - untested - TOML files as pages (Game Settings Override's among them); changes reloaded in game where a mod declares how
 
 ### Added
-- Game Settings Override page (promised on Nexus for the update after 2.2.0). Game Settings Override (GSO) sets the
-  game's settings from TOML files in `Data\SKSE\Plugins\ccld_GameSettingsOverride`; each `.toml` there is now a tab of
-  one "Game Settings Override" page, in the order GSO loads them (A-Z, the later file winning). Each line is a control
-  chosen by the game setting's own type - a switch for bool, a number box stepping one unit of the last decimal the file
-  shows for float, a whole-number box for int and uint, a colour editor for colours (0xRRGGBBAA), a text box for strings -
-  with the game's current value beside it. A key the game has no setting for, a value written as another type, and a key
-  a later file sets again (so this file's value is not the one the game ends up with) are each flagged on the row. This
-  is not GSO's Mod Function Menu button (Config > Game Settings Override, which only reloads GSO's files and already runs
-  in AMF's MFM menu): this page reads and writes the files themselves.
-- Writing: one value at a time, in place - only that value's text on its line changes; comments, order, the byte-order
-  mark and each line's own ending are kept byte for byte. The file is read again and must still read cleanly before
-  anything is written, and is kept once as `<file>.amf-backup` before the first change. The reader takes only the flat form GSO's files use (`EditorID = value`, `#` comments); a file
-  with anything else (a `[table]`, a dotted or quoted key, an array, a date, a multi-line string, a key given twice) is
-  not shown, and Settings > Converted menus > GSO lists it with the line and the reason. A name not ending in `.toml` in
-  small letters is listed too: GSO does not read it.
-- Applying: after a write the game's value is set at once (only when this file is the one that wins the key), and GSO's
-  own `ReloadConfig` is called - found in the loaded `ccld_GameSettingsOverride.dll`, never loaded by AMF - with its
-  message shown on the page. The page says which of the two happened. Without GSO installed the file is still written
-  and the game's value set for this session.
-- Settings > Converted menus > GSO: a switch for the whole page (`[GsoMenus] bEnabled`, on by default), whether GSO is
-  loaded, each file found with its own switch - OFF by default, as each INI page is (`[GsoMenus] sOn` lists the ones
-  turned on) - and what was not shown and why.
-- DevBench: `amf.menu` `op=gso` - `do=list` (files, switches, skip reasons, whether GSO is loaded), `do=get {file}` (each
-  setting's file value, TOML type, game type, live value, control and winning file), `do=set {file, name, value}`
-  (writes and applies exactly as the page does, on the render thread).
-- Offline check `tools\gso_check.bat` (include\GsoCore.h, the same code the page runs): the TOML read and write round
-  trip with comments, BOM and CRLF / LF kept, every value form, the type mapping, the refused forms and the load order.
+- TOML pages (the owner, 2026-10-13: "Just make a tab called TOML, which would house all of the TOML format files similar to
+  GSO"). Every `.toml` directly in `Data\SKSE\Plugins` and in its folders one level down can be a page. A top-level file is
+  "<name> (TOML)" with a tab per table; a folder's files are one page with a tab per file, its tables as headings. Names come
+  from a loaded DLL of the same name, else from the file's or folder's words, as INI pages are named.
+  - Each value gets a control: a switch for bool, a whole-number box for integers, a number box stepping one unit of the
+    last decimal the file shows for floats, and a text box for strings and for dates and times. The +/- buttons and the
+    mouse wheel nudge a number, and a run of notches is written once the wheel rests.
+  - Arrays, inline tables and multi-line strings are shown and marked "(shown only)"; they are never written.
+  - The `#` lines above a key, and a comment after it, are its help.
+  - A mod that has a page of its own here takes its TOML page away, as with INI pages.
+- Game Settings Override (promised on Nexus for this update) is the TOML pages' special case: its folder is the "Game
+  Settings Override" page, a tab per file in GSO's load order (A-Z, the later file winning).
+  - Each setting gets a control by the GAME setting's type, read from the EditorID's first letter as the engine does: a
+    switch, a decimal or whole-number box, a colour editor (0xRRGGBBAA) or a text box. The game's current value is shown
+    beside each.
+  - Three things are flagged: a key the game has no setting for, a value written as another type, and a key a later file
+    sets again.
+  - A change also sets the game's value at once (only when this file wins the key) before GSO reloads.
+- Writing, for every TOML page: one value at a time, in place. Only that value's text on its line changes; comments,
+  order, quoting, the byte-order mark and each line's own ending are kept byte for byte, and the file is never written back
+  from a parsed model.
+  - The file is read again and must still read cleanly before anything is written.
+  - It is kept once as `<file>.amf-backup` before the first change.
+  - A file that does not read cleanly is listed under "Not shown" with the line and the reason: a line that is not a table,
+    a setting or a comment; a value that is not TOML; a text or list never closed; a key or table given twice.
+  - Also listed there:
+    - Mod Function Menu's own entry files (`ccld_ModFunctionMenu\`), which are the MFM menu's buttons;
+    - AMF's own files;
+    - names outside plain ASCII;
+    - files over 256 KB;
+    - files with no settings;
+    - in GSO's folder, names GSO does not read (".toml" not in small letters).
+- Changes take effect in game where a mod says how (the owner, 2026-10-13: "a refresh feature for these TOML files, just
+  like what MFM does ... and a similar logic to the INI files"). Every INI and TOML page now says how its changes take
+  effect:
+  - "reloaded in game (via <mod>)": the mod declares a reload function - a Mod Function Menu Config entry naming its DLL,
+    function and type, or Game Settings Override's `ReloadConfig`. A page is matched to it by the DLL's name: the file's
+    name, or its folder's, is the DLL's name or starts with it and a '_'. Only a Config entry whose function or file says
+    "reload" counts.
+    - AMF calls it after a save, once the control is let go: one call for a run of changes.
+    - The page's Reload button calls it too, and the message it returns is shown.
+    - It is found with GetModuleHandleW + GetProcAddress, never loaded, and called guarded, as AMF's MFM menu calls it. No
+      undeclared function is ever called.
+  - "applied live": the game's own INI settings - a `Data\<plugin>.ini` beside its plugin, or an INI whose every key is
+    one of the engine's INI settings - are set at once in the engine's INISettingCollection (or INIPrefSettingCollection).
+    After a save the page lists which keys were set in the game now, and which apply the next time the game starts (not a
+    setting the game holds, or no plain value).
+  - "apply the next time the game starts": everything else, said plainly.
+- Settings > Converted menus > TOML: a switch for all TOML pages (`[TomlMenus] bEnabled`, on by default). Each page has its
+  own switch, OFF by default as each INI page is (`[TomlMenus] sOn` lists the ones turned on). Each page shows its files
+  and how its changes take effect, and what was not shown is listed with why.
+- DevBench: `amf.menu` `op=toml` - `do=list`, `do=get {file}` (each value: table, text, type, control, whether it can be
+  written; GSO settings also the game type, live value and winning file), `do=set {file, name, value}` (writes and reloads
+  exactly as the page does, on the render thread) and `do=reload {page}`. `op=gso` is the same for Game Settings Override's
+  files only.
+- Offline check `tools\toml_check.bat`, running the same code as the pages (include\TomlCore.h, GsoCore.h,
+  RefreshCore.h). It covers:
+  - the read and write round trip with tables, arrays of tables, dotted and quoted keys, arrays over several lines with
+    comments inside, inline tables, multi-line strings, dates, BOM and CRLF / LF;
+  - every refused form;
+  - GSO's type mapping and load order;
+  - the matching of pages to declared reloads.
+  - Given folders, it reads every `.toml` under them and writes each back in memory. On Njordlinger's mods, 52 of 53 read
+    and every one is byte-identical; the one refused gives a table twice.
 - Its strings in all eleven languages.
 
 ## 2.2.0 - 2026-10-13 - untested - Mod Function Menu buttons; a page for every INI file; other mods' own menus opened from here (directly where the mod has a call for it, ENB's too), their keys held by AMF if you want; nothing during loading; the idle camera held off

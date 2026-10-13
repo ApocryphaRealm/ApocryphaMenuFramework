@@ -19,8 +19,11 @@
 //   registered only when at least one entry exists. MFM itself is left alone: with both installed, both menus work.
 // ============================================================================================
 
+#include "RefreshCore.h"
+
 #include <cstddef>
 #include <string>
+#include <vector>
 
 namespace mfmpages
 {
@@ -37,4 +40,8 @@ namespace mfmpages
 	// gives it ("Mod/Toggle UI/Toggle HUD - Compass.toml"; the ".toml" may be left off). run presses the entry as the page
 	// does - on the render thread - and returns the outcome and any message text. Called on DevBench's listener thread.
 	std::string ToolJson(const std::string& a_argsJson);
+
+	// 2.2.1: every entry read (Mod and Config) as a declaration - its file, DLL, function and type - for the INI and TOML pages'
+	// in-game reload (PageRefresh.h; only Config entries that reload are ever called). Read at kDataLoaded. Thread-safe.
+	std::vector<refreshcore::Decl> Declarations();
 }
