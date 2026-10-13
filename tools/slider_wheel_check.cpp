@@ -7,7 +7,9 @@
 // an AMF slider (precise::SliderFloat / SliderInt) and over a consumer-shaped slider (ImGui::SliderScalar, which SliderInt / SliderFloat reach,
 // followed by precise::WheelNudge, exactly what the generated exports do) moves it one step, clamps at the ends, returns
 // true and marks the item edited, and that the page does not scroll while the pointer is on a slider but still scrolls
-// when it is not. What it cannot: the game's own wheel records (Input.cpp turns them into io.AddMouseWheelEvent).
+// when it is not. Section 6 (the 2.2.0 fix): a slider that applies on IsItemDeactivatedAfterEdit - AMF's Text size, a
+// consumer through igIsItemDeactivatedAfterEdit - applies a wheel change exactly once per settled run of notches.
+// What it cannot: the game's own wheel records (Input.cpp turns them into io.AddMouseWheelEvent).
 #include "../include/PreciseSlider.h"
 
 #include <imgui.h>
@@ -36,6 +38,8 @@ namespace
 	ImRect g_rectText, g_rectCount, g_rectScale;
 	float  g_scrollY = 0.0f;
 	ImVec2 g_pointer{ 5, 5 };
+	bool   g_mouseDown = false;
+	int    g_appliedText = 0, g_appliedCount = 0;   // release-applies: IsItemDeactivatedAfterEdit after the slider, as Renderer.cpp's Text size
 	int    g_outlineVerts = 0, g_outlineEdgeVerts = 0, g_outlineTextVerts = 0;   // precise::OutlineValue on the Text size slider
 
 	void BuildFonts()
@@ -55,6 +59,7 @@ namespace
 		ImGuiIO& io = ImGui::GetIO();
 		if (a_wheel != 0.0f) { io.AddMouseWheelEvent(0.0f, a_wheel); }
 		io.AddMousePosEvent(g_pointer.x, g_pointer.y);
+		io.AddMouseButtonEvent(0, g_mouseDown);
 		io.DeltaTime = 1.0f / 60.0f;
 		ImGui::NewFrame();
 		ImGui::SetNextWindowPos(ImVec2(100, 100));
@@ -64,6 +69,7 @@ namespace
 		ImGui::SetNextItemWidth(600);
 		g_retText = precise::SliderFloat("Text size", &g_text, 1.0f, 2.0f, "%.2f");
 		g_editedText = ImGui::IsItemEdited();
+		if (ImGui::IsItemDeactivatedAfterEdit()) { ++g_appliedText; }   // Renderer.cpp: save + rebuild the atlas
 		g_rectText = ImRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
 		{
 			// the value outline (2.2.0): drawn again here to count what it adds - glyphs in the window colour, then in the text colour
@@ -90,6 +96,7 @@ namespace
 			const bool r = ImGui::SliderScalar("Count", ImGuiDataType_S32, &g_count, &lo, &hi, "%d");   // what igSliderInt reaches
 			const bool w = precise::WheelNudge(ImGuiDataType_S32, &g_count, &lo, &hi, precise::FormatStep("%d", true));
 			g_retCount = r || w;
+			if (ImGui::IsItemDeactivatedAfterEdit()) { ++g_appliedCount; }   // a consumer's igIsItemDeactivatedAfterEdit
 			g_rectCount = ImRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
 		}
 		{
@@ -185,6 +192,67 @@ int main()
 	Frame();
 	Check(g_scrollY > 0.0f, "wheel over the page (not a slider) scrolls it: scrollY " + std::to_string(g_scrollY));
 	Check(g_text == textBefore && g_count == countBefore, "and no slider moved");
+
+	// 6. the 2.2.0 fix: a release-applying slider applies a wheel change once the wheel rests (precise::WheelSettle, 0.25 s)
+	auto idle = [](int n) { for (int i = 0; i < n; ++i) Frame(); };
+	idle(30);   // whatever the sections above left settling
+	for (int i = 0; i < 3 && g_scrollY > 0.0f; ++i) { Frame(+1.0f); Frame(); }   // scroll section 5's page back to the top
+	Check(g_scrollY == 0.0f, "page back at the top for section 6");
+	idle(2);
+	g_appliedText = g_appliedCount = 0;
+	g_text = 1.5f;
+	g_pointer = Mid(g_rectText);
+	idle(2);
+	Frame(+1.0f);
+	Check(g_retText && g_appliedText == 0, "one notch on Text size: the call returns true; no release yet");
+	idle(10);   // 0.17 s
+	Check(g_appliedText == 0, "still settling at 0.17 s: not applied yet");
+	idle(10);   // 0.33 s
+	Check(g_appliedText == 1, "rested 0.25 s: IsItemDeactivatedAfterEdit fired, applied " + std::to_string(g_appliedText) + " time(s)");
+	idle(60);
+	Check(g_appliedText == 1, "and only once (" + std::to_string(g_appliedText) + " after another second)");
+
+	g_appliedText = 0;
+	for (int i = 0; i < 5; ++i) Frame(+1.0f);   // a fast spin: five notches on five frames
+	Check(std::fabs(g_text - 1.56f) < 1e-5f && g_appliedText == 0, "five fast notches: 1.51 -> " + std::to_string(g_text) + ", nothing applied mid-spin");
+	idle(20);
+	Check(g_appliedText == 1, "the spin settles into ONE apply, not five: " + std::to_string(g_appliedText));
+
+	g_appliedText = 0;
+	for (int i = 0; i < 3; ++i) { Frame(-1.0f); idle(10); }   // three notches 0.18 s apart
+	idle(20);
+	Check(g_appliedText == 1 && std::fabs(g_text - 1.53f) < 1e-5f, "three slow notches (each under 0.25 s apart): one apply at " + std::to_string(g_text) + ", applied " + std::to_string(g_appliedText));
+
+	g_appliedText = 0;
+	g_text = 2.0f;
+	Frame(+1.0f);
+	idle(30);
+	Check(g_appliedText == 0, "a notch that changes nothing (at the maximum) applies nothing");
+
+	g_appliedText = 0;
+	g_text = 1.5f;
+	Frame(+1.0f);
+	idle(3);
+	g_pointer.x = g_rectText.Min.x + 596.0f;   // grabbed before it settles: press at the far end of the 600 px frame, then let go
+	g_mouseDown = true;
+	Frame();
+	Frame();
+	g_mouseDown = false;
+	Frame();
+	idle(30);
+	Check(g_appliedText == 1 && g_text > 1.9f, "a notch then a grab before it settles: one apply, by the release (" + std::to_string(g_appliedText) + ", " + std::to_string(g_text) + ")");
+
+	// the consumer shape: igSliderInt then igIsItemDeactivatedAfterEdit
+	g_count = 3;
+	g_pointer = Mid(g_rectCount);
+	idle(2);
+	Frame(+1.0f);
+	Frame(+1.0f);
+	Check(g_count == 5 && g_appliedCount == 0, "consumer igSliderInt: two notches, 3 -> " + std::to_string(g_count) + ", not applied mid-spin");
+	idle(20);
+	Check(g_appliedCount == 1, "consumer igIsItemDeactivatedAfterEdit fires once when the wheel rests: " + std::to_string(g_appliedCount));
+	idle(30);
+	Check(g_appliedCount == 1, "and not again");
 
 	ImGui::DestroyContext();
 	std::printf("slider_wheel_check: %d of %d passed\n", g_pass, g_pass + g_fail);

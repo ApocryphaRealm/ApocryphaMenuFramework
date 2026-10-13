@@ -102,6 +102,68 @@ namespace precise
 			v = out;
 			return true;
 		}
+
+		// A wheel change awaiting its "release" (2.2.0 fix; the owner: "Whenever using the scroller to scroll the slider on
+		// the text size, it doesn't actually take effect unless you manually drag it"). A slider whose code applies on
+		// IsItemDeactivatedAfterEdit - AMF's Text size rebuilding the atlas, every AMF slider that saves on release, and any
+		// consumer doing the same through igIsItemDeactivatedAfterEdit - never saw one from a wheel notch on a hovered slider,
+		// because the item was never active, so it was never deactivated. A few slots: one per slider still settling.
+		struct WheelPending
+		{
+			ImGuiContext* ctx = nullptr;
+			ImGuiID       id = 0;
+			double        last = 0.0;   // ImGui time of the latest notch
+		};
+		inline WheelPending (&WheelPendings())[8]
+		{
+			static WheelPending s_pending[8]{};
+			return s_pending;
+		}
+	}
+
+	// How long the wheel must rest on a slider before its change counts as released: one "deactivated after edit" per
+	// settled change, so a run of notches rebuilds the Text size atlas (or saves) once, not once per notch.
+	inline constexpr double kWheelSettleSeconds = 0.25;
+
+	// The slider item just drawn, every frame, after the wheel: a_ticked when a notch changed its value this frame.
+	// - A notch on a hovered slider starts (or restarts) its settle timer; the slider call already returned true.
+	// - A notch while the slider is held needs nothing: its release reports the edit, as a drag's does.
+	// - Once the wheel has rested kWheelSettleSeconds, the frame the slider is next drawn reports it deactivated after an
+	//   edit - IsItemDeactivatedAfterEdit() (and igIsItemDeactivatedAfterEdit, the FLICK slot) are true for it, once.
+	// - Grabbed before it settles: the active item is marked edited, so the release reports the wheel's change too.
+	// - Another item held meanwhile: the report waits for it to be let go (nothing else's deactivation is touched).
+	inline void WheelSettle(bool a_ticked)
+	{
+		ImGuiContext& g = *GImGui;
+		const ImGuiID id = g.LastItemData.ID;
+		if (id == 0) return;
+		auto& slots = detail::WheelPendings();
+		detail::WheelPending* mine = nullptr;
+		detail::WheelPending* open = nullptr;
+		for (auto& s : slots) {
+			if (s.id == id && s.ctx == &g) mine = &s;
+			else if (s.id == 0 && !open) open = &s;
+		}
+		if (a_ticked) {
+			if (g.ActiveId == id) { if (mine) mine->id = 0; return; }   // held: the release reports it
+			if (!mine) {
+				mine = open;
+				if (!mine) {   // every slot settling: reuse the oldest
+					mine = &slots[0];
+					for (auto& s : slots) if (s.last < mine->last) mine = &s;
+				}
+			}
+			*mine = { &g, id, g.Time };
+			return;
+		}
+		if (!mine) return;
+		if (g.ActiveId == id) { g.ActiveIdHasBeenEditedBefore = true; mine->id = 0; return; }   // grabbed: its release reports it
+		if (g.ActiveId != 0) return;                                  // something else is held: wait for it
+		if (g.Time - mine->last < kWheelSettleSeconds) return;        // still notching
+		mine->id = 0;
+		// ImGui's own test, with nothing active: the item reports deactivated, and an edit since the last activation
+		g.LastItemData.StatusFlags |= ImGuiItemStatusFlags_HasDeactivated | ImGuiItemStatusFlags_Deactivated;
+		g.ActiveIdHasBeenEditedBefore = true;
 	}
 
 	// The wheel for the slider item just drawn: one step of a_step, clamped. True when the value changed (the item is
@@ -109,7 +171,7 @@ namespace precise
 	inline bool WheelNudge(ImGuiDataType a_type, void* a_data, const void* a_min, const void* a_max, double a_step)
 	{
 		const int dir = WheelDirection();
-		if (dir == 0 || !a_data || !a_min || !a_max) return false;
+		if (dir == 0 || !a_data || !a_min || !a_max) { WheelSettle(false); return false; }
 		bool changed = false;
 		switch (a_type) {
 		case ImGuiDataType_S8:     changed = detail::Nudge<ImS8>(a_data, a_min, a_max, a_step, dir); break;
@@ -122,9 +184,10 @@ namespace precise
 		case ImGuiDataType_U64:    changed = detail::Nudge<ImU64>(a_data, a_min, a_max, a_step, dir); break;
 		case ImGuiDataType_Float:  changed = detail::Nudge<float>(a_data, a_min, a_max, a_step, dir); break;
 		case ImGuiDataType_Double: changed = detail::Nudge<double>(a_data, a_min, a_max, a_step, dir); break;
-		default: return false;
+		default: WheelSettle(false); return false;
 		}
 		if (changed) ImGui::MarkItemEdited(GImGui->LastItemData.ID);
+		WheelSettle(changed);   // the release a release-applying slider waits for, once the wheel rests
 		return changed;
 	}
 
