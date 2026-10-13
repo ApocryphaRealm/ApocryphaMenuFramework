@@ -403,7 +403,7 @@ namespace inipages
 			// never write a file that does not read cleanly NOW (it may have changed since the game started)
 			if (existed)
 			{
-				std::string problem = utf16 ? std::string("UTF-16 text") : CleanProblem(lines);
+				std::string problem = utf16 ? std::string(strings::TR("AMF_IniWhyUtf16", "UTF-16 text, which this reader does not take")) : CleanProblem(lines);
 				if (!problem.empty())
 				{
 					a_error = path + " does not read cleanly (" + problem + ")";
@@ -716,25 +716,19 @@ namespace inipages
 			logger::info("ini pages: {}/{} - no page: {}", a_folder, a_file, a_reason);
 		}
 
-		std::set<std::string> OffSet()
-		{
-			std::set<std::string> out;
-			std::stringstream ss(settings::Get().iniPagesOff);
-			std::string item;
-			while (std::getline(ss, item, ',')) { if (const std::string t = Lower(Trim(item)); !t.empty()) { out.insert(t); } }
-			return out;
-		}
+		// 2.2.0: each page starts off; [IniMenus] sOn lists the ones the player turned on (IniCore.h, inicore::ParseIdList)
+		std::set<std::string> OnSet() { return inicore::ParseIdList(settings::Get().iniPagesOn); }
 
-		bool PageOn(const Mod& a_mod, const std::set<std::string>& a_off) { return settings::Get().iniMenus && !a_off.contains(a_mod.id); }
+		bool PageOn(const Mod& a_mod, const std::set<std::string>& a_on) { return inicore::PageShown(settings::Get().iniMenus, a_on, a_mod.id); }
 
 		// Called with g_lock held.
 		void ApplyVisibilityLocked()
 		{
-			const std::set<std::string> off = OffSet();
+			const std::set<std::string> on = OnSet();
 			for (const Mod& m : g_mods)
 			{
 				if (!m.registered) { continue; }
-				const bool show = PageOn(m, off);
+				const bool show = PageOn(m, on);
 				for (const std::string& p : m.pages) { registry::SetPageVisible(m.entry.c_str(), p.c_str(), show); }
 			}
 		}
@@ -809,7 +803,8 @@ namespace inipages
 						std::vector<std::string> cl;
 						bool ccrlf = false, cutf16 = false;
 						const bool read = ReadLines(custom.string(), cl, ccrlf, nullptr, &cutf16);
-						const std::string problem = !read ? std::string("could not be opened") : (cutf16 ? std::string("UTF-16 text") : CleanProblem(cl));
+						const std::string problem = !read ? std::string(strings::TR("AMF_IniWhyUnread", "could not be opened"))
+														  : (cutf16 ? std::string(strings::TR("AMF_IniWhyUtf16", "UTF-16 text, which this reader does not take")) : CleanProblem(cl));
 						if (!problem.empty())
 						{
 							std::snprintf(buf, sizeof(buf), strings::TR("AMF_IniWhyCustomBad", "its %s does not read cleanly (%s)"),
@@ -938,8 +933,8 @@ namespace inipages
 		std::scoped_lock l(g_lock);
 		ApplyVisibilityLocked();
 		std::size_t shown = 0;
-		const std::set<std::string> off = OffSet();
-		for (const Mod& m : g_mods) { shown += m.registered && PageOn(m, off) ? 1 : 0; }
+		const std::set<std::string> on = OnSet();
+		for (const Mod& m : g_mods) { shown += m.registered && PageOn(m, on) ? 1 : 0; }
 		logger::info("ini pages: {} of {} entr(ies) shown{}", shown, g_mods.size(), settings::Get().iniMenus ? "" : " (all off)");
 	}
 
@@ -947,13 +942,19 @@ namespace inipages
 	{
 		Sync();
 		std::scoped_lock l(g_lock);
-		const std::set<std::string> off = OffSet();
+		const std::set<std::string> onSet = OnSet();
 		bool anyShown = false;
+		// 2.2.0: alphabetical by the name shown, within each folder, so the one INI wanted is easy to find
+		std::vector<Mod*> sorted;
+		sorted.reserve(g_mods.size());
+		for (Mod& m : g_mods) { sorted.push_back(&m); }
+		std::stable_sort(sorted.begin(), sorted.end(), [](const Mod* a, const Mod* b) { return Lower(a->entry) < Lower(b->entry); });
 		for (const bool data : { false, true })
 		{
 			bool heading = false;
-			for (Mod& m : g_mods)
+			for (Mod* mp : sorted)
 			{
+				Mod& m = *mp;
 				if (m.dataFolder != data || !m.ownPage.empty()) { continue; }
 				if (!heading)
 				{
@@ -962,15 +963,11 @@ namespace inipages
 					ImGui::SeparatorText(data ? strings::TR("AMF_IniGroupData", "In Data") : strings::TR("AMF_IniGroupSkse", "In Data/SKSE/Plugins"));
 				}
 				anyShown = true;
-				bool on = !off.contains(m.id);
+				bool on = onSet.contains(m.id);
 				const std::string label = m.entry + "##ini-" + m.id;
 				if (widgets::Toggle(label.c_str(), &on))
 				{
-					std::set<std::string> next = off;
-					if (on) { next.erase(m.id); } else { next.insert(m.id); }
-					std::string joined;
-					for (const std::string& s : next) { joined += (joined.empty() ? "" : ",") + s; }
-					settings::Get().iniPagesOff = joined;
+					settings::Get().iniPagesOn = inicore::WithPage(settings::Get().iniPagesOn, m.id, on);
 					logger::info("settings page: INI page {} -> {}", m.id, on ? "on" : "off");
 					settings::Save();
 					ApplyVisibilityLocked();
@@ -1029,7 +1026,7 @@ namespace inipages
 		std::scoped_lock l(g_lock);
 		if (what == "list")
 		{
-			const std::set<std::string> off = OffSet();
+			const std::set<std::string> on = OnSet();
 			std::string mods;
 			for (const Mod& m : g_mods)
 			{
@@ -1038,7 +1035,7 @@ namespace inipages
 				mods += (mods.empty() ? "" : ",") + std::string("{\"mod\":") + J(m.id) + ",\"base\":" + J(m.base) + ",\"entry\":" + J(m.entry) +
 						",\"folder\":" + J(m.folder) + ",\"main\":" + J(m.mainIni) + ",\"custom\":" + J(m.customIni) +
 						",\"gameSettings\":" + (m.gameSettings ? "true" : "false") + ",\"registered\":" + (m.registered ? "true" : "false") +
-						",\"switch\":" + (off.contains(m.id) ? "false" : "true") + ",\"shown\":" + (m.registered && PageOn(m, off) ? "true" : "false") +
+						",\"switch\":" + (on.contains(m.id) ? "true" : "false") + ",\"shown\":" + (m.registered && PageOn(m, on) ? "true" : "false") +
 						(m.ownPage.empty() ? std::string() : ",\"ownPage\":" + J(m.ownPage)) +
 						",\"writes\":" + std::to_string(m.writes) + ",\"sections\":[" + secs + "]}";
 			}

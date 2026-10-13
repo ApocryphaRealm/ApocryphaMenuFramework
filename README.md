@@ -36,7 +36,8 @@ Licence: GPL-3.0-or-later (see `LICENSE` and `NOTICE.md`). Not a fork: contains 
   Skyrim, since Task Manager cannot.
 - **INI files as pages.** Every `.ini` directly in `Data\SKSE\Plugins` and in `Data` gets a page "<name> (INI)" (a tab
   per section, a control per key) unless its mod has a page of its own; a change writes only that value, keeping a
-  `.amf-backup` of the file. Each page has its own switch under Settings -> Converted menus -> INI.
+  `.amf-backup` of the file. Each page has its own switch under Settings -> Converted menus -> INI, and starts off:
+  turn on the INI files you want and only those appear in the Mods list.
 - **Game Settings Override files as a page** (2.2.1). Each `.toml` in `Data\SKSE\Plugins\ccld_GameSettingsOverride` is a
   tab of the "Game Settings Override" page, in the order GSO loads them: a control per game setting chosen by the game
   setting's own type (switch, number box, colour editor, text box), with the game's current value beside it, and flags

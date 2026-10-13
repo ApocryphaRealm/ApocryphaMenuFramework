@@ -8,6 +8,8 @@
 
 #include <algorithm>
 #include <cctype>
+#include <set>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -137,4 +139,44 @@ namespace inicore
 		const std::string m = Normal(a_module), b = Normal(a_base);
 		return !m.empty() && m == b;
 	}
+
+	// EACH INI PAGE STARTS OFF (2.2.0; the owner, 2026-10-13: "I want the INI feature of AMF to default to on, but I want all
+	// of the named INI files defaulted to off, so that they can just look for the specific INI file they want and not have all
+	// of them on"). [IniMenus] sOn holds the pages the player turned on, by id ("skse/plugins/foo.ini", "data/bar.ini"),
+	// comma-separated, lower case; a page is shown only when the master switch is on AND its id is listed. A fresh INI lists
+	// none, so no INI page is in the Mods list until the player turns one on on Settings > Converted menus > INI.
+	inline std::set<std::string> ParseIdList(const std::string& a_list)
+	{
+		std::set<std::string> out;
+		std::stringstream ss(a_list);
+		std::string item;
+		while (std::getline(ss, item, ',')) {
+			const auto b = item.find_first_not_of(" \t\r\n");
+			if (b == std::string::npos) continue;
+			const auto e = item.find_last_not_of(" \t\r\n");
+			std::string t = item.substr(b, e - b + 1);
+			std::transform(t.begin(), t.end(), t.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+			out.insert(t);
+		}
+		return out;
+	}
+
+	inline std::string JoinIdList(const std::set<std::string>& a_ids)
+	{
+		std::string joined;
+		for (const std::string& s : a_ids) { joined += (joined.empty() ? "" : ",") + s; }
+		return joined;
+	}
+
+	// The list after the player flips one page's switch.
+	inline std::string WithPage(const std::string& a_list, const std::string& a_id, bool a_on)
+	{
+		std::set<std::string> ids = ParseIdList(a_list);
+		std::string id = a_id;
+		std::transform(id.begin(), id.end(), id.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+		if (a_on) { ids.insert(id); } else { ids.erase(id); }
+		return JoinIdList(ids);
+	}
+
+	inline bool PageShown(bool a_master, const std::set<std::string>& a_on, const std::string& a_id) { return a_master && a_on.contains(a_id); }
 }

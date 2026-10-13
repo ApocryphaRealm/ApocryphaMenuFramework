@@ -1172,8 +1172,21 @@ namespace flick
 		float GetScrollMaxY() { return ImGui::GetScrollMaxY(); }
 		void SetScrollX(float a_v) { ImGui::SetScrollX(a_v); }
 		void SetScrollY(float a_v) { ImGui::SetScrollY(a_v); }
-		bool SliderAngle(const char* a_label, float* a_rad, float a_min, float a_max, const char* a_fmt) { return a_rad && ImGui::SliderAngle(Tr(a_label), a_rad, a_min, a_max, a_fmt ? a_fmt : "%.0f deg"); }
-		bool VSliderFloat(const char* a_label, const ImVec2& a_size, float* a_v, float a_min, float a_max, const char* a_fmt) { return a_v && ImGui::VSliderFloat(Tr(a_label), a_size, a_v, a_min, a_max, a_fmt ? a_fmt : "%.3f"); }
+		// 2.2.0: the wheel nudges these two as it does every slider (include/PreciseSlider.h)
+		bool SliderAngle(const char* a_label, float* a_rad, float a_min, float a_max, const char* a_fmt)
+		{
+			if (!a_rad) { return false; }
+			const char* const fmt = a_fmt ? a_fmt : "%.0f deg";
+			const bool r = ImGui::SliderAngle(Tr(a_label), a_rad, a_min, a_max, fmt);
+			return precise::WheelNudgeAngle(a_rad, a_min, a_max, fmt) || r;
+		}
+		bool VSliderFloat(const char* a_label, const ImVec2& a_size, float* a_v, float a_min, float a_max, const char* a_fmt)
+		{
+			if (!a_v) { return false; }
+			const char* const fmt = a_fmt ? a_fmt : "%.3f";
+			const bool r = ImGui::VSliderFloat(Tr(a_label), a_size, a_v, a_min, a_max, fmt);
+			return precise::WheelNudge(ImGuiDataType_Float, a_v, &a_min, &a_max, precise::Step(fmt)) || r;
+		}
 		bool IsPluginWindowOpen(const char*, const char*) { return false; }
 
 		// v5: AMF's sliders never multiply a nudge on the bumpers (rule 68), so there is nothing to switch off
