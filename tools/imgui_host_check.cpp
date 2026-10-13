@@ -5,6 +5,7 @@
 // Prints one line per check and "imgui_host_check: N of N passed"; exits 1 on any failure.
 #include "../include/HostCore.h"
 #include "../include/GameKeysCore.h"
+#include <windowsx.h>
 
 #include <filesystem>
 #include <iostream>
@@ -456,6 +457,49 @@ int main(int argc, char** argv)
 		Check(u.size() == 1 && u[0].msg == WM_KEYUP && u[0].vk == VK_INSERT && u[0].lParam == 0xC1520001u,
 			  "Insert key-up step: WM_KEYUP, wParam VK_INSERT (OptiScaler 0.9.4 toggles on WM_KEYUP == ShortcutKey)");
 		Check(StepMessages(ins, Step::kModifiersDown).empty() && StepMessages(ins, Step::kModifiersUp).empty(), "a single key posts no modifier messages");
+		{
+			// THE MOUSE FOR OPTISCALER'S MENU (2.2.0): the game's mouse events as the window messages OptiScaler's ImGui reads
+			const POINT cl{ 640, 360 }, sc{ 1920 + 640, 360 };
+			const auto ld = MouseForwardMessage(0, true, false, cl, sc);
+			const auto lu = MouseForwardMessage(0, false, true, cl, sc);
+			Check(ld && ld->msg == WM_LBUTTONDOWN && ld->wParam == MK_LBUTTON && ld->lParam == MAKELPARAM(640, 360), "left press: WM_LBUTTONDOWN, MK_LBUTTON, client (640, 360)");
+			Check(lu && lu->msg == WM_LBUTTONUP && lu->wParam == 0 && lu->lParam == MAKELPARAM(640, 360), "left release: WM_LBUTTONUP, no buttons, client position");
+			const auto rd = MouseForwardMessage(1, true, false, cl, sc);
+			const auto ru = MouseForwardMessage(1, false, true, cl, sc);
+			Check(rd && rd->msg == WM_RBUTTONDOWN && rd->wParam == MK_RBUTTON && ru && ru->msg == WM_RBUTTONUP, "right press / release: WM_RBUTTONDOWN (MK_RBUTTON) / WM_RBUTTONUP");
+			const auto md = MouseForwardMessage(2, true, false, cl, sc);
+			Check(md && md->msg == WM_MBUTTONDOWN && md->wParam == MK_MBUTTON, "middle press: WM_MBUTTONDOWN");
+			Check(!MouseForwardMessage(0, false, false, cl, sc), "a held left button (neither press nor release) posts nothing");
+			const auto wu = MouseForwardMessage(8, true, false, cl, sc);
+			const auto wd = MouseForwardMessage(9, true, false, cl, sc);
+			Check(wu && wu->msg == WM_MOUSEWHEEL && GET_WHEEL_DELTA_WPARAM(static_cast<WPARAM>(wu->wParam)) == WHEEL_DELTA &&
+					  GET_X_LPARAM(static_cast<LPARAM>(wu->lParam)) == 1920 + 640 && GET_Y_LPARAM(static_cast<LPARAM>(wu->lParam)) == 360,
+				  "wheel up: WM_MOUSEWHEEL, +120, screen position");
+			Check(wd && wd->msg == WM_MOUSEWHEEL && GET_WHEEL_DELTA_WPARAM(static_cast<WPARAM>(wd->wParam)) == -WHEEL_DELTA, "wheel down: WM_MOUSEWHEEL, -120");
+			Check(!MouseForwardMessage(8, false, true, cl, sc), "a wheel 'release' posts nothing");
+			Check(!MouseForwardMessage(3, true, false, cl, sc) && !MouseForwardMessage(4, true, false, cl, sc), "other mouse buttons post nothing");
+			const POINT neg{ -5, -7 };
+			const auto ln = MouseForwardMessage(0, true, false, neg, neg);
+			Check(ln && GET_X_LPARAM(static_cast<LPARAM>(ln->lParam)) == -5 && GET_Y_LPARAM(static_cast<LPARAM>(ln->lParam)) == -7, "a cursor left of / above the client area keeps its sign");
+
+			// open as far as AMF set it
+			ForwardTracker t;
+			Check(!t.open, "tracker: closed at start (nothing AMF did)");
+			t.OnPressSent(false, true);
+			Check(!t.open, "tracker: an Open whose key could not be sent leaves it closed");
+			t.OnPressSent(true, true);
+			Check(t.open, "tracker: AMF's Open sent its key - open, forwarding on");
+			t.OnPressSent(false, false);
+			Check(t.open, "tracker: a Close whose key could not be sent leaves it open");
+			t.OnPressSent(true, false);
+			Check(!t.open, "tracker: AMF's Close sent its key - closed, forwarding off");
+			t.OnPressSent(true, true);
+			t.OnOwnKey();
+			Check(!t.open, "tracker: the target's own key while open - closed, forwarding off");
+			t.OnPressSent(true, true);
+			t.OnLoading();
+			Check(!t.open, "tracker: loading - closed, forwarding off");
+		}
 		KeyCombo f16;
 		f16.keys = { 0x67 };
 		Check(StepMessages(f16, Step::kKeyUp).size() == 1 && StepMessages(f16, Step::kKeyUp)[0].vk == VK_F16, "AMF's held F16 posts VK_F16");

@@ -182,8 +182,22 @@ namespace imguihost
 			bool modsDown = false, keyDown = false;
 			hostcore::SendMethod method = hostcore::SendMethod::kSendInput;   // game events / posted messages / SendInput
 			std::string sent;            // what each step handed over (SendInput's counts, messages posted, game keys queued)
+			bool open = true;            // AMF's Open (true) or Close (false) - the key itself toggles the mod's menu
 		};
 		std::optional<Press> g_press;
+
+		// THE MOUSE FOR OPTISCALER'S MENU (2.2.0, HostCore.h MouseForwardMessage): open as far as AMF set it (render thread),
+		// published for the input hook, which posts the real mouse's buttons and wheel to the game window while it is on
+		hostcore::ForwardTracker g_optiTrack;
+		std::atomic<bool> g_forwardOn{ false };
+		std::atomic<bool> g_forwardLogged{ false };
+		void PublishForward(const char* a_why)
+		{
+			const bool on = g_optiTrack.open;
+			if (g_forwardOn.exchange(on) == on) { return; }
+			g_forwardLogged.store(false);
+			logger::info("imgui: OptiScaler - mouse forwarding to its menu {} ({})", on ? "on" : "off", a_why);
+		}
 		// an API call waiting for AMF's menu to be gone (render thread only)
 		struct ApiCall
 		{
@@ -718,6 +732,11 @@ namespace imguihost
 				return;
 			default:
 				if (p.combo.keys.size() > 1) { SendStep(p, hostcore::Step::kModifiersUp); }
+				if (p.target == kOpti && p.method == hostcore::SendMethod::kPostMessage)
+				{
+					g_optiTrack.OnPressSent(p.keyDown, p.open);
+					PublishForward(p.open ? "AMF sent its key to open it" : "AMF sent its key to close it");
+				}
 				// "sent", never "opened" / "closed": none of these mods can say whether its menu is open, and a hook can drop a
 				// key and still report it taken (OptiScaler's SendInput detour, 2026-10-13)
 				FinishPress(p, p.keyDown ? "sent its key (not confirmed: the mod cannot report whether its menu opened or closed)" :
@@ -777,6 +796,7 @@ namespace imguihost
 			p.target = a_id;
 			p.combo = combo;
 			p.startFrame = start;
+			p.open = a_open;
 			{
 				std::scoped_lock l(g_lock);
 				p.method = hostcore::SendMethodFor(kIds[a_id], g_targets[a_id].manualPolling);
@@ -837,6 +857,12 @@ namespace imguihost
 				const bool down = usable[i] && ComboDown(keys[i]);
 				const bool edge = down && !g_keyHeld[i];
 				g_keyHeld[i] = down;
+				// OptiScaler's own key toggles its menu: pressed while AMF has it open, it closes it, so the mouse stops going there
+				if (edge && i == kOpti && g_optiTrack.open && !g_press && GameIsForeground())
+				{
+					g_optiTrack.OnOwnKey();
+					PublishForward("its own key closed it");
+				}
 				if (!edge || !watch) { continue; }
 				logger::info("imgui: {}'s own key ({}) with this menu open - this menu closes so its menu is shown alone", kNames[i],
 							 hostcore::ComboName(keys[i]));
@@ -852,6 +878,28 @@ namespace imguihost
 		}
 
 		std::string J(const std::string& a_s) { return nlohmann::json(a_s).dump(-1, ' ', false, nlohmann::json::error_handler_t::replace); }
+	}
+
+	bool MouseForwardActive() { return g_forwardOn.load(std::memory_order_acquire) && !loadguard::Blocked(); }
+
+	void ForwardMouse(std::uint32_t a_idCode, bool a_down, bool a_up)
+	{
+		if (!MouseForwardActive()) { return; }
+		const HWND game = static_cast<HWND>(renderer::GetGameWindow());
+		if (!game || !::IsWindow(game)) { return; }
+		POINT screen{};
+		if (!::GetCursorPos(&screen)) { return; }
+		POINT client = screen;
+		::ScreenToClient(game, &client);
+		const auto m = hostcore::MouseForwardMessage(a_idCode, a_down, a_up, client, screen);
+		if (!m) { return; }
+		const bool ok = ::PostMessageW(game, m->msg, static_cast<WPARAM>(m->wParam), static_cast<LPARAM>(m->lParam)) != FALSE;
+		if (!g_forwardLogged.exchange(true))
+		{
+			logger::info("imgui: OptiScaler - first mouse message forwarded to its menu: 0x{:04X} at ({}, {}){}", m->msg, client.x, client.y,
+						 ok ? "" : " - PostMessage failed");
+		}
+		else { logger::debug("imgui: OptiScaler - mouse message 0x{:04X} at ({}, {}){}", m->msg, client.x, client.y, ok ? "" : " - PostMessage failed"); }
 	}
 
 	void Load()
@@ -1148,6 +1196,11 @@ namespace imguihost
 			}
 			g_reopenAfterOar = false;
 			StepPress();
+			if (g_optiTrack.open)
+			{
+				g_optiTrack.OnLoading();
+				PublishForward("the game is loading");
+			}
 			return;
 		}
 		g_framesSeen.fetch_add(1, std::memory_order_relaxed);

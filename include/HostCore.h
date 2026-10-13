@@ -42,6 +42,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <optional>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -1275,4 +1276,59 @@ namespace hostcore
 		d.why = row->call;
 		return d;
 	}
+
+	// ---------------------------------------------------------------------------------------------------------------------
+	// THE MOUSE FOR A MENU AMF OPENED (2.2.0, the owner's live session of 2026-10-13): OptiScaler's ImGui menu reads its mouse
+	// from window messages on its subclassed game window (WM_LBUTTONDOWN / UP, WM_MOUSEWHEEL ... through
+	// ImGui_ImplWin32_WndProcHandler; its cursor position from GetCursorPos, which it does not hook). Skyrim reads the mouse
+	// through DirectInput, so no button message ever reaches that window and OptiScaler's widgets never see a click. While a
+	// menu AMF opened is open, AMF posts the real mouse's buttons and wheel (seen in the game's input events) to the game
+	// window as those messages. Only a target whose key is posted (OptiScaler without ManualInputPolling, which polls the
+	// buttons itself) is forwarded to.
+	struct MouseMessage
+	{
+		UINT msg = 0;
+		std::uint64_t wParam = 0;
+		std::int64_t lParam = 0;
+	};
+
+	// One game mouse event (Skyrim's idCode: 0 left, 1 right, 2 middle, 8 wheel up, 9 wheel down) as the message Windows
+	// would send. a_client is the cursor in the window's client area (button messages), a_screen on the screen (the wheel).
+	// Nothing for a held repeat, a wheel "release" or another button.
+	inline std::optional<MouseMessage> MouseForwardMessage(std::uint32_t a_idCode, bool a_down, bool a_up, POINT a_client, POINT a_screen)
+	{
+		const auto pack = [](POINT a_p) {
+			return static_cast<std::int64_t>(static_cast<std::uint32_t>(MAKELPARAM(static_cast<WORD>(static_cast<short>(a_p.x)),
+																					static_cast<WORD>(static_cast<short>(a_p.y)))));
+		};
+		if (a_idCode == 8 || a_idCode == 9)
+		{
+			if (!a_down) { return std::nullopt; }
+			const short delta = a_idCode == 8 ? WHEEL_DELTA : -WHEEL_DELTA;
+			return MouseMessage{ WM_MOUSEWHEEL, static_cast<std::uint64_t>(static_cast<std::uint32_t>(MAKEWPARAM(0, static_cast<WORD>(delta)))), pack(a_screen) };
+		}
+		if (a_down == a_up) { return std::nullopt; }   // a held repeat (or nothing)
+		switch (a_idCode)
+		{
+		case 0: return MouseMessage{ a_down ? static_cast<UINT>(WM_LBUTTONDOWN) : static_cast<UINT>(WM_LBUTTONUP), a_down ? static_cast<std::uint64_t>(MK_LBUTTON) : 0u, pack(a_client) };
+		case 1: return MouseMessage{ a_down ? static_cast<UINT>(WM_RBUTTONDOWN) : static_cast<UINT>(WM_RBUTTONUP), a_down ? static_cast<std::uint64_t>(MK_RBUTTON) : 0u, pack(a_client) };
+		case 2: return MouseMessage{ a_down ? static_cast<UINT>(WM_MBUTTONDOWN) : static_cast<UINT>(WM_MBUTTONUP), a_down ? static_cast<std::uint64_t>(MK_MBUTTON) : 0u, pack(a_client) };
+		default: return std::nullopt;
+		}
+	}
+
+	// Whether the target's menu is open as far as AMF set it. AMF's Open and Close both press the target's one toggle key:
+	// a press AMF sent for Open marks it open, for Close closed; the target's own key pressed while it is marked open closes
+	// it (the key toggles it); loading marks it closed. A key that could not be sent changes nothing. Never set open by
+	// anything AMF did not do.
+	struct ForwardTracker
+	{
+		bool open = false;
+		void OnPressSent(bool a_keySent, bool a_wasOpen)
+		{
+			if (a_keySent) { open = a_wasOpen; }
+		}
+		void OnOwnKey() { open = false; }
+		void OnLoading() { open = false; }
+	};
 }

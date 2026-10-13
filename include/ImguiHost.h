@@ -43,6 +43,7 @@
 // Nothing here acts while the loading guard holds (LoadGuard.h).
 // ============================================================================================
 
+#include <cstdint>
 #include <string>
 
 namespace imguihost
@@ -61,6 +62,14 @@ namespace imguihost
 
 	// Render thread, once a frame after AMF's own drawing: the queued key presses, OAR's state, the mods' own keys.
 	void Frame();
+
+	// THE MOUSE FOR OPTISCALER'S MENU (2.2.0): true while OptiScaler's menu is open as far as AMF set it (AMF's Open sent its
+	// key; not yet closed by AMF's Close, its own key or loading). Any thread.
+	bool MouseForwardActive();
+
+	// Input hook: one game mouse event (idCode 0-2 buttons, 8 / 9 wheel) posted to the game window as the Windows message
+	// OptiScaler's ImGui reads, at the OS cursor. Does nothing unless MouseForwardActive(). Observe only: the event goes on.
+	void ForwardMouse(std::uint32_t a_idCode, bool a_down, bool a_up);
 
 	// DevBench amf.menu op=imgui (listener thread; open / close run on the render thread).
 	std::string ToolJson(const std::string& a_argsJson);
