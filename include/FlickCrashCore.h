@@ -14,13 +14,21 @@
 //      windows it sent to the real FLICK.
 //   2. At the next start it reads the previous marker. If that session sent at least one such DLL to FLICK, it takes the
 //      NEWEST crash-*.log in the SKSE log folder (where Crash Logger writes) that is newer than that session's start,
-//      and searches its text for "FUCK.dll" - nothing more is parsed.
-//   3. Found: the notice offers "Keep <mod> in this menu" for each of those DLLs the player has not already kept here.
+//      and asks which module FAULTED (FaultingModule below). Narrowed 2026-10-16 (Main Agent): Crash Logger lists every
+//      loaded module in each log ("MODULES:"), so with FLICK installed every crash log contains "FUCK.dll" somewhere;
+//      only the exception header counts - the line
+//          Unhandled exception "EXCEPTION_ACCESS_VIOLATION" at 0x7FF9871F67C2 FUCK.dll+00E67C2	cmp [rcx+0x0C], eax | ...
+//      (its module is the token after "at 0x<address>", up to the "+"), or, when that line names no module, the top frame
+//      of "PROBABLE CALL STACK:" ("[0] 0x7FF9871F67C2     FUCK.dll+00E67C2", or "[ 0] ..." in other builds). The format
+//      is pinned from the eight real crash logs of the 2.2.1 test (handoffs\evidence-2026-10-15-amf221).
+//   3. FUCK.dll faulted: the notice offers "Keep <mod> in this menu" for each of those DLLs the player has not already kept
+//      here. A crash anywhere else offers nothing.
 // A crash is offered once: the next session's marker starts after that crash log was written, so the same log can never
 // match again.
 // ============================================================================================
 
 #include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <optional>
 #include <set>
@@ -113,6 +121,86 @@ namespace flick::crash
 	}
 
 	// The whole test of the log: does its text name FLICK's file? (Any case, as a module list may spell it.)
+	// "FUCK.dll+00E67C2" at a_pos (after any spaces/tabs) -> "FUCK.dll"; empty when the token has no "+offset"
+	inline std::string ModuleToken(std::string_view a_line, std::size_t a_pos)
+	{
+		while (a_pos < a_line.size() && (a_line[a_pos] == ' ' || a_line[a_pos] == '\t')) { ++a_pos; }
+		const auto end = a_line.find_first_of(" \t\r", a_pos);
+		const std::string_view token = a_line.substr(a_pos, end == std::string_view::npos ? std::string_view::npos : end - a_pos);
+		const auto plus = token.rfind('+');
+		if (plus == std::string_view::npos || plus == 0) { return {}; }
+		return std::string(token.substr(0, plus));
+	}
+
+	// After "0x<hex digits>" at or after a_pos: the index just past the hex number; npos when there is none.
+	inline std::size_t PastAddress(std::string_view a_line, std::size_t a_pos)
+	{
+		const auto at = a_line.find("0x", a_pos);
+		if (at == std::string_view::npos) { return std::string_view::npos; }
+		std::size_t i = at + 2;
+		while (i < a_line.size() && std::isxdigit(static_cast<unsigned char>(a_line[i]))) { ++i; }
+		return i == at + 2 ? std::string_view::npos : i;
+	}
+
+	inline std::string_view LineAt(std::string_view a_text, std::size_t a_start)
+	{
+		const auto nl = a_text.find('\n', a_start);
+		return a_text.substr(a_start, nl == std::string_view::npos ? std::string_view::npos : nl - a_start);
+	}
+
+	// The module the crash log says faulted (see the header): the exception line's module, else the top call-stack frame's.
+	// Empty when neither says. Never looks into the module list.
+	inline std::string FaultingModule(std::string_view a_text)
+	{
+		// 1. "Unhandled exception "<code>" at 0x<address> <module>+<offset>" - the first such line, at a line start
+		for (std::size_t pos = 0; pos < a_text.size();)
+		{
+			const auto line = LineAt(a_text, pos);
+			if (line.rfind("Unhandled exception", 0) == 0)
+			{
+				const auto at = line.find(" at 0x");
+				if (at != std::string_view::npos)
+				{
+					const auto past = PastAddress(line, at + 4);
+					if (past != std::string_view::npos)
+					{
+						if (auto m = ModuleToken(line, past); !m.empty()) { return m; }
+					}
+				}
+				break;   // the exception line names no module: try the call stack
+			}
+			if (line.rfind("MODULES:", 0) == 0) { return {}; }   // past the header - stop
+			pos += line.size() + 1;
+		}
+		// 2. the first frame under "PROBABLE CALL STACK:" - "[0] 0x<address> <module>+<offset>" (or "[ 0]")
+		const auto stack = a_text.find("PROBABLE CALL STACK:");
+		if (stack == std::string_view::npos) { return {}; }
+		std::size_t pos = a_text.find('\n', stack);
+		while (pos != std::string_view::npos && pos + 1 < a_text.size())
+		{
+			const auto line = LineAt(a_text, pos + 1);
+			const auto open = line.find('[');
+			const auto close = line.find(']');
+			if (open == std::string_view::npos || close == std::string_view::npos || close < open) { return {}; }   // section ended
+			std::string index(line.substr(open + 1, close - open - 1));
+			index.erase(std::remove(index.begin(), index.end(), ' '), index.end());
+			if (index == "0")
+			{
+				const auto past = PastAddress(line, close);
+				return past == std::string_view::npos ? std::string{} : ModuleToken(line, past);
+			}
+			pos = a_text.find('\n', pos + 1);
+		}
+		return {};
+	}
+
+	// Whether FLICK's own file is the faulting module (any case).
+	inline bool FaultsInFlick(std::string_view a_text)
+	{
+		return Lower(FaultingModule(a_text)) == "fuck.dll";
+	}
+
+	// (the first cut's whole-text search, kept for the check's "the module list names it too" case)
 	inline bool NamesFlick(std::string_view a_text)
 	{
 		constexpr std::string_view kNeedle = "fuck.dll";

@@ -2,7 +2,7 @@
 setlocal
 REM Compiles tools\flick_crash_check.cpp (include\FlickCrashCore.h, the FLICK crash notice: the last-session marker, which
 REM crash log is read, the plain "FUCK.dll" search, which mods are offered - 2.2.1) with MSVC and runs it.
-REM Optional argument: a real crash log that names FUCK.dll.
+REM Optional arguments: real crash logs that fault in FUCK.dll (each is also checked with its fault moved to the game).
 call "%~dp0..\find-msvc.bat"
 if errorlevel 1 exit /b 1
 set OUT=%TEMP%\amf-flick-crash-check-build

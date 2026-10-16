@@ -483,19 +483,21 @@ namespace flick
 				in.read(crashText.data(), static_cast<std::streamsize>(kMax));
 				crashText.resize(static_cast<std::size_t>(std::max<std::streamsize>(in.gcount(), 0)));
 			}
-			const bool namesFlick = crash::NamesFlick(crashText);
+			const std::string faulted = crash::FaultingModule(crashText);   // only the exception header and top frame, never the module list
+			const bool namesFlick = crash::FaultsInFlick(crashText);
 			std::set<std::string> keptHere = g_amfAtStart;
 			g_crashOffer = crash::ToOffer(previous, namesFlick, keptHere);
 			g_crashLogName = log->name;
 			if (g_crashOffer.empty())
 			{
-				logger::info("flick: the last session's crash log {} {} - no notice", log->name,
-							 namesFlick ? "names FUCK.dll, but every mod it sent to FLICK is now kept here" : "does not name FUCK.dll");
+				logger::info("flick: the last session's crash log {} {} ({}) - no notice", log->name,
+							 namesFlick ? "faulted in FUCK.dll, but every mod it sent to FLICK is now kept here" : "faulted elsewhere, not in FUCK.dll",
+							 faulted.empty() ? std::string("(module not named)") : faulted);
 				return;
 			}
 			std::string list;
 			for (const auto& dll : g_crashOffer) { list += (list.empty() ? "" : ", ") + dll; }
-			logger::warn("flick: the last session ended in a crash inside FLICK ({} names FUCK.dll) after this menu sent {} to FLICK. "
+			logger::warn("flick: the last session ended in a crash inside FLICK ({} - the faulting module is FUCK.dll) after this menu sent {} to FLICK. "
 						 "The menu will OFFER, once, to keep it in this menu - nothing is changed unless the player chooses it.", log->name, list);
 		}
 
