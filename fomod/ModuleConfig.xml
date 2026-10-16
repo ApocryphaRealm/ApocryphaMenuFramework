@@ -139,4 +139,19 @@
 			</optionalFileGroups>
 		</installStep>
 	</installSteps>
+	<!-- 2.2.1: the SKSE Menu Framework plugin-name stub (!ApocryphaMenuFramework-SMFName.dll), so a Papyrus check of
+	     SKSE.GetPluginVersion("SKSEMenuFramework") finds a menu framework. Installed only while the real
+	     SKSE Menu Framework's DLL is missing - never beside it. -->
+	<conditionalFileInstalls>
+		<patterns>
+			<pattern>
+				<dependencies operator="And">
+					<fileDependency file="SKSE\Plugins\SKSEMenuFramework.dll" state="Missing" />
+				</dependencies>
+				<files>
+					<folder source="SMF-Name" destination="" priority="0" />
+				</files>
+			</pattern>
+		</patterns>
+	</conditionalFileInstalls>
 </config>

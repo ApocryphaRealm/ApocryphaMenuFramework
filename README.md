@@ -63,6 +63,7 @@ Licence: GPL-3.0-or-later (see `LICENSE` and `NOTICE.md`). Not a fork: contains 
 ## Requirements
 
 - SKSE64 and Address Library for SKSE Plugins. Nothing else.
+- The installer also adds `!ApocryphaMenuFramework-SMFName.dll` (built from `stub/`) when SKSE Menu Framework is not installed: it only declares the SKSE plugin name `SKSEMenuFramework` at 3.14.0, so Papyrus `SKSE.GetPluginVersion("SKSEMenuFramework")` checks pass (2.2.1).
 - Optional: DevBench (for the driving tools), the AMF MO2 plugin and DLL Load Order Shim (load-order
   control when a mod needs a specific DLL order).
 

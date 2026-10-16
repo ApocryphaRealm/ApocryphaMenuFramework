@@ -1,6 +1,6 @@
 ApocryphaRealm Menu Framework
 =============================
-Version 2.2.0
+Version 2.2.1
 
 An original, GPL-3.0-or-later in-game menu framework (embedding Dear ImGui) - a one-for-one
 replacement for SKSE Menu Framework's consumer surface, plus user-friendly features that do
@@ -77,6 +77,10 @@ reading.
 
 WHAT CHANGED
 ------------
+
+Version 2.2.1
+FLICK mods that draw their own windows on screen go to FLICK itself by default when FLICK is installed: Racemenu Enhancer's widgets show in RaceMenu again (thanks to DSAdmin for the report). This menu holds FLICK settings pages but does not draw FLICK windows. Your choice on Settings > Converted menus > FLICK still wins, and the page says which mods have windows. Mods with settings pages only stay here.
+Papyrus checks for SKSE Menu Framework pass: a script asking SKSE.GetPluginVersion("SKSEMenuFramework") now finds it (thanks to hirato for the report). See REQUIREMENTS for the small file this adds.
 
 Version 2.2.0
 Mod Function Menu's buttons work here without Mod Function Menu: the buttons mods add for it (Toggle UI, Game Settings Override and others) appear as one converted menu, "Mod Function Menu", a button per file. An entry whose function cannot be found is drawn greyed.
@@ -327,6 +331,8 @@ REQUIREMENTS
 
 The .pdb debug symbols ship in this download so Crash Logger can resolve this framework's
 stack frames; there is no separate symbols file to fetch.
+
+The installer also adds !ApocryphaMenuFramework-SMFName.dll when SKSE Menu Framework is not installed: a tiny file whose only job is to tell SKSE (and Papyrus scripts that ask for "SKSEMenuFramework") that a menu framework is present, reporting version 3.14.0.
 
 BUILDING FROM SOURCE
 --------------------

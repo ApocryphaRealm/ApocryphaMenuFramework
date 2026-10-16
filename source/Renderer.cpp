@@ -2969,6 +2969,18 @@ namespace renderer
 											"compatibility layer."));
 									ImGui::PopStyleColor();
 								}
+								// 2.2.1: a mod with FLICK windows (widgets this menu does not draw) goes to FLICK's own window by
+								// default when FLICK is installed (FlickRouteCore.h); say so, and say when FLICK is missing
+								if (c.windows)
+								{
+									ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
+									ImGui::TextWrapped("%s", flick::RealFlickInstalled() ?
+										TR("AMF_FlickWindows", "It has its own windows on screen, which only FLICK itself draws, so it goes to FLICK's "
+											"own window unless you choose this menu.") :
+										TR("AMF_FlickWindowsNoFlick", "It has its own windows on screen, which only FLICK itself draws. FLICK is not "
+											"installed, so they are not shown."));
+									ImGui::PopStyleColor();
+								}
 								if (c.leftToFlick == c.toAmf)
 								{
 									ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());

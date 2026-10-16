@@ -19,7 +19,9 @@ WHAT IT REFUSES TO DO
     * ship if the two build lines are byte-identical, which means one was copied over the other
       and the "which Skyrim" question would be a lie;
     * ship if any file the installer's ModuleConfig.xml names as a source folder came out empty;
-    * ship if a document the licence requires is absent.
+    * ship if a document the licence requires is absent;
+    * ship without the SKSE Menu Framework plugin-name stub (2.2.1), or with the installer able to put it beside a real
+      SKSEMenuFramework.dll.
 
 Usage:  python tools/build-fomod.py [output folder]
         Default output is "<repo>/../../7. current test builds/Apocrypha Menu Framework <ver> FOMOD".
@@ -35,6 +37,14 @@ REPO = os.path.normpath(os.path.join(HERE, ".."))
 
 DLL = "!ApocryphaMenuFramework.dll"
 PDB = "!ApocryphaMenuFramework.pdb"
+
+# 2.2.1: the SKSE Menu Framework plugin-name stub (stub/SMFNameStub.cpp, built by the same CMakeLists). One build serves every
+# runtime (it uses no CommonLibSSE), so the SE/AE tree's copy ships, in its own installer folder: ModuleConfig.xml installs
+# it only while SKSE\Plugins\SKSEMenuFramework.dll is missing. Never named SKSEMenuFramework.dll.
+STUB_DLL = "!ApocryphaMenuFramework-SMFName.dll"
+STUB_PDB = "!ApocryphaMenuFramework-SMFName.pdb"
+STUB_FROM = "build/relwithdebinfo-se-only"
+STUB_FOLDER = "SMF-Name"
 
 # The two build lines, and the folder each becomes in the installer. These names are not free -
 # ModuleConfig.xml names them as its source folders, and the check at the bottom proves they match.
@@ -130,6 +140,18 @@ def main(out_root=None):
         pdb = os.path.join(REPO, rel, PDB)
         if os.path.isfile(pdb):                      # rule 43 - ship the symbols
             copy_into(pdb, dest)
+
+    # ---- the SMF plugin-name stub (2.2.1): its DLL and PDB, refused when missing or misnamed
+    stub_dll = os.path.join(REPO, STUB_FROM, STUB_DLL)
+    stub_pdb = os.path.join(REPO, STUB_FROM, STUB_PDB)
+    if not os.path.isfile(stub_dll) or not os.path.isfile(stub_pdb):
+        fail("the SMF plugin-name stub (%s and its .pdb) is not in %s - build the SE/AE line, which builds it too"
+             % (STUB_DLL, STUB_FROM))
+    if STUB_DLL.lower() == "sksemenuframework.dll":
+        fail("the stub must never carry SKSE Menu Framework's own file name")
+    stub_dest = os.path.join(out_root, STUB_FOLDER, "SKSE", "Plugins")
+    copy_into(stub_dll, stub_dest)
+    copy_into(stub_pdb, stub_dest)                    # rule 43 - ship the symbols
 
     # The 1.7 line links CommonLibSSE-NG 7.x, which is GPL-3.0-or-later with a modding exception,
     # so that folder carries its own licence set. These were hand-placed in the package every
@@ -234,11 +256,26 @@ def main(out_root=None):
         if not os.path.isdir(p) or not any(
                 os.path.isfile(os.path.join(dp, f)) for dp, _, fs in os.walk(p) for f in fs):
             fail("ModuleConfig.xml installs from '%s', but the package has nothing there" % s)
+    # the stub's folder is installed ONLY by a condition on SKSEMenuFramework.dll being missing - never unconditionally,
+    # so a player with the real SKSE Menu Framework never gets a second plugin declaring its name
+    stub_ok = False
+    for pattern in root.iter("pattern"):
+        deps = [d for d in pattern.iter("fileDependency")]
+        if any(f.get("source") == STUB_FOLDER for f in pattern.iter("folder")):
+            stub_ok = any(d.get("file", "").replace("/", "\\").lower() == "skse\\plugins\\sksemenuframework.dll"
+                          and d.get("state") == "Missing" for d in deps)
+    if not stub_ok:
+        fail("ModuleConfig.xml must install '%s' only under a fileDependency on SKSE\\Plugins\\SKSEMenuFramework.dll "
+             "being Missing" % STUB_FOLDER)
+    for e in root.iter("folder"):
+        if e.get("source") == STUB_FOLDER and e not in [f for p in root.iter("pattern") for f in p.iter("folder")]:
+            fail("'%s' is installed outside its Missing-SMF condition" % STUB_FOLDER)
 
     total = sum(len(fs) for _, _, fs in os.walk(out_root))
     print("built %s" % out_root)
     print("  version ............... %s" % ver)
     print("  build lines ........... %s" % ", ".join(f for _, f in LINES))
+    print("  SMF name stub ......... %s\\SKSE\\Plugins\\%s (installed only without SKSEMenuFramework.dll)" % (STUB_FOLDER, STUB_DLL))
     print("  languages ............. %d, plus All" % len(LANGUAGES))
     print("  installer sources ..... %d, every one of them present" % len(sources))
     print("  files ................. %d" % total)

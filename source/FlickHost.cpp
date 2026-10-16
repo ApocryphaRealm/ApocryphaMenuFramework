@@ -3,6 +3,7 @@
 #include "FlickHost.h"
 
 #include "FlickImGuiMap.h"
+#include "FlickRouteCore.h"
 #include "HelpBar.h"
 #include "PreciseSlider.h"
 #include "Registry.h"
@@ -382,11 +383,17 @@ namespace flick
 			return std::memchr(a_p, 0, std::min<std::size_t>(static_cast<std::size_t>(end - a_p), 512)) != nullptr;
 		}
 
-		// the per-mod choice (FlickHost.h)
+		// the per-mod choice (FlickHost.h) and, 2.2.1, the default for mods with FLICK windows (FlickRouteCore.h)
 		constexpr const char* kLeftToFlickPath = "Data/SKSE/Plugins/ApocryphaMenuFramework/FlickLeftToFlick.txt";
 		std::mutex g_choiceLock;
-		std::set<std::string> g_leftAtStart;   // as read with Configure: what the alias answers by this session
+		std::set<std::string> g_leftAtStart;   // as read with Configure: the player chose FLICK's own window
 		std::set<std::string> g_leftNow;       // as saved now
+		std::set<std::string> g_amfAtStart;    // 2.2.1: the player chose this menu ("amf:" lines)
+		std::set<std::string> g_amfNow;
+		std::set<std::string> g_windowsAtStart;   // 2.2.1: registered a FLICK window here in an earlier session ("windows:")
+		std::set<std::string> g_windowsNow;
+		std::map<std::string, bool> g_windowClass;   // 2.2.1: dll -> its DLL carries FLICK's IWindow class (read when it asks)
+		std::map<std::string, bool> g_answer;        // 2.2.1: dll -> answered here (decided once per session, AnswerHere)
 		std::map<std::string, bool> g_consumers;   // dll -> answered with AMF's table
 		std::map<std::string, std::string> g_names;   // dll -> shown name, kept with the choice
 
@@ -395,12 +402,64 @@ namespace flick
 			std::error_code ec;
 			std::filesystem::create_directories(std::filesystem::path(kLeftToFlickPath).parent_path(), ec);
 			std::ofstream out(kLeftToFlickPath, std::ios::binary | std::ios::trunc);
-			out << "# FLICK mods left to the real FLICK (FUCK.dll) - one DLL file name per line. Set in the menu: Settings >\r\n"
-				   "# Converted menus > FLICK. Applies from the next game start.\r\n";
-			for (const auto& dll : g_leftNow)
+			out << "# Where each FLICK mod's pages go - one DLL file name per line. Set in the menu: Settings > Converted menus >\r\n"
+				   "# FLICK. Applies from the next game start.\r\n"
+				   "#   <dll> = <name>            FLICK's own window (the real FLICK, FUCK.dll)\r\n"
+				   "#   amf: <dll> = <name>       this menu\r\n"
+				   "#   windows: <dll> = <name>   not a choice: the mod registered a FLICK window here, which this menu does not draw,\r\n"
+				   "#                             so with no choice made it goes to the real FLICK when FLICK is installed\r\n";
+			auto nameOf = [](const std::string& a_dll) {
+				const auto it = g_names.find(a_dll);
+				return it != g_names.end() ? it->second : std::string{};
+			};
+			for (const auto& dll : g_leftNow) { out << route::FormatLine(route::Line::Kind::kFlick, dll, nameOf(dll)) << "\r\n"; }
+			for (const auto& dll : g_amfNow) { out << route::FormatLine(route::Line::Kind::kAmf, dll, nameOf(dll)) << "\r\n"; }
+			for (const auto& dll : g_windowsNow) { out << route::FormatLine(route::Line::Kind::kWindows, dll, nameOf(dll)) << "\r\n"; }
+		}
+
+		route::Choice ChoiceNowLocked(const std::string& a_dll)
+		{
+			return g_leftNow.contains(a_dll) ? route::Choice::kFlick : g_amfNow.contains(a_dll) ? route::Choice::kAmf : route::Choice::kNone;
+		}
+		bool WindowsKnownNowLocked(const std::string& a_dll)
+		{
+			const auto it = g_windowClass.find(a_dll);
+			return (it != g_windowClass.end() && it->second) || g_windowsNow.contains(a_dll);
+		}
+
+		// 2.2.1 THE BACKSTOP (FlickRouteCore.h): a FLICK window registered HERE, where it is held and never drawn. Remembered in
+		// the choice file ("windows:"), so with no choice made the mod goes to the real FLICK from the next start when FLICK is
+		// installed - for a DLL whose windows its bytes did not show before it connected. Warned once per DLL, whatever applies.
+		void NoteWindowHere(const std::string& a_dll, const char* a_plugin, const char* a_id)
+		{
+			if (a_dll.empty()) { return; }
+			static std::set<std::string> s_warned;
+			std::scoped_lock lock(g_choiceLock);
+			const bool known = WindowsKnownNowLocked(a_dll);
+			if (!known)
 			{
-				const auto it = g_names.find(dll);
-				out << dll << (it != g_names.end() && !it->second.empty() ? " = " + it->second : std::string{}) << "\r\n";
+				g_windowsNow.insert(a_dll);
+				SaveLeftLocked();
+			}
+			if (!s_warned.insert(a_dll).second) { return; }
+			const auto choice = ChoiceNowLocked(a_dll);
+			if (!g_realFlick)
+			{
+				logger::warn("flick: {} ({}) registered the FLICK window \"{}\". This menu does not draw FLICK windows and FLICK itself "
+							 "(FUCK.dll) is not installed, so it is shown nowhere - install FLICK to see this mod's windows. Its settings "
+							 "page, if it has one, stays in this menu.", a_dll, a_plugin, a_id);
+			}
+			else if (choice == route::Choice::kAmf)
+			{
+				logger::warn("flick: {} ({}) registered the FLICK window \"{}\", which this menu does not draw. The mod is kept in this "
+							 "menu by your choice (Settings > Converted menus > FLICK); choose FLICK's own window there to see its windows.",
+							 a_dll, a_plugin, a_id);
+			}
+			else
+			{
+				logger::warn("flick: {} ({}) registered the FLICK window \"{}\", which this menu does not draw. FLICK itself is installed, "
+							 "so this mod goes to FLICK's own window from the next game start{}.", a_dll, a_plugin, a_id,
+							 known ? "" : " (remembered: its DLL did not show its windows before it connected)");
 			}
 		}
 		std::mutex g_lock;
@@ -664,7 +723,8 @@ namespace flick
 				logger::warn("flick: {} registered a window whose Id() or PluginName() is not readable text - not held", DllOf(a_window));
 				return;
 			}
-			logger::info("flick: RegisterWindow plugin={} id={} - held, not drawn yet (free windows come in a later build)", plugin, id);
+			logger::info("flick: RegisterWindow plugin={} id={} - held, not drawn (this menu does not draw FLICK's free windows)", plugin, id);
+			NoteWindowHere(DllOf(a_window), plugin, id);
 			std::lock_guard lock(g_lock);
 			g_windows.push_back(a_window);
 		}
@@ -1438,56 +1498,85 @@ namespace flick
 		std::error_code ec;
 		g_realFlick = std::filesystem::exists("Data/SKSE/Plugins/FUCK.dll", ec);
 		logger::info("flick: host {} ({} slots, API version {}){}", a_host ? "ON" : "off", FLICK_SLOT_COUNT, FLICK_API_VERSION_ANSWERED,
-					 g_realFlick ? " - the real FLICK (FUCK.dll) is installed too: AMF holds every FLICK mod not left to it (Settings > Converted menus > FLICK)" : "");
+					 g_realFlick ? " - the real FLICK (FUCK.dll) is installed too: AMF holds every FLICK mod that has no FLICK windows and "
+								   "is not left to FLICK; a mod with FLICK windows goes to FLICK unless kept here (Settings > Converted menus > FLICK)" :
+								   " - the real FLICK (FUCK.dll) is not installed: every FLICK mod is held here, and a mod's FLICK windows cannot be drawn");
 		(void)Table();   // build the table now (it is also built on first request)
 		{
 			std::scoped_lock lock(g_choiceLock);
 			std::ifstream in(kLeftToFlickPath, std::ios::binary);
-			std::string line;
-			while (std::getline(in, line))
+			std::string text;
+			while (std::getline(in, text))
 			{
-				while (!line.empty() && (line.back() == '\r' || line.back() == ' ' || line.back() == '\t')) { line.pop_back(); }
-				const auto start = line.find_first_not_of(" \t");
-				if (start == std::string::npos || line[start] == '#') { continue; }
-				std::string dll = line.substr(start);
-				std::string name;
-				if (const auto eq = dll.find('='); eq != std::string::npos)
+				const auto line = route::ParseLine(text);
+				switch (line.kind)
 				{
-					name = dll.substr(eq + 1);
-					dll.resize(eq);
-					while (!dll.empty() && (dll.back() == ' ' || dll.back() == '\t')) { dll.pop_back(); }
-					const auto n = name.find_first_not_of(" \t");
-					name = n == std::string::npos ? std::string{} : name.substr(n);
+				case route::Line::Kind::kFlick: g_leftAtStart.insert(line.dll); g_amfAtStart.erase(line.dll); break;
+				case route::Line::Kind::kAmf: if (!g_leftAtStart.contains(line.dll)) { g_amfAtStart.insert(line.dll); } break;
+				case route::Line::Kind::kWindows: g_windowsAtStart.insert(line.dll); break;
+				default: continue;
 				}
-				std::transform(dll.begin(), dll.end(), dll.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-				g_leftAtStart.insert(dll);
-				if (!name.empty()) { g_names[dll] = name; }
+				if (!line.name.empty()) { g_names[line.dll] = line.name; }
 			}
 			g_leftNow = g_leftAtStart;
+			g_amfNow = g_amfAtStart;
+			g_windowsNow = g_windowsAtStart;
 			for (const auto& dll : g_leftAtStart) { logger::info("flick: {} is left to the real FLICK (the player's choice){}", dll, g_realFlick ? "" : " - FLICK is not installed, so its page is shown nowhere"); }
+			for (const auto& dll : g_amfAtStart) { logger::info("flick: {} is kept in this menu (the player's choice)", dll); }
+			for (const auto& dll : g_windowsAtStart) { logger::info("flick: {} registered a FLICK window in an earlier session (remembered)", dll); }
 		}
 	}
 
-	bool LeftToFlick(const std::string& a_dllLower)
+	bool AnswerHere(const std::string& a_dllLower, const void* a_module)
 	{
 		std::scoped_lock lock(g_choiceLock);
-		return g_leftAtStart.contains(a_dllLower);
+		if (const auto it = g_answer.find(a_dllLower); it != g_answer.end()) { return it->second; }   // one answer per session
+		// the DLL's own bytes, read once: does it carry FLICK's IWindow class (FlickRouteCore.h)?
+		const auto mod = static_cast<HMODULE>(const_cast<void*>(a_module));
+		const bool windowClass = mod && ModuleHasString(mod, route::kWindowClassMarker);
+		g_windowClass[a_dllLower] = windowClass;
+		const bool windows = windowClass || g_windowsAtStart.contains(a_dllLower);
+		const auto choice = g_leftAtStart.contains(a_dllLower) ? route::Choice::kFlick :
+							g_amfAtStart.contains(a_dllLower) ? route::Choice::kAmf : route::Choice::kNone;
+		const bool here = route::Decide(choice, g_realFlick, windows) == route::Place::kAmf;
+		g_answer[a_dllLower] = here;
+		const char* why = choice != route::Choice::kNone ? "the player's choice" :
+						  !windows ? "no FLICK windows" :
+						  g_realFlick ? (windowClass ? "it has FLICK windows (its DLL carries FLICK's IWindow class), which only FLICK draws" :
+													   "it registered a FLICK window in an earlier session, which only FLICK draws") :
+									    "it has FLICK windows, but FLICK itself is not installed";
+		logger::info("flick: {} -> {} ({})", a_dllLower, here ? "this menu" : (g_realFlick ? "the real FLICK" : "the real FLICK, which is not installed"), why);
+		if (here && windows)
+		{
+			if (!g_realFlick)
+			{
+				logger::warn("flick: {} has FLICK windows (on-screen widgets), which this menu does not draw, and FLICK itself (FUCK.dll) is "
+							 "not installed - its windows cannot be shown without FLICK. Its settings page, if it has one, is in this menu.", a_dllLower);
+			}
+			else
+			{
+				logger::warn("flick: {} has FLICK windows, which this menu does not draw - kept here by your choice, so they are not shown. "
+							 "Choose FLICK's own window for it on Settings > Converted menus > FLICK to see them.", a_dllLower);
+			}
+		}
+		return here;
 	}
 
 	void SetLeftToFlick(const std::string& a_dllLower, bool a_on, const std::string& a_shownName)
 	{
 		std::scoped_lock lock(g_choiceLock);
 		if (!a_shownName.empty() && a_shownName != a_dllLower) { g_names[a_dllLower] = a_shownName; }
-		if (a_on) { g_leftNow.insert(a_dllLower); }
-		else { g_leftNow.erase(a_dllLower); }
+		// 2.2.1: both places are saved as the player's choice, so "This menu" stays this menu for a mod with FLICK windows too
+		if (a_on) { g_leftNow.insert(a_dllLower); g_amfNow.erase(a_dllLower); }
+		else { g_leftNow.erase(a_dllLower); g_amfNow.insert(a_dllLower); }
 		SaveLeftLocked();
-		logger::info("flick: {} -> {} (applies from the next game start)", a_dllLower, a_on ? "the real FLICK's own window" : "this menu");
+		logger::info("flick: {} -> {} (the player's choice; applies from the next game start)", a_dllLower, a_on ? "the real FLICK's own window" : "this menu");
 	}
 
 	bool LeftToFlickChanged()
 	{
 		std::scoped_lock lock(g_choiceLock);
-		return g_leftNow != g_leftAtStart;
+		return g_leftNow != g_leftAtStart || g_amfNow != g_amfAtStart;
 	}
 
 	void NoteConsumer(const std::string& a_dllLower, bool a_toAmf)
@@ -1529,7 +1618,17 @@ namespace flick
 			const auto it = g_consumers.find(dll);
 			std::string name = shown.contains(dll) ? shown[dll] : std::string{};
 			if (name.empty()) { if (const auto n = g_names.find(dll); n != g_names.end()) { name = n->second; } }
-			Consumer c{ dll, name, it != g_consumers.end() ? it->second : !g_leftAtStart.contains(dll), g_leftNow.contains(dll) };
+			// 2.2.1: where it goes from the next start - the choice saved now, else the default (FlickRouteCore.h)
+			const auto choice = ChoiceNowLocked(dll);
+			const bool windows = WindowsKnownNowLocked(dll);
+			const bool toFlickNext = route::Decide(choice, g_realFlick, windows) == route::Place::kFlick;
+			bool toAmf = true;
+			if (it != g_consumers.end()) { toAmf = it->second; }
+			else if (const auto a = g_answer.find(dll); a != g_answer.end()) { toAmf = a->second; }
+			else { toAmf = !g_leftAtStart.contains(dll); }   // never asked this session: what it would have got by its saved choice
+			Consumer c{ dll, name, toAmf, toFlickNext };
+			c.chosen = choice != route::Choice::kNone;
+			c.windows = windows;
 			if (const auto e = eras.find(dll); e != eras.end()) { c.era = e->second; }
 			out.push_back(std::move(c));
 		}
