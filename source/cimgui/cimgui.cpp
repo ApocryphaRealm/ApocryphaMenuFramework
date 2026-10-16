@@ -9,7 +9,8 @@
 // exports run with ImGui's stock window padding so a framed header's edge sits where it does
 // under SKSE Menu Framework (2.0.6); SameLine never puts an item on top of the one before it (2.1.6);
 // Checkbox draws AMF's on/off switch, as every boolean in the menu does (rule 32, 2.1.9); and the
-// single-value slider exports take a mouse-wheel notch as one step of the shown digit (2.2.0).
+// single-value slider exports take a mouse-wheel notch as one step of the shown digit (2.2.0); the tooltip
+// exports wrap a mod's tooltip to the window it draws in (ConsumerTooltip.h, 2.2.2).
 // The generator's docstring explains exactly what is guarded and what is deliberately not -
 // in particular that ImGui's optional p_* pointers are left alone, because guarding p_open
 // would stop every window without a close button from drawing.
@@ -40,6 +41,7 @@ bool amf_ConsumerSliderAngleWheel(float* a_rad, float a_minDegrees, float a_maxD
 #endif
 #include "./imgui/imgui_internal.h"
 #include "cimgui.h"
+#include "ConsumerTooltip.h"   // AMF: wrapped tooltips (2.2.2)
 
 
 
@@ -1274,41 +1276,41 @@ CIMGUI_API bool igMenuItem_BoolPtr(const char* label,const char* shortcut,bool* 
 }
 CIMGUI_API bool igBeginTooltip()
 {
-    return ImGui::BeginTooltip();
+    return consumer_tooltip::BeginTooltip();   // AMF: wrapped (2.2.2)
 }
 CIMGUI_API void igEndTooltip()
 {
-    return ImGui::EndTooltip();
+    return consumer_tooltip::EndTooltip();   // AMF: wrapped (2.2.2)
 }
 CIMGUI_API void igSetTooltip(const char* fmt,...)
 {
     if (!fmt) { fmt = ""; }   // AMF null guard
     va_list args;
     va_start(args, fmt);
-    ImGui::SetTooltipV(fmt,args);
-    va_end(args);
+    consumer_tooltip::SetTooltipV(fmt,args);
+    va_end(args);   // AMF: wrapped (2.2.2)
 }
 CIMGUI_API void igSetTooltipV(const char* fmt,va_list args)
 {
     if (!fmt) { fmt = ""; }   // AMF null guard
-    return ImGui::SetTooltipV(fmt,args);
+    return consumer_tooltip::SetTooltipV(fmt,args);   // AMF: wrapped (2.2.2)
 }
 CIMGUI_API bool igBeginItemTooltip()
 {
-    return ImGui::BeginItemTooltip();
+    return consumer_tooltip::BeginItemTooltip();   // AMF: wrapped (2.2.2)
 }
 CIMGUI_API void igSetItemTooltip(const char* fmt,...)
 {
     if (!fmt) { fmt = ""; }   // AMF null guard
     va_list args;
     va_start(args, fmt);
-    ImGui::SetItemTooltipV(fmt,args);
-    va_end(args);
+    consumer_tooltip::SetItemTooltipV(fmt,args);
+    va_end(args);   // AMF: wrapped (2.2.2)
 }
 CIMGUI_API void igSetItemTooltipV(const char* fmt,va_list args)
 {
     if (!fmt) { fmt = ""; }   // AMF null guard
-    return ImGui::SetItemTooltipV(fmt,args);
+    return consumer_tooltip::SetItemTooltipV(fmt,args);   // AMF: wrapped (2.2.2)
 }
 CIMGUI_API bool igBeginPopup(const char* str_id,ImGuiWindowFlags flags)
 {

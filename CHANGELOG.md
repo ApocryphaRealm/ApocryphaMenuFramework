@@ -21,6 +21,11 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## 2.2.2 - 2026-10-16 - untested - long mod descriptions wrap inside the window
+
+### Fixed
+- A mod's long description no longer runs off the screen on one line (BanMarwein's report: Skyrim Performance Solution's 'Far shadow cache (BETA)' help went past the right edge, wider than AMF's window). Mods made for SKSE Menu Framework draw their help as ImGui tooltips through AMF's exports, and Dear ImGui sizes a tooltip to its text without wrapping it. AMF's tooltip exports (SetTooltip, SetItemTooltip, BeginTooltip, BeginItemTooltip and their V forms) now wrap the text to the window the mod is drawing in - AMF's window - less its padding, never wider than the screen and never narrower than a dozen characters, and the tooltip grows to as many lines as it needs. Chinese and Japanese still break between characters, and a word wider than the line is broken inside it. AMF's own help bar and help popups already wrapped and are unchanged. Generated into source/cimgui/cimgui.cpp by tools/harden-cimgui.py (include/ConsumerTooltip.h). Proven offline (tools\tooltip_wrap_check.bat, 10 of 10, on AMF's own ImGui build: the same text through ImGui's own SetTooltip was 2911 px wide on a 1920 px screen; through AMF's export, 792 px in an 800 px window, on 4 lines).
+
 ## 2.2.1 - 2026-10-15 - untested - TOML pages and Game Settings Override; typing in other languages; live apply on converted pages; FLICK mods with their own windows go to FLICK itself; the SKSE Menu Framework name for Papyrus checks
 
 ### TOML pages and Game Settings Override (added)

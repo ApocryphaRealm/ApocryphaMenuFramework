@@ -183,6 +183,13 @@ def main() -> int:
         "igVSliderScalar": ("data_type", "p_data", "p_min", "p_max", "format"),
     }
     sliders = 0
+    # 2.2.2 (BanMarwein: Skyrim Performance Solution's long description ran off the screen on one line): a mod's tooltips
+    # are wrapped to the window it draws in. The seven tooltip exports call consumer_tooltip:: (ConsumerTooltip.h) in
+    # place of the same-named ImGui function; Dear ImGui never wraps a tooltip.
+    TOOLTIPS = {"igBeginTooltip": "BeginTooltip", "igEndTooltip": "EndTooltip", "igBeginItemTooltip": "BeginItemTooltip",
+                "igSetTooltip": "SetTooltipV", "igSetTooltipV": "SetTooltipV", "igSetItemTooltip": "SetItemTooltipV",
+                "igSetItemTooltipV": "SetItemTooltipV"}
+    tooltips = 0
     for m in fn.finditer(src):
         ret, name, args = m.group(2).strip(), m.group(3), m.group(4).strip()
         lines = guards_for(ret, args)
@@ -227,6 +234,14 @@ def main() -> int:
                        "    return amf_r || amf_w;")
             pos = body_end
             sliders += 1
+        elif name in TOOLTIPS:
+            body_end = src.index("\n}", pos)
+            body = src[pos:body_end]
+            target = "ImGui::" + TOOLTIPS[name] + "("
+            assert body.count(target) == 1, (name, body)
+            out.append(body.replace(target, "consumer_tooltip::" + TOOLTIPS[name] + "(") + "   // AMF: wrapped (2.2.2)")
+            pos = body_end
+            tooltips += 1
         elif name in TEXT_FIELDS:
             body_end = src.index("\n}", pos)
             body = src[pos:body_end]
@@ -273,7 +288,8 @@ def main() -> int:
         "// exports run with ImGui's stock window padding so a framed header's edge sits where it does\n"
         "// under SKSE Menu Framework (2.0.6); SameLine never puts an item on top of the one before it (2.1.6);\n"
         "// Checkbox draws AMF's on/off switch, as every boolean in the menu does (rule 32, 2.1.9); and the\n"
-        "// single-value slider exports take a mouse-wheel notch as one step of the shown digit (2.2.0).\n"
+        "// single-value slider exports take a mouse-wheel notch as one step of the shown digit (2.2.0); the tooltip\n"
+        "// exports wrap a mod's tooltip to the window it draws in (ConsumerTooltip.h, 2.2.2).\n"
         "// The generator's docstring explains exactly what is guarded and what is deliberately not -\n"
         "// in particular that ImGui's optional p_* pointers are left alone, because guarding p_open\n"
         "// would stop every window without a close button from drawing.\n"
@@ -289,6 +305,8 @@ def main() -> int:
     assert checkbox == 1, checkbox
     # 2.2.0: the wheel the seven single-value slider exports call (defined in ConsumerSurface.cpp).
     assert sliders == 7, sliders
+    # 2.2.2: the seven tooltip exports (ConsumerTooltip.h, included after cimgui.h below).
+    assert tooltips == 7, tooltips
     text = (banner + "void amf_NoteTextField(unsigned int a_itemId);\n"
             "void amf_BeginConsumerHeader();\nvoid amf_EndConsumerHeader();\n"
             "void amf_ConsumerSameLine(float a_offsetFromStartX, float a_spacing);\n"
@@ -296,6 +314,8 @@ def main() -> int:
             "bool amf_ConsumerSliderWheel(int a_type, void* a_data, const void* a_min, const void* a_max, const char* a_format);\n"
             "bool amf_ConsumerSliderAngleWheel(float* a_rad, float a_minDegrees, float a_maxDegrees, const char* a_format);\n"
             + "".join(out))
+    assert text.count('#include "cimgui.h"\n') == 1
+    text = text.replace('#include "cimgui.h"\n', '#include "cimgui.h"\n#include "ConsumerTooltip.h"   // AMF: wrapped tooltips (2.2.2)\n', 1)
     os.makedirs(os.path.dirname(TARGET), exist_ok=True)
     io.open(TARGET, "w", encoding="utf-8", newline="\n").write(text)
 
