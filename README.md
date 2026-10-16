@@ -38,6 +38,20 @@ Licence: GPL-3.0-or-later (see `LICENSE` and `NOTICE.md`). Not a fork: contains 
   per section, a control per key) unless its mod has a page of its own; a change writes only that value, keeping a
   `.amf-backup` of the file. Each page has its own switch under Settings -> Converted menus -> INI, and starts off:
   turn on the INI files you want and only those appear in the Mods list.
+- **TOML files as pages** (2.2.1). Every `.toml` directly in `Data\SKSE\Plugins` and in its folders can be a page:
+  "<name> (TOML)", a tab per table (a folder's files: a tab per file), a control per value (switch, number box with the
+  wheel, text box; arrays and inline tables shown only), the file's comments as help. A change writes only that value
+  (comments, order, quoting, byte-order mark and line endings kept; `.amf-backup` of the file). Game Settings Override's
+  folder is the "Game Settings Override" page: controls by the game setting's own type, the game's current value beside
+  each, flags for unknown keys, wrong types and keys a later file wins, and the game's value set at once. Each page starts
+  off: turn it on under Settings -> Converted menus -> TOML.
+- **Changes in game, where a mod says how** (2.2.1). Each INI and TOML page says how its changes take effect:
+  - reloaded in game, through the reload the mod declares (its Mod Function Menu Config entry, or Game Settings
+    Override's `ReloadConfig`), after each save and from the page's Reload button;
+  - applied live, for the game's own INI settings, which are set in the engine at once;
+  - or the next time the game starts.
+
+  Nothing undeclared is ever called.
 - **Other menus.** Open Animation Replacer, Community Shaders, Immersive Equipment Displays, OptiScaler and ENB get a
   row under Framework -> Other menus with a button that opens their own menu; AMF closes as it does, and a mod's own key
   pressed while AMF is open closes AMF too. "AMF holds this key" (off by default, per mod) writes a key no keyboard has
@@ -105,6 +119,8 @@ Corrections from native speakers are welcome - the files are plain text.
 
 - **ccld** - Mod Function Menu (MIT). AMF shows Mod Function Menu's entries as one of its converted menus; that support
   is a clean reimplementation from Mod Function Menu's description and public SDK header, with none of its code.
+- **ccld** - Game Settings Override (GPL-3.0). AMF reads and writes Game Settings Override's documented file format and
+  calls its exported `ReloadConfig`; none of its code is used.
 
 ## Licence
 

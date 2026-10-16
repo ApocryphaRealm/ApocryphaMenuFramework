@@ -58,4 +58,13 @@ namespace inipages
 	// ("skse/plugins/ssedisplaytweaks.ini"), its name without .ini ("SSEDisplayTweaks") or its entry name. Thread-safe. set
 	// writes exactly as the page's control does.
 	std::string ToolJson(const std::string& a_argsJson);
+
+	// 2.2.1: a loaded <a_base>.dll's version-resource name (ProductName, else FileDescription) when it is a real name, else
+	// empty - the TOML pages name their entries the same way.
+	std::string DllProductName(const std::string& a_base);
+
+	// 2.2.1, render thread, every frame: a saved value of the game's own INI settings is set in the engine at once, and a
+	// page's declared in-game reload (its mod's Mod Function Menu Config entry) runs once its controls are let go
+	// (PageRefresh.h). Each page says which way its changes take effect.
+	void RefreshTick();
 }

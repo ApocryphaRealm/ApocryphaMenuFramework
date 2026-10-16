@@ -14,6 +14,7 @@
 #include "PrismaRedux.h"
 #include "HelpBar.h"
 #include "IniPages.h"
+#include "TomlPages.h"
 #include "MfmPages.h"
 #include "ImguiHost.h"
 #include "LoadGuard.h"
@@ -3133,6 +3134,26 @@ namespace renderer
 						mfmpages::DrawSettingsList();
 						ImGui::EndTabItem();
 					}
+					// 2.2.1: TOML files (Game Settings Override's among them) - TomlPages.h
+					if (sub.Tab(TR("AMF_SubToml", "TOML")))
+					{
+						if (widgets::Toggle(TR("AMF_TomlLoad", "TOML files' settings here"), &values.tomlMenus))
+						{
+							logger::info("settings page: TOML pages -> {}", values.tomlMenus);
+							settings::Save();
+							tomlpages::ApplyVisibility();
+						}
+						ImGui::TextWrapped("%s", TR("AMF_TomlLoadHelp", "On: every TOML file directly in Data/SKSE/Plugins, and in its folders, can "
+							"be a page here - \"<name> (TOML)\", a tab per table (a folder's files: a tab per file), a control per value, the "
+							"file's own comments as the help; Game Settings Override's folder is the \"Game Settings Override\" page, with the "
+							"game's current value beside each setting. Each page starts off: turn on the ones you want below. A change is "
+							"written into the file itself, only that value (the file as it first was is kept as .amf-backup). A mod that "
+							"declares a reload (a Mod Function Menu Config entry) reloads in game after each save; otherwise the change "
+							"applies the next time the game starts. Each page says which."));
+						ImGui::Spacing();
+						tomlpages::DrawSettingsList();
+						ImGui::EndTabItem();
+					}
 					// next after 2.1.9: other mods' own ImGui menus - a switch per mod for its row on Framework > Other menus (ImguiHost.h)
 					if (sub.Tab(TR("AMF_SubImgui", "ImGui menus")))
 					{
@@ -5361,11 +5382,16 @@ namespace renderer
 						// next after 2.1.9: INI pages registered (or taken away for a mod's own page) - other plugins register
 						// after AMF's kDataLoaded, so this is checked as the menu opens
 						inipages::Sync();
+						tomlpages::Sync();   // 2.2.1: the same for TOML pages
 					}
 					s_wasInteractive = interactive;
 					// and whenever a page is registered (the 2026-10-12 test: Lock Interaction Overhaul registered its own page
 					// after AMF's INI pages were up) - an atomic read on a frame where nothing registered
 					inipages::SyncIfRegistryChanged();
+					// 2.2.1: a saved INI value set live in the game, and a page's declared in-game reload once its controls are let
+					// go (PageRefresh.h); the TOML pages' registry sync and reloads
+					inipages::RefreshTick();
+					tomlpages::Tick();
 				}
 				if (visible) { mcmloader::LearnFromLayoutIfChanged(); }   // the sort learns from menus moved by hand
 				// Published only AFTER the rising edge has cleared the queue, so nothing the input thread

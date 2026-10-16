@@ -385,6 +385,13 @@ namespace settings
 				"; \"Mod Function Menu\" (the default). 0 = they are not. Mod Function Menu itself is not needed and not changed.\n"
 				"bEnabled=" << (a_v.mfmMenus ? 1 : 0) << "\n"
 				"\n"
+				"[TomlMenus]\n"
+				"; 1 = TOML files directly in Data\\SKSE\\Plugins and in its folders (Game Settings Override's among them) can be pages\n"
+				"; in this menu (the default). 0 = none are.\n"
+				"bEnabled=" << (a_v.tomlMenus ? 1 : 0) << "\n"
+				"; The pages turned on one by one (Settings > Converted menus > TOML), comma-separated. Empty = none (each starts off).\n"
+				"sOn=" << a_v.tomlPagesOn << "\n"
+				"\n"
 				"[ImGuiMenus]\n"
 				"; Other mods' own menus, opened from Framework > Other menus (this menu closes as one opens, and\n"
 				"; a mod's own key pressed while this menu is open closes it too). 1 = the mod's row is shown there when the mod is\n"
@@ -788,6 +795,11 @@ namespace settings
 				if (it != entries.end()) { g_values.iniPagesOn = it->second; }
 			}
 			ReadBool(entries, "MfmMenus.bEnabled", g_values.mfmMenus);
+			ReadBool(entries, "TomlMenus.bEnabled", g_values.tomlMenus);
+			{
+				auto it = entries.find("TomlMenus.sOn");
+				if (it != entries.end()) { g_values.tomlPagesOn = it->second; }
+			}
 			ReadBool(entries, "ImGuiMenus.bOpenAnimationReplacer", g_values.imguiOar);
 			ReadBool(entries, "ImGuiMenus.bCommunityShaders", g_values.imguiCs);
 			ReadBool(entries, "ImGuiMenus.bImmersiveEquipmentDisplays", g_values.imguiIed);

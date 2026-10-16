@@ -21,8 +21,74 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
-## 2.2.1 - 2026-10-15 - untested - typing in other languages; live apply on converted pages; FLICK mods with their own windows go to FLICK itself; the SKSE Menu Framework name for Papyrus checks
+## 2.2.1 - 2026-10-15 - untested - TOML pages and Game Settings Override; typing in other languages; live apply on converted pages; FLICK mods with their own windows go to FLICK itself; the SKSE Menu Framework name for Papyrus checks
 
+### TOML pages and Game Settings Override (added)
+- TOML pages (the owner, 2026-10-13: "Just make a tab called TOML, which would house all of the TOML format files similar to
+  GSO"). Every `.toml` directly in `Data\SKSE\Plugins` and in its folders one level down can be a page. A top-level file is
+  "<name> (TOML)" with a tab per table; a folder's files are one page with a tab per file, its tables as headings. Names come
+  from a loaded DLL of the same name, else from the file's or folder's words, as INI pages are named.
+  - Each value gets a control: a switch for bool, a whole-number box for integers, a number box stepping one unit of the
+    last decimal the file shows for floats, and a text box for strings and for dates and times. The +/- buttons and the
+    mouse wheel nudge a number, and a run of notches is written once the wheel rests.
+  - Arrays, inline tables and multi-line strings are shown and marked "(shown only)"; they are never written.
+  - The `#` lines above a key, and a comment after it, are its help.
+  - A mod that has a page of its own here takes its TOML page away, as with INI pages.
+- Game Settings Override (promised on Nexus for this update) is the TOML pages' special case: its folder is the "Game
+  Settings Override" page, a tab per file in GSO's load order (A-Z, the later file winning).
+  - Each setting gets a control by the GAME setting's type, read from the EditorID's first letter as the engine does: a
+    switch, a decimal or whole-number box, a colour editor (0xRRGGBBAA) or a text box. The game's current value is shown
+    beside each.
+  - Three things are flagged: a key the game has no setting for, a value written as another type, and a key a later file
+    sets again.
+  - A change also sets the game's value at once (only when this file wins the key) before GSO reloads.
+- Writing, for every TOML page: one value at a time, in place. Only that value's text on its line changes; comments,
+  order, quoting, the byte-order mark and each line's own ending are kept byte for byte, and the file is never written back
+  from a parsed model.
+  - The file is read again and must still read cleanly before anything is written.
+  - It is kept once as `<file>.amf-backup` before the first change.
+  - A file that does not read cleanly is listed under "Not shown" with the line and the reason: a line that is not a table,
+    a setting or a comment; a value that is not TOML; a text or list never closed; a key or table given twice.
+  - Also listed there:
+    - Mod Function Menu's own entry files (`ccld_ModFunctionMenu\`), which are the MFM menu's buttons;
+    - AMF's own files;
+    - names outside plain ASCII;
+    - files over 256 KB;
+    - files with no settings;
+    - in GSO's folder, names GSO does not read (".toml" not in small letters).
+- Changes take effect in game where a mod says how (the owner, 2026-10-13: "a refresh feature for these TOML files, just
+  like what MFM does ... and a similar logic to the INI files"). Every INI and TOML page now says how its changes take
+  effect:
+  - "reloaded in game (via <mod>)": the mod declares a reload function - a Mod Function Menu Config entry naming its DLL,
+    function and type, or Game Settings Override's `ReloadConfig`. A page is matched to it by the DLL's name: the file's
+    name, or its folder's, is the DLL's name or starts with it and a '_'. Only a Config entry whose function or file says
+    "reload" counts.
+    - AMF calls it after a save, once the control is let go: one call for a run of changes.
+    - The page's Reload button calls it too, and the message it returns is shown.
+    - It is found with GetModuleHandleW + GetProcAddress, never loaded, and called guarded, as AMF's MFM menu calls it. No
+      undeclared function is ever called.
+  - "applied live": the game's own INI settings - a `Data\<plugin>.ini` beside its plugin, or an INI whose every key is
+    one of the engine's INI settings - are set at once in the engine's INISettingCollection (or INIPrefSettingCollection).
+    After a save the page lists which keys were set in the game now, and which apply the next time the game starts (not a
+    setting the game holds, or no plain value).
+  - "apply the next time the game starts": everything else, said plainly.
+- Settings > Converted menus > TOML: a switch for all TOML pages (`[TomlMenus] bEnabled`, on by default). Each page has its
+  own switch, OFF by default as each INI page is (`[TomlMenus] sOn` lists the ones turned on). Each page shows its files
+  and how its changes take effect, and what was not shown is listed with why.
+- DevBench: `amf.menu` `op=toml` - `do=list`, `do=get {file}` (each value: table, text, type, control, whether it can be
+  written; GSO settings also the game type, live value and winning file), `do=set {file, name, value}` (writes and reloads
+  exactly as the page does, on the render thread) and `do=reload {page}`. `op=gso` is the same for Game Settings Override's
+  files only.
+- Offline check `tools\toml_check.bat`, running the same code as the pages (include\TomlCore.h, GsoCore.h,
+  RefreshCore.h). It covers:
+  - the read and write round trip with tables, arrays of tables, dotted and quoted keys, arrays over several lines with
+    comments inside, inline tables, multi-line strings, dates, BOM and CRLF / LF;
+  - every refused form;
+  - GSO's type mapping and load order;
+  - the matching of pages to declared reloads.
+  - Given folders, it reads every `.toml` under them and writes each back in memory. On Njordlinger's mods, 52 of 53 read
+    and every one is byte-identical; the one refused gives a table twice.
+- Its strings in all eleven languages.
 ### Typing in other languages
 - Typing in other languages (the owner, 2026-10-13: "Add typing for other languages."). AMF's text boxes - the mod-list search, the Filter word box, Rename, the INI pages' text boxes and every mod's own text box drawn in AMF - now take Chinese, Japanese and Korean typed through a Windows input method (IME), with the IME's own composition and candidate windows shown at the text cursor, and accented letters from dead keys and AltGr as Windows types them. Why it never worked: the game makes its typed characters itself, from the raw DirectInput keys through ToUnicode, and never reads the text Windows sends the window; and its window code answers the IME's "show your windows" message by hiding them (read from the game's own code, 1.5.97 and 1.7.104 alike). So an IME's text, a SendInput Unicode character and a posted character could never reach any box - only paste did, as the 2026-10-13 test found. AMF now puts a window procedure in front of the game's (ANSI, like the game's window, so other mods' menus on the same window read keys exactly as before) that, only while one of AMF's text boxes wants text, types the window's characters and the IME's finished text, shows and places the IME's windows, and gives the window an input context if it has none; the moment the box lets go, everything is back as the game had it, and with AMF closed nothing changes - the console and the game's own naming boxes are untouched. A key the game also reads is typed once: whichever of the two copies arrives first, the other is dropped, and while the IME is composing the raw letters it is turning into Chinese, Japanese or Korean are not typed, nor do Enter and Backspace inside the composition reach the box. A character above U+FFFF (an emoji) arrives as one replacement character, since ImGui's characters are 16-bit in the menu framework's shared format. Help > Controls > Typing has one more line saying so, in all eleven languages. DevBench: `op=type` and `op=injectchar` now type the UTF-8 text they are given character by character (they pushed each byte as a character, so 函数 came out as "å‡½æ•°"; `chars` is now the number of characters and `bytes` the length), and the new `amf.menu op=ime` reports the window procedure, the input context, the IME's state and which path typed each character (and the log has one line per text box held saying what reached it). Proven offline with the same code (`tools\text_input_check.bat`, 37 of 37): the UTF-8 decoding, characters above U+FFFF, the IME window position from menu to window pixels, and which copy of a key types. Not yet tested in game.
 

@@ -2,6 +2,7 @@
 #include "FlickHost.h"
 #include "PrismaRedux.h"
 #include "IniPages.h"
+#include "TomlPages.h"
 #include "MfmPages.h"
 #include "ImguiHost.h"
 #include "SystemRow.h"
@@ -217,6 +218,12 @@ namespace devbenchtool
 				// next version: Mod Function Menu entries (MfmPages.h) - {"op":"mfm","do":"list|run","path":"Mod/Toggle UI/Toggle UI.toml"}.
 				// run hands the call to the render thread and waits for it (a mod's function is never called on this thread).
 				result = mfmpages::ToolJson(args);
+			}
+			else if (op == "toml" || op == "gso")
+			{
+				// 2.2.1: TOML files' pages (TomlPages.h) - {"op":"toml","do":"list|get|set|reload","file":"EngineFixes","name":"General.bVerboseLogging",
+				// "value":"true"}. set and reload run on the render thread, as the page does. op=gso: only Game Settings Override's files.
+				result = tomlpages::ToolJson(args, op == "gso");
 			}
 			else if (op == "imgui")
 			{
