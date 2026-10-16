@@ -93,6 +93,28 @@ int main(int argc, char** argv)
 	Check(!Has(std::string(".?AVITool@FUCK@@") + '\0'), "the page class (ITool) alone is not a window");
 	Check(!Has(std::string()), "an empty buffer is not");
 
+	// ---- known clashes (2026-10-16) ----
+	{
+		constexpr std::string_view kRaceSha = "502dd85cd79206efd817f8afe9f639743974ca11c8376d447a34d9da9bc5e676";
+		const auto* k = flick::route::FindKnownClash("fuck-race.dll", kRaceSha, "1.5.0.0");
+		Check(k != nullptr && k->flickVersion == "1.5.0", "Racemenu Enhancer 1.0.0's DLL on FLICK 1.5.0.0 is a known clash");
+		Check(flick::route::FindKnownClash("fuck-race.dll", "502DD85CD79206EFD817F8AFE9F639743974CA11C8376D447A34D9DA9BC5E676", "1, 5, 0, 0") != nullptr,
+			  "the hash in upper case and the version written with commas match too");
+		Check(flick::route::FindKnownClash("fuck-race.dll", kRaceSha, "1.5.1.0") == nullptr, "another FLICK version (1.5.1) is not a clash");
+		Check(flick::route::FindKnownClash("fuck-race.dll", kRaceSha, "1.4.0.0") == nullptr, "an older FLICK version (1.4.0) is not a clash");
+		Check(flick::route::FindKnownClash("fuck-race.dll", "0000000000000000000000000000000000000000000000000000000000000000", "1.5.0.0") == nullptr,
+			  "another build of the mod (another hash) is not a clash");
+		Check(flick::route::FindKnownClash("fuck-qty.dll", kRaceSha, "1.5.0.0") == nullptr, "another DLL name with the same hash is not");
+		Check(flick::route::FindKnownClash("fuck-race.dll", "", "1.5.0.0") == nullptr, "an unreadable hash is not");
+		Check(flick::route::FindKnownClash("fuck-race.dll", kRaceSha, "") == nullptr, "an unknown FLICK version is not");
+		Check(flick::route::MayClash("fuck-race.dll") && !flick::route::MayClash("waityourturn.dll"), "only a listed DLL name is ever hashed");
+		Check(flick::route::ShortVersion("1.5.0.0") == "1.5.0" && flick::route::ShortVersion("1.5") .empty(), "versions shorten to three numbers");
+		Check(Decide(Choice::kNone, true, true, true) == Place::kAmf, "a known clash keeps the windowed mod here (the default would send it to FLICK)");
+		Check(Decide(Choice::kFlick, true, true, true) == Place::kFlick, "the player's 'FLICK's own window' still wins over a known clash");
+		Check(Decide(Choice::kAmf, true, true, true) == Place::kAmf, "the player's 'This menu' agrees with it");
+		Check(Decide(Choice::kNone, true, true, false) == Place::kFlick, "no clash: the normal default again");
+	}
+
 	// ---- real DLLs (optional) ----
 	if (argc > 1)
 	{

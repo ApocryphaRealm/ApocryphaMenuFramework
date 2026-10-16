@@ -122,6 +122,7 @@ target_link_libraries(
 		Ole32.lib     # CoTaskMemFree (Persistence.cpp)
 		Psapi.lib     # EnumProcessModules (SmfAlias.cpp)
 		Version.lib   # GetFileVersionInfoW - an INI page's name from its DLL (IniPages.cpp)
+		Bcrypt.lib    # BCryptHash - a FLICK mod DLL's SHA-256 for the known-clash table (FlickHost.cpp, 2.2.1)
 )
 
 if (MSVC)

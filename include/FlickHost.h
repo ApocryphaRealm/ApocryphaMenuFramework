@@ -131,6 +131,7 @@ namespace flick
 		bool leftToFlick = false;   // where it goes from the next start: the choice saved now, else the default (2.2.1)
 		bool chosen = false;        // 2.2.1: the player picked its place (else the default applies)
 		bool windows = false;       // 2.2.1: it has FLICK windows (its DLL carries the IWindow class, or it registered one here)
+		std::string clashFlick;     // 2.2.1: a known clash (FlickRouteCore.h): the FLICK version this build crashes; empty if none
 		// 2.1.8: the FLICK header the DLL was built with (FlickHost.cpp, AbiOfModule) - "current", "old-2026-02-27" /
 		// "old-2026-04-13" / "old-2026-05-30" (2.1.9: a known old build, answered with its own header's table order),
 		// "old-unknown" (an old header this menu cannot place: not

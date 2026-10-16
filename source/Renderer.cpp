@@ -2974,6 +2974,7 @@ namespace renderer
 								if (c.windows)
 								{
 									ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
+									if (c.clashFlick.empty() || c.chosen)   // a known clash says where it is instead (below)
 									ImGui::TextWrapped("%s", flick::RealFlickInstalled() ?
 										TR("AMF_FlickWindows", "It has its own windows on screen, which only FLICK itself draws, so it goes to FLICK's "
 											"own window unless you choose this menu.") :
@@ -2981,6 +2982,15 @@ namespace renderer
 											"installed, so they are not shown."));
 									// 2.2.1 (the owner, 2026-10-16): Racemenu Enhancer 1.0.0 crashes FLICK NG 1.5.0 when RaceMenu opens
 									ImGui::TextWrapped("%s", TR("AMF_FlickWindowsCrash", "If the game crashes when this mod's menu opens, choose This menu."));
+									ImGui::PopStyleColor();
+								}
+								// 2.2.1 KNOWN CLASHES (FlickRouteCore.h): kept here because this build is proven to crash the installed FLICK version
+								if (!c.clashFlick.empty() && !c.chosen)
+								{
+									std::string text = TR("AMF_FlickKnownClash", "Kept in this menu: this version crashes with FLICK %s");
+									if (const auto at = text.find("%s"); at != std::string::npos) { text.replace(at, 2, c.clashFlick); }
+									ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
+									ImGui::TextWrapped("%s", text.c_str());
 									ImGui::PopStyleColor();
 								}
 								if (c.leftToFlick == c.toAmf)

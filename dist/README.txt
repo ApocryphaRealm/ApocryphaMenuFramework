@@ -82,6 +82,7 @@ Version 2.2.1
 FLICK mods that draw their own windows on screen go to FLICK itself by default when FLICK is installed: Racemenu Enhancer's widgets show in RaceMenu again (thanks to DSAdmin for the report). This menu holds FLICK settings pages but does not draw FLICK windows. Your choice on Settings > Converted menus > FLICK still wins, and the page says which mods have windows. Mods with settings pages only stay here.
 Papyrus checks for SKSE Menu Framework pass: a script asking SKSE.GetPluginVersion("SKSEMenuFramework") now finds it (thanks to hirato for the report). See REQUIREMENTS for the small file this adds.
 If a FLICK mod with windows crashes FLICK when its menu opens (Racemenu Enhancer 1.0.0 does with FLICK NG 1.5.0, with or without this menu), choose "This menu" for it on Settings > Converted menus > FLICK. After such a crash this menu offers that choice once at the next start; it never changes anything by itself.
+Racemenu Enhancer 1.0.0 itself is kept in this menu automatically while FLICK 1.5.0 is installed (that pair is proven to crash); your own choice on that page still wins.
 
 Version 2.2.0
 Mod Function Menu's buttons work here without Mod Function Menu: the buttons mods add for it (Toggle UI, Game Settings Override and others) appear as one converted menu, "Mod Function Menu", a button per file. An entry whose function cannot be found is drawn greyed.

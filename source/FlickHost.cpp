@@ -36,6 +36,8 @@
 
 #include <intrin.h>
 #pragma intrinsic(_ReturnAddress)
+#include <bcrypt.h>   // 2.2.1: SHA-256 of a FLICK mod's DLL for the known-clash table
+#include <winver.h>   // 2.2.1: FUCK.dll's file version
 
 // the slot lists' constants (FLICK_API_VERSION_ANSWERED, FLICK_SLOT_COUNT, FLICK_SLOT_0227/0413/0530_COUNT) before first use
 #define FLICK_SLOT(ret, name, params)
@@ -495,6 +497,54 @@ namespace flick
 			for (const auto& dll : g_crashOffer) { list += (list.empty() ? "" : ", ") + dll; }
 			logger::warn("flick: the last session ended in a crash inside FLICK ({} names FUCK.dll) after this menu sent {} to FLICK. "
 						 "The menu will OFFER, once, to keep it in this menu - nothing is changed unless the player chooses it.", log->name, list);
+		}
+
+		// 2.2.1 KNOWN CLASHES (FlickRouteCore.h kKnownClashes, the owner approved 2026-10-16)
+		std::string g_flickVersion;                                // FUCK.dll's file version, "a.b.c.d"; empty when not installed
+		std::map<std::string, const route::KnownClash*> g_clash;   // dll -> its known clash with the installed FLICK (or null)
+
+		std::string FileVersionOf(const std::wstring& a_path)
+		{
+			DWORD handle = 0;
+			const DWORD size = ::GetFileVersionInfoSizeW(a_path.c_str(), &handle);
+			if (size == 0) { return {}; }
+			std::vector<std::uint8_t> data(size);
+			if (!::GetFileVersionInfoW(a_path.c_str(), 0, size, data.data())) { return {}; }
+			VS_FIXEDFILEINFO* info = nullptr;
+			UINT len = 0;
+			if (!::VerQueryValueW(data.data(), L"\\", reinterpret_cast<void**>(&info), &len) || !info || len < sizeof(VS_FIXEDFILEINFO)) { return {}; }
+			return std::format("{}.{}.{}.{}", HIWORD(info->dwFileVersionMS), LOWORD(info->dwFileVersionMS), HIWORD(info->dwFileVersionLS),
+							   LOWORD(info->dwFileVersionLS));
+		}
+
+		// SHA-256 of a file, lower-case hex; empty on any failure (then no known clash can match - the normal default applies)
+		std::string Sha256OfFile(const std::wstring& a_path)
+		{
+			std::ifstream in(std::filesystem::path(a_path), std::ios::binary);
+			if (!in) { return {}; }
+			BCRYPT_ALG_HANDLE alg = nullptr;
+			BCRYPT_HASH_HANDLE hash = nullptr;
+			if (::BCryptOpenAlgorithmProvider(&alg, BCRYPT_SHA256_ALGORITHM, nullptr, 0) < 0) { return {}; }
+			std::string out;
+			if (::BCryptCreateHash(alg, &hash, nullptr, 0, nullptr, 0, 0) >= 0)
+			{
+				std::vector<char> buf(1 << 16);
+				bool ok = true;
+				while (in)
+				{
+					in.read(buf.data(), static_cast<std::streamsize>(buf.size()));
+					const auto got = in.gcount();
+					if (got > 0 && ::BCryptHashData(hash, reinterpret_cast<PUCHAR>(buf.data()), static_cast<ULONG>(got), 0) < 0) { ok = false; break; }
+				}
+				std::uint8_t digest[32]{};
+				if (ok && ::BCryptFinishHash(hash, digest, sizeof(digest), 0) >= 0)
+				{
+					for (const auto b : digest) { out += std::format("{:02x}", b); }
+				}
+				::BCryptDestroyHash(hash);
+			}
+			::BCryptCloseAlgorithmProvider(alg, 0);
+			return out;
 		}
 
 		route::Choice ChoiceNowLocked(const std::string& a_dll)
@@ -1577,6 +1627,12 @@ namespace flick
 		g_host.store(a_host, std::memory_order_release);
 		std::error_code ec;
 		g_realFlick = std::filesystem::exists("Data/SKSE/Plugins/FUCK.dll", ec);
+		if (g_realFlick)
+		{
+			// 2.2.1: its file version, for the known-clash table (FlickRouteCore.h)
+			g_flickVersion = FileVersionOf(std::filesystem::absolute("Data/SKSE/Plugins/FUCK.dll", ec).wstring());
+			logger::info("flick: the real FLICK's FUCK.dll is version {}", g_flickVersion.empty() ? "(unreadable)" : g_flickVersion);
+		}
 		logger::info("flick: host {} ({} slots, API version {}){}", a_host ? "ON" : "off", FLICK_SLOT_COUNT, FLICK_API_VERSION_ANSWERED,
 					 g_realFlick ? " - the real FLICK (FUCK.dll) is installed too: AMF holds every FLICK mod that has no FLICK windows and "
 								   "is not left to FLICK; a mod with FLICK windows goes to FLICK unless kept here (Settings > Converted menus > FLICK)" :
@@ -1622,7 +1678,20 @@ namespace flick
 		const bool windows = windowClass || g_windowsAtStart.contains(a_dllLower);
 		const auto choice = g_leftAtStart.contains(a_dllLower) ? route::Choice::kFlick :
 							g_amfAtStart.contains(a_dllLower) ? route::Choice::kAmf : route::Choice::kNone;
-		const bool here = route::Decide(choice, g_realFlick, windows) == route::Place::kAmf;
+		// 2.2.1 KNOWN CLASHES: this exact DLL build against this FLICK version (the file is hashed only for a listed name)
+		const route::KnownClash* clash = nullptr;
+		if (g_realFlick && mod && route::MayClash(a_dllLower))
+		{
+			wchar_t path[MAX_PATH]{};
+			const auto len = ::GetModuleFileNameW(mod, path, MAX_PATH);
+			const std::string sha = len ? Sha256OfFile(std::wstring(path, len)) : std::string{};
+			clash = route::FindKnownClash(a_dllLower, sha, g_flickVersion);
+			logger::info("flick: {} is in the known-clash table - sha256 {}, FLICK {}: {}", a_dllLower, sha.empty() ? "(unreadable)" : sha,
+						g_flickVersion.empty() ? "(unknown)" : g_flickVersion, clash ? "this build and this FLICK version clash" :
+						"not the listed build or FLICK version, so the normal default applies");
+		}
+		g_clash[a_dllLower] = clash;
+		const bool here = route::Decide(choice, g_realFlick, windows, clash != nullptr) == route::Place::kAmf;
 		g_answer[a_dllLower] = here;
 		if (!here && windows && g_realFlick)
 		{
@@ -1634,6 +1703,7 @@ namespace flick
 			}
 		}
 		const char* why = choice != route::Choice::kNone ? "the player's choice" :
+						  clash ? "a known clash: this build crashes the installed FLICK version - kept in this menu, as 'This menu' would" :
 						  !windows ? "no FLICK windows" :
 						  g_realFlick ? (windowClass ? "it has FLICK windows (its DLL carries FLICK's IWindow class), which only FLICK draws" :
 													   "it registered a FLICK window in an earlier session, which only FLICK draws") :
@@ -1645,6 +1715,11 @@ namespace flick
 			{
 				logger::warn("flick: {} has FLICK windows (on-screen widgets), which this menu does not draw, and FLICK itself (FUCK.dll) is "
 							 "not installed - its windows cannot be shown without FLICK. Its settings page, if it has one, is in this menu.", a_dllLower);
+			}
+			else if (clash && choice == route::Choice::kNone)
+			{
+				logger::warn("flick: {} is kept in this menu: {} (FLICK {}). Its windows are not shown. Choosing FLICK's own window for "
+							 "it on Settings > Converted menus > FLICK overrides this.", a_dllLower, clash->what, g_flickVersion);
 			}
 			else
 			{
@@ -1737,7 +1812,9 @@ namespace flick
 			// 2.2.1: where it goes from the next start - the choice saved now, else the default (FlickRouteCore.h)
 			const auto choice = ChoiceNowLocked(dll);
 			const bool windows = WindowsKnownNowLocked(dll);
-			const bool toFlickNext = route::Decide(choice, g_realFlick, windows) == route::Place::kFlick;
+			const auto cl = g_clash.find(dll);
+			const bool clash = cl != g_clash.end() && cl->second != nullptr;
+			const bool toFlickNext = route::Decide(choice, g_realFlick, windows, clash) == route::Place::kFlick;
 			bool toAmf = true;
 			if (it != g_consumers.end()) { toAmf = it->second; }
 			else if (const auto a = g_answer.find(dll); a != g_answer.end()) { toAmf = a->second; }
@@ -1745,6 +1822,7 @@ namespace flick
 			Consumer c{ dll, name, toAmf, toFlickNext };
 			c.chosen = choice != route::Choice::kNone;
 			c.windows = windows;
+			if (clash) { c.clashFlick = route::ShortVersion(g_flickVersion); }
 			if (const auto e = eras.find(dll); e != eras.end()) { c.era = e->second; }
 			out.push_back(std::move(c));
 		}
