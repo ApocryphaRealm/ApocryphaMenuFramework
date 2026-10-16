@@ -80,6 +80,9 @@ WHAT CHANGED
 ------------
 
 Version 2.2.1
+TOML pages: every .toml in Data\SKSE\Plugins and its folders one level down can be a page, with a control per value; Game Settings Override's folder is one page, a tab per file in its load order, each setting drawn by the game setting's type. Changes are reloaded in game where a mod says how; otherwise they apply at the next start, as the page says.
+Typing in other languages: Chinese, Japanese and Korean through a Windows input method, and accented letters, in every text box this menu draws.
+Live apply on converted pages: a settled change on an MCM Helper page (TrueHUD, for one) applies while the page is still open; Prisma MCM Redux pages get their Apply too (Settings > Converted menus > MCM, "Apply changes straight away", on by default).
 FLICK mods that draw their own windows on screen go to FLICK itself by default when FLICK is installed: Racemenu Enhancer's widgets show in RaceMenu again (thanks to DSAdmin for the report). This menu holds FLICK settings pages but does not draw FLICK windows. Your choice on Settings > Converted menus > FLICK still wins, and the page says which mods have windows. Mods with settings pages only stay here.
 Papyrus checks for SKSE Menu Framework pass: a script asking SKSE.GetPluginVersion("SKSEMenuFramework") now finds it (thanks to hirato for the report). See REQUIREMENTS for the small file this adds.
 If a FLICK mod with windows crashes FLICK when its menu opens (Racemenu Enhancer 1.0.0 does with FLICK NG 1.5.0, with or without this menu), choose "This menu" for it on Settings > Converted menus > FLICK. After such a crash this menu offers that choice once at the next start; it never changes anything by itself.
