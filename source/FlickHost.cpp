@@ -587,6 +587,13 @@ namespace flick
 							 "menu by your choice (Settings > Converted menus > FLICK); choose FLICK's own window there to see its windows.",
 							 a_dll, a_plugin, a_id);
 			}
+			else if (const auto cl = g_clash.find(a_dll); cl != g_clash.end() && cl->second)
+			{
+				// 2.2.1: a known clash (FlickRouteCore.h) keeps it here - it does NOT go to FLICK at the next start
+				logger::warn("flick: {} ({}) registered the FLICK window \"{}\", which this menu does not draw. The mod stays in this "
+							 "menu because of a known clash: {} (FLICK {}). Choosing FLICK's own window for it on Settings > Converted "
+							 "menus > FLICK overrides this.", a_dll, a_plugin, a_id, cl->second->what, g_flickVersion);
+			}
 			else
 			{
 				logger::warn("flick: {} ({}) registered the FLICK window \"{}\", which this menu does not draw. FLICK itself is installed, "
