@@ -116,6 +116,11 @@ namespace flick
 	// this menu its name again. a_on: FLICK's own window; off: this menu - both saved as the player's choice.
 	void SetLeftToFlick(const std::string& a_dllLower, bool a_on, const std::string& a_shownName = {});
 	bool LeftToFlickChanged();   // a choice differs from what this session started with (restart to apply)
+	// 2.2.1 THE CRASH NOTICE (FlickCrashCore.h): when the last session ended in a crash whose newest crash log names FUCK.dll,
+	// after this menu sent a mod with FLICK windows to the real FLICK - each such mod not kept here already, as (dll, shown
+	// name). Empty once shown. The menu only OFFERS "keep it in this menu" (SetLeftToFlick(dll, false)); nothing is switched.
+	std::vector<std::pair<std::string, std::string>> CrashNotice();
+	void CrashNoticeShown();     // the notice was drawn: never again this session (and the crash is never offered again)
 	// SmfAlias: a DLL asked for FUCK.dll and was answered (a_toAmf: AMF's table; false: the real FLICK, or nothing).
 	void NoteConsumer(const std::string& a_dllLower, bool a_toAmf);
 	struct Consumer

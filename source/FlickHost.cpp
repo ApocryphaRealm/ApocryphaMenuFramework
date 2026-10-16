@@ -2,6 +2,7 @@
 
 #include "FlickHost.h"
 
+#include "FlickCrashCore.h"
 #include "FlickImGuiMap.h"
 #include "FlickRouteCore.h"
 #include "HelpBar.h"
@@ -24,6 +25,7 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <iterator>
 #include <map>
 #include <mutex>
 #include <set>
@@ -415,6 +417,84 @@ namespace flick
 			for (const auto& dll : g_leftNow) { out << route::FormatLine(route::Line::Kind::kFlick, dll, nameOf(dll)) << "\r\n"; }
 			for (const auto& dll : g_amfNow) { out << route::FormatLine(route::Line::Kind::kAmf, dll, nameOf(dll)) << "\r\n"; }
 			for (const auto& dll : g_windowsNow) { out << route::FormatLine(route::Line::Kind::kWindows, dll, nameOf(dll)) << "\r\n"; }
+		}
+
+		// 2.2.1 THE CRASH NOTICE (FlickCrashCore.h): this session's marker, and what the last session's crash left to offer
+		constexpr const char* kLastSessionPath = "Data/SKSE/Plugins/ApocryphaMenuFramework/FlickLastSession.txt";
+		crash::Marker            g_session;          // under g_choiceLock
+		std::vector<std::string> g_crashOffer;       // DLLs to offer "keep in this menu" for (under g_choiceLock)
+		std::string              g_crashLogName;     // the crash log that named FLICK
+		bool                     g_crashShown = false;
+
+		void SaveSessionLocked()
+		{
+			std::error_code ec;
+			std::filesystem::create_directories(std::filesystem::path(kLastSessionPath).parent_path(), ec);
+			std::ofstream out(kLastSessionPath, std::ios::binary | std::ios::trunc);
+			out << crash::FormatMarker(g_session);
+		}
+
+		std::int64_t FileClockNow() { return std::filesystem::file_time_type::clock::now().time_since_epoch().count(); }
+
+		// At start-up, before this session's marker replaces it: did the last session end in a crash inside FLICK after this
+		// menu sent a mod with FLICK windows there? Plain file reads only; any failure just means no notice.
+		void EvaluateLastSessionLocked()
+		{
+			std::string text;
+			{
+				std::ifstream in(kLastSessionPath, std::ios::binary);
+				if (!in) { logger::debug("flick: no last-session marker (first run, or nothing written)"); return; }
+				text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+			}
+			const auto previous = crash::ParseMarker(text);
+			if (!previous.valid || previous.flickDlls.empty())
+			{
+				logger::debug("flick: the last session sent no mod with FLICK windows to FLICK - no crash check");
+				return;
+			}
+			const auto dir = SKSE::log::log_directory();
+			if (!dir) { logger::warn("flick: crash check skipped - the SKSE log folder is unknown"); return; }
+			std::vector<crash::LogFile> files;
+			std::error_code ec;
+			for (std::filesystem::directory_iterator it(*dir, ec), end; !ec && it != end; it.increment(ec))
+			{
+				std::error_code fec;
+				if (!it->is_regular_file(fec)) { continue; }
+				const std::string name = it->path().filename().string();
+				if (!crash::IsCrashLogName(name)) { continue; }
+				const auto t = it->last_write_time(fec);
+				if (fec) { continue; }
+				files.push_back({ name, t.time_since_epoch().count() });
+			}
+			const auto log = crash::NewestCrashLogAfter(files, previous.start);
+			if (!log)
+			{
+				logger::info("flick: the last session sent {} mod(s) with FLICK windows to FLICK and left no crash log - no notice",
+							 previous.flickDlls.size());
+				return;
+			}
+			std::string crashText;
+			{
+				std::ifstream in(*dir / log->name, std::ios::binary);
+				constexpr std::size_t kMax = 16u * 1024u * 1024u;   // a crash log is well under this; read no more
+				crashText.resize(kMax);
+				in.read(crashText.data(), static_cast<std::streamsize>(kMax));
+				crashText.resize(static_cast<std::size_t>(std::max<std::streamsize>(in.gcount(), 0)));
+			}
+			const bool namesFlick = crash::NamesFlick(crashText);
+			std::set<std::string> keptHere = g_amfAtStart;
+			g_crashOffer = crash::ToOffer(previous, namesFlick, keptHere);
+			g_crashLogName = log->name;
+			if (g_crashOffer.empty())
+			{
+				logger::info("flick: the last session's crash log {} {} - no notice", log->name,
+							 namesFlick ? "names FUCK.dll, but every mod it sent to FLICK is now kept here" : "does not name FUCK.dll");
+				return;
+			}
+			std::string list;
+			for (const auto& dll : g_crashOffer) { list += (list.empty() ? "" : ", ") + dll; }
+			logger::warn("flick: the last session ended in a crash inside FLICK ({} names FUCK.dll) after this menu sent {} to FLICK. "
+						 "The menu will OFFER, once, to keep it in this menu - nothing is changed unless the player chooses it.", log->name, list);
 		}
 
 		route::Choice ChoiceNowLocked(const std::string& a_dll)
@@ -1524,6 +1604,10 @@ namespace flick
 			for (const auto& dll : g_leftAtStart) { logger::info("flick: {} is left to the real FLICK (the player's choice){}", dll, g_realFlick ? "" : " - FLICK is not installed, so its page is shown nowhere"); }
 			for (const auto& dll : g_amfAtStart) { logger::info("flick: {} is kept in this menu (the player's choice)", dll); }
 			for (const auto& dll : g_windowsAtStart) { logger::info("flick: {} registered a FLICK window in an earlier session (remembered)", dll); }
+			// 2.2.1 the crash notice: judge the last session first, then start this one's marker (FlickCrashCore.h)
+			EvaluateLastSessionLocked();
+			g_session = crash::Marker{ true, FileClockNow(), {} };
+			SaveSessionLocked();
 		}
 	}
 
@@ -1540,6 +1624,15 @@ namespace flick
 							g_amfAtStart.contains(a_dllLower) ? route::Choice::kAmf : route::Choice::kNone;
 		const bool here = route::Decide(choice, g_realFlick, windows) == route::Place::kAmf;
 		g_answer[a_dllLower] = here;
+		if (!here && windows && g_realFlick)
+		{
+			// 2.2.1 the crash notice: remembered for the next start, in case FLICK crashes with it (FlickCrashCore.h)
+			if (std::find(g_session.flickDlls.begin(), g_session.flickDlls.end(), a_dllLower) == g_session.flickDlls.end())
+			{
+				g_session.flickDlls.push_back(a_dllLower);
+				SaveSessionLocked();
+			}
+		}
 		const char* why = choice != route::Choice::kNone ? "the player's choice" :
 						  !windows ? "no FLICK windows" :
 						  g_realFlick ? (windowClass ? "it has FLICK windows (its DLL carries FLICK's IWindow class), which only FLICK draws" :
@@ -1571,6 +1664,29 @@ namespace flick
 		else { g_leftNow.erase(a_dllLower); g_amfNow.insert(a_dllLower); }
 		SaveLeftLocked();
 		logger::info("flick: {} -> {} (the player's choice; applies from the next game start)", a_dllLower, a_on ? "the real FLICK's own window" : "this menu");
+	}
+
+	std::vector<std::pair<std::string, std::string>> CrashNotice()
+	{
+		std::scoped_lock lock(g_choiceLock);
+		std::vector<std::pair<std::string, std::string>> out;
+		if (g_crashShown) { return out; }
+		for (const auto& dll : g_crashOffer)
+		{
+			const auto n = g_names.find(dll);
+			out.emplace_back(dll, n != g_names.end() && !n->second.empty() ? n->second : dll);
+		}
+		return out;
+	}
+
+	void CrashNoticeShown()
+	{
+		std::scoped_lock lock(g_choiceLock);
+		if (!g_crashShown && !g_crashOffer.empty())
+		{
+			logger::info("flick: the crash notice was shown (crash log {})", g_crashLogName);
+		}
+		g_crashShown = true;
 	}
 
 	bool LeftToFlickChanged()

@@ -2979,6 +2979,8 @@ namespace renderer
 											"own window unless you choose this menu.") :
 										TR("AMF_FlickWindowsNoFlick", "It has its own windows on screen, which only FLICK itself draws. FLICK is not "
 											"installed, so they are not shown."));
+									// 2.2.1 (the owner, 2026-10-16): Racemenu Enhancer 1.0.0 crashes FLICK NG 1.5.0 when RaceMenu opens
+									ImGui::TextWrapped("%s", TR("AMF_FlickWindowsCrash", "If the game crashes when this mod's menu opens, choose This menu."));
 									ImGui::PopStyleColor();
 								}
 								if (c.leftToFlick == c.toAmf)
@@ -4828,6 +4830,61 @@ namespace renderer
 						ImGui::CloseCurrentPopup();
 					}
 					ImGui::EndPopup();
+				}
+
+				// 2.2.1 THE FLICK CRASH NOTICE (FlickCrashCore.h, the owner approved 2026-10-16): the last session ended in a crash
+				// inside FLICK after this menu sent a mod with FLICK windows there - OFFER, once, to keep it in this menu. Nothing
+				// is switched unless the player presses the button; the notice is never shown again for that crash.
+				{
+					static std::vector<std::pair<std::string, std::string>> s_crashMods;
+					static bool s_crashOpened = false;
+					if (!s_crashOpened)
+					{
+						s_crashMods = flick::CrashNotice();
+						if (!s_crashMods.empty())
+						{
+							ImGui::OpenPopup("##amf_flickcrash");
+							flick::CrashNoticeShown();
+							logger::info("flick: crash notice opened ({} mod(s))", s_crashMods.size());
+						}
+						s_crashOpened = true;
+					}
+					if (ImGui::BeginPopupModal("##amf_flickcrash", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar))
+					{
+						ImGui::TextUnformatted(TR("AMF_FlickCrashTitle", "The game crashed inside FLICK last time"));
+						ImGui::Spacing();
+						bool close = false;
+						for (const auto& [dll, name] : s_crashMods)
+						{
+							ImGui::PushID(dll.c_str());
+							ImGui::PushTextWrapPos(ImGui::GetFontSize() * 28.0f);
+							// "%s" is the mod's name, put in by hand (a translation is never used as a format string)
+							auto withName = [&name](std::string a_text) {
+								if (const auto at = a_text.find("%s"); at != std::string::npos) { a_text.replace(at, 2, name); }
+								return a_text;
+							};
+							ImGui::TextWrapped("%s", withName(TR("AMF_FlickCrashBody", "The last session ended in a crash inside FLICK (FUCK.dll) "
+								"after %s was sent to FLICK's own window. Keeping it in this menu should stop the crash; its windows are then "
+								"not shown. It takes effect after a restart.")).c_str());
+							ImGui::PopTextWrapPos();
+							const std::string keep = withName(TR("AMF_FlickCrashKeep", "Keep %s in this menu"));
+							if (ImGui::Button(icons::Label(icons::kCheck, keep.c_str()).c_str()))
+							{
+								flick::SetLeftToFlick(dll, false, name);
+								logger::info("flick: crash notice - the player kept {} in this menu", dll);
+								close = s_crashMods.size() == 1;
+							}
+							ImGui::PopID();
+							ImGui::Spacing();
+						}
+						if (ImGui::Button(icons::Label(icons::kClear, TR("AMF_FlickCrashLater", "Not now")).c_str()))
+						{
+							logger::info("flick: crash notice - closed without a change");
+							close = true;
+						}
+						if (close) { ImGui::CloseCurrentPopup(); }
+						ImGui::EndPopup();
+					}
 				}
 
 				if (knot)
