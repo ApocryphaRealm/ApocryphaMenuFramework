@@ -182,6 +182,8 @@ namespace devbenchtool
 			{
 				// 2.1.6: the FLICK host - the FLICK mods connected, their pages, the page open now, and the calls not answered yet.
 				// {"op":"flick","dll":"<mod>.dll","place":"amf"|"flick"} sets the per-mod choice (applies from the next start).
+				// 2.2.1: each consumer also says "chosen" (the player picked its place) and "windows" (it has FLICK windows, so with
+				// no choice it goes to the real FLICK when FLICK is installed); leftToFlick is where it goes from the next start.
 				const std::string dll = JsonStr(args, "dll");
 				const std::string place = JsonStr(args, "place");
 				// 2.1.8: {"op":"flick","show":"<entry> (FLICK)"} lists a FLICK copy the one-entry rule hid, for this session
@@ -197,7 +199,8 @@ namespace devbenchtool
 				{
 					if (consumers.size() > 1) { consumers += ","; }
 					consumers += "{\"dll\":\"" + c.dll + "\",\"name\":\"" + c.name + "\",\"toAmf\":" + (c.toAmf ? "true" : "false") +
-								 ",\"leftToFlick\":" + (c.leftToFlick ? "true" : "false") + ",\"era\":\"" + c.era + "\"}";
+								 ",\"leftToFlick\":" + (c.leftToFlick ? "true" : "false") + ",\"chosen\":" + (c.chosen ? "true" : "false") +
+								 ",\"windows\":" + (c.windows ? "true" : "false") + ",\"era\":\"" + c.era + "\"}";
 				}
 				consumers += "]";
 				const std::string status = flick::StatusJson();

@@ -165,8 +165,10 @@ namespace
 
 	std::string CallerName(void* a_returnAddress);
 
-	// 2.1.6 THE PER-MOD FLICK CHOICE (FlickHost.h): a FLICK lookup is answered with AMF only for a DLL the player has not
-	// left to the real FLICK - that one gets the real API's answer (the real FUCK.dll, or nothing when it is not installed).
+	// 2.1.6 THE PER-MOD FLICK CHOICE (FlickHost.h): a FLICK lookup is answered with AMF only for a DLL that is not going to
+	// the real FLICK - that one gets the real API's answer (the real FUCK.dll, or nothing when it is not installed). 2.2.1:
+	// with no choice made, a DLL with FLICK windows goes to the real FLICK when it is installed (FlickRouteCore.h), so the
+	// calling MODULE is handed over too - its bytes say whether it has FLICK windows.
 	bool Aliased(std::wstring_view a_name, void* a_caller)
 	{
 		if (!IsSmfName(a_name)) {
@@ -177,7 +179,13 @@ namespace
 		}
 		std::string dll = CallerName(a_caller);
 		std::transform(dll.begin(), dll.end(), dll.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-		const bool toAmf = !flick::LeftToFlick(dll);
+		HMODULE module = nullptr;
+		if (a_caller &&
+			!::GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+								  reinterpret_cast<LPCWSTR>(a_caller), &module)) {
+			module = nullptr;
+		}
+		const bool toAmf = flick::AnswerHere(dll, module);
 		flick::NoteConsumer(dll, toAmf);
 		return toAmf;
 	}

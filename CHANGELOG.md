@@ -21,6 +21,14 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## 2.2.1 - 2026-10-15 - untested - FLICK mods with their own windows go to FLICK itself; the SKSE Menu Framework name for Papyrus checks
+
+### Fixed
+- Racemenu Enhancer's widgets in RaceMenu are back with FLICK installed (DSAdmin's report, 2.1.6-2.2.0). A FLICK mod that draws its own windows on screen now goes to FLICK itself by default when FLICK (FUCK.dll) is installed, instead of to this menu, which holds FLICK pages but does not draw FLICK windows - Racemenu Enhancer's RaceMenu widgets were held here and never drawn. A mod with windows is told from its own DLL before it connects (FLICK's window class is in it); one whose windows only show when it registers them is remembered and goes to FLICK from the next start. Your own choice on Settings > Converted menus > FLICK still wins either way, and the page says when a mod has windows. Without FLICK installed nothing changes, and the log says plainly that the mod's windows cannot be shown without FLICK. Mods with settings pages only (Wait Your Turn Redux, Simple Timed Block, Stances NG, Kill Feed and the rest) stay in this menu.
+
+### Added
+- Papyrus checks for SKSE Menu Framework pass (hirato's report): a mod script that asks SKSE.GetPluginVersion("SKSEMenuFramework") got -1, because this framework is known to SKSE as ApocryphaMenuFramework. The installer now adds !ApocryphaMenuFramework-SMFName.dll, a tiny SKSE plugin that only declares the name SKSEMenuFramework at version 3.14.0 and does nothing else - no menu code, its own file name, and installed only when SKSE Menu Framework's own DLL is not there (the owner's approved exception to 'no second DLL').
+
 ## 2.2.0 - 2026-10-13 - working - Mod Function Menu buttons; a page for every INI file; other mods' own menus opened from here (directly where the mod has a call for it, ENB's too), their keys held by AMF if you want; nothing during loading; the idle camera held off
 
 ### Added

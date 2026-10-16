@@ -15,7 +15,7 @@
 
 project(
 	ApocryphaMenuFramework
-	VERSION 2.2.0
+	VERSION 2.2.1
 	LANGUAGES CXX
 )
 
@@ -140,3 +140,29 @@ target_precompile_headers(
 )
 
 target_sources(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/version.rc)
+
+########################################################################################################################
+## The SKSE Menu Framework plugin-name stub (2.2.1) - stub/SMFNameStub.cpp
+########################################################################################################################
+#
+# A second, tiny SKSE plugin built beside the framework: !ApocryphaMenuFramework-SMFName.dll declares the SKSE plugin name
+# "SKSEMenuFramework" at version 3.14.0 and does nothing else, so a Papyrus check like
+# SKSE.GetPluginVersion("SKSEMenuFramework") > -1 passes under AMF (hirato's Nexus report, 2026-10-15). The owner approved
+# it as an exception to "no second DLL" (identity-and-load-order-decisions.md section 1): its own file name, no SMF code,
+# and the FOMOD installs it only while SKSE\Plugins\SKSEMenuFramework.dll is missing. No CommonLibSSE - it touches no game
+# address or structure - so one build serves every runtime; tools/build-fomod.py ships the SE/AE tree's copy.
+configure_file(
+	${CMAKE_CURRENT_SOURCE_DIR}/stub/SMFNameStub.rc.in
+	${CMAKE_CURRENT_BINARY_DIR}/SMFNameStub.rc
+	@ONLY
+)
+add_library(SMFNameStub SHARED
+	${CMAKE_CURRENT_SOURCE_DIR}/stub/SMFNameStub.cpp
+	${CMAKE_CURRENT_BINARY_DIR}/SMFNameStub.rc
+)
+set_target_properties(SMFNameStub PROPERTIES OUTPUT_NAME "!ApocryphaMenuFramework-SMFName")
+if (MSVC)
+	# rules 43 and 45, as for the framework above: a PDB that pairs with the DLL, and no build path inside either
+	target_compile_options(SMFNameStub PRIVATE /Zi "/d1trimfile:${PROJECT_NATIVE_DIR}")
+	target_link_options(SMFNameStub PRIVATE /DEBUG:FULL /OPT:REF /OPT:ICF /PDBALTPATH:%_PDB%)
+endif()
