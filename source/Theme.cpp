@@ -503,7 +503,10 @@ namespace theme
 			ImVec4* c = a_out.colors;
 			c[ImGuiCol_WindowBg] = black;
 			c[ImGuiCol_ChildBg] = black;
-			c[ImGuiCol_PopupBg] = black;
+			// 2.2.0 (the owner's theme review, 2026-10-12: the open dropdown list showed the page through it in Edge and Nordic,
+			// whose panel colours carry an alpha - #1D1D1DF4, #000000F2 - and not in Dear Diary, whose panel has none): popups,
+			// dropdown lists and tooltips take the panel's colour fully solid, whatever alpha the theme gives the window.
+			c[ImGuiCol_PopupBg] = ImVec4(black.x, black.y, black.z, 1.0f);
 			c[ImGuiCol_MenuBarBg] = black;
 			c[ImGuiCol_TitleBg] = black;
 			c[ImGuiCol_TitleBgActive] = black;

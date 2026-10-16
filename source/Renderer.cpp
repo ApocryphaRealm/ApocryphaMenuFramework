@@ -3108,6 +3108,10 @@ namespace renderer
 							"already has a page here. A change is written to the file itself, only the value you change (or to its _custom.ini "
 							"when it has one), and the file as it first was is kept as .amf-backup. Mods and the game read these files when the "
 							"game starts, so a change takes effect next time. Each page has its own switch below."));
+						// 2.2.0 (the owner, 2026-10-13): each INI file's page starts off - the player turns on the ones wanted
+						ImGui::Spacing();
+						ImGui::TextWrapped("%s", TR("AMF_IniPickHelp", "Each INI file's page starts off: turn on the INI files you want below, "
+							"and only those appear in the Mods list."));
 						ImGui::Spacing();
 						inipages::DrawSettingsList();
 						ImGui::EndTabItem();
@@ -4728,7 +4732,7 @@ namespace renderer
 								if (personalization::Nudge(entries, row.modName, -1)) { settings::Save(); }
 							}
 							if (ImGui::IsItemHovered()) { ImGui::SetTooltip("%s", TR("AMF_MoveUp", "Move up one place")); }
-							ImGui::SameLine();
+							// 2.2.0 (the W3 parity check): Down under Up, not beside it - D-pad down from Up reaches it
 							if (ImGui::ArrowButton("##nudgedown", ImGuiDir_Down))
 							{
 								if (personalization::Nudge(entries, row.modName, 1)) { settings::Save(); }
@@ -6045,7 +6049,20 @@ namespace renderer
 			",\"rect\":[" + std::to_string(g_searchRect[0].load()) + "," + std::to_string(g_searchRect[1].load()) + "," + std::to_string(g_searchRect[2].load()) + "," + std::to_string(g_searchRect[3].load()) + "]}," +
 			"\"wantTextInput\":" + (g_wantTextInput.load() ? "true" : "false") + ",\"backspaceDown\":" + (g_backspaceDown.load() ? "true" : "false") +
 			",\"activeId\":" + std::to_string(g_activeIdMirror.load()) + ",\"keyCtrl\":" + (g_modCtrl.load() ? "true" : "false") + ",\"keyShift\":" + (g_modShift.load() ? "true" : "false") + ",\"keyAlt\":" + (g_modAlt.load() ? "true" : "false") + ",";
-		auto esc = [](const std::string& v) { std::string o; for (char c : v) { if (c == '"' || c == '\x5C') { o += '\x5C'; } o += c; } return o; };
+		// 2.2.0: control characters too (a tab in a page name broke the JSON) - tab, newline and return by their short escapes, the rest as a four-digit hex escape
+		auto esc = [](const std::string& v) {
+			std::string o;
+			for (char c : v)
+			{
+				if (c == '"' || c == '\x5C') { o += '\x5C'; o += c; }
+				else if (c == '\t') { o += "\x5Ct"; }
+				else if (c == '\n') { o += "\x5Cn"; }
+				else if (c == '\r') { o += "\x5Cr"; }
+				else if (static_cast<unsigned char>(c) < 0x20) { char u[8]; std::snprintf(u, sizeof(u), "\x5Cu%04X", static_cast<unsigned>(static_cast<unsigned char>(c))); o += u; }
+				else { o += c; }
+			}
+			return o;
+		};
 		std::string mods;
 		for (std::size_t i = 0; i < entries.size(); ++i)
 		{

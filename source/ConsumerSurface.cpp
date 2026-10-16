@@ -3,6 +3,7 @@
 #include "Renderer.h"
 #include "Theme.h"
 #include "utils/Logger.h"
+#include "PreciseSlider.h"   // the wheel on a consumer's slider (2.2.0)
 #include "utils/ToggleSwitch.h"   // widgets::Toggle: a consumer's Checkbox drawn as AMF's switch (2.1.9)
 
 #include <cmath>
@@ -683,6 +684,21 @@ bool amf_ConsumerCheckbox(const char* a_label, bool* a_value)
 	const bool changed = widgets::Toggle(a_label, a_value);
 	ImGui::EndGroup();
 	return changed;
+}
+
+// 2.2.0 (the owner, testing RaceMenu Atelier: the mouse wheel did not move a slider after clicking it). Every consumer
+// slider export (igSliderFloat / Int / Scalar, the vertical three and igSliderAngle - tools/harden-cimgui.py) calls this
+// right after ImGui's own slider: one wheel notch over the slider, or while it is held, moves it one unit of the last
+// digit its format shows ("%.2f" 0.01, "%d" and "%.0f" 1), clamped, and the export returns true so the mod applies it as
+// it would a drag. The slider claims the wheel, so the page under it does not scroll (include/PreciseSlider.h).
+bool amf_ConsumerSliderWheel(int a_type, void* a_data, const void* a_min, const void* a_max, const char* a_format)
+{
+	return precise::WheelNudge(a_type, a_data, a_min, a_max, precise::FormatStep(a_format, precise::IsIntegerType(a_type)));
+}
+
+bool amf_ConsumerSliderAngleWheel(float* a_rad, float a_minDegrees, float a_maxDegrees, const char* a_format)
+{
+	return precise::WheelNudgeAngle(a_rad, a_minDegrees, a_maxDegrees, a_format);
 }
 
 void amf_BeginConsumerHeader()

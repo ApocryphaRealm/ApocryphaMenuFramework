@@ -375,10 +375,10 @@ namespace settings
 				"bEnabled=" << (a_v.fastExit ? 1 : 0) << "\n"
 				"\n"
 				"[IniMenus]\n"
-				"; 1 = every INI file directly in Data\\SKSE\\Plugins and in Data gets a page in this menu (the default). 0 = none do.\n"
+				"; 1 = INI files directly in Data\\SKSE\\Plugins and in Data can have a page in this menu (the default). 0 = none do.\n"
 				"bEnabled=" << (a_v.iniMenus ? 1 : 0) << "\n"
-				"; The pages switched off one by one (Settings > Converted menus > INI), comma-separated. Empty = all shown.\n"
-				"sOff=" << a_v.iniPagesOff << "\n"
+				"; The pages turned on one by one (Settings > Converted menus > INI), comma-separated. Each page starts off: empty = none shown.\n"
+				"sOn=" << a_v.iniPagesOn << "\n"
 				"\n"
 				"[MfmMenus]\n"
 				"; 1 = Mod Function Menu entries (the buttons other mods add under SKSE\\Plugins\\ccld_ModFunctionMenu) are a menu here,\n"
@@ -784,8 +784,8 @@ namespace settings
 			ReadBool(entries, "Startup.bCleanOrphanedSaveState", g_values.cleanOrphanedState);
 			ReadBool(entries, "IniMenus.bEnabled", g_values.iniMenus);
 			{
-				auto it = entries.find("IniMenus.sOff");
-				if (it != entries.end()) { g_values.iniPagesOff = it->second; }
+				auto it = entries.find("IniMenus.sOn");   // 2.2.0: 2.1.9's sOff (pages switched off) is not read - each page starts off now
+				if (it != entries.end()) { g_values.iniPagesOn = it->second; }
 			}
 			ReadBool(entries, "MfmMenus.bEnabled", g_values.mfmMenus);
 			ReadBool(entries, "ImGuiMenus.bOpenAnimationReplacer", g_values.imguiOar);

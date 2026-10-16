@@ -40,7 +40,8 @@ WHAT YOU GET
     per section, a control per setting, the file's comments as the help - unless its mod has a
     page here of its own. A change writes only that one value (a copy of the file as it first was
     is kept as .amf-backup) and takes effect the next time the game starts. Settings > Converted
-    menus > INI lists them, each with its own switch, and says why any file was left out.
+    menus > INI lists them, each with its own switch - each starts off, so turn on the INI files
+    you want and only those appear in the Mods list - and says why any file was left out.
   * Keep the camera awake: with the game left running behind the menu, the idle camera never
     starts circling your character while the menu is open, and one already circling stops when
     the menu opens (Settings > General, on by default).
@@ -90,6 +91,8 @@ Every INI file directly in Data\SKSE\Plugins and in Data gets a page, "<name> (I
 Other menus (Framework > Other menus): Open Animation Replacer, Community Shaders, Immersive Equipment Displays, OptiScaler and ENB get a row with a button that opens their own menu; this menu closes as it does, and a mod's own key pressed while this menu is open closes it too. "AMF holds this key" (off by default, per mod) writes a key no keyboard has (F13 and up, one no other key in these mods' configs uses) into that mod's own config, keeping a backup, so it opens from here and its real key is free; off puts the original back. Takes effect next launch. A file your mod manager puts back at launch is noticed and said.
 Nothing while loading: until the main menu appears, and on every loading screen, this menu does not open, takes no keys and queues nothing; one that is open when a load starts closes.
 The idle camera no longer starts circling your character while the menu is open, and one already circling stops when it opens (Settings > General, "Keep the camera awake", on by default). Every control has a visible outline in every theme. A quick click or key tap, even one shorter than a frame, is never lost. Switching theme no longer changes the window's spacing.
+The mouse wheel moves a slider: with the pointer on a slider, or while you hold it, one notch moves it one step of the last digit shown (up increases, down decreases), clamped to its range, and the page does not scroll under it - on this menu's own pages, converted MCM, INI, Prisma and FLICK pages, and mods' own SKSE Menu Framework sliders (RaceMenu Atelier's among them). Each INI file's page starts off: turn on the INI files you want on Settings > Converted menus > INI, listed alphabetically by folder.
+Font Awesome icons on this menu's own pages: the side list, page headings, tabs, Help sections and page buttons. A slider's value reads over its handle in every theme. The open dropdown list is solid in Edge and Nordic, and Dear Diary's secondary text is darker so it reads on the paper. The reorder arrows are stacked, so the D-pad reaches Down.
 Chinese (Simplified and Traditional), Japanese and Korean text on every page has its characters with any font you pick - mods' own page text included; characters a page draws are added to the font as they appear, and the font stays within what the game can load at every text size.
 
 Version 2.1.9

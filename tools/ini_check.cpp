@@ -256,6 +256,26 @@ int main(int argc, char** argv)
 			   { "OffsetX", "Offset X" } },
 			 { { "Render", "Render" }, { "HAVOK", "HAVOK" }, { "OSD", "OSD" }, { "Miscellaneous", "Miscellaneous" } });
 
+	// 2.2.0 (the owner, 2026-10-13): the master switch on, every INI page off until the player turns it on
+	std::cout << "== each INI page starts off ([IniMenus] sOn)\n";
+	{
+		const std::string bpc = "skse/plugins/backpocketforcontroller.ini", dt = "skse/plugins/ssedisplaytweaks.ini";
+		const std::set<std::string> fresh = inicore::ParseIdList("");   // a fresh user INI: no sOn
+		Check(!inicore::PageShown(true, fresh, bpc) && !inicore::PageShown(true, fresh, dt),
+			  "a fresh INI (no sOn): Back Pocket For Controller and SSE Display Tweaks are off with the master switch on");
+		const std::string turnedOn = inicore::WithPage("", bpc, true);
+		Check(turnedOn == bpc, "turning Back Pocket For Controller on stores sOn=" + turnedOn);
+		const std::set<std::string> reread = inicore::ParseIdList(turnedOn);   // the INI read back at the next start
+		Check(inicore::PageShown(true, reread, bpc) && !inicore::PageShown(true, reread, dt),
+			  "read back at the next start: it is still on, Display Tweaks still off");
+		Check(!inicore::PageShown(false, reread, bpc), "the master switch off hides it whatever sOn says");
+		const std::set<std::string> handEdited = inicore::ParseIdList(" SKSE/Plugins/BackPocketForController.ini , data/foo.ini,,");
+		Check(handEdited.size() == 2 && inicore::PageShown(true, handEdited, bpc), "a hand-edited sOn (spaces, capitals, empty items) still reads");
+		const std::string both = inicore::WithPage(turnedOn, dt, true);
+		const std::string backOff = inicore::WithPage(both, bpc, false);
+		Check(backOff == dt, "turning one off keeps the other on: sOn=" + backOff);
+	}
+
 	std::cout << "ini_check: " << g_pass << " of " << (g_pass + g_fail) << " passed\n";
 	return g_fail == 0 ? 0 : 1;
 }

@@ -36,7 +36,8 @@ Licence: GPL-3.0-or-later (see `LICENSE` and `NOTICE.md`). Not a fork: contains 
   Skyrim, since Task Manager cannot.
 - **INI files as pages.** Every `.ini` directly in `Data\SKSE\Plugins` and in `Data` gets a page "<name> (INI)" (a tab
   per section, a control per key) unless its mod has a page of its own; a change writes only that value, keeping a
-  `.amf-backup` of the file. Each page has its own switch under Settings -> Converted menus -> INI.
+  `.amf-backup` of the file. Each page has its own switch under Settings -> Converted menus -> INI, and starts off:
+  turn on the INI files you want and only those appear in the Mods list.
 - **Other menus.** Open Animation Replacer, Community Shaders, Immersive Equipment Displays, OptiScaler and ENB get a
   row under Framework -> Other menus with a button that opens their own menu; AMF closes as it does, and a mod's own key
   pressed while AMF is open closes AMF too. "AMF holds this key" (off by default, per mod) writes a key no keyboard has

@@ -176,7 +176,7 @@ namespace systemrow
 				return;
 			}
 			g_foundPath = page;
-			logger::info("System row: System page found at \"{}\"", page);
+			logger::debug("System row: System page found at \"{}\"", page);   // 2.2.0: debug - every journal open
 
 			// ---- the row -----------------------------------------------------------------
 			const std::string listPath = page + ".CategoryList_mc.List_mc";
@@ -234,7 +234,7 @@ namespace systemrow
 			// SetShowMod splices a Mod Manager row in at index 2 whenever the game wants one, which
 			// moves everything below it - and a report that says "the row sat between HELP and QUIT"
 			// can only be answered if the list of the day was written down.
-			logger::info("System row: category list is now [{}]", RowTexts(movie, listPath));
+			logger::debug("System row: category list is now [{}]", RowTexts(movie, listPath));
 
 			// ---- the press listener --------------------------------------------------------
 			// NOT a wrapper. The menu binds its own handler with
@@ -272,11 +272,11 @@ namespace systemrow
 					return;
 				}
 				g_listenerAdded = true;
-				logger::info("System row: press listener added beside the menu's own");
+				logger::debug("System row: press listener added beside the menu's own");
 			}
 
 			g_injected.store(true, std::memory_order_release);
-			logger::info("System row: \"{}\" added at index {} and the press handler wrapped",
+			logger::debug("System row: \"{}\" added at index {} and the press handler wrapped",
 						 kRowLabel, g_rowIndex);
 		}
 

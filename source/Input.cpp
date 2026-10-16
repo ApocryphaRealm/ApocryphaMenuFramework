@@ -1,4 +1,5 @@
 #include "Input.h"
+#include "ImguiHost.h"
 #include "Keyboard.h"
 
 #include <chrono>
@@ -738,6 +739,19 @@ namespace input
 					}
 					func(a_dispatcher, a_events);
 					return;
+				}
+
+				// 2.2.0: while OptiScaler's menu is open as far as AMF set it, the real mouse's buttons and wheel go to the game
+				// window as the messages its ImGui reads (ImguiHost.h ForwardMouse) - observe only, every event goes on as before
+				if (imguihost::MouseForwardActive())
+				{
+					for (const RE::InputEvent* e = *a_events; e; e = e->next)
+					{
+						const RE::ButtonEvent* b = e->AsButtonEvent();
+						if (b && b->GetDevice() == RE::INPUT_DEVICE::kMouse) { imguihost::ForwardMouse(b->GetIDCode(), b->IsDown(), b->IsUp()); }
+						// OptiScaler's own key as a game input event: it closes its menu, so the forwarding goes off (2.2.0 fix)
+						else if (b && b->GetDevice() == RE::INPUT_DEVICE::kKeyboard && b->IsDown()) { imguihost::NoteGameKey(b->GetIDCode()); }
+					}
 				}
 
 				SyncEngineTextInput();   // the engine makes no CharEvent unless we ask it to

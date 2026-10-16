@@ -170,6 +170,19 @@ def main() -> int:
     # black on black): rule 32 holds on a consumer's page too. The Checkbox export goes through amf_ConsumerCheckbox
     # (ConsumerSurface.cpp), which draws AMF's on/off switch with the same label, value and result.
     checkbox = 0
+    # 2.2.0 (the owner, testing RaceMenu Atelier: the mouse wheel did not move a slider after clicking it): every
+    # single-value slider export calls amf_ConsumerSliderWheel (ConsumerSurface.cpp) after ImGui's own slider - one wheel
+    # notch over the slider moves it one unit of the digit its format shows, clamped, and the export returns true.
+    # name -> the (data type, value pointer, min pointer, max pointer, format) the helper is given.
+    SLIDERS = {
+        "igSliderFloat":   ("ImGuiDataType_Float", "v", "&v_min", "&v_max", "format"),
+        "igSliderInt":     ("ImGuiDataType_S32", "v", "&v_min", "&v_max", "format"),
+        "igSliderScalar":  ("data_type", "p_data", "p_min", "p_max", "format"),
+        "igVSliderFloat":  ("ImGuiDataType_Float", "v", "&v_min", "&v_max", "format"),
+        "igVSliderInt":    ("ImGuiDataType_S32", "v", "&v_min", "&v_max", "format"),
+        "igVSliderScalar": ("data_type", "p_data", "p_min", "p_max", "format"),
+    }
+    sliders = 0
     for m in fn.finditer(src):
         ret, name, args = m.group(2).strip(), m.group(3), m.group(4).strip()
         lines = guards_for(ret, args)
@@ -200,6 +213,20 @@ def main() -> int:
             out.append("\n    return amf_ConsumerCheckbox(label, v);   // AMF: on/off as AMF's switch (rule 32)")
             pos = body_end
             checkbox += 1
+        elif name in SLIDERS or name == "igSliderAngle":
+            body_end = src.index("\n}", pos)
+            body = src[pos:body_end]
+            assert body.strip().startswith("return ImGui::"), name
+            call = body.strip()[len("return "):].rstrip(";")
+            if name == "igSliderAngle":
+                wheel = "amf_ConsumerSliderAngleWheel(v_rad, v_degrees_min, v_degrees_max, format)"
+            else:
+                wheel = "amf_ConsumerSliderWheel(" + ", ".join(SLIDERS[name]) + ")"
+            out.append("\n    const bool amf_r = " + call + ";\n"
+                       "    const bool amf_w = " + wheel + ";   // AMF: the wheel nudges a slider (2.2.0)\n"
+                       "    return amf_r || amf_w;")
+            pos = body_end
+            sliders += 1
         elif name in TEXT_FIELDS:
             body_end = src.index("\n}", pos)
             body = src[pos:body_end]
@@ -245,7 +272,8 @@ def main() -> int:
         "// exports note their item for the on-screen keyboard; and the collapsing-header / tree-node\n"
         "// exports run with ImGui's stock window padding so a framed header's edge sits where it does\n"
         "// under SKSE Menu Framework (2.0.6); SameLine never puts an item on top of the one before it (2.1.6);\n"
-        "// and Checkbox draws AMF's on/off switch, as every boolean in the menu does (rule 32, 2.1.9).\n"
+        "// Checkbox draws AMF's on/off switch, as every boolean in the menu does (rule 32, 2.1.9); and the\n"
+        "// single-value slider exports take a mouse-wheel notch as one step of the shown digit (2.2.0).\n"
         "// The generator's docstring explains exactly what is guarded and what is deliberately not -\n"
         "// in particular that ImGui's optional p_* pointers are left alone, because guarding p_open\n"
         "// would stop every window without a close button from drawing.\n"
@@ -259,10 +287,15 @@ def main() -> int:
     assert sameline == 1, sameline
     # 2.1.9: the switch the Checkbox export draws (defined in ConsumerSurface.cpp).
     assert checkbox == 1, checkbox
+    # 2.2.0: the wheel the seven single-value slider exports call (defined in ConsumerSurface.cpp).
+    assert sliders == 7, sliders
     text = (banner + "void amf_NoteTextField(unsigned int a_itemId);\n"
             "void amf_BeginConsumerHeader();\nvoid amf_EndConsumerHeader();\n"
             "void amf_ConsumerSameLine(float a_offsetFromStartX, float a_spacing);\n"
-            "bool amf_ConsumerCheckbox(const char* a_label, bool* a_value);\n" + "".join(out))
+            "bool amf_ConsumerCheckbox(const char* a_label, bool* a_value);\n"
+            "bool amf_ConsumerSliderWheel(int a_type, void* a_data, const void* a_min, const void* a_max, const char* a_format);\n"
+            "bool amf_ConsumerSliderAngleWheel(float* a_rad, float a_minDegrees, float a_maxDegrees, const char* a_format);\n"
+            + "".join(out))
     os.makedirs(os.path.dirname(TARGET), exist_ok=True)
     io.open(TARGET, "w", encoding="utf-8", newline="\n").write(text)
 
