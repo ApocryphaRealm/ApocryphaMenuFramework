@@ -1403,7 +1403,7 @@ namespace mcmloader
 			for (std::uint32_t i = 0; i < array->size(); ++i)
 			{
 				const auto& v = (*array)[i];
-				if (v.IsObject() && v.GetObject().get() == a_config.get()) { return true; }
+				if (const auto o = detail::SafeObject(v); o && o.get() == a_config.get()) { return true; }
 			}
 			return false;
 		}
@@ -2528,7 +2528,7 @@ namespace mcmloader
 				const ListLayout layout = DetectLayout(manager);
 				json r{ { "ok", true }, { "layout", layoutNames[static_cast<int>(layout)] } };
 				const auto configName = [](const RE::BSScript::Variable& a_v) {
-					const auto obj = a_v.IsObject() ? a_v.GetObject() : nullptr;
+					const auto obj = detail::SafeObject(a_v);
 					const auto name = obj ? obj->GetProperty("ModName") : nullptr;
 					return name && name->IsString() ? std::string(name->GetString()) : std::string();
 				};
@@ -2552,7 +2552,7 @@ namespace mcmloader
 						for (std::uint32_t i = 0; arr && i < arr->size(); ++i)
 						{
 							const auto& c = (*arr)[i];
-							if (!c.IsObject() || !c.GetObject()) { continue; }  // an empty slot is an object-typed None that IsNoneObject does not report
+							if (!detail::SafeObject(c)) { continue; }  // an empty slot is an object-typed None that IsNoneObject does not report
 							list.push_back(configName(c));
 						}
 					}

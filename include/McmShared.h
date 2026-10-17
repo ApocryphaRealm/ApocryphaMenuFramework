@@ -3,6 +3,8 @@
 // MCM loader. Helpers shared by the MCM Helper loader (McmLoader.cpp, phases 1-2) and the SkyUI
 // script-menu loader (McmScripts.cpp, phase 3). Internal to AMF - not part of its API.
 
+#include "SlotGuard.h"
+
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -38,6 +40,17 @@ namespace mcmloader::detail
 
 	// A script variable by name through the type chain (MCM Helper's ScriptObject::GetVariable). Null when absent.
 	RE::BSScript::Variable* ScriptVar(const RE::BSTSmartPointer<RE::BSScript::Object>& a_object, std::string_view a_name);
+
+	// 2.2.2: the object a slot holds, or empty when it holds none OR holds something that cannot be an object. Variable::GetObject()
+	// raises the target's reference count - a write through whatever pointer the slot holds - so a slot the VM has not finished
+	// writing (a made-up pointer under an "object" type) crashed a new game (SlotGuard.h). Use this wherever the slot is read off
+	// the VM thread or out of an object whose set-up may not be done; never GetObject() on such a slot directly.
+	inline RE::BSTSmartPointer<RE::BSScript::Object> SafeObject(const RE::BSScript::Variable& a_var)
+	{
+		if (!a_var.IsObject()) { return nullptr; }
+		if (slotguard::Classify(true, slotguard::RawValue(std::addressof(a_var)), 0x30) != slotguard::Slot::kPointer) { return nullptr; }
+		return a_var.GetObject();
+	}
 
 	// Whether a menu comes into AMF (the player's choice per menu; menus never set follow [MCM] bImportNewMenus). Keys
 	// are the ledger's: "mcmhelper|<mod>" and "script|<plugin>|<ModName>". Any thread.

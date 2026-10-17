@@ -8,6 +8,7 @@
 #include "PreciseSlider.h"
 #include "Registry.h"
 #include "Settings.h"
+#include "SlotGuard.h"
 #include "Strings.h"
 #include "Theme.h"
 #include "utils/Logger.h"
@@ -289,16 +290,31 @@ namespace mcmloader::scripts
 			return out;
 		}
 
+		// 2.2.2: what a variable slot holds, judged from its two raw words with nothing dereferenced (SlotGuard.h). A slot the
+		// VM has not finished writing (or whose script object is still being set up) can say "object" and hold a made-up
+		// pointer; copying it raises a reference count through that pointer, which is how a new game crashed (Nicallia,
+		// 2026-10-17: 0xB2CB0001 in SKI_ConfigBase._configManager of SexLab Aroused's dormant "SLA Config" quest).
+		slotguard::Slot SlotOf(const RE::BSScript::Variable& a_var)
+		{
+			const bool object = a_var.IsObject();
+			return slotguard::Classify(object || a_var.IsArray() || a_var.IsString(), slotguard::RawValue(std::addressof(a_var)), object ? 0x30 : 0x10);
+		}
+
+		bool SlotStable(const RE::BSScript::Variable* a_var)
+		{
+			return a_var && SlotOf(*a_var) != slotguard::Slot::kUnstable;
+		}
+
 		std::vector<std::string> ReadStringArray(const RE::BSScript::Variable* a_var)
 		{
 			std::vector<std::string> out;
-			if (!a_var || !a_var->IsArray()) { return out; }
+			if (!a_var || !a_var->IsArray() || !SlotStable(a_var)) { return out; }
 			const auto array = a_var->GetArray();
 			if (!array) { return out; }
 			for (std::uint32_t i = 0; i < array->size(); ++i)
 			{
 				const auto& v = (*array)[i];
-				out.emplace_back(v.IsString() ? std::string(v.GetString()) : std::string());
+				out.emplace_back(v.IsString() && SlotStable(std::addressof(v)) ? std::string(v.GetString()) : std::string());
 			}
 			return out;
 		}
@@ -1342,6 +1358,9 @@ namespace mcmloader::scripts
 			}
 		}
 
+		// Quests already reported as holding an unsettled variable (one log line per quest, not one per pass).
+		std::set<RE::FormID> g_warnedUnstable;
+
 		void DiscoverNow()
 		{
 			const auto vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
@@ -1358,6 +1377,7 @@ namespace mcmloader::scripts
 			int found = 0;
 			int added = 0;
 			int unregistered = 0;
+			int deferred = 0;
 			for (const auto quest : dataHandler->GetFormArray<RE::TESQuest>())
 			{
 				if (!quest) { continue; }
@@ -1375,12 +1395,28 @@ namespace mcmloader::scripts
 				// moreHUD, T.N.G., Wyrmstooth ... missing from AMF in his list).
 				const auto manager = Var(config, "_configManager");
 				// the VALUE, not the type: "_configManager = none" leaves an object-typed None, which IsNoneObject (a None
-				// TYPE) does not report - tested 2026-10-04 with TestBench papyrus var after SkyUI's own reset event
-				const bool registered = manager && manager->IsObject() && manager->GetObject();
+				// TYPE) does not report - tested 2026-10-04 with TestBench papyrus var after SkyUI's own reset event.
+				// 2.2.2: judged from the slot's raw words, never by copying its pointer (GetObject raises the target's reference
+				// count - a write through whatever the slot holds). A slot holding a made-up pointer means the script object is
+				// still being set up, or the VM is writing it right now: leave this quest for a later pass.
+				const auto managerSlot = manager ? SlotOf(*manager) : slotguard::Slot::kNotPointer;
+				if (managerSlot == slotguard::Slot::kUnstable)
+				{
+					++deferred;
+					if (g_warnedUnstable.insert(quest->GetFormID()).second)
+					{
+						logger::warn("MCM scripts: quest {:08X} - SKI_ConfigBase._configManager holds {:#x}, not a live object (script object flags: constructed {}, initialized {}, valid {}, {} propert(ies) still to set); left for a later pass",
+							quest->GetFormID(), slotguard::RawValue(manager), config->IsConstructed(), config->IsInitialized(), config->IsValid(),
+							static_cast<unsigned>(config->remainingPropsToInit));
+					}
+					continue;
+				}
+				const bool registered = managerSlot == slotguard::Slot::kPointer;
 				const auto initVar = Var(config, "_initialized");
 				const bool initialized = initVar && initVar->IsBool() && initVar->GetBool();
 				if (!registered && !initialized) { continue; }  // not set up yet - a later pass looks again
 				const auto nameVar = config->GetProperty("ModName");
+				if (nameVar && !SlotStable(nameVar)) { ++deferred; continue; }  // ModName being written - a later pass looks again
 				const std::string modName = nameVar && nameVar->IsString() ? std::string(nameVar->GetString()) : std::string();
 				if (modName.empty()) { continue; }
 				const auto pages = ReadStringArray(config->GetProperty("Pages"));
@@ -1419,8 +1455,8 @@ namespace mcmloader::scripts
 				mod.pages = pages;
 				SyncTabs(index);
 			}
-			logger::info("MCM scripts: discovery - {} script-only SkyUI menu(s) in this game, {} new, {} not registered with SkyUI's manager",
-				found, added, unregistered);
+			logger::info("MCM scripts: discovery - {} script-only SkyUI menu(s) in this game, {} new, {} not registered with SkyUI's manager, {} left for a later pass (script variables not settled yet)",
+				found, added, unregistered, deferred);
 		}
 
 		// After a load the configs register with SkyUI over the first half-minute: look a few times.
