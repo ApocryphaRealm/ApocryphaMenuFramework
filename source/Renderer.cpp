@@ -2551,8 +2551,8 @@ namespace renderer
 						logger::info("settings page: help bar -> {}", values.helpBar);
 						settings::Save();
 					}
-					ImGui::TextWrapped("%s", TR("AMF_HelpBarHelp", "On: the help for the highlighted option on a converted MCM page "
-						"shows in a bar under the right pane, inside the menu, like SkyUI's info line. Off: it shows as a popup beside "
+					ImGui::TextWrapped("%s", TR("AMF_HelpBarHelp", "On: the help for the highlighted option - on a converted MCM page, an INI or TOML page, and an SKSE mod's page "
+						"- shows in a bar under the right pane, inside the menu, like SkyUI's info line. Off: it shows as a popup beside "
 						"the option."));
 						ImGui::EndTabItem();
 					}
@@ -4976,7 +4976,10 @@ namespace renderer
 					}
 					if (visiblePages.size() == 1)
 					{
+						// 2.2.2: a mod's plain-text tooltips go to the help bar (HelpBar.h) while its page draws
+						helpbar::EnterModPage();
 						visiblePages[0]->render();
+						helpbar::LeaveModPage(entry.modName + "|" + visiblePages[0]->pageName);
 					}
 					else if (visiblePages.size() > 1 && ImGui::BeginTabBar("##pages",ImGuiTabBarFlags_FittingPolicyScroll | ImGuiTabBarFlags_TabListPopupButton))   // a mod with many sections keeps whole labels: the bar scrolls, and the list button on the left opens every section by name (Character Progression Control reached twelve tabs and the default policy squeezed them to "Level... Expe... Skills")
 					{
@@ -5018,7 +5021,9 @@ namespace renderer
 							{
 								g_tabIndex = index;
 								curTabName = page.pageName;
+								helpbar::EnterModPage();
 								page.render();
+								helpbar::LeaveModPage(entry.modName + "|" + page.pageName);
 								ImGui::EndTabItem();
 							}
 							++index;

@@ -19,6 +19,13 @@ namespace helpbar
 	// Call right after the item. a_help is shown as given (already translated); empty does nothing.
 	void OfferForLastItem(const std::string& a_help);
 
+	// 2.2.2: pages of SKSE mods (the SKSE Menu Framework API) do not call Want themselves - their help is a tooltip.
+	// The Renderer brackets a registered mod page's render with EnterModPage / LeaveModPage; a page that did not ask for
+	// the bar by itself (MCM, INI, TOML, FLICK and Prisma pages do) gets it here under a_pageKey, so its plain-text tooltips
+	// (SetTooltip / SetItemTooltip) go to the bar instead of popping up. Same setting, same bar, same colour.
+	void EnterModPage();
+	void LeaveModPage(const std::string& a_pageKey);
+
 	// Renderer: whether the content pane leaves room for the bar this frame (the setting on, and a page asked last frame),
 	// the bar's own height, the right pane's rect (for the popup form), and drawing the bar at the cursor.
 	bool Active();

@@ -82,6 +82,8 @@ WHAT CHANGED
 Version 2.2.2
 A mod's long description no longer runs off the screen on one line: help that a mod made for SKSE Menu Framework shows as a tooltip (Skyrim Performance Solution's, for one) now wraps inside this menu's window and grows to as many lines as it needs (thanks to BanMarwein for the report).
 
+The help bar under the right pane (Settings, Display, Help bar: on by default) now also shows the help of a mod made for SKSE Menu Framework, as it already did for converted MCM, INI and TOML pages, so every kind of page shows its help in the same place, like SkyUI's info line. Turn the bar off and the help shows as a popup beside the option again.
+
 Version 2.2.1
 TOML pages: every .toml in Data\SKSE\Plugins and its folders one level down can be a page, with a control per value; Game Settings Override's folder is one page, a tab per file in its load order, each setting drawn by the game setting's type. Changes are reloaded in game where a mod says how; otherwise they apply at the next start, as the page says.
 Typing in other languages: Chinese, Japanese and Korean through a Windows input method, and accented letters, in every text box this menu draws.

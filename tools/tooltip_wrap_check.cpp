@@ -141,6 +141,25 @@ int main()
 		Check(wrap >= ImGui::GetFontSize() * 12.0f - 0.5f, "a very narrow host window still wraps at a dozen characters or more");
 	}
 
+	{
+		// the help bar hook: a taker keeps the text out of the popup and receives it formatted; a decliner leaves the popup
+		static std::string taken;
+		static bool take = true;
+		consumer_tooltip::Bar() = [](const char* a_text) { taken = a_text; return take; };
+		taken.clear();
+		take = true;
+		const auto* tip = Run([&] { Tip("%s: %d", "Far shadow cache", 7); });
+		Check(!tip && taken == "Far shadow cache: 7", "hook takes a plain tooltip: no popup, text formatted for the bar");
+		take = false;
+		tip = Run([&] { Tip("%s", "Declined."); });
+		Check(tip != nullptr, "hook declines: the wrapped popup is drawn as before");
+		tip = Run([&] {
+			if (consumer_tooltip::BeginTooltip()) { ImGui::TextUnformatted("widgets"); consumer_tooltip::EndTooltip(); }
+		});
+		Check(tip != nullptr, "a BeginTooltip form is never offered to the bar");
+		consumer_tooltip::Bar() = nullptr;
+	}
+
 	ImGui::DestroyContext();
 	std::cout << "tooltip_wrap_check: " << g_pass << " of " << (g_pass + g_fail) << " passed\n";
 	return g_fail ? 1 : 0;

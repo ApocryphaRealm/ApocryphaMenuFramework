@@ -3,6 +3,7 @@
 #include "AmfIcons.h"
 #include "Settings.h"
 #include "Theme.h"
+#include "ConsumerTooltip.h"
 #include "utils/Logger.h"
 
 #include <algorithm>
@@ -19,6 +20,35 @@ namespace helpbar
 		std::string g_text;      // the help on show (the last highlighted item's, as SkyUI's info line keeps it)
 		float g_paneMinX = 0.0f, g_paneMinY = 0.0f, g_paneMaxX = 0.0f, g_paneMaxY = 0.0f;   // the right pane, last frame
 		constexpr int kLines = 3;  // the bar's height in text lines; longer help scrolls inside it
+		bool g_inModPage = false;  // a registered mod page is drawing (Renderer): its tooltips may go to the bar
+
+		// consumer_tooltip's hook: a mod's plain-text tooltip. Taken (true) only while a mod page draws in the content pane
+		// with the help bar on and the bar present; otherwise the caller draws its wrapped popup.
+		bool TakeConsumerTooltip(const char* a_text)
+		{
+			if (!g_inModPage || !a_text || !*a_text) { return false; }
+			if (!settings::Get().helpBar || g_wantFrame < ImGui::GetFrameCount() - 1) { return false; }
+			if (g_text != a_text)
+			{
+				g_text = a_text;
+				logger::debug("help bar: {} character(s) from a mod's tooltip", g_text.size());
+			}
+			return true;
+		}
+
+		[[maybe_unused]] const bool g_hookInstalled = (consumer_tooltip::Bar() = &TakeConsumerTooltip, true);
+	}
+
+	void EnterModPage()
+	{
+		g_inModPage = true;
+	}
+
+	void LeaveModPage(const std::string& a_pageKey)
+	{
+		g_inModPage = false;
+		// A page that asked for the bar itself keeps its own name; any other mod page asks here, under its own key.
+		if (g_wantFrame != ImGui::GetFrameCount()) { Want(a_pageKey); }
 	}
 
 	void Want(const std::string& a_page)

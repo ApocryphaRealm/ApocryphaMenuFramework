@@ -20,10 +20,37 @@
 
 #include <algorithm>
 #include <cstdarg>
+#include <cstdio>
+#include <string>
 #include <vector>
 
 namespace consumer_tooltip
 {
+	// 2.2.2: the help bar. AMF sets this once; a plain-text tooltip (SetTooltip / SetItemTooltip) is offered to it first, and
+	// when it takes the text (the help bar is on and the mod is drawing inside AMF's page pane) no popup is drawn - the text
+	// shows in the bar under the right pane, as a converted MCM page's help does. Null (the offline check) = always a popup.
+	// Tooltips built from widgets (BeginTooltip ... EndTooltip) stay popups: a bar holds text only.
+	using BarHook = bool (*)(const char* a_text);
+	inline BarHook& Bar()
+	{
+		static BarHook s_hook = nullptr;
+		return s_hook;
+	}
+
+	inline bool OfferToBar(const char* a_fmt, va_list a_args)
+	{
+		if (!Bar()) { return false; }
+		va_list copy;
+		va_copy(copy, a_args);
+		const int n = std::vsnprintf(nullptr, 0, a_fmt, copy);
+		va_end(copy);
+		if (n <= 0) { return false; }
+		std::string text(static_cast<std::size_t>(n) + 1, '\0');
+		std::vsnprintf(text.data(), text.size(), a_fmt, a_args);
+		text.resize(static_cast<std::size_t>(n));
+		return Bar()(text.c_str());
+	}
+
 	// The wrap width for a tooltip opened now (before the tooltip window begins).
 	inline float WrapWidth()
 	{
@@ -82,6 +109,7 @@ namespace consumer_tooltip
 	// ImGui's SetTooltipV, with the text wrapped.
 	inline void SetTooltipV(const char* a_fmt, va_list a_args)
 	{
+		if (OfferToBar(a_fmt, a_args)) { return; }
 		const float wrap = WrapWidth();
 		if (!ImGui::BeginTooltipEx(ImGuiTooltipFlags_OverridePrevious, ImGuiWindowFlags_None)) { return; }
 		ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + wrap);
