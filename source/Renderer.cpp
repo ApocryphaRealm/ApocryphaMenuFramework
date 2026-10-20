@@ -100,7 +100,7 @@ namespace renderer
 		// and published here for the input thread, which then feeds ImGui and holds the game's input exactly as it
 		// does for our own menu. Until 2.0.4 only our own menu did that, so such a window drew every frame with no
 		// cursor and no input at all unless the framework menu happened to be open too (mmmizuhara, 2026-10-03:
-		// RaceMenu Atelier "isn't working ... It works fine when I switch back to SKSE Menu Framework"). Published by
+		// another mod "isn't working ... It works fine when I switch back to SKSE Menu Framework"). Published by
 		// the render thread rather than asked of the registry by the input thread, so the two sides agree: the input
 		// thread only queues events for ImGui once the renderer has already taken the rising edge and cleared the queue.
 		std::atomic<bool> g_consumerInput{ false };
@@ -1241,7 +1241,7 @@ namespace renderer
 				}
 
 				// FONT AWESOME ICON FACES (2.0.4). SKSE Menu Framework consumers push a Font Awesome face by
-				// name and draw its icons (U+E000-U+F8FF); RaceMenu Atelier's buttons drew as "?" because only
+				// name and draw its icons (U+E000-U+F8FF); another mod's buttons drew as "?" because only
 				// the text face existed (mmmizuhara, 2026-10-03). Each face is a font of its own - solid and
 				// regular share codepoints, so they cannot share one - made of the text face (Latin, Latin
 				// Extended-A and Cyrillic only, so "<icon> Label" works without copying a CJK set three times)
@@ -5418,7 +5418,7 @@ namespace renderer
 
 				// Software cursor while the menu (or a mod's blocking window) has the input - the game
 				// hides and recentres the OS cursor at will, so ImGui draws its own at the position we
-				// integrate. RaceMenu Atelier hides the game's own cursor for exactly this reason.
+				// integrate. another mod hides the game's own cursor for exactly this reason.
 				io.MouseDrawCursor = interactive;
 
 				// Nav mode follows the EXPLICIT setting live (the toggle sits on the settings
@@ -5444,7 +5444,7 @@ namespace renderer
 				// CharEvent is the only way a letter ever reaches ImGui in this framework (there is no
 				// WndProc hook). Without it the search bar and every mod's text box took clicks and
 				// navigation but not a single character (phbd01, 2026-09-19).
-				// A mod's own window counts too (2.0.4): RaceMenu Atelier's name field types through here.
+				// A mod's own window counts too (2.0.4): another mod's name field types through here.
 				g_wantTextInput.store(interactive && io.WantTextInput, std::memory_order_release);
 				textinput::OnFrame(interactive && io.WantTextInput);   // 2.2.1: the IME's windows follow it (TextInput.h)
 
@@ -5806,7 +5806,7 @@ namespace renderer
 			g_justOpened.store(true, std::memory_order_release);
 			g_applyGeometry.store(true, std::memory_order_release);
 			// an MCM menu set up since the last pass shows as the menu opens. Here, on OUR open, not on the render
-			// thread's input edge: over a mod's window that already owns the input (RaceMenu Atelier in character
+			// thread's input edge: over a mod's window that already owns the input (another mod in character
 			// creation) the menu opening is no input edge, and the pass never ran (tested 2026-10-04)
 			mcmloader::scripts::RequestDiscovery();
 		}

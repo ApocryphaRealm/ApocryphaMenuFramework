@@ -317,7 +317,7 @@ namespace consumer
 	void PushNamedFont(const char* a_name)
 	{
 		// FONT AWESOME (2.0.4). SKSE Menu Framework consumers draw their icons as Font Awesome glyphs
-		// (U+E000-U+F8FF) after pushing one of its faces by name - RaceMenu Atelier pushes "fa-solid-900"
+		// (U+E000-U+F8FF) after pushing one of its faces by name - another mod pushes "fa-solid-900"
 		// - and with only the text face in the atlas every icon drew as "?" (mmmizuhara, 2026-10-03). A
 		// Font Awesome name now pushes the matching icon face: the text face with that style's icons merged
 		// in, so "<icon> Label" strings draw both. The face is built the first time a mod asks for it.
@@ -686,7 +686,7 @@ bool amf_ConsumerCheckbox(const char* a_label, bool* a_value)
 	return changed;
 }
 
-// 2.2.0 (the owner, testing RaceMenu Atelier: the mouse wheel did not move a slider after clicking it). Every consumer
+// 2.2.0 (the owner, testing another mod: the mouse wheel did not move a slider after clicking it). Every consumer
 // slider export (igSliderFloat / Int / Scalar, the vertical three and igSliderAngle - tools/harden-cimgui.py) calls this
 // right after ImGui's own slider: one wheel notch over the slider, or while it is held, moves it one unit of the last
 // digit its format shows ("%.2f" 0.01, "%d" and "%.0f" 1), clamped, and the export returns true so the mod applies it as

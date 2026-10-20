@@ -170,7 +170,7 @@ def main() -> int:
     # black on black): rule 32 holds on a consumer's page too. The Checkbox export goes through amf_ConsumerCheckbox
     # (ConsumerSurface.cpp), which draws AMF's on/off switch with the same label, value and result.
     checkbox = 0
-    # 2.2.0 (the owner, testing RaceMenu Atelier: the mouse wheel did not move a slider after clicking it): every
+    # 2.2.0 (the owner, testing another mod: the mouse wheel did not move a slider after clicking it): every
     # single-value slider export calls amf_ConsumerSliderWheel (ConsumerSurface.cpp) after ImGui's own slider - one wheel
     # notch over the slider moves it one unit of the digit its format shows, clamped, and the export returns true.
     # name -> the (data type, value pointer, min pointer, max pointer, format) the helper is given.

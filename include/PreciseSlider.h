@@ -30,7 +30,7 @@ namespace precise
 	}
 
 	// ---------------------------------------------------------------------------------------------------------
-	// The mouse wheel (2.2.0; the owner, testing RaceMenu Atelier: "I tried using the scroller on the mouse to move the
+	// The mouse wheel (2.2.0; the owner, testing another mod: "I tried using the scroller on the mouse to move the
 	// sliders after clicking the slider, and it didn't scroll it" - and in a bunch of other menus drawn through AMF).
 	// One notch over a slider - hovered, or held in a drag - moves it one step: up increases, down decreases, clamped to
 	// its range, and the slider call returns true and the item reports itself edited, as a drag does. The slider claims

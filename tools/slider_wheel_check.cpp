@@ -1,4 +1,4 @@
-// Off-game check of the mouse wheel on a slider (AMF 2.2.0; the owner, testing RaceMenu Atelier: the wheel did not move a
+// Off-game check of the mouse wheel on a slider (AMF 2.2.0; the owner, testing another mod: the wheel did not move a
 // slider after clicking it). Runs AMF's own ImGui build (1.90.8 with the overlay patches, the SE line's vcpkg tree) headless,
 // with the framework's input rules (trickling off, the pointer published once per frame).
 //   tools\slider_wheel_check.bat   -> one line per check and "slider_wheel_check: N of N passed"; exits 1 on any failure.

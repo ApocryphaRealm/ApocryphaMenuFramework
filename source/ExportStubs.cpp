@@ -139,7 +139,7 @@ namespace export_stubs::detail
 	// that we DO export, so the inventory covers both halves.
 	//
 	// THE HOT PATH (2.0.4). The stock consumer header's wrappers call GetProcAddress on EVERY call -
-	// RaceMenu Atelier's do, around a thousand times a frame - and every one lands here. This used to
+	// another mod's do, around a thousand times a frame - and every one lands here. This used to
 	// lock a mutex, build a std::string and walk a vector of every name seen so far on each of them.
 	// A name already seen now costs a shared (reader) lock and one hash: no allocation, no scan, and
 	// readers never wait on each other. Only a name's FIRST sighting takes the writer lock and allocates.

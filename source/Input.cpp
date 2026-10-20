@@ -643,11 +643,11 @@ namespace input
 			// THE INPUT IS TAKEN FROM THE GAME - one event, while our menu OR a mod's own blocking window
 			// (2.0.4) holds the player's input. One body for both, so the two can never drift apart: until
 			// 2.0.4 only our menu came through here, and a mod's AddWindow window drew with no input at all
-			// unless our menu happened to be open too (mmmizuhara, 2026-10-03, RaceMenu Atelier).
+			// unless our menu happened to be open too (mmmizuhara, 2026-10-03, another mod).
 			// Returns true when the event still reaches the game. a_holder names who has the input, for the log.
 			// The game's console key (ControlMap's "Console" user event, ~ by default). A mod's window that holds the
 			// input must not keep it from the game: a player who opens RaceMenu from the console (showracemenu) is left
-			// with the console stuck open behind RaceMenu Atelier otherwise (the owner's screenshot, 2026-10-03).
+			// with the console stuck open behind another mod otherwise (the owner's screenshot, 2026-10-03).
 			static bool IsGameConsoleKey(const RE::ButtonEvent* a_button)
 			{
 				if (!a_button || a_button->GetDevice() != RE::INPUT_DEVICE::kKeyboard) { return false; }
@@ -668,7 +668,7 @@ namespace input
 
 			static bool TakeForImGui(RE::InputEvent* a_event, const RE::ButtonEvent* a_button, const char* a_holder)
 			{
-				// SMF-compat input callbacks (e.g. DEM's "Press a key..." bind capture, RaceMenu Atelier's
+				// SMF-compat input callbacks (e.g. DEM's "Press a key..." bind capture, another mod's
 				// F4 that swaps it for the stock RaceMenu) get first look; a callback that consumes the
 				// event keeps it from ImGui as well. The game sees it in neither case.
 				if (!compat::DispatchInputEvent(a_event))
@@ -867,9 +867,9 @@ namespace input
 					}
 					else if (consumerInput)
 					{
-						// OUR MENU IS CLOSED BUT A MOD'S WINDOW HAS THE INPUT (2.0.4) - RaceMenu Atelier's
+						// OUR MENU IS CLOSED BUT A MOD'S WINDOW HAS THE INPUT (2.0.4) - another mod's
 						// editor, FSMP, Equip or Unequip All. The same body as our menu: the mod's input
-						// callbacks first (so its own hotkey, Atelier's F4, still reaches it), then ImGui,
+						// callbacks first (so its own hotkey, its F4, still reaches it), then ImGui,
 						// and the game keeps only the releases of keys it saw pressed. The toggle key above
 						// still opens our menu over the window; Start (controller close) does not apply,
 						// it closes only our menu. The moment the window closes, the renderer publishes
@@ -1351,7 +1351,7 @@ namespace input
 					// A key typed into a text field is text, not a command: F (favourite) and Page Up / Down
 					// (tabs) must not fire while the search bar or a mod's text box is being typed into.
 					// And only while OUR menu is up (2.0.4): a mod's window gets the input too now, and a
-					// raised command is LATCHED until our menu takes it - F pressed in RaceMenu Atelier would
+					// raised command is LATCHED until our menu takes it - F pressed in another mod would
 					// otherwise favourite a mod the next time the menu opened.
 					if (record.down && renderer::IsMainWindowVisible() && !renderer::WantsTextInput()) { bindings::RaiseAllFor(record.code, false); }
 					const ImGuiKey key = ScancodeToImGuiKey(record.code);
