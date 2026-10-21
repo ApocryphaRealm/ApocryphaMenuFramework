@@ -21,6 +21,11 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## 2.2.3 - 2026-10-21 - untested - dropdowns on SkyUI MCM pages fill when AMF is opened from the Journal's System menu
+
+### Fixed (dropdowns on converted MCM pages)
+- A dropdown (menu option) on a SkyUI MCM page shown in AMF opened with no choices when AMF had been opened from the Journal's SKSE MENUS row (Blackspine18859's report: Tactical Retreat's team dropdown - "the dropdown menu opens, but none of the options populate"; a plain Papyrus MCM). A mod hands its dropdown's choices to SkyUI's own Journal panel through UI.InvokeStringA (SetMenuDialogOptions, from OnOptionMenuOpen or OnMenuOpenST), and AMF records that call as it passes. The recorder took it only while the Journal was CLOSED, on the belief that an open Journal meant SkyUI's own panel was the one asking. Opened from the System menu, AMF draws inside the Journal, which stays open - so every list was left to a SkyUI panel that was not showing, and AMF's dropdown showed "-". The same rule kept a mod's ShowMessage question from reaching AMF's popup there. The recorder now takes the call whenever one of AMF's own calls into that mod's script is running, Journal open or not; with the Journal open and no AMF call running it still leaves the call to SkyUI's panel. Opening AMF with its key (Journal closed) worked before and is unchanged. Both forms of a dropdown - by option ID (AddMenuOption) and by state (AddMenuOptionST) - go through the same SkyUI function, so both are covered. No new text, so no translation change.
+
 ## 2.2.2 - 2026-10-17 - untested - a new game no longer crashes while AMF looks for SkyUI menus; long mod descriptions wrap inside the window
 
 ### Fixed (crash on a new game)

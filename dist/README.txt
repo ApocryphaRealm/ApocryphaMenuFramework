@@ -1,6 +1,6 @@
 ApocryphaRealm Menu Framework
 =============================
-Version 2.2.2
+Version 2.2.3
 
 An original, GPL-3.0-or-later in-game menu framework (embedding Dear ImGui) - a one-for-one
 replacement for SKSE Menu Framework's consumer surface, plus user-friendly features that do
@@ -78,6 +78,9 @@ reading.
 
 WHAT CHANGED
 ------------
+
+Version 2.2.3
+A dropdown on a SkyUI MCM page shown in this menu now lists its choices when the menu was opened from the SKSE MENUS row in the game's System tab; it opened empty there before (Tactical Retreat's team dropdown, for one - thanks to Blackspine18859 for the report). A mod's yes/no question on such a page reaches this menu's popup there too.
 
 Version 2.2.2
 A mod's long description no longer runs off the screen on one line: help that a mod made for SKSE Menu Framework shows as a tooltip (Skyrim Performance Solution's, for one) now wraps inside this menu's window and grows to as many lines as it needs (thanks to BanMarwein for the report).

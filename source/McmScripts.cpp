@@ -115,6 +115,9 @@ namespace mcmloader::scripts
 		Session g_session;
 		std::atomic<int> g_open{ -1 };              // the config OpenConfig was sent to
 		std::atomic<bool> g_openedByTool{ false };  // the DevBench tool opened it: no auto-close when no page draws it
+		// 2.2.3: how many calls AMF itself sent to a config script have not finished yet (Call() below). While one runs, a
+		// UI.InvokeStringA the script makes is AMF's to record, whether or not the Journal is open (the recorder below).
+		std::atomic<int> g_callsInFlight{ 0 };
 		int g_lastDrawFrame = -10;
 		Table g_skyuiTable;  // SkyUI's own strings ($Accept, $Cancel ...), main thread at first discovery
 
@@ -324,7 +327,13 @@ namespace mcmloader::scripts
 		// SetMenuDialogOptions and ShowMessage hand their strings only to the Journal's Flash panel
 		// (UI.InvokeStringA("Journal Menu", "_root.ConfigPanelFader.configPanel.setMenuDialogOptions" / ".showMessageDialog",
 		// ...)). With the Journal closed SKSE drops those calls, so AMF puts a forwarder in UI.InvokeStringA's slot of the
-		// VM's UI type: it records those two calls while the Journal is closed and ALWAYS runs the original afterwards.
+		// VM's UI type: it records those two calls and ALWAYS runs the original afterwards.
+		//
+		// WHEN it records (2.2.3): while one of AMF's own calls into a config script is running, or while the Journal is closed.
+		// Until 2.2.2 it was "while the Journal is closed" alone, on the belief that an open Journal means SkyUI's own panel
+		// asked. It does not: AMF opened from the Journal's SKSE MENUS row draws NESTED over the Journal, which stays open, so
+		// every dropdown on a converted MCM page opened empty (Blackspine18859, 2026-10-20: Tactical Retreat's team menu - "the
+		// dropdown menu opens, but none of the options populate"), and a ShowMessage question never reached AMF's popup.
 
 		std::mutex g_captureMutex;
 		std::vector<std::string> g_capturedMenu;
@@ -354,14 +363,23 @@ namespace mcmloader::scripts
 			const bool isMenu = EndsWith(t, ".setMenuDialogOptions");
 			const bool isMessage = EndsWith(t, ".showMessageDialog");
 			if (!isMenu && !isMessage) { return; }
-			if (const auto ui = RE::UI::GetSingleton(); ui && ui->IsMenuOpen("Journal Menu")) { return; }  // SkyUI's own menu is showing it
+			const int amfCalls = g_callsInFlight.load();
+			if (amfCalls <= 0)
+			{
+				// none of AMF's calls is running: with the Journal open, this is SkyUI's own panel asking - leave it to SkyUI
+				if (const auto ui = RE::UI::GetSingleton(); ui && ui->IsMenuOpen("Journal Menu"))
+				{
+					logger::debug("MCM scripts: {} with the Journal open and no AMF call running - left to SkyUI's panel", isMenu ? "a menu list" : "a question");
+					return;
+				}
+			}
 			const auto strings = ReadStringArray(&frame->GetStackFrameVariable(2, page));
 			std::scoped_lock lock(g_captureMutex);
 			if (isMenu)
 			{
 				g_capturedMenu = strings;
 				g_menuCaptured = true;
-				logger::debug("MCM scripts: recorded a menu list of {} option(s)", strings.size());
+				logger::debug("MCM scripts: recorded a menu list of {} option(s) ({} AMF call(s) running)", strings.size(), amfCalls);
 			}
 			else
 			{
@@ -582,7 +600,28 @@ namespace mcmloader::scripts
 		{
 			const auto vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
 			if (!vm || !a_object) { return false; }
-			RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> callback{ new ResultFn(std::move(a_then)) };
+			// 2.2.3: counted as AMF's call from here until the call has finished (its callback runs) or the VM drops it (the
+			// callback is released unrun) - the recorder takes what the script hands UI.InvokeStringA meanwhile, even with the
+			// Journal open (AMF nested in it)
+			struct InFlight
+			{
+				std::atomic<bool> released{ false };
+				InFlight() { g_callsInFlight.fetch_add(1); }
+				~InFlight() { Release(); }
+				void Release()
+				{
+					if (!released.exchange(true)) { g_callsInFlight.fetch_sub(1); }
+				}
+				InFlight(const InFlight&) = delete;
+				InFlight& operator=(const InFlight&) = delete;
+			};
+			auto inFlight = std::make_shared<InFlight>();
+			RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> callback{ new ResultFn(
+				[then = std::move(a_then), inFlight](const RE::BSScript::Variable& a_result) {
+					inFlight->Release();  // finished: anything the script asks UI for from here is not this call's
+					if (then) { then(a_result); }
+				}) };
+			inFlight.reset();  // the callback holds the only reference now
 			ObjectPtr object = a_object;
 			const bool sent = vm->DispatchMethodCall(object, a_function, &a_args, callback);
 			if (!sent) { logger::warn("MCM scripts: {} could not be called on the config script", a_function); }
