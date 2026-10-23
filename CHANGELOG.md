@@ -21,6 +21,14 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## 2.2.4 - 2026-10-22 - working
+
+### Fixed
+- Controls page: the Unbind buttons are no longer cut off at the right edge at a large text size (seen at 1920x1080, text size 1.50). The button column is now measured from the labels the buttons really draw (icon plus word), and when the window is too narrow for both buttons side by side, Unbind sits under Rebind instead of past the edge.
+
+### Changed
+- TestBench: amf.menu op=setting takes name=textScale (1.00-2.50) and re-rasterises the font, so the menu can be checked at every text size without a person at the slider.
+
 ## 2.2.3 - 2026-10-21 - untested - dropdowns on SkyUI MCM pages fill when AMF is opened from the Journal's System menu
 
 ### Fixed (dropdowns on converted MCM pages)

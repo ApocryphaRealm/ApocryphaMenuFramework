@@ -1,6 +1,6 @@
 ApocryphaRealm Menu Framework
 =============================
-Version 2.2.3
+Version 2.2.4
 
 An original, GPL-3.0-or-later in-game menu framework (embedding Dear ImGui) - a one-for-one
 replacement for SKSE Menu Framework's consumer surface, plus user-friendly features that do
@@ -78,6 +78,9 @@ reading.
 
 WHAT CHANGED
 ------------
+
+Version 2.2.4
+Controls page: the Unbind buttons are no longer cut off at the right edge at a large text size. The button column now fits Rebind and Unbind at every text size, and when the window is too narrow for both side by side, Unbind sits under Rebind.
 
 Version 2.2.3
 A dropdown on a SkyUI MCM page shown in this menu now lists its choices when the menu was opened from the SKSE MENUS row in the game's System tab; it opened empty there before (Tactical Retreat's team dropdown, for one - thanks to Blackspine18859 for the report). A mod's yes/no question on such a page reaches this menu's popup there too.

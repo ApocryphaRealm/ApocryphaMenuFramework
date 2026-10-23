@@ -26,6 +26,8 @@
 #include <cstdio>
 #include "utils/Logger.h"
 
+namespace renderer { void RequestFontRebuild(); }   // Renderer.cpp - at the next frame's start (2.2.4: setting textScale)
+
 #include <iterator>
 #include <string>
 
@@ -412,7 +414,8 @@ namespace devbenchtool
 			{
 				// 2.1.7: set one of the Settings > General values the settings page sets, and save the INI, exactly as the
 				// page's control does. args name: pointerSpeed (value 0.25-4.00) | wheelSwitchesTabs (0/1) | pauseGame (0/1)
-				// | keepCameraAwake (0/1, next after 2.1.9).
+				// | keepCameraAwake (0/1, next after 2.1.9) | textScale (2.2.4: 1.00-2.50, the INI's range - the Appearance
+				// slider stops at 2.00 - then the font is re-rasterised as on the slider's release).
 				// No name (or no value) just reports them. The write runs on the game's main thread, where the frame reads them.
 				const std::string name = JsonStr(args, "name");
 				const double value = JsonNum(args, "value", -1000.0);
@@ -420,13 +423,18 @@ namespace devbenchtool
 				std::string error;
 				if (!name.empty() && value > -999.0)
 				{
-					if (name != "pointerSpeed" && name != "wheelSwitchesTabs" && name != "pauseGame" && name != "keepCameraAwake")
+					if (name != "pointerSpeed" && name != "wheelSwitchesTabs" && name != "pauseGame" && name != "keepCameraAwake" &&
+						name != "textScale")
 					{
-						ok = false; error = "unknown setting '" + name + "' (pointerSpeed|wheelSwitchesTabs|pauseGame|keepCameraAwake)";
+						ok = false; error = "unknown setting '" + name + "' (pointerSpeed|wheelSwitchesTabs|pauseGame|keepCameraAwake|textScale)";
 					}
 					else if (name == "pointerSpeed" && !(value >= 0.25 && value <= 4.0))
 					{
 						ok = false; error = "pointerSpeed takes 0.25-4.00";
+					}
+					else if (name == "textScale" && !(value >= 1.0 && value <= 2.5))
+					{
+						ok = false; error = "textScale takes 1.00-2.50";
 					}
 					else if (auto* task = SKSE::GetTaskInterface())
 					{
@@ -435,6 +443,11 @@ namespace devbenchtool
 							if (name == "pointerSpeed")     { v.pointerSpeed = static_cast<float>(std::round(value * 100.0) / 100.0); }
 							else if (name == "wheelSwitchesTabs") { v.wheelSwitchesTabs = value != 0.0; }
 							else if (name == "keepCameraAwake") { v.keepCameraAwake = value != 0.0; }
+							else if (name == "textScale")
+							{
+								v.textScale = static_cast<float>(std::round(value * 100.0) / 100.0);
+								renderer::RequestFontRebuild();   // as the Appearance slider's release does
+							}
 							else                             { v.pauseGameWhileOpen = value != 0.0; }
 							logger::info("devbench: setting {} -> {} (saved)", name, value);
 							settings::Save();
@@ -452,6 +465,7 @@ namespace devbenchtool
 						 ",\"wheelSwitchesTabs\":" + (v.wheelSwitchesTabs ? "true" : "false") +
 						 ",\"pauseGame\":" + (v.pauseGameWhileOpen ? "true" : "false") +
 						 ",\"keepCameraAwake\":" + (v.keepCameraAwake ? "true" : "false") +
+						 ",\"textScale\":" + std::to_string(v.textScale) +
 						 ",\"note\":\"a change is applied on the next game frame; read op=state or op=setting again\"}";
 			}
 			else if (op == "cleanstate")
@@ -767,7 +781,7 @@ namespace devbenchtool
 			"noMouseInputs, noInputs, pos, size), and consumerInput says whether a mod's window holds the "
 			"input (open, blocking AND a submitted window that takes the mouse). "
 			"2.1.7: mousemove queues a relative mouse movement in raw counts (args dx, dy) through the real pointer scaling; "
-			"setting sets pointerSpeed (0.25-4.00), wheelSwitchesTabs or pauseGame (0/1) and saves the INI (args name, value; "
+			"setting sets pointerSpeed (0.25-4.00), wheelSwitchesTabs or pauseGame (0/1), or 2.2.4 textScale (1.00-2.50, font re-rasterised) and saves the INI (args name, value; "
 			"no args reports them); state carries pointer {speed, gameCursorSpeed, scale}, wheelSwitchesTabs, pauseGame and "
 			"pauseHeld (the game is paused by this menu now). The wheel over a row of tabs (a mod's, or 2.1.9 Settings / Controls / Help "
 			"and the settings sub-tab rows; state.tabBars lists each bar drawn last frame as x0,y0,x1,y1, outer first): op=cursor onto it, then "

@@ -3609,6 +3609,16 @@ namespace renderer
 			// One tab's worth of rows. gamepadSide picks which half of each binding is shown and
 			// which device the capture listens to; everything else is identical, on purpose.
 			const auto drawRows = [&](bool a_gamepadSide) {
+				// 2.2.4: the button column is measured from the labels the buttons really draw - icon, two spaces and the
+				// word. 2.1.1 measured the bare words, so the column came out two icon widths short and Unbind was cut at the
+				// right edge ("x Un") - worse the bigger the text size, since the shortfall grows with the font.
+				const ImGuiStyle& cs = ImGui::GetStyle();
+				const std::string rebindLabel = icons::Label(icons::kKeyboard, TR("AMF_BindRebind", "Rebind"));
+				const std::string unbindLabel = icons::Label(icons::kClear, TR("AMF_BindUnbindBtn", "Unbind"));
+				const float rebindWidth = ImGui::CalcTextSize(rebindLabel.c_str()).x + cs.FramePadding.x * 2.0f;
+				const float unbindWidth = ImGui::CalcTextSize(unbindLabel.c_str()).x + cs.FramePadding.x * 2.0f;
+				const float pressWidth = ImGui::CalcTextSize(TR("AMF_BindPress", "press...")).x;
+				const float tableWidth = ImGui::GetContentRegionAvail().x;
 				if (!ImGui::BeginTable(a_gamepadSide ? "##padbinds" : "##keybinds", 3,
 									   ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
 				{
@@ -3628,9 +3638,21 @@ namespace renderer
 										boundWidth + ImGui::GetStyle().CellPadding.x * 2.0f);
 				// As wide as Rebind and Unbind side by side (2.1.1), not a flat 13 em: at the default window size the flat width
 				// left a gap after the buttons while the Function column clipped "Open and close the menu".
-				const ImGuiStyle& cs = ImGui::GetStyle();
-				const float buttonsWidth = ImGui::CalcTextSize(TR("AMF_BindRebind", "Rebind")).x + ImGui::CalcTextSize(TR("AMF_BindUnbindBtn", "Unbind")).x +
-										   cs.FramePadding.x * 4.0f + cs.ItemSpacing.x + cs.CellPadding.x * 2.0f;
+				// 2.2.4: when the key and button columns side by side would leave the Function column less than 40% of the
+				// table (a big text size in a narrow window), Unbind goes under Rebind instead of past the right edge.
+				const float sideBySide = rebindWidth + cs.ItemSpacing.x + unbindWidth;
+				const float stackedWidth = (std::max)({ rebindWidth, unbindWidth, pressWidth });
+				const float fixedSideBySide = boundWidth + sideBySide + cs.CellPadding.x * 4.0f;
+				const bool stackButtons = fixedSideBySide > tableWidth * 0.6f;
+				const float buttonsWidth = stackButtons ? stackedWidth : (std::max)(sideBySide, pressWidth);
+				static int s_loggedStack = -1;
+				if (s_loggedStack != static_cast<int>(stackButtons))
+				{
+					s_loggedStack = static_cast<int>(stackButtons);
+					logger::debug("controls: button column {:.1f}px ({}), table {:.1f}px, key column {:.1f}px, text size {:.2f}",
+								  buttonsWidth, stackButtons ? "stacked" : "side by side", tableWidth, boundWidth,
+								  settings::Get().textScale);
+				}
 				ImGui::TableSetupColumn("##rebind", ImGuiTableColumnFlags_WidthFixed, buttonsWidth);
 				ImGui::TableHeadersRow();
 
@@ -3664,7 +3686,7 @@ namespace renderer
 					}
 					else
 					{
-						if (ImGui::Button(icons::Label(icons::kKeyboard, TR("AMF_BindRebind", "Rebind")).c_str()))
+						if (ImGui::Button(rebindLabel.c_str()))
 						{
 							bindings::BeginCapture(action, a_gamepadSide);
 						}
@@ -3675,8 +3697,8 @@ namespace renderer
 							: bindings::Get(action).keyKind != bindings::KeyKind::kNone;
 						if (bound)
 						{
-							ImGui::SameLine();
-							if (ImGui::Button(icons::Label(icons::kClear, TR("AMF_BindUnbindBtn", "Unbind")).c_str()))
+							if (!stackButtons) { ImGui::SameLine(); }
+							if (ImGui::Button(unbindLabel.c_str()))
 							{
 								bindings::Unbind(action, a_gamepadSide);
 								settings::Save();
