@@ -35,6 +35,7 @@
 #include "Watchdog.h"
 #include "GlyphCore.h"
 #include "ListCore.h"
+#include "WindowGeometryCore.h"
 #include "utils/ToggleSwitch.h"
 #include "utils/Logger.h"
 
@@ -4112,7 +4113,9 @@ namespace renderer
 			static ImVec2 s_hotCentre{ -1.0f, -1.0f };
 			ImGuiWindow* hotWindow = ImGui::FindWindowByName(windowId);
 			const bool movingHot = hotWindow && GImGui->MovingWindow && GImGui->MovingWindow->RootWindow == hotWindow;
-			const bool haveDisplay = display.x >= 1.0f && display.y >= 1.0f;   // 0x0 while minimised or driven in the background
+			// 0x0 while minimised or driven in the background, and an 8x8 placeholder image at times: not a display to place,
+			// constrain or save the window against (2.3.0, WindowGeometryCore.h).
+			const bool haveDisplay = windowgeometry::UsableDisplay(display.x, display.y);
 			// A centre that keeps a window of this size whole on the screen.
 			const auto keepCentreOnScreen = [&display](ImVec2 a_centre, ImVec2 a_size) {
 				const float hw = std::min(a_size.x, display.x) * 0.5f;
@@ -4122,19 +4125,20 @@ namespace renderer
 			constexpr bool kCentred = true;   // both ways of opening share this geometry (see above)
 			if (kCentred)
 			{
-				if (g_applyGeometry.load(std::memory_order_acquire))
+				// The saved geometry is applied on the first frame with a real display after an opening (an opening on a
+				// placeholder image waits for it), and again when the display changes size under the open window (2.3.0).
+				static windowgeometry::Gate s_geometryGate;
+				s_geometryGate.pending = g_applyGeometry.load(std::memory_order_acquire);
+				if (windowgeometry::ApplyNow(s_geometryGate, display.x, display.y))
 				{
-					const float gw = std::min(profile.IsSet() ? profile.w : dw, 1.0f);
-					const float gh = std::min(profile.IsSet() ? profile.h : dh, 1.0f);
-					ImGui::SetNextWindowSize(ImVec2(display.x * gw, display.y * gh), ImGuiCond_Always);
 					// WHERE THE PLAYER LEFT IT (2.1.1 - Barzing on Nexus, 2026-10-05: "the possibility to move the window"). The
 					// window opens centred the first time and after Reset, and otherwise where it was last put - its saved top-left
 					// plus half its size is the centre. 2.3.0: in every move style (Fixed stays where it was left).
-					float cx = profile.IsSet() ? profile.x + gw * 0.5f : 0.5f;
-					float cy = profile.IsSet() ? profile.y + gh * 0.5f : 0.5f;
-					cx = std::clamp(cx, gw * 0.5f, 1.0f - gw * 0.5f);
-					cy = std::clamp(cy, gh * 0.5f, 1.0f - gh * 0.5f);
-					s_hotCentre = ImVec2(display.x * cx, display.y * cy);
+					const windowgeometry::Placement place = windowgeometry::OpenPlacement(profile.IsSet(), profile.x, profile.y, profile.w, profile.h, dw, dh);
+					const float gw = place.w;
+					const float gh = place.h;
+					ImGui::SetNextWindowSize(ImVec2(display.x * gw, display.y * gh), ImGuiCond_Always);
+					s_hotCentre = ImVec2(display.x * place.cx, display.y * place.cy);
 					ImGui::SetNextWindowPos(s_hotCentre, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
 					g_applyGeometry.store(false, std::memory_order_release);
 					appliedThisFrame = true;
@@ -4179,6 +4183,8 @@ namespace renderer
 				}
 				s_hotkeyConstraint.display = display;
 				s_hotkeyConstraint.window = hotWindow;
+				// Not against a placeholder image: its "screen" would squeeze the window to a few pixels (2.3.0).
+				if (haveDisplay)
 				ImGui::SetNextWindowSizeConstraints(ImVec2(display.x * 0.2f, display.y * 0.2f), display,
 					+[](ImGuiSizeCallbackData* a_data) {
 						auto* c = static_cast<HotkeyConstraint*>(a_data->UserData);
@@ -4268,7 +4274,8 @@ namespace renderer
 				// Reset could not restore the journal fit. And not mid-drag either: the settings
 				// file is rewritten on each save, and a drag would rewrite it every frame. Waiting
 				// for the mouse to come up saves once, when the player has finished.
-				if (!appliedThisFrame && !ImGui::IsMouseDown(ImGuiMouseButton_Left))
+				// 2.3.0: and never against a display that is not a real image (WindowGeometryCore.h).
+				if (windowgeometry::SaveNow(appliedThisFrame, ImGui::IsMouseDown(ImGuiMouseButton_Left), display.x, display.y))
 				{
 					const ImVec2 wpos = ImGui::GetWindowPos();
 					const ImVec2 wsize = ImGui::GetWindowSize();
