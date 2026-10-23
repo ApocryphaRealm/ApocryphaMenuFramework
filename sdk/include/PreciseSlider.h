@@ -214,8 +214,12 @@ namespace precise
 		if (!window || window->SkipItems || !a_data || !ImGui::IsItemVisible()) return;
 		const ImGuiID id = g.LastItemData.ID;
 		if (id == 0 || ImGui::TempInputIsActive(id)) return;
-		const ImRect frame = g.LastItemData.NavRect;
+		ImRect frame = g.LastItemData.NavRect;
 		if (frame.GetWidth() <= 0.0f || frame.GetHeight() <= 0.0f) return;
+#ifdef AMF_IMGUI_SLIDER_VALUE_RECT
+		// 2.3.0: AMF's ImGui moves a value the grab would cover to the side of the grab - redraw it where it was drawn
+		if (GImGuiSliderValueId == id && GImGuiSliderValueRect.GetWidth() > 0.0f) { frame = GImGuiSliderValueRect; }
+#endif
 		char buf[64];
 		const char* const fmt = a_format ? a_format : ImGui::DataTypeGetInfo(a_type)->PrintFmt;
 		const char* const end = buf + ImGui::DataTypeFormatString(buf, IM_ARRAYSIZE(buf), a_type, a_data, fmt);

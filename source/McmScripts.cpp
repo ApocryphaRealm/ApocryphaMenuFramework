@@ -1127,7 +1127,7 @@ namespace mcmloader::scripts
 					// its own line under the label, indented.
 					if (mcmstyle::LabelWidth(label) + gutter * 2.0f + w <= max.x - min.x)
 					{
-						ImGui::GetWindowDrawList()->AddText(ImVec2(max.x - w - gutter, min.y), ImGui::GetColorU32(ImGuiCol_TextDisabled), value.c_str());
+						ImGui::GetWindowDrawList()->AddText(ImVec2(max.x - w - gutter, (min.y + max.y - ImGui::GetTextLineHeight()) * 0.5f), ImGui::GetColorU32(ImGuiCol_TextDisabled), value.c_str());   // 2.3.0: on the label's line, not the row's top edge
 					}
 					else
 					{

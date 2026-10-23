@@ -1,39 +1,68 @@
+diff --git a/imgui_internal.h b/imgui_internal.h
+index d1d241f..69ab962 100644
+--- a/imgui_internal.h
++++ b/imgui_internal.h
+@@ -3947,4 +3947,9 @@ extern IMGUI_API int            GImGuiArtFrameHint;   // set by a widget around
+ // framework can add every character a page actually drew to its atlas (a mod's own text included). NULL = off.
+ typedef void (*ImGuiGlyphMissHookFn)(const ImFont* font, ImWchar c);
+ extern IMGUI_API ImGuiGlyphMissHookFn GImGuiGlyphMissHook;
++// AMF 2.3.0 (amf-slider-value.patch): where SliderScalar drew its value text last (the item id and the box the text is centred
++// in), so an overlay that redraws the value (AMF's PreciseSlider OutlineValue) puts it in the same place.
++#define AMF_IMGUI_SLIDER_VALUE_RECT 1
++extern IMGUI_API ImGuiID        GImGuiSliderValueId;
++extern IMGUI_API ImRect         GImGuiSliderValueRect;
+ extern IMGUI_API float          GImGuiScrollbarInset; // set around a window's Begin: its scroll bars sit this far in from its edges (clear of a frame drawn round it); 0 = none
 diff --git a/imgui_widgets.cpp b/imgui_widgets.cpp
-index 3d83d39..0d8bd73 100644
+index 3d83d39..c229715 100644
 --- a/imgui_widgets.cpp
 +++ b/imgui_widgets.cpp
-@@ -3137,7 +3137,34 @@ bool ImGui::SliderScalar(const char* label, ImGuiDataType data_type, void* p_dat
+@@ -3062,6 +3062,9 @@ bool ImGui::SliderBehavior(const ImRect& bb, ImGuiID id, ImGuiDataType data_type
+ 
+ // Note: p_data, p_min and p_max are _pointers_ to a memory address holding the data. For a slider, they are all required.
+ // Read code of e.g. SliderFloat(), SliderInt() etc. or examples in 'Demo->Widgets->Data Types' to understand how to use this function directly.
++ImGuiID GImGuiSliderValueId = 0;          // AMF 2.3.0 (imgui_internal.h)
++ImRect  GImGuiSliderValueRect;
++
+ bool ImGui::SliderScalar(const char* label, ImGuiDataType data_type, void* p_data, const void* p_min, const void* p_max, const char* format, ImGuiSliderFlags flags)
+ {
+     ImGuiWindow* window = GetCurrentWindow();
+@@ -3137,7 +3140,39 @@ bool ImGui::SliderScalar(const char* label, ImGuiDataType data_type, void* p_dat
      const char* value_buf_end = value_buf + DataTypeFormatString(value_buf, IM_ARRAYSIZE(value_buf), data_type, p_data, format);
      if (g.LogEnabled)
          LogSetNextTextDecoration("{", "}");
 -    RenderTextClipped(frame_bb.Min, frame_bb.Max, value_buf, value_buf_end, NULL, ImVec2(0.5f, 0.5f));
-+    // AMF 2.2.4 (amf-slider-value.patch): the value is never left under the grab. Centred as before while it clears the
++    // AMF 2.3.0 (amf-slider-value.patch): the value is never left under the grab. Centred as before while it clears the
 +    // grab; when the grab sits on it, it moves to the wider side of the grab that holds it whole; when neither side does
-+    // (a frame too narrow for its value at a big text size), it stays centred on a plate in the frame's colour.
++    // (a frame too narrow for its value at a big text size), it stays centred on a plate in the frame's colour, the text's
++    // height only, so the grab still shows above and below it. The box used is published in GImGuiSliderValueRect.
 +    ImVec2 value_min = frame_bb.Min, value_max = frame_bb.Max;
 +    if (grab_bb.Max.x > grab_bb.Min.x)
 +    {
 +        const ImVec2 value_size = CalcTextSize(value_buf, value_buf_end, false);
 +        const float centre = (frame_bb.Min.x + frame_bb.Max.x) * 0.5f;
-+        if (centre - value_size.x * 0.5f < grab_bb.Max.x && grab_bb.Min.x < centre + value_size.x * 0.5f)
++        const float pad = style.FramePadding.x;
++        const float margin = pad * 0.5f;   // the grab art can reach a little past its box
++        if (centre - value_size.x * 0.5f - margin < grab_bb.Max.x && grab_bb.Min.x < centre + value_size.x * 0.5f + margin)
 +        {
-+            const float pad = style.FramePadding.x;
 +            const float left_room = grab_bb.Min.x - frame_bb.Min.x - pad;
 +            const float right_room = frame_bb.Max.x - grab_bb.Max.x - pad;
-+            if (right_room >= value_size.x && right_room >= left_room)
++            if (right_room >= value_size.x + margin && right_room >= left_room)
 +                value_min.x = grab_bb.Max.x;
-+            else if (left_room >= value_size.x)
++            else if (left_room >= value_size.x + margin)
 +                value_max.x = grab_bb.Min.x;
 +            else
 +            {
-+                const float x0 = ImMax(frame_bb.Min.x, centre - value_size.x * 0.5f - pad * 0.5f);
-+                const float x1 = ImMin(frame_bb.Max.x, centre + value_size.x * 0.5f + pad * 0.5f);
++                const float edge = ImMax(1.0f, pad * 0.35f);
++                const float x0 = ImMax(frame_bb.Min.x, centre - value_size.x * 0.5f - edge);
++                const float x1 = ImMin(frame_bb.Max.x, centre + value_size.x * 0.5f + edge);
 +                const float y0 = ImMax(frame_bb.Min.y, (frame_bb.Min.y + frame_bb.Max.y - value_size.y) * 0.5f);
 +                const float y1 = ImMin(frame_bb.Max.y, y0 + value_size.y);
-+                window->DrawList->AddRectFilled(ImVec2(x0, y0), ImVec2(x1, y1), frame_col | IM_COL32_A_MASK, style.FrameRounding);
++                window->DrawList->AddRectFilled(ImVec2(x0, y0), ImVec2(x1, y1), frame_col | IM_COL32_A_MASK, ImMin(style.FrameRounding, value_size.y * 0.25f));
 +            }
 +        }
 +    }
++    GImGuiSliderValueId = id;
++    GImGuiSliderValueRect = ImRect(value_min, value_max);
 +    RenderTextClipped(value_min, value_max, value_buf, value_buf_end, NULL, ImVec2(0.5f, 0.5f));
  
      if (label_size.x > 0.0f)

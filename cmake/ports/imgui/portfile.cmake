@@ -17,8 +17,9 @@ if ("docking-experimental" IN_LIST FEATURES)
         # between characters with the kinsoku rules instead of only at spaces; text with no CJK wraps as before.
         # AMF 2.2.0 - glyph misses (amf-glyph-miss.patch, ImFont::FindGlyph): one global function pointer called when a font
         # has no glyph for a character, so the framework adds every character a page drew to its atlas. No struct change.
-        # AMF 2.2.4 - slider values off the grab (amf-slider-value.patch, SliderScalar): a value the grab would cover moves to the
-        # wider side of the grab, or sits on a plate in the frame colour when neither side holds it. No struct change.
+        # AMF 2.3.0 - slider values off the grab (amf-slider-value.patch, SliderScalar): a value the grab would cover moves to the
+        # wider side of the grab, or sits on a plate in the frame colour when neither side holds it; the box used is published
+        # (GImGuiSliderValueRect) for PreciseSlider's outline. Two new globals, no struct change.
         PATCHES amf-art-hooks.patch amf-cjk-wrap.patch amf-glyph-miss.patch amf-slider-value.patch
         HEAD_REF docking
     )
