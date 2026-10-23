@@ -21,7 +21,7 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
-## 2.3.0 - 2026-10-23 - untested - window Move style and Resize style settings, the window kept inside the screen; pages render properly at big text sizes; side list rect for pages; a TestBench crash fixed
+## 2.3.0 - 2026-10-23 - working - window Move style and Resize style settings, the window kept inside the screen; pages render properly at big text sizes; side list rect for pages; a TestBench crash fixed
 
 ### Fixed
 - The window can no longer be pushed off the screen (a Nexus report, 2026-10-23): with the window moved into the top-left corner, resizing it grew it past 0/0, and in windowed mode out of the game window. In every move and resize style the edge being dragged now stops at the screen's edge, and the window's position is kept inside the screen every frame - after a resize, a move, the window widening itself for long menu names, or a change of resolution.
