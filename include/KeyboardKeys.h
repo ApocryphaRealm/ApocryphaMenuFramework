@@ -10,6 +10,13 @@
 // never drops back to the plain face when the mouse is over it (before 2.3.0 only the rest colour was swapped). The
 // caller turns on the shaped outline (arthooks::SetShapedButtons) around DrawRows, so every key's outline follows the
 // theme's button shape - the shape the cursor's blue face already showed (the owner, 2026-10-23).
+//
+// The MOUSE never reaches these buttons as a click (2.3.0, the 2026-10-23 run): ImGui's text field lets go of input on
+// any left click that is not on itself (InputTextEx "Release focus when we click outside"), so a key clicked through
+// ImGui closed the keyboard with its field and typed nothing. Keyboard.cpp takes left-button presses over the keyboard
+// before ImGui sees them, so the caller passes the hover and held state here (KeyMouse) and gets each key's rectangle
+// back (KeyRect) to hit-test the press; the colours below draw the hover and the held wash exactly as ImGui's own
+// hovered / active colours would.
 // ============================================================================================
 
 #include <imgui.h>
@@ -37,6 +44,38 @@ namespace keyboardkeys
 		const char* done;
 	};
 
+	// The widest row has 10 keys; the rectangle table is sized with room to spare.
+	inline constexpr int kMaxCols = 16;
+
+	// What the mouse is doing, from the caller (nullptr = no mouse state, as in the offline render).
+	struct KeyMouse
+	{
+		bool hover = false;     // the pointer counts (keyboard/mouse in use)
+		ImVec2 pos{};           // the pointer
+		int heldRow = -1;       // the key the left button went down on, while it is down
+		int heldCol = -1;
+	};
+
+	struct KeyRect
+	{
+		ImVec2 min{};
+		ImVec2 max{};
+		bool Contains(const ImVec2& a_p) const { return a_p.x >= min.x && a_p.y >= min.y && a_p.x < max.x && a_p.y < max.y; }
+	};
+
+	// A key's width for key size a_k.
+	inline float KeyWidth(int a_row, int a_col, float a_k)
+	{
+		if (a_row != kActionRow) { return a_k; }
+		switch (a_col)
+		{
+		case kSpace: return a_k * 4.0F;
+		case kBack:
+		case kClear: return a_k * 1.8F;
+		default: return a_k * 1.6F;   // Shift, Done
+		}
+	}
+
 	// The width of the keyboard window for key size a_k (10 keys across the widest row).
 	inline float WindowWidth(float a_k)
 	{
@@ -45,11 +84,15 @@ namespace keyboardkeys
 	}
 
 	// Draws the five rows inside the current window. a_row / a_col: the cursor. Returns true when a key was clicked and
-	// gives its row and column.
-	inline bool DrawRows(const ActionLabels& a_labels, int a_row, int a_col, bool a_shift, float a_k, int& a_outRow, int& a_outCol)
+	// gives its row and column. a_mouse: the hover / held state the caller tracks (see above); a_rects: filled with every
+	// key's screen rectangle when given.
+	inline bool DrawRows(const ActionLabels& a_labels, int a_row, int a_col, bool a_shift, float a_k, int& a_outRow, int& a_outCol,
+		const KeyMouse* a_mouse = nullptr, KeyRect (*a_rects)[kMaxCols] = nullptr)
 	{
 		const float gap = ImGui::GetStyle().ItemSpacing.x;
 		const ImVec4 hi = ImGui::GetStyleColorVec4(ImGuiCol_NavHighlight);
+		const ImVec4 hoverCol = ImGui::GetStyleColorVec4(ImGuiCol_ButtonHovered);
+		const ImVec4 heldCol = ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive);
 		bool any = false;
 		for (int r = 0; r < kRowCount; ++r)
 		{
@@ -60,11 +103,33 @@ namespace keyboardkeys
 			for (int c = 0; c < len; ++c)
 			{
 				const bool cursor = (r == a_row && c == a_col);
+				const ImVec2 at = ImGui::GetCursorScreenPos();
+				const KeyRect rect{ at, ImVec2(at.x + KeyWidth(r, c, a_k), at.y + a_k) };
+				if (a_rects && c < kMaxCols) { a_rects[r][c] = rect; }
+				const bool over = a_mouse && a_mouse->hover && rect.Contains(a_mouse->pos);
+				const bool held = over && r == a_mouse->heldRow && c == a_mouse->heldCol;
+				int pushed = 0;
 				if (cursor)
 				{
 					ImGui::PushStyleColor(ImGuiCol_Button, hi);
 					ImGui::PushStyleColor(ImGuiCol_ButtonHovered, hi);
 					ImGui::PushStyleColor(ImGuiCol_ButtonActive, hi);
+					pushed = 3;
+				}
+				else if (held)
+				{
+					// the held wash: every state in the active colour, so the face is the one ImGui draws for a held button
+					ImGui::PushStyleColor(ImGuiCol_Button, heldCol);
+					ImGui::PushStyleColor(ImGuiCol_ButtonHovered, heldCol);
+					ImGui::PushStyleColor(ImGuiCol_ButtonActive, heldCol);
+					pushed = 3;
+				}
+				else if (over)
+				{
+					// hovered, also while a text field holds ImGui's active id (ImGui then hovers nothing else)
+					ImGui::PushStyleColor(ImGuiCol_Button, hoverCol);
+					ImGui::PushStyleColor(ImGuiCol_ButtonActive, hoverCol);
+					pushed = 2;
 				}
 				ImGui::PushID(r * 32 + c);
 				bool pressed = false;
@@ -87,7 +152,7 @@ namespace keyboardkeys
 					}
 				}
 				ImGui::PopID();
-				if (cursor) { ImGui::PopStyleColor(3); }
+				if (pushed) { ImGui::PopStyleColor(pushed); }
 				if (pressed) { a_outRow = r; a_outCol = c; any = true; }
 				if (c + 1 < len) { ImGui::SameLine(); }
 			}

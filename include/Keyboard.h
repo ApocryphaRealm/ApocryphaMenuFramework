@@ -52,6 +52,9 @@ namespace keyboard
 	// Render thread (the translation step runs there, before NewFrame). Return true = consumed.
 	bool HandleGamepad(std::uint32_t a_xinputMask, bool a_down);
 	bool HandleStick(std::uint32_t a_stick, float a_x, float a_y);   // 0 = left (moves the cursor), 1 = right (swallowed while open)
+	// 2.3.0: a left press over the open keyboard (and its release) is the keyboard's, never ImGui's - ImGui's text field
+	// lets go of input on any click outside itself. True = consumed; the release types the key it went down on.
+	bool HandleMouseButton(int a_button, bool a_down, float a_x, float a_y);
 
 	// The exports' backing: open for the focused text field (or the next one focused), close.
 	void Show();

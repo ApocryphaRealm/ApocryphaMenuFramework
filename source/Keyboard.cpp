@@ -43,6 +43,31 @@ namespace keyboard
 		int g_stickDirX = 0, g_stickDirY = 0;
 		std::uint32_t g_typed = 0, g_activations = 0;
 
+		// ---- the mouse (2.3.0) ---------------------------------------------------------------------
+		// A left press over the keyboard is taken here before ImGui sees it (HandleMouseButton): ImGui's text field lets
+		// go of input on ANY left click that is not on itself, so a key clicked through ImGui closed the keyboard with
+		// its field and typed nothing (the 2026-10-23 run: "text field ... lost the keyboard ... nav window now
+		// ###amf-keyboard"). The key types on the release over the key it went down on, as a button does.
+		KeyRect g_keyRects[kRowCount][kMaxCols]{};
+		KeyRect g_windowRect{};
+		bool g_windowValid = false;      // g_windowRect is the keyboard as drawn last frame
+		bool g_mouseHeld = false;        // a left press of ours is down (its release is ours too)
+		int g_heldRow = -1, g_heldCol = -1;
+		std::uint32_t g_mouseTyped = 0;
+
+		bool KeyAt(float a_x, float a_y, int& a_row, int& a_col)
+		{
+			const ImVec2 p(a_x, a_y);
+			for (int r = 0; r < kRowCount; ++r)
+			{
+				for (int c = 0; c < RowLength(r) && c < kMaxCols; ++c)
+				{
+					if (g_keyRects[r][c].Contains(p)) { a_row = r; a_col = c; return true; }
+				}
+			}
+			return false;
+		}
+
 		bool IsTextField_(std::uint32_t a_id)
 		{
 			return a_id != 0 && (g_fieldsLastFrame.count(a_id) != 0 || g_fieldsThisFrame.count(a_id) != 0);
@@ -114,6 +139,9 @@ namespace keyboard
 				char c = kRows[g_row][g_col];
 				if (g_shift && c >= 'a' && c <= 'z') { c = static_cast<char>(c - 'a' + 'A'); }
 				SendChar(c);
+				// Shift is one-shot (2.3.0): it lets go after the next character, as on a phone's keyboard - it used
+				// to stay on until pressed again ("qQ" then "W W" in the 2026-10-23 run).
+				g_shift = false;
 				return;
 			}
 			switch (g_col)
@@ -138,6 +166,7 @@ namespace keyboard
 			g_open = false;
 			g_forced = false;
 			g_capturing = false;
+			g_windowValid = false;   // a held press stays ours until its release (g_mouseHeld), so ImGui never sees half a click
 		}
 
 		// Ask ImGui to put the target text field into input mode on its next frame - the same
@@ -228,6 +257,32 @@ namespace keyboard
 		}
 	}
 
+	bool HandleMouseButton(int a_button, bool a_down, float a_x, float a_y)
+	{
+		if (a_button != 0) { return false; }
+		if (!a_down)
+		{
+			if (!g_mouseHeld) { return false; }   // the press went to ImGui, so does the release
+			g_mouseHeld = false;
+			int r = -1, c = -1;
+			if (g_open && KeyAt(a_x, a_y, r, c) && r == g_heldRow && c == g_heldCol)
+			{
+				g_row = r; g_col = c;
+				++g_mouseTyped;
+				logger::debug("keyboard: mouse typed key {},{}", r, c);
+				Press();
+			}
+			g_heldRow = g_heldCol = -1;
+			return true;
+		}
+		if (!g_open || !g_windowValid || !g_windowRect.Contains(ImVec2(a_x, a_y))) { return false; }
+		g_mouseHeld = true;
+		g_heldRow = g_heldCol = -1;
+		KeyAt(a_x, a_y, g_heldRow, g_heldCol);
+		logger::debug("keyboard: mouse down at ({:.0f},{:.0f}) on key {},{} - kept from ImGui so the text field keeps input", a_x, a_y, g_heldRow, g_heldCol);
+		return true;   // over the keyboard, a key or not: the text field must not see a click outside itself
+	}
+
 	bool HandleStick(std::uint32_t a_stick, float a_x, float a_y)
 	{
 		if (!g_open) { return false; }
@@ -261,6 +316,7 @@ namespace keyboard
 		g_fieldsLastFrame.swap(g_fieldsThisFrame);
 		g_fieldsThisFrame.clear();
 
+		g_windowValid = false;
 		if (!SettingOn() || !renderer::IsMainWindowVisible()) { Close("setting off or window closed"); return; }
 		if (!g_open) { return; }
 
@@ -285,15 +341,26 @@ namespace keyboard
 		// In front of the framework window: the keyboard is what the player is using, and a tall
 		// window otherwise covers its top rows (seen in the first proof, 2026-09-18).
 		ImGui::BringWindowToDisplayFront(ImGui::GetCurrentWindow());
+		{
+			const ImRect wr = ImGui::GetCurrentWindow()->Rect();
+			g_windowRect = KeyRect{ wr.Min, wr.Max };
+			g_windowValid = true;
+		}
 
 		ImGui::TextDisabled("%s", TR("AMF_OskHint", "D-pad moves, A types, B goes back to the box, X shift, Y backspace"));
 		const keyboardkeys::ActionLabels labels{ TR("AMF_OskShift", "Shift"), TR("AMF_OskSpace", "Space"), TR("AMF_OskBack", "Back"),
 												TR("AMF_OskClear", "Clear"), TR("AMF_OskDone", "Done") };
 		int pressedRow = -1, pressedCol = -1;
+		KeyMouse mouse;
+		mouse.hover = !input::UsingController();   // a pointer left over a key does not wash it while the pad is in use
+		mouse.pos = io.MousePos;
+		if (g_mouseHeld) { mouse.heldRow = g_heldRow; mouse.heldCol = g_heldCol; }
 		// 2.3.0: the keys' outlines follow the theme's button shape while they draw (the owner, 2026-10-23)
 		arthooks::SetShapedButtons(true);
-		const bool pressed = keyboardkeys::DrawRows(labels, g_row, g_col, g_shift, k, pressedRow, pressedCol);
+		const bool pressed = keyboardkeys::DrawRows(labels, g_row, g_col, g_shift, k, pressedRow, pressedCol, &mouse, g_keyRects);
 		arthooks::SetShapedButtons(false);
+		// ImGui itself never sees a left press over the keyboard now (HandleMouseButton), so this fires only for a click
+		// that reached it some other way - kept so such a click still types.
 		if (pressed) { g_row = pressedRow; g_col = pressedCol; Press(); }
 		ImGui::End();
 	}
@@ -304,11 +371,11 @@ namespace keyboard
 		std::string esc;
 		for (char ch : text) { if (ch == '"' || ch == '\\') { esc += '\\'; } if (static_cast<unsigned char>(ch) >= 0x20) { esc += ch; } }
 		ImGuiContext* g = GImGui;
-		char buf[320];
-		std::snprintf(buf, sizeof(buf), "{\"open\":%s,\"capturing\":%s,\"forced\":%s,\"target\":\"0x%08X\",\"targetActive\":%s,\"navOnTextField\":%s,\"row\":%d,\"col\":%d,\"shift\":%s,\"typed\":%u,\"activations\":%u,\"fields\":%zu,\"text\":\"%s\"}",
+		char buf[400];
+		std::snprintf(buf, sizeof(buf), "{\"open\":%s,\"capturing\":%s,\"forced\":%s,\"target\":\"0x%08X\",\"targetActive\":%s,\"navOnTextField\":%s,\"row\":%d,\"col\":%d,\"shift\":%s,\"typed\":%u,\"mouseTyped\":%u,\"mouseHeld\":%s,\"held\":[%d,%d],\"activations\":%u,\"fields\":%zu,\"text\":\"%s\"}",
 					  g_open ? "true" : "false", Capturing() ? "true" : "false", g_forced ? "true" : "false", g_target,
 					  (g && g->ActiveId == g_target && g_target) ? "true" : "false", (g && IsTextField(g->NavId)) ? "true" : "false",
-					  g_row, g_col, g_shift ? "true" : "false", g_typed, g_activations, g_fieldsLastFrame.size(), esc.c_str());
+					  g_row, g_col, g_shift ? "true" : "false", g_typed, g_mouseTyped, g_mouseHeld ? "true" : "false", g_heldRow, g_heldCol, g_activations, g_fieldsLastFrame.size(), esc.c_str());
 		return buf;
 	}
 }

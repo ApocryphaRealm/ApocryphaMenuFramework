@@ -1331,6 +1331,12 @@ namespace input
 				if (record.down) { NoteDevice(Device::kKeyboardMouse); }
 				// every click that reaches the menu, so a test can tell "never arrived" from "arrived and was lost"
 				logger::debug("input: mouse button {} {}", record.code, record.down ? "press" : "release");
+				// 2.3.0: a left press over the on-screen keyboard is the keyboard's - given to ImGui it would make the
+				// text field the keyboard types into let go of input (a click outside the field), closing both.
+				if (keyboard::HandleMouseButton(static_cast<int>(record.code), record.down, g_cursorX, g_cursorY))
+				{
+					break;
+				}
 				if (record.code < ImGuiMouseButton_COUNT)
 				{
 					io.AddMouseButtonEvent(static_cast<int>(record.code), record.down);
