@@ -19,6 +19,8 @@
 #include "Strings.h"
 #include "TextInput.h"
 #include <cmath>
+#include <chrono>
+#include <thread>
 #include <ctime>
 #include <filesystem>
 #include "Watchdog.h"
@@ -485,6 +487,98 @@ namespace devbenchtool
 						 ",\"saveFolder\":\"" + JsonEscape(c.saveFolder) + "\"" +
 						 (c.error.empty() ? std::string() : ",\"error\":\"" + JsonEscape(c.error) + "\"") +
 						 ",\"files\":[" + files + "]}";
+			}
+			else if (op == "window")
+			{
+				// 2.3.0 (ssuamier's report; the owner's Move style / Resize style settings): drive the framework window.
+				//  {"op":"window"} reports the rect, the screen and the styles.
+				//  "moveStyle":0|1|2 (Anywhere|Top edge|Fixed), "resizeStyle":0|1 (Centred|Edges), "freeResize":0|1 set and save
+				//  them exactly as the Window tab does (applied on the next game frame).
+				//  "place":1 with x,y,w,h (pixels) puts the window there (saved as the player's geometry).
+				//  "drag":"left|right|top|bottom|bottomleft|bottomright|topbar|body" with dx,dy (pixels) and optional steps
+				//  presses there, moves the cursor in steps (one frame or more each) and releases - the real mouse path - and
+				//  reports the rect before and after. Run with the menu open and nothing else holding the mouse.
+				std::string error;
+				const double moveStyle = JsonNum(args, "moveStyle", -1.0);
+				const double resizeStyle = JsonNum(args, "resizeStyle", -1.0);
+				const double freeResize = JsonNum(args, "freeResize", -1.0);
+				if (moveStyle >= 0.0 || resizeStyle >= 0.0 || freeResize >= 0.0)
+				{
+					if (moveStyle > 2.0 || resizeStyle > 1.0 || freeResize > 1.0) { error = "moveStyle takes 0-2, resizeStyle 0-1, freeResize 0/1"; }
+					else if (auto* task = SKSE::GetTaskInterface())
+					{
+						task->AddTask([moveStyle, resizeStyle, freeResize]() {
+							auto& v = settings::Get();
+							if (moveStyle >= 0.0) { v.moveStyle = static_cast<int>(moveStyle); }
+							if (resizeStyle >= 0.0) { v.resizeStyle = static_cast<int>(resizeStyle); }
+							if (freeResize >= 0.0) { v.freeResize = freeResize != 0.0; }
+							logger::info("devbench: window move style {}, resize style {}, resize {} (saved)", v.moveStyle, v.resizeStyle, v.freeResize);
+							settings::Save();
+						});
+					}
+					else { error = "no SKSE task interface"; }
+				}
+				const auto rectJson = [](const renderer::WindowRect& a_r) {
+					return "{\"x\":" + std::to_string(static_cast<int>(std::lround(a_r.x))) + ",\"y\":" + std::to_string(static_cast<int>(std::lround(a_r.y))) +
+						   ",\"w\":" + std::to_string(static_cast<int>(std::lround(a_r.w))) + ",\"h\":" + std::to_string(static_cast<int>(std::lround(a_r.h))) +
+						   ",\"right\":" + std::to_string(static_cast<int>(std::lround(a_r.x + a_r.w))) + ",\"bottom\":" + std::to_string(static_cast<int>(std::lround(a_r.y + a_r.h))) +
+						   ",\"onScreen\":" + ((a_r.x >= -0.5f && a_r.y >= -0.5f && a_r.x + a_r.w <= a_r.dispW + 0.5f && a_r.y + a_r.h <= a_r.dispH + 0.5f) ? "true" : "false") + "}";
+				};
+				std::string extra;
+				if (error.empty() && JsonNum(args, "place", 0.0) != 0.0)
+				{
+					const double x = JsonNum(args, "x", -1.0), y = JsonNum(args, "y", -1.0), w = JsonNum(args, "w", -1.0), h = JsonNum(args, "h", -1.0);
+					if (x < 0.0 || y < 0.0 || w <= 0.0 || h <= 0.0) { error = "place needs x, y, w, h (pixels)"; }
+					else { renderer::PlaceWindow(static_cast<float>(x), static_cast<float>(y), static_cast<float>(w), static_cast<float>(h)); }
+				}
+				const std::string from = JsonStr(args, "drag");
+				if (error.empty() && !from.empty())
+				{
+					const renderer::WindowRect r = renderer::GetWindowRect();
+					float px = -1.0f, py = -1.0f;
+					if (from == "left") { px = r.x; py = r.y + r.h * 0.5f; }
+					else if (from == "right") { px = r.x + r.w - 1.0f; py = r.y + r.h * 0.5f; }
+					else if (from == "top") { px = r.x + r.w * 0.5f; py = r.y; }
+					else if (from == "bottom") { px = r.x + r.w * 0.5f; py = r.y + r.h - 1.0f; }
+					else if (from == "bottomleft") { px = r.x + 3.0f; py = r.y + r.h - 3.0f; }
+					else if (from == "bottomright") { px = r.x + r.w - 3.0f; py = r.y + r.h - 3.0f; }
+					else if (from == "topbar") { px = r.x + r.w * 0.5f; py = r.bandY >= 0.0f ? r.bandY : r.y + 12.0f; }
+					else if (from == "body") { px = r.gapX; py = r.gapY; }
+					if (px < 0.0f || py < 0.0f) { error = "drag takes left|right|top|bottom|bottomleft|bottomright|topbar|body, with the menu open"; }
+					else
+					{
+						const float dx = static_cast<float>(JsonNum(args, "dx", 0.0));
+						const float dy = static_cast<float>(JsonNum(args, "dy", 0.0));
+						const int steps = std::clamp(static_cast<int>(JsonNum(args, "steps", 10.0)), 1, 60);
+						// Each record lands on its own frame (trickling is off), so every step waits a few frames' time.
+						const auto wait = [](int a_ms) { std::this_thread::sleep_for(std::chrono::milliseconds(a_ms)); };
+						input::SetCursorAbsolute(px, py);
+						wait(150);   // hover first: ImGui's resize borders answer only once hovered
+						input::QueueMouseButton(0, true);
+						wait(100);
+						for (int i = 1; i <= steps; ++i)
+						{
+							input::SetCursorAbsolute(px + dx * static_cast<float>(i) / static_cast<float>(steps), py + dy * static_cast<float>(i) / static_cast<float>(steps));
+							wait(50);
+						}
+						wait(100);
+						input::QueueMouseButton(0, false);
+						wait(200);
+						extra = ",\"drag\":\"" + from + "\",\"pressAt\":[" + std::to_string(static_cast<int>(px)) + "," + std::to_string(static_cast<int>(py)) +
+								"],\"dx\":" + std::to_string(static_cast<int>(dx)) + ",\"dy\":" + std::to_string(static_cast<int>(dy)) + ",\"before\":" + rectJson(r);
+						logger::info("devbench: window drag {} by {:.0f},{:.0f} from {:.0f},{:.0f}", from, dx, dy, px, py);
+					}
+				}
+				const renderer::WindowRect now = renderer::GetWindowRect();
+				const auto& v = settings::Get();
+				result = std::string("{\"ok\":") + (error.empty() ? "true" : "false") + ",\"op\":\"window\"" +
+						 (error.empty() ? std::string() : ",\"error\":\"" + error + "\"") + extra +
+						 ",\"rect\":" + rectJson(now) +
+						 ",\"display\":[" + std::to_string(static_cast<int>(now.dispW)) + "," + std::to_string(static_cast<int>(now.dispH)) + "]" +
+						 ",\"moveStyle\":" + std::to_string(v.moveStyle) + ",\"resizeStyle\":" + std::to_string(v.resizeStyle) +
+						 ",\"freeResize\":" + (v.freeResize ? "true" : "false") +
+						 ",\"saved\":[" + std::to_string(v.hotkeyWindow.x) + "," + std::to_string(v.hotkeyWindow.y) + "," + std::to_string(v.hotkeyWindow.w) + "," +
+						 std::to_string(v.hotkeyWindow.h) + "]}";
 			}
 			else if (op == "mouse")
 			{

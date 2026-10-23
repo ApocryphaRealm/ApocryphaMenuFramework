@@ -343,12 +343,17 @@ namespace settings
 				"; window, so it takes its default: the journal panel it is hosted in when opened\n"
 				"; from the System row, and the centre of the screen when opened by the key. Move or\n"
 				"; resize either one and it is remembered here; the settings page can reset it.\n"
-				"; Move the window (0/1): on, drag its top row (the name and version) to move it, and it opens where it\n"
-				"; was left. Off: it sits in the middle of the screen. On is the default.\n"
-				"bMovable=" << (a_v.movableWindow ? 1 : 0) << "\n"
+				"; Move style: 0 = Anywhere (drag the top row or any empty part of the menu), 1 = Top edge (drag only the\n"
+				"; top row - the name and version), 2 = Fixed (the menu stays where it is: no moving, no resizing).\n"
+				"; It opens where it was left. Top edge is the default. Replaces bMovable (bMovable=0 is read as Fixed).\n"
+				"uMoveStyle=" << a_v.moveStyle << "\n"
 				"; Resize the window (0/1): on, drag any edge or corner to resize it, freely. Off: its size is fixed.\n"
 				"; On is the default.\n"
 				"bFreeResize=" << (a_v.freeResize ? 1 : 0) << "\n"
+				"; Resize style: 0 = Centred (an edge drag moves both sides about the middle), 1 = Edges (the dragged edge\n"
+				"; or corner moves and the opposite one stays put, like a normal window). Centred is the default.\n"
+				"; In every style the menu is kept inside the screen.\n"
+				"uResizeStyle=" << a_v.resizeStyle << "\n"
 				"fNestedX=" << a_v.nestedWindow.x << "\n"
 				"fNestedY=" << a_v.nestedWindow.y << "\n"
 				"fNestedW=" << a_v.nestedWindow.w << "\n"
@@ -718,8 +723,29 @@ namespace settings
 			ReadNumber(entries, "Window.fHotkeyH", g_values.hotkeyWindow.h);
 			ReadNumber(entries, "Display.fTextScale", g_values.textScale);
 			ReadNumber(entries, "Display.uWindowOpacity", g_values.windowOpacity);
-			ReadBool(entries, "Window.bMovable", g_values.movableWindow);
+			ReadNumber(entries, "Window.uMoveStyle", g_values.moveStyle);
 			ReadBool(entries, "Window.bFreeResize", g_values.freeResize);
+			ReadNumber(entries, "Window.uResizeStyle", g_values.resizeStyle);
+			// 2.3.0: bMovable is retired for uMoveStyle. A User.ini written before 2.3.0 that turned moving off says
+			// bMovable=0 and has no uMoveStyle (it did not exist): read it as Fixed. The next save writes uMoveStyle.
+			if (const auto mv = userEntries.find("Window.bMovable");
+				mv != userEntries.end() && !userEntries.contains("Window.uMoveStyle") && mv->second == "0")
+			{
+				g_values.moveStyle = Values::kMoveFixed;
+				logger::info("settings: User.ini has bMovable=0 from before 2.3.0 - read as Move style Fixed");
+			}
+			if (g_values.moveStyle < Values::kMoveAnywhere || g_values.moveStyle > Values::kMoveFixed)
+			{
+				logger::warn("settings: Window.uMoveStyle = {} is not 0-2; using 1 (Top edge)", g_values.moveStyle);
+				g_values.moveStyle = Values::kMoveTopEdge;
+			}
+			if (g_values.resizeStyle < Values::kResizeCentred || g_values.resizeStyle > Values::kResizeEdges)
+			{
+				logger::warn("settings: Window.uResizeStyle = {} is not 0-1; using 0 (Centred)", g_values.resizeStyle);
+				g_values.resizeStyle = Values::kResizeCentred;
+			}
+			logger::debug("settings: window move style {}, resize style {}, resize {}", g_values.moveStyle, g_values.resizeStyle,
+				g_values.freeResize ? "on" : "off");
 			ReadBool(entries, "Display.bSeeThrough", g_values.seeThrough);
 			ReadBool(entries, "Display.bHelpBar", g_values.helpBar);
 			ReadBool(entries, "Display.bColorsApplyNow", g_values.colorsApplyNow);

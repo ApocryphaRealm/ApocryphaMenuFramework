@@ -361,6 +361,9 @@ namespace renderer
 		// size instead of judging a screenshot (the owner, 2026-10-05: "I couldn't resize the vertical length ... you'll
 		// have to check"). Guarded by g_selLock.
 		float g_mainX = 0.0f, g_mainY = 0.0f, g_mainW = 0.0f, g_mainH = 0.0f;
+		float g_mainDispW = 0.0f, g_mainDispH = 0.0f;   // 2.3.0: the screen the window is kept inside, for op=window / state
+		float g_bodyGapX = -1.0f, g_bodyGapY = -1.0f;     // 2.3.0: an empty body spot (between the panes), for op=window
+		float g_moveBandY = -1.0f;                        // 2.3.0: the middle of the top-row move handle, for op=window
 		std::string g_selTab  = "mods";            // kept for the DevBench state JSON; the SMF shape has one list
 		std::string g_selNode = "settings";        // side-list entry: settings|controls|help|mod
 		int g_selMod = 0;
@@ -2512,14 +2515,23 @@ namespace renderer
 					// "the semi transparence of the window"; the owner: "seperate toggles" ... "in apperance teb"). Each ON by default
 					// (the owner: "have it default to on, along with the other settings we just added"); See-through starts at
 					// 100% opacity, so it looks solid until the slider is lowered.
-					if (widgets::Toggle(TR("AMF_MovableWindow", "Move the window"), &values.movableWindow))
+					// MOVE STYLE (2.3.0 - the owner, 2026-10-23: "settings to drag the window by its top edge or fixed position
+					// too"). Replaces the 2.1.1 "Move the window" switch: Top edge is what that switch's ON did, and stays the
+					// default; Fixed also stops resizing, so the two resize controls below are greyed out under it.
 					{
-						logger::info("settings page: move the window -> {}", values.movableWindow);
-						settings::Save();
-						if (!values.movableWindow) { g_applyGeometry.store(true, std::memory_order_release); }   // back to the centre
+						const char* moveItems[] = { TR("AMF_MoveAnywhere", "Anywhere"), TR("AMF_MoveTopEdge", "Top edge"), TR("AMF_MoveFixed", "Fixed") };
+						ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
+						if (theme::ComboTight(TR("AMF_MoveStyle", "Move style"), &values.moveStyle, moveItems, 3))
+						{
+							logger::info("settings page: move style -> {}", values.moveStyle);
+							settings::Save();
+						}
+						ImGui::TextWrapped("%s", TR("AMF_MoveStyleHelp", "Anywhere: drag the top row or any empty part of the menu to move it. "
+							"Top edge: drag only the top row - the name and version. Fixed: the menu stays where it is and cannot be moved or "
+							"resized. It always opens where you left it, and it is kept inside the screen."));
 					}
-					ImGui::TextWrapped("%s", TR("AMF_MovableWindowHelp", "On: drag the top row - the name and version - to move the "
-						"menu, and it opens where you left it. Off: it sits in the middle of the screen."));
+					const bool fixedWindow = values.moveStyle == settings::Values::kMoveFixed;
+					ImGui::BeginDisabled(fixedWindow);
 					if (widgets::Toggle(TR("AMF_FreeResize", "Resize the window"), &values.freeResize))
 					{
 						logger::info("settings page: resize the window -> {}", values.freeResize);
@@ -2527,6 +2539,23 @@ namespace renderer
 					}
 					ImGui::TextWrapped("%s", TR("AMF_FreeResizeHelp", "On: drag any edge or corner to resize the menu - height "
 						"and width alike - and the size is kept. Off: the size is fixed."));
+					// RESIZE STYLE (2.3.0 - ssuamier on Nexus, 2026-10-23; the owner: "i can just make the resizing style a
+					// setting in the window settings tab"). Centred is the 1.7.7 behaviour the owner asked for and stays the default.
+					{
+						const char* resizeItems[] = { TR("AMF_ResizeCentred", "Centred"), TR("AMF_ResizeEdges", "Edges") };
+						ImGui::BeginDisabled(!values.freeResize);
+						ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
+						if (theme::ComboTight(TR("AMF_ResizeStyle", "Resize style"), &values.resizeStyle, resizeItems, 2))
+						{
+							logger::info("settings page: resize style -> {}", values.resizeStyle);
+							settings::Save();
+						}
+						ImGui::EndDisabled();
+						ImGui::TextWrapped("%s", TR("AMF_ResizeStyleHelp", "Centred: dragging an edge moves the opposite edge too, so the "
+							"menu grows or shrinks about its middle. Edges: the edge or corner you drag moves and the opposite one stays put, "
+							"like a normal window. Either way the menu never leaves the screen."));
+					}
+					ImGui::EndDisabled();
 					if (widgets::Toggle(TR("AMF_SeeThrough", "See-through window"), &values.seeThrough))
 					{
 						logger::info("settings page: see-through window -> {}", values.seeThrough);
@@ -4052,30 +4081,45 @@ namespace renderer
 			// button"). The knotwork frame now runs round the window's own top edge, and the collapse arrow is gone. The window
 			// still MOVES (the owner's 2026-09-21 requirement): ImGui's ConfigWindowsMoveFromTitleBarOnly does not apply to a
 			// window without a title bar, so a drag on its frame or any empty part of it moves it.
-			// NoMove stays (2.1.1): ImGui's own move would let the body drag the window. The top row is the handle instead -
-			// see "THE TOP ROW MOVES THE WINDOW" below.
-			ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove;
+			// NoMove (2.1.1) stays for Move style Top edge and Fixed: ImGui's own move would let the body drag the window. The
+			// top row is the handle instead - see "THE TOP ROW MOVES THE WINDOW" below. 2.3.0's Anywhere lifts it.
+			// 2.3.0 MOVE STYLE AND RESIZE STYLE (ssuamier on Nexus, 2026-10-23: at the top-left corner a resize pushed the window
+			// past 0/0 and off the screen; the owner: "i can just make the resizing style a setting in the window settings tab",
+			// then "settings to drag the window by its top edge or fixed position too").
+			//  - Move style Top edge (the default, what 2.1.1-2.2.x did): NoMove, and the top row is the handle (below).
+			//    Anywhere: ImGui's own move as well, so a press on any EMPTY part of the window drags it (a press on a control
+			//    still works the control - ImGui only moves a window when no item took the press). Fixed: no move, no resize.
+			//  - Resize style Centred (the default, the owner's 1.7.7 design): the window is held at its centre, so an edge drag
+			//    grows both sides. Edges: the window is not held; ImGui's own resize keeps the opposite edge where it is.
+			//  - In every style the window is kept inside the screen: the size callback stops the dragged edge at the screen's
+			//    edge on the frame it would cross, and the position is clamped before Begin every frame (a resolution change,
+			//    the self-widening below, ImGui's move).
+			const settings::Values& winValues = settings::Get();
+			const int moveStyle = winValues.moveStyle;
+			const bool edgesResize = winValues.resizeStyle == settings::Values::kResizeEdges;
+			const bool fixedWindow = moveStyle == settings::Values::kMoveFixed;
+			const bool canResize = winValues.freeResize && !fixedWindow;
+			ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse;
+			if (moveStyle != settings::Values::kMoveAnywhere) { windowFlags |= ImGuiWindowFlags_NoMove; }
 			// Resize the window OFF really is off (the owner, 2026-10-05: "make sure the toggle actually toggles off the
-			// resizing"): no edge or corner resizes it. On (the default), every edge and corner does, freely.
-			if (!settings::Get().freeResize) { windowFlags |= ImGuiWindowFlags_NoResize; }
-			// 1.7.7/1.7.8 (the owner, 2026-09-13): the KEY-OPENED window is fixed to the screen centre; an
-			// edge drag grows both sides (the centre never moves); a corner drag keeps the window's SHAPE
-			// and grows it - the text does not scale ("it should just increase the size of the window
-			// length and width proportionally"); the window can never be larger than the game screen.
-			// Done through ImGui's own size constraint callback, so ImGui resizes once per frame with
-			// the rule already applied and nothing is forced afterwards (no jumping). None of it
-			// applies to the nested window, which keeps the journal-panel placement below.
-			struct HotkeyConstraint { ImVec2 display{}; float aspect = 0.0f; bool free = false; };
+			// resizing"): no edge or corner resizes it. Fixed (2.3.0) turns it off too.
+			if (!canResize) { windowFlags |= ImGuiWindowFlags_NoResize; }
+			// What the size callback needs: the screen, and the window, to tell WHICH edge or corner is being dragged (ImGui's
+			// own ids for its resize borders and grips) - that edge may go as far as the screen's edge and no further.
+			struct HotkeyConstraint { ImVec2 display{}; ImGuiWindow* window = nullptr; };
 			static HotkeyConstraint s_hotkeyConstraint{};
-			// 1.9.6 (the owner, 2026-09-21: "the F1 called AMF does not [move], as it is fixed in position, which should
-			// still be movable if they grab it by the top"). The key-opened window now MOVES by its top bar like the
-			// System-row one (ConfigWindowsMoveFromTitleBarOnly keeps the body from dragging it). What stays from
-			// 2026-09-13 is the resize: an edge drag still grows both sides about the window's centre and a corner
-			// drag keeps its shape - the centre is simply wherever the player has put the window, not the screen's.
+			// The centre a Centred window is held at. Kept in step in Edges too, so switching style leaves the window put.
 			static ImVec2 s_hotCentre{ -1.0f, -1.0f };
 			ImGuiWindow* hotWindow = ImGui::FindWindowByName(windowId);
 			const bool movingHot = hotWindow && GImGui->MovingWindow && GImGui->MovingWindow->RootWindow == hotWindow;
-			constexpr bool kCentred = true;   // both modes (see above)
+			const bool haveDisplay = display.x >= 1.0f && display.y >= 1.0f;   // 0x0 while minimised or driven in the background
+			// A centre that keeps a window of this size whole on the screen.
+			const auto keepCentreOnScreen = [&display](ImVec2 a_centre, ImVec2 a_size) {
+				const float hw = std::min(a_size.x, display.x) * 0.5f;
+				const float hh = std::min(a_size.y, display.y) * 0.5f;
+				return ImVec2(std::clamp(a_centre.x, hw, std::max(hw, display.x - hw)), std::clamp(a_centre.y, hh, std::max(hh, display.y - hh)));
+			};
+			constexpr bool kCentred = true;   // both ways of opening share this geometry (see above)
 			if (kCentred)
 			{
 				if (g_applyGeometry.load(std::memory_order_acquire))
@@ -4083,45 +4127,84 @@ namespace renderer
 					const float gw = std::min(profile.IsSet() ? profile.w : dw, 1.0f);
 					const float gh = std::min(profile.IsSet() ? profile.h : dh, 1.0f);
 					ImGui::SetNextWindowSize(ImVec2(display.x * gw, display.y * gh), ImGuiCond_Always);
-					// WHERE THE PLAYER LEFT IT (2.1.1 - Barzing on Nexus, 2026-10-05: "the possibility to move the window"; the
-					// owner: "ill add ... move the window"). This reverses 2026-10-02's lock to the screen centre: the window opens
-					// centred the first time and after Reset, and otherwise where it was last put - its saved top-left plus half
-					// its size is the centre it is held at.
-					// Only with Move the window on; off, it is held at the screen centre as before.
-					const bool free = settings::Get().movableWindow && profile.IsSet();
-					float cx = free ? profile.x + gw * 0.5f : 0.5f;
-					float cy = free ? profile.y + gh * 0.5f : 0.5f;
+					// WHERE THE PLAYER LEFT IT (2.1.1 - Barzing on Nexus, 2026-10-05: "the possibility to move the window"). The
+					// window opens centred the first time and after Reset, and otherwise where it was last put - its saved top-left
+					// plus half its size is the centre. 2.3.0: in every move style (Fixed stays where it was left).
+					float cx = profile.IsSet() ? profile.x + gw * 0.5f : 0.5f;
+					float cy = profile.IsSet() ? profile.y + gh * 0.5f : 0.5f;
 					cx = std::clamp(cx, gw * 0.5f, 1.0f - gw * 0.5f);
 					cy = std::clamp(cy, gh * 0.5f, 1.0f - gh * 0.5f);
 					s_hotCentre = ImVec2(display.x * cx, display.y * cy);
+					ImGui::SetNextWindowPos(s_hotCentre, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
 					g_applyGeometry.store(false, std::memory_order_release);
 					appliedThisFrame = true;
-					s_hotkeyConstraint.aspect = 0.0f;
+					logger::debug("window: opened at centre ({:.0f},{:.0f}) size {:.0f}x{:.0f} - move style {}, resize style {}",
+						s_hotCentre.x, s_hotCentre.y, display.x * gw, display.y * gh, moveStyle, edgesResize ? "edges" : "centred");
 				}
-				if (s_hotCentre.x < 0.0f) { s_hotCentre = ImVec2(display.x * 0.5f, display.y * 0.5f); }
+				else if (hotWindow && haveDisplay)
+				{
+					const ImVec2 size(std::min(hotWindow->SizeFull.x, display.x), std::min(hotWindow->SizeFull.y, display.y));
+					if (!edgesResize)
+					{
+						// Held at its centre every frame; ImGui's own move (Anywhere, or the gamepad's window move) has already
+						// placed the window for this frame in NewFrame, so the centre follows it - clamped to the screen.
+						if (movingHot) { s_hotCentre = ImVec2(hotWindow->Pos.x + size.x * 0.5f, hotWindow->Pos.y + size.y * 0.5f); }
+						const ImVec2 held = keepCentreOnScreen(s_hotCentre, size);
+						if (std::fabs(held.x - s_hotCentre.x) > 0.5f || std::fabs(held.y - s_hotCentre.y) > 0.5f)
+						{
+							static int s_saidCentre = 0;
+							if (s_saidCentre++ < 20) { logger::debug("window: centre ({:.0f},{:.0f}) kept on screen at ({:.0f},{:.0f})", s_hotCentre.x, s_hotCentre.y, held.x, held.y); }
+						}
+						s_hotCentre = held;
+						ImGui::SetNextWindowPos(s_hotCentre, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+					}
+					else
+					{
+						// Edges: not held - ImGui's resize moves the dragged edge only. Only a window off the screen is put back.
+						const ImVec2 pos = hotWindow->Pos;
+						const ImVec2 kept(std::clamp(pos.x, 0.0f, std::max(0.0f, display.x - size.x)), std::clamp(pos.y, 0.0f, std::max(0.0f, display.y - size.y)));
+						if (std::fabs(kept.x - pos.x) > 0.5f || std::fabs(kept.y - pos.y) > 0.5f)
+						{
+							ImGui::SetNextWindowPos(kept, ImGuiCond_Always);
+							static int s_saidEdges = 0;
+							if (s_saidEdges++ < 20) { logger::debug("window: ({:.0f},{:.0f}) kept on screen at ({:.0f},{:.0f})", pos.x, pos.y, kept.x, kept.y); }
+						}
+						s_hotCentre = ImVec2(kept.x + size.x * 0.5f, kept.y + size.y * 0.5f);
+					}
+				}
+				else
+				{
+					if (s_hotCentre.x < 0.0f) { s_hotCentre = ImVec2(display.x * 0.5f, display.y * 0.5f); }
+					ImGui::SetNextWindowPos(s_hotCentre, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+				}
 				s_hotkeyConstraint.display = display;
-				s_hotkeyConstraint.free = settings::Get().freeResize;
+				s_hotkeyConstraint.window = hotWindow;
 				ImGui::SetNextWindowSizeConstraints(ImVec2(display.x * 0.2f, display.y * 0.2f), display,
 					+[](ImGuiSizeCallbackData* a_data) {
 						auto* c = static_cast<HotkeyConstraint*>(a_data->UserData);
-						const bool wChanged = std::fabs(a_data->DesiredSize.x - a_data->CurrentSize.x) > 0.5f;
-						const bool hChanged = std::fabs(a_data->DesiredSize.y - a_data->CurrentSize.y) > 0.5f;
-						// With Resize the window on (2.1.1) a corner drag is free - width and height each follow the mouse.
-						const bool corner = wChanged && hChanged && c->aspect > 0.0f && !c->free;
-						if (corner)
+						float maxW = c->display.x;
+						float maxH = c->display.y;
+						ImGuiContext& g = *GImGui;
+						if (c->window && g.ActiveId != 0)
 						{
-							a_data->DesiredSize.y = a_data->DesiredSize.x / c->aspect;   // keep the shape
+							// Which side is being dragged: ImGui's ids for its four borders and its two (lower) corner grips.
+							const ImGuiID id = g.ActiveId;
+							const bool left = id == ImGui::GetWindowResizeBorderID(c->window, ImGuiDir_Left) || id == ImGui::GetWindowResizeCornerID(c->window, 1);
+							const bool right = id == ImGui::GetWindowResizeBorderID(c->window, ImGuiDir_Right) || id == ImGui::GetWindowResizeCornerID(c->window, 0);
+							const bool top = id == ImGui::GetWindowResizeBorderID(c->window, ImGuiDir_Up);
+							const bool bottom = id == ImGui::GetWindowResizeBorderID(c->window, ImGuiDir_Down) || id == ImGui::GetWindowResizeCornerID(c->window, 0) ||
+							                    id == ImGui::GetWindowResizeCornerID(c->window, 1);
+							// The dragged edge stops at the screen's edge: a left/top drag keeps the right/bottom edge where it is,
+							// so the width can grow to that edge's x; a right/bottom drag can grow to the screen's far side.
+							// Never below the size it has (a window already past the edge is put back by the position clamp).
+							if (left) { maxW = std::max(a_data->Pos.x + a_data->CurrentSize.x, a_data->CurrentSize.x); }
+							if (right) { maxW = std::max(c->display.x - a_data->Pos.x, a_data->CurrentSize.x); }
+							if (top) { maxH = std::max(a_data->Pos.y + a_data->CurrentSize.y, a_data->CurrentSize.y); }
+							if (bottom) { maxH = std::max(c->display.y - a_data->Pos.y, a_data->CurrentSize.y); }
 						}
-						a_data->DesiredSize.x = std::min(a_data->DesiredSize.x, c->display.x);
-						a_data->DesiredSize.y = std::min(a_data->DesiredSize.y, c->display.y);
-						if (corner && a_data->DesiredSize.y * c->aspect < a_data->DesiredSize.x)
-						{
-							a_data->DesiredSize.x = a_data->DesiredSize.y * c->aspect;   // the clamp held one side: keep the shape
-						}
+						a_data->DesiredSize.x = std::min(a_data->DesiredSize.x, std::min(maxW, c->display.x));
+						a_data->DesiredSize.y = std::min(a_data->DesiredSize.y, std::min(maxH, c->display.y));
 					}, &s_hotkeyConstraint);
-				// Held at its centre every frame EXCEPT while the title bar is being dragged, when ImGui's own move
-				// runs and the centre follows it (below). That is what keeps a resize symmetric.
-				if (!movingHot) { ImGui::SetNextWindowPos(s_hotCentre, ImGuiCond_Always, ImVec2(0.5f, 0.5f)); }
 			}
 			else if (g_applyGeometry.load(std::memory_order_acquire))
 			{
@@ -4167,21 +4250,7 @@ namespace renderer
 					const ImVec2 rs = ImGui::GetWindowSize();
 					std::scoped_lock l(g_selLock);
 					g_mainX = rp.x; g_mainY = rp.y; g_mainW = rs.x; g_mainH = rs.y;
-				}
-				if (kCentred)
-				{
-					// The shape a corner drag keeps is the shape the window had when the drag began:
-					// refreshed every frame the mouse is up, frozen while it is down.
-					const ImVec2 cur = ImGui::GetWindowSize();
-					if (!ImGui::IsMouseDown(ImGuiMouseButton_Left) && cur.x > 1.0f && cur.y > 1.0f)
-					{
-						s_hotkeyConstraint.aspect = cur.x / cur.y;
-					}
-					if (movingHot)
-					{
-						const ImVec2 wp = ImGui::GetWindowPos();
-						s_hotCentre = ImVec2(wp.x + cur.x * 0.5f, wp.y + cur.y * 0.5f);
-					}
+					g_mainDispW = display.x; g_mainDispH = display.y;
 				}
 				// The author's background, before any content: ImGui has already painted the window's
 				// own colour, and everything drawn after this lands on top of the art.
@@ -4229,7 +4298,8 @@ namespace renderer
 				// restrains windows WITH a title bar). So the band from the window's top edge to the bottom of this line is an
 				// invisible handle: drag it and the window follows; let go and the place is saved with the size. ImGui's own
 				// edge-resize zones are tested before any item, so the very edge still resizes.
-				if (kCentred && settings::Get().movableWindow)
+				// 2.3.0: in Move style Anywhere and Top edge; Fixed has no handle.
+				if (kCentred && !fixedWindow)
 				{
 					const ImVec2 afterRow = ImGui::GetCursorScreenPos();
 					const ImVec2 wp = ImGui::GetWindowPos();
@@ -4237,6 +4307,7 @@ namespace renderer
 					const float bandH = ImGui::GetItemRectMax().y - wp.y - border;
 					if (bandH > 1.0f)
 					{
+						{ std::scoped_lock l(g_selLock); g_moveBandY = wp.y + border + bandH * 0.5f; }
 						ImGui::SetCursorScreenPos(ImVec2(wp.x + border, wp.y + border));
 						// a mouse handle only: off the D-pad's path (the owner, 2026-10-07: D-pad up from the panes put the 2.1.5
 						// highlight frame round the top bar - the band was a nav stop)
@@ -4250,6 +4321,8 @@ namespace renderer
 							// Kept whole on the screen: the centre stays half a window from every edge.
 							s_hotCentre.x = std::clamp(s_hotCentre.x + d.x, sz.x * 0.5f, std::max(sz.x * 0.5f, display.x - sz.x * 0.5f));
 							s_hotCentre.y = std::clamp(s_hotCentre.y + d.y, sz.y * 0.5f, std::max(sz.y * 0.5f, display.y - sz.y * 0.5f));
+							// Resize style Edges holds no centre before Begin, so the window is put there directly.
+							if (edgesResize) { ImGui::SetWindowPos(ImVec2(s_hotCentre.x - sz.x * 0.5f, s_hotCentre.y - sz.y * 0.5f)); }
 						}
 						ImGui::SetCursorScreenPos(afterRow);
 					}
@@ -4298,7 +4371,13 @@ namespace renderer
 					{
 						ImGuiWindow* self = ImGui::GetCurrentWindow();
 						const float grown = std::min(self->Size.x + (needed + rightMin + between - avail), display.x * 0.98f);
-						if (grown > self->Size.x + 0.5f) { ImGui::SetWindowSize(ImVec2(grown, self->Size.y)); }
+						if (grown > self->Size.x + 0.5f)
+						{
+							ImGui::SetWindowSize(ImVec2(grown, self->Size.y));
+							// 2.3.0: growing to the right must not carry the window off the screen (Resize style Edges holds no
+							// centre that would bring it back next frame).
+							if (self->Pos.x + grown > display.x) { ImGui::SetWindowPos(ImVec2(std::max(0.0f, display.x - grown), self->Pos.y)); }
+						}
 					}
 					// 2.2.4 (the menu render matrix, 2026-10-22: at text size 2.50 the pane came out NARROWER than at 2.00 - the
 					// page's 28-character minimum grew with the text and took the room, so Filter and Sort were cut mid-letter and
@@ -5030,6 +5109,14 @@ namespace renderer
 
 				// Room between the panes for both knotwork frames plus a breath of air.
 				ImGui::SameLine(0.0f, knot ? kKnotOutset * 4.0f : -1.0f);
+				{
+					// 2.3.0: an EMPTY spot of the window body - the gap between the panes - for op=window's drag "body" (the
+					// test of Move style Anywhere: a press there is on no item, so ImGui moves the window).
+					const float contentX = ImGui::GetCursorScreenPos().x;
+					std::scoped_lock l(g_selLock);
+					g_bodyGapX = (sidePaneMax.x + contentX) * 0.5f;
+					g_bodyGapY = (sidePaneMin.y + sidePaneMax.y) * 0.5f;
+				}
 
 				// ---- CONTENT PANE -------------------------------------------------------------
 				if (g_focusPane == 2) { ImGui::SetNextWindowFocus(); g_focusPane = 0; g_frameWindowFocus = ImGui::GetFrameCount(); }
@@ -6175,6 +6262,42 @@ namespace renderer
 		return true;
 	}
 
+	WindowRect GetWindowRect()
+	{
+		std::scoped_lock l(g_selLock);
+		WindowRect r;
+		r.x = g_mainX; r.y = g_mainY; r.w = g_mainW; r.h = g_mainH;
+		r.dispW = g_mainDispW; r.dispH = g_mainDispH;
+		r.gapX = g_bodyGapX; r.gapY = g_bodyGapY; r.bandY = g_moveBandY;
+		return r;
+	}
+
+	void PlaceWindow(float a_x, float a_y, float a_w, float a_h)
+	{
+		// On the game's main thread, where the frame reads the settings; the geometry is applied on the next opening frame.
+		if (auto* task = SKSE::GetTaskInterface())
+		{
+			task->AddTask([a_x, a_y, a_w, a_h]() {
+				float dw = 0.0f, dh = 0.0f;
+				{
+					std::scoped_lock l(g_selLock);
+					dw = g_mainDispW; dh = g_mainDispH;
+				}
+				if (dw < 1.0f || dh < 1.0f)
+				{
+					logger::warn("devbench: window place ignored - the screen size is not known yet (open the menu once)");
+					return;
+				}
+				auto& p = settings::Get().hotkeyWindow;
+				p.x = a_x / dw; p.y = a_y / dh; p.w = a_w / dw; p.h = a_h / dh;
+				settings::Save();
+				g_applyGeometry.store(true, std::memory_order_release);
+				logger::info("devbench: window placed at {:.0f},{:.0f} {:.0f}x{:.0f} (fractions {:.3f},{:.3f} {:.3f}x{:.3f})",
+					a_x, a_y, a_w, a_h, p.x, p.y, p.w, p.h);
+			});
+		}
+	}
+
 	std::string GetMenuStateJson()
 	{
 		std::string node, tab, tabName; int selMod, tabIndex, tabCount;
@@ -6280,7 +6403,10 @@ namespace renderer
 		{
 			std::scoped_lock l(g_selLock);
 			mainWindow = ",\"mainWindow\":{\"pos\":[" + std::to_string(static_cast<int>(g_mainX)) + "," + std::to_string(static_cast<int>(g_mainY)) +
-				"],\"size\":[" + std::to_string(static_cast<int>(g_mainW)) + "," + std::to_string(static_cast<int>(g_mainH)) + "]}";
+				"],\"size\":[" + std::to_string(static_cast<int>(g_mainW)) + "," + std::to_string(static_cast<int>(g_mainH)) +
+				"],\"display\":[" + std::to_string(static_cast<int>(g_mainDispW)) + "," + std::to_string(static_cast<int>(g_mainDispH)) +
+				"],\"moveStyle\":" + std::to_string(settings::Get().moveStyle) + ",\"resizeStyle\":" + std::to_string(settings::Get().resizeStyle) +
+				",\"freeResize\":" + (settings::Get().freeResize ? "true" : "false") + "}";
 		}
 		return std::string("{" + searchJson + "\"cursor\":{\"x\":") + std::to_string(static_cast<int>(cursorX)) + ",\"y\":" + std::to_string(static_cast<int>(cursorY)) + "}" +
 			   ",\"visible\":" + (visible ? "true" : "false") + mainWindow +

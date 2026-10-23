@@ -137,6 +137,17 @@ namespace renderer
 	std::string SeparatorOp(const std::string& a_action, const std::string& a_name, const std::string& a_mod, const std::string& a_separator);
 
 	std::string GetMenuStateJson();
+	// 2.3.0: the framework window's last drawn rect and the spots a test drags (op=window). Thread-safe.
+	struct WindowRect
+	{
+		float x = 0.0f, y = 0.0f, w = 0.0f, h = 0.0f;   // pixels, last frame
+		float dispW = 0.0f, dispH = 0.0f;               // the screen it is kept inside
+		float gapX = -1.0f, gapY = -1.0f;               // an empty body spot (between the panes)
+		float bandY = -1.0f;                            // the middle of the top-row move handle
+	};
+	WindowRect GetWindowRect();
+	// Puts the window at a pixel rect (saved as the player's geometry, applied on the next frame). Thread-safe.
+	void PlaceWindow(float a_x, float a_y, float a_w, float a_h);
 	// 1.8.9: draw the active theme's frame around a rect on a consumer's draw list (see Renderer.cpp).
 	bool DrawThemeFrameAround(ImDrawList* a_drawList, float a_x0, float a_y0, float a_x1, float a_y1);
 

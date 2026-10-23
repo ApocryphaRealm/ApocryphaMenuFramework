@@ -55,7 +55,14 @@ namespace settings
 		// on, along with the other settings we just added, like the move the window and see-through window at max
 		// opacity"), matching the shipped INI (rule 16). The window always resized from every edge - a saved size 99% of
 		// the screen tall had made the height look fixed; "Resize the window" is now a true on/off ("make sure the toggle actually toggles off the resizing").
-		bool movableWindow = true;    // [Window] bMovable - drag the top row; it reopens where it was left
+		// 2.3.0 (ssuamier on Nexus, 2026-10-23: the window grew past the screen corner when resized there; the owner: "make
+		// the resizing style a setting in the window settings tab", then "settings to drag the window by its top edge or
+		// fixed position too"). These two replace the old bMovable switch, which is still READ once from an older User.ini
+		// (bMovable=0 there becomes Fixed). Defaults keep the behaviour 2.2.x shipped, matching the shipped INI (rule 16).
+		enum MoveStyle : int { kMoveAnywhere = 0, kMoveTopEdge = 1, kMoveFixed = 2 };
+		enum ResizeStyle : int { kResizeCentred = 0, kResizeEdges = 1 };
+		int moveStyle = kMoveTopEdge;      // [Window] uMoveStyle - 0 Anywhere (any empty part), 1 Top edge (the top row), 2 Fixed (no move, no resize)
+		int resizeStyle = kResizeCentred;  // [Window] uResizeStyle - 0 Centred (both sides move about the centre), 1 Edges (the opposite side stays put)
 		bool freeResize = true;       // [Window] bFreeResize - Resize the window: on, any edge or corner resizes freely; off, NoResize
 		bool seeThrough = true;       // [Display] bSeeThrough - uWindowOpacity applies (100 = solid, the default)
 		// 2.1.5 (the owner, 2026-10-07): the help of the highlighted option on a converted MCM page shows in a bar under
