@@ -14,4 +14,9 @@ namespace arthooks
 	// The mouse pointer (the Cursor kind): when a cursor part is picked and the menu wants a drawn pointer, draws the
 	// part at the mouse and returns true so the caller leaves ImGui's own pointer off. Call between NewFrame and Render.
 	bool DrawCursor(bool a_wanted);
+
+	// 2.3.0: on while the on-screen keyboard draws its keys - a button's outline follows the button part's own shape
+	// (rounded, clipped, six- or eight-sided) instead of ImGui's square line, so every key has the shape its cursor's blue
+	// face shows (include/ArtPlate.h). Render thread.
+	void SetShapedButtons(bool a_on);
 }

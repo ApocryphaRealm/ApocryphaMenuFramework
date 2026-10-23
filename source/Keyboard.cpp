@@ -1,6 +1,9 @@
 #include "PCH.h"
 
 #include "Keyboard.h"
+#include "KeyboardKeys.h"
+
+#include "ArtHooks.h"
 
 #include "Input.h"
 #include "Renderer.h"
@@ -24,15 +27,8 @@ namespace keyboard
 
 	namespace
 	{
-		// ---- the layout ----------------------------------------------------------------------
-		// Four character rows and one row of actions. The action row is index 4; its columns are
-		// fixed below so the D-pad lands on them predictably.
-		const char* kRows[4] = { "1234567890", "qwertyuiop", "asdfghjkl", "zxcvbnm-'" };
-		constexpr int kActionRow = 4;
-		enum Action : int { kShift = 0, kSpace, kBack, kClear, kDone, kActionCount };
-		constexpr int kRowCount = 5;
-
-		int RowLength(int a_row) { return a_row == kActionRow ? kActionCount : static_cast<int>(std::strlen(kRows[a_row])); }
+		// ---- the layout (include/KeyboardKeys.h, shared with the offline render) ---------------
+		using namespace keyboardkeys;   // kRows, kActionRow, kRowCount, RowLength and the Action names
 
 		// ---- state (render thread; the input translation runs on it too, before NewFrame) ------
 		std::unordered_set<std::uint32_t> g_fieldsThisFrame;   // text-field item ids seen this frame
@@ -278,8 +274,7 @@ namespace keyboard
 
 		const ImGuiIO& io = ImGui::GetIO();
 		const float k = ImGui::GetFrameHeight() * 1.6F;
-		const float gap = ImGui::GetStyle().ItemSpacing.x;
-		const float width = 10.0F * k + 9.0F * gap + ImGui::GetStyle().WindowPadding.x * 2.0F;
+		const float width = keyboardkeys::WindowWidth(k);
 		ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5F, io.DisplaySize.y - k * 0.5F), ImGuiCond_Always, ImVec2(0.5F, 1.0F));
 		ImGui::SetNextWindowSize(ImVec2(width, 0.0F), ImGuiCond_Always);
 		ImGui::SetNextWindowBgAlpha(0.92F);
@@ -292,43 +287,14 @@ namespace keyboard
 		ImGui::BringWindowToDisplayFront(ImGui::GetCurrentWindow());
 
 		ImGui::TextDisabled("%s", TR("AMF_OskHint", "D-pad moves, A types, B goes back to the box, X shift, Y backspace"));
-		const ImVec4 hi = ImGui::GetStyleColorVec4(ImGuiCol_NavHighlight);
-		for (int r = 0; r < kRowCount; ++r)
-		{
-			const int len = RowLength(r);
-			// centre the shorter rows
-			const float rowWidth = (r == kActionRow) ? (k * 1.6F + k * 4.0F + k * 1.8F + k * 1.8F + k * 1.6F + 4.0F * gap) : (len * k + (len - 1) * gap);
-			ImGui::SetCursorPosX((ImGui::GetWindowSize().x - rowWidth) * 0.5F);
-			for (int c = 0; c < len; ++c)
-			{
-				const bool cursor = (r == g_row && c == g_col);
-				if (cursor) { ImGui::PushStyleColor(ImGuiCol_Button, hi); }
-				ImGui::PushID(r * 32 + c);
-				bool pressed = false;
-				if (r != kActionRow)
-				{
-					char label[2] = { kRows[r][c], '\0' };
-					if (g_shift && label[0] >= 'a' && label[0] <= 'z') { label[0] = static_cast<char>(label[0] - 'a' + 'A'); }
-					pressed = ImGui::Button(label, ImVec2(k, k));
-				}
-				else
-				{
-					switch (c)
-					{
-					case kShift: pressed = ImGui::Button(TR("AMF_OskShift", "Shift"), ImVec2(k * 1.6F, k)); break;
-					case kSpace: pressed = ImGui::Button(TR("AMF_OskSpace", "Space"), ImVec2(k * 4.0F, k)); break;
-					case kBack:  pressed = ImGui::Button(TR("AMF_OskBack", "Back"), ImVec2(k * 1.8F, k)); break;
-					case kClear: pressed = ImGui::Button(TR("AMF_OskClear", "Clear"), ImVec2(k * 1.8F, k)); break;
-					case kDone:  pressed = ImGui::Button(TR("AMF_OskDone", "Done"), ImVec2(k * 1.6F, k)); break;
-					default: break;
-					}
-				}
-				ImGui::PopID();
-				if (cursor) { ImGui::PopStyleColor(); }
-				if (pressed) { g_row = r; g_col = c; Press(); }
-				if (c + 1 < len) { ImGui::SameLine(); }
-			}
-		}
+		const keyboardkeys::ActionLabels labels{ TR("AMF_OskShift", "Shift"), TR("AMF_OskSpace", "Space"), TR("AMF_OskBack", "Back"),
+												TR("AMF_OskClear", "Clear"), TR("AMF_OskDone", "Done") };
+		int pressedRow = -1, pressedCol = -1;
+		// 2.3.0: the keys' outlines follow the theme's button shape while they draw (the owner, 2026-10-23)
+		arthooks::SetShapedButtons(true);
+		const bool pressed = keyboardkeys::DrawRows(labels, g_row, g_col, g_shift, k, pressedRow, pressedCol);
+		arthooks::SetShapedButtons(false);
+		if (pressed) { g_row = pressedRow; g_col = pressedCol; Press(); }
 		ImGui::End();
 	}
 

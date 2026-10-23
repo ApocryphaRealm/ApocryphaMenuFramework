@@ -5762,13 +5762,15 @@ namespace renderer
 						DrawFrameworkWindow();
 					}
 				}
+				// The on-screen keyboard, after the window so this frame's text fields are known. It
+				// closes itself when the window is not up. 2.3.0: and BEFORE the highlight frames, so a key under the
+				// mouse gets the theme's hover frame the way every button on a page does - drawn after them, its keys'
+				// hover marks waited for the next frame's flush and were wiped when the keyboard window began again.
+				keyboard::Draw();
+
 				// 2.1.5: the theme's frame round the highlighted and hovered items, over every window's own drawing.
 				if (IsMainWindowVisible()) { FlushHighlightFrames(); }
 				else { g_highlights.clear(); g_mouseSinceNav = false; }
-
-				// The on-screen keyboard, after the window so this frame's text fields are known. It
-				// closes itself when the window is not up.
-				keyboard::Draw();
 
 				// LAST thing in the frame: the curtain covers the framework's own window and every
 				// consumer HUD element rather than being interleaved with them.
