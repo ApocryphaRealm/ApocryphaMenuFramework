@@ -190,6 +190,13 @@ def main() -> int:
                 "igSetTooltip": "SetTooltipV", "igSetTooltipV": "SetTooltipV", "igSetItemTooltip": "SetItemTooltipV",
                 "igSetItemTooltipV": "SetItemTooltipV"}
     tooltips = 0
+    # 2.2.4 (the menu render matrix: Compass Navigation Overhaul's INI path line was cut mid-word at the window's edge from
+    # text size 2.00): a mod's plain text on its AMF page wraps inside the page instead of running past its edge. The seven
+    # text exports run between amf_BeginConsumerText() and amf_EndConsumerText() (ConsumerSurface.cpp), which turn wrapping
+    # on only on a mod's page, only when the mod set no wrap position of its own, and never in a window that scrolls
+    # sideways. Text that fits draws exactly as before.
+    TEXTS = {"igTextUnformatted", "igText", "igTextV", "igTextColored", "igTextColoredV", "igTextDisabled", "igTextDisabledV"}
+    texts = 0
     for m in fn.finditer(src):
         ret, name, args = m.group(2).strip(), m.group(3), m.group(4).strip()
         lines = guards_for(ret, args)
@@ -234,6 +241,29 @@ def main() -> int:
                        "    return amf_r || amf_w;")
             pos = body_end
             sliders += 1
+        elif name in TEXTS:
+            body_end = src.index("\n}", pos)
+            body = src[pos:body_end]
+            stripped = body.strip()
+            if stripped.startswith("return ImGui::"):
+                # void igTextUnformatted(text, text_end) { return ImGui::TextUnformatted(text,text_end); }
+                call = stripped[len("return "):].rstrip(";")
+                out.append("\n    const bool amf_t = amf_BeginConsumerText();   // AMF: wraps inside the page (2.2.4)\n"
+                           "    " + call + ";\n"
+                           "    amf_EndConsumerText(amf_t);")
+            else:
+                # the variadic shape: va_start; ImGui::...V(...); va_end;
+                call_line = re.search(r"^(\s*)ImGui::Text[A-Za-z]*V\([^\n]*;$", body, re.M)
+                assert call_line, name
+                indent = call_line.group(1)
+                body = (body[:call_line.start()] +
+                        indent + "const bool amf_t = amf_BeginConsumerText();   // AMF: wraps inside the page (2.2.4)\n" +
+                        call_line.group(0) + "\n" +
+                        indent + "amf_EndConsumerText(amf_t);" +
+                        body[call_line.end():])
+                out.append(body)
+            pos = body_end
+            texts += 1
         elif name in TOOLTIPS:
             body_end = src.index("\n}", pos)
             body = src[pos:body_end]
@@ -289,7 +319,8 @@ def main() -> int:
         "// under SKSE Menu Framework (2.0.6); SameLine never puts an item on top of the one before it (2.1.6);\n"
         "// Checkbox draws AMF's on/off switch, as every boolean in the menu does (rule 32, 2.1.9); and the\n"
         "// single-value slider exports take a mouse-wheel notch as one step of the shown digit (2.2.0); the tooltip\n"
-        "// exports wrap a mod's tooltip to the window it draws in (ConsumerTooltip.h, 2.2.2).\n"
+        "// exports wrap a mod's tooltip to the window it draws in (ConsumerTooltip.h, 2.2.2); the plain text exports wrap\n"
+        "// a mod's text inside its AMF page (2.2.4).\n"
         "// The generator's docstring explains exactly what is guarded and what is deliberately not -\n"
         "// in particular that ImGui's optional p_* pointers are left alone, because guarding p_open\n"
         "// would stop every window without a close button from drawing.\n"
@@ -307,12 +338,15 @@ def main() -> int:
     assert sliders == 7, sliders
     # 2.2.2: the seven tooltip exports (ConsumerTooltip.h, included after cimgui.h below).
     assert tooltips == 7, tooltips
+    # 2.2.4: the seven text exports (amf_BeginConsumerText / amf_EndConsumerText, ConsumerSurface.cpp).
+    assert texts == 7, texts
     text = (banner + "void amf_NoteTextField(unsigned int a_itemId);\n"
             "void amf_BeginConsumerHeader();\nvoid amf_EndConsumerHeader();\n"
             "void amf_ConsumerSameLine(float a_offsetFromStartX, float a_spacing);\n"
             "bool amf_ConsumerCheckbox(const char* a_label, bool* a_value);\n"
             "bool amf_ConsumerSliderWheel(int a_type, void* a_data, const void* a_min, const void* a_max, const char* a_format);\n"
             "bool amf_ConsumerSliderAngleWheel(float* a_rad, float a_minDegrees, float a_maxDegrees, const char* a_format);\n"
+            "bool amf_BeginConsumerText();\nvoid amf_EndConsumerText(bool a_pushed);\n"
             + "".join(out))
     assert text.count('#include "cimgui.h"\n') == 1
     text = text.replace('#include "cimgui.h"\n', '#include "cimgui.h"\n#include "ConsumerTooltip.h"   // AMF: wrapped tooltips (2.2.2)\n', 1)

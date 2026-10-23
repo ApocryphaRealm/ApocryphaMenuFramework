@@ -1680,6 +1680,19 @@ namespace mcmloader
 			helpbar::OfferForLastItem(help);
 		}
 
+		// 2.2.4 (the menu render matrix: TrueHUD's labels were cut at the window's right edge from text size 2.00 - "Phantom
+		// Bars Durati" - and on its Colors tab the colour boxes took the row and cut "Health Bar Phanto"): a control with its
+		// label to the right keeps ImGui's width while the label fits beside it, gives up width for the label down to a_minEm
+		// text heights, and below that puts the label on its own line above the control. a_maxEm caps the control (0 = none).
+		// Returns the ImGui label to draw the control with: the full one, or its "##" ID alone when the label went above.
+		std::string FitControl(const std::string& a_shownLabel, const std::string& a_imguiId, float a_minEm, float a_maxEm)
+		{
+			const mcmstyle::RowFit fit = mcmstyle::FitLabelRight(a_shownLabel, a_minEm, a_maxEm);
+			if (fit.stacked) { mcmstyle::LabelAbove(a_shownLabel); }
+			ImGui::SetNextItemWidth(fit.width);
+			return fit.stacked ? mcmstyle::HiddenLabel(a_imguiId) : a_imguiId;
+		}
+
 		void DrawControl(std::size_t a_mod, const Control& a_c, const std::string& a_value)
 		{
 			const std::string label = Translate(a_c.text);
@@ -1707,8 +1720,10 @@ namespace mcmloader
 				if (ImGui::Button(button.c_str())) { Apply(a_mod, a_c, value); }
 				if (!value.empty())
 				{
-					ImGui::SameLine();
+					mcmstyle::SameLineIfFits(mcmstyle::LabelWidth(value));   // 2.2.4: the value under the button when it would not fit
+					ImGui::PushTextWrapPos(0.0f);
 					ImGui::TextDisabled("%s", value.c_str());
+					ImGui::PopTextWrapPos();
 				}
 				Tooltip(a_c, value);
 				return;
@@ -1724,12 +1739,15 @@ namespace mcmloader
 				mcmstyle::Heading(label);   // 2.1.5: the theme's heading colour
 				break;
 			case Kind::kText:
+				// 2.2.4: label and value wrap inside the row; the value goes under the label when both do not fit on one line
+				ImGui::PushTextWrapPos(0.0f);
 				ImGui::TextUnformatted(label.c_str());
 				if (const std::string shown = a_c.source == Source::kString || a_c.source == Source::kPropString ? a_value : Translate(a_c.staticValue); !shown.empty())
 				{
-					ImGui::SameLine();
+					mcmstyle::SameLineIfFits(mcmstyle::LabelWidth(shown));
 					ImGui::TextDisabled("%s", shown.c_str());
 				}
+				ImGui::PopTextWrapPos();
 				break;
 			case Kind::kToggle:
 			{
@@ -1743,7 +1761,7 @@ namespace mcmloader
 				const bool whole = a_c.source == Source::kInt || a_c.source == Source::kPropInt;
 				float v = whole ? static_cast<float>(ParseInt(a_value)) : ParseFloat(a_value);
 				const float before = v;
-				if (precise::SliderFloat(imguiId.c_str(), &v, a_c.min, a_c.max, a_c.format.c_str()))
+				if (precise::SliderFloat(FitControl(label, imguiId, 7.0f, 0.0f).c_str(), &v, a_c.min, a_c.max, a_c.format.c_str()))
 				{
 					// MCM's step can be coarser than the shown digit (step 5 on "{0}"): a one-digit nudge then moves a
 					// whole step in its direction instead of snapping straight back (rule 68's intent: every press moves).
@@ -1763,7 +1781,7 @@ namespace mcmloader
 			{
 				int index = static_cast<int>(ParseInt(a_value));
 				const std::string current = (index >= 0 && index < static_cast<int>(a_c.options.size())) ? Translate(a_c.options[index]) : std::to_string(index);
-				if (theme::BeginComboTight(imguiId.c_str(), current.c_str()))
+				if (theme::BeginComboTight(FitControl(label, imguiId, 6.0f, 0.0f).c_str(), current.c_str()))
 				{
 					for (int i = 0; i < static_cast<int>(a_c.options.size()); ++i)
 					{
@@ -1778,7 +1796,7 @@ namespace mcmloader
 			case Kind::kMenu:
 			{
 				const std::string current = Translate(a_value);
-				if (theme::BeginComboTight(imguiId.c_str(), current.c_str()))
+				if (theme::BeginComboTight(FitControl(label, imguiId, 6.0f, 0.0f).c_str(), current.c_str()))
 				{
 					for (std::size_t i = 0; i < a_c.options.size(); ++i)
 					{
@@ -1794,7 +1812,7 @@ namespace mcmloader
 			{
 				char buffer[512]{};
 				strncpy_s(buffer, a_value.c_str(), _TRUNCATE);
-				ImGui::InputText((std::string(icons::kPen) + "  " + imguiId).c_str(), buffer, sizeof(buffer));
+				ImGui::InputText(FitControl(std::string(icons::kPen) + "  " + label, std::string(icons::kPen) + "  " + imguiId, 7.0f, 0.0f).c_str(), buffer, sizeof(buffer));
 				keyboard::NoteTextField(ImGui::GetItemID());
 				if (ImGui::IsItemDeactivatedAfterEdit() && a_value != buffer) { Apply(a_mod, a_c, buffer); }
 				Tooltip(a_c, a_value);
@@ -1804,7 +1822,8 @@ namespace mcmloader
 			{
 				const auto rgb = static_cast<std::uint32_t>(ParseInt(a_value));
 				float col[3]{ ((rgb >> 16) & 0xFF) / 255.0f, ((rgb >> 8) & 0xFF) / 255.0f, (rgb & 0xFF) / 255.0f };
-				if (ImGui::ColorEdit3((std::string(icons::kPalette) + "  " + imguiId).c_str(), col))
+				// 2.2.4: the colour boxes are at least 12 and at most 16 text heights wide, so they never take the label's room
+				if (ImGui::ColorEdit3(FitControl(std::string(icons::kPalette) + "  " + label, std::string(icons::kPalette) + "  " + imguiId, 12.0f, 16.0f).c_str(), col))
 				{
 					const auto c = [](float f) { return static_cast<std::uint32_t>(std::lround(std::clamp(f, 0.0f, 1.0f) * 255.0f)); };
 					Apply(a_mod, a_c, std::to_string((c(col[0]) << 16) | (c(col[1]) << 8) | c(col[2])));
@@ -1815,16 +1834,21 @@ namespace mcmloader
 			case Kind::kKeymap:
 			{
 				const bool waiting = g_capturing && g_capturing->first == a_mod && g_capturing->second == a_c.id;
+				// 2.2.4: the label wraps, and each button goes on the label's line only while it fits whole
+				ImGui::PushTextWrapPos(0.0f);
 				ImGui::TextUnformatted(label.c_str());
-				ImGui::SameLine();
+				ImGui::PopTextWrapPos();
 				const std::string button = std::string(icons::kKeyboard) + "  " + (waiting ? std::string(strings::TR("AMF_McmPressKey", "Press a key...")) : KeyName(static_cast<std::int32_t>(ParseInt(a_value)))) + "###key" + a_c.id;
+				const std::string clear = std::string(icons::kClear) + "  " + strings::TR("AMF_McmClear", "Clear") + "##clr" + a_c.id;
+				const float framePad = ImGui::GetStyle().FramePadding.x * 2.0f;
+				mcmstyle::SameLineIfFits(mcmstyle::LabelWidth(button) + framePad);
 				if (ImGui::Button(button.c_str()) && !waiting)
 				{
 					g_capturing = std::make_pair(a_mod, a_c.id);
 					input::ArmKeyCapture();
 				}
-				ImGui::SameLine();
-				if (ImGui::Button((std::string(icons::kClear) + "  " + strings::TR("AMF_McmClear", "Clear") + "##clr" + a_c.id).c_str())) { Apply(a_mod, a_c, "-1"); }
+				mcmstyle::SameLineIfFits(mcmstyle::LabelWidth(clear) + framePad);
+				if (ImGui::Button(clear.c_str())) { Apply(a_mod, a_c, "-1"); }
 				if (waiting && !input::IsKeyCaptureArmed())
 				{
 					// LastCapturedKey: (device << 32) | code - 0 keyboard (DirectInput scan code), 1 mouse, 2 gamepad

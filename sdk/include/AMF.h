@@ -205,6 +205,16 @@ namespace AMF
 		return fn ? fn() : false;
 	}
 
+	// The side list's rectangle (2.3.0): the screen rect, in the game image's pixels (ImGui screen coordinates), of the
+	// menu's left pane of mod names as drawn in the most recent frame. Call it from your page's render callback. False
+	// (outputs untouched) while the menu is closed, the list was not drawn this frame or the one before, or the framework
+	// is missing or older than 2.3.0.
+	inline bool SideListRect(float* a_x0, float* a_y0, float* a_x1, float* a_y1)
+	{
+		AMF_H_FN("AMF_GetSideListRect", bool (*)(float*, float*, float*, float*));
+		return fn ? fn(a_x0, a_y0, a_x1, a_y1) : false;
+	}
+
 	// ---- language ---------------------------------------------------------------------------------------------
 
 	// The language the menu is showing: "english", "french", "german", "italian", "spanish", "polish",

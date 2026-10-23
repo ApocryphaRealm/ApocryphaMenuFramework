@@ -75,6 +75,14 @@ AMF_API std::uint32_t AMF_GetInputMode();
 AMF_API const char* AMF_GetLanguage();
 
 // --------------------------------------------------------------------------------------------
+// The side list's rectangle (2.3.0). The screen rect (swap-chain pixels, ImGui screen coordinates)
+// of the menu's left pane of mod names as drawn in the most recent frame. False, outputs untouched,
+// while the menu is closed or the list was not drawn this frame or the previous one. Call it from
+// a page's render callback. Any pointer may be null.
+// --------------------------------------------------------------------------------------------
+AMF_API bool AMF_GetSideListRect(float* a_x0, float* a_y0, float* a_x1, float* a_y1);
+
+// --------------------------------------------------------------------------------------------
 // Open the framework's menu on a mod's page (1.7.7). For a consumer whose own settings key
 // should land on its page: resolve by name with GetProcAddress, null-check, call with the mod
 // name it registered under ("Wheeler - Refined"). Returns false when no such mod is registered

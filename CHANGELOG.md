@@ -21,13 +21,22 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
-## 2.2.4 - 2026-10-22 - working
+## 2.3.0 - 2026-10-23 - untested - pages render properly at big text sizes; side list rect for pages; a TestBench crash fixed
 
 ### Fixed
+- A crash with TestBench driving (EXCEPTION_ACCESS_VIOLATION in AMF's input hook, the PDB naming textcore::CharArbiter::Emit at Input.cpp:524): a driver key or wheel press was spliced straight into the event list another plugin's input hook handed on - and while Immersive Equipment Displays' window has the input, that is a read-only 'no events' constant inside ImmersiveEquipmentDisplays.dll. Driver presses now go into AMF's own copy of the list head, which reaches the game through the same write-only-when-writable path AMF already used for its pruned list; the game-key injector checks the same way. Players' own input never took this path.
+- Sliders on every page: the value is no longer drawn under the slider's handle (seen at 4K from text size 1.50 on Compass Navigation Overhaul, and on Show Player In Inventory's fixed-width sliders, where the handle covered the minus sign of '-75.0'). The value stays centred while the handle is clear of it, moves to the wider side of the handle when the handle sits on it, and sits on a small plate in the slider's colour when neither side has room. Pages laid out in fixed pixels keep their layout.
+- SKSE Menu Framework pages: plain text a mod draws on its page (for example Compass Navigation Overhaul's INI path line) wraps inside the page instead of being cut mid-word at the edge from text size 2.00. Only text that would run past the edge changes; tables, popups and the mod's own windows are left alone.
+- MCM Helper pages (TrueHUD and the like): from text size 2.00 labels were cut at the window's right edge, and on colour pages the colour boxes took the row and cut the labels. A control now gives up width for its label, down to a minimum, and below that its label goes on its own line above it; colour boxes are kept between 12 and 16 text heights wide; switch labels, keybind rows and text rows wrap instead of being cut.
+- SkyUI script MCM pages (SmoothCam and the like): from text size 2.00 the right column's labels were cut at the window edge and status values such as 'Not Detected' and 'API Consumer' were drawn over their labels. The page keeps its two columns only while every option fits its column whole; otherwise it is drawn as one column (the left column's options, then the right column's, so each section keeps its options). A value that does not clear its label goes on its own line under it, sliders and dropdowns give up width for their label, and labels wrap instead of running past the edge.
+- The list of menus on the left no longer gets narrower at text size 2.50 than at 2.00 (seen at 1080p, 1440p and 4K in the menu render check). The page's minimum width used to grow with the text and take the room, so the Filter and Sort buttons were cut mid-letter and long names were cut at the edge. The pane now takes what its names need, up to half the window (never under 14 characters), so a bigger text size never gives a narrower pane. A name that still does not fit ends in '...' and shows whole in a tooltip (mouse or controller highlight), and the row of controls above the list (tick box, A-Z, Fold, Filter, Sort) wraps onto a second line instead of running past the edge.
 - Controls page: the Unbind buttons are no longer cut off at the right edge at a large text size (seen at 1920x1080, text size 1.50). The button column is now measured from the labels the buttons really draw (icon plus word), and when the window is too narrow for both buttons side by side, Unbind sits under Rebind instead of past the edge.
 
 ### Changed
 - TestBench: amf.menu op=setting takes name=textScale (1.00-2.50) and re-rasterises the font, so the menu can be checked at every text size without a person at the slider.
+
+### Added
+- C API: AMF_GetSideListRect(float* x0, float* y0, float* x1, float* y1) - the screen rect (game image pixels, ImGui screen coordinates) of the menu's left list of mod names as drawn in the most recent frame, so a page can place things beside the list (asked for by Item Explorer). False, outputs untouched, while the menu is closed or the list was not drawn this frame or the one before; call it from a page's render callback. SDK: AMF::SideListRect in sdk/include/AMF.h.
 
 ## 2.2.3 - 2026-10-21 - untested - dropdowns on SkyUI MCM pages fill when AMF is opened from the Journal's System menu
 

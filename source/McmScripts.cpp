@@ -1045,6 +1045,52 @@ namespace mcmloader::scripts
 			}
 		}
 
+		// 2.2.4: a control's width on a script page - half the row as before, less when its label needs the room, never under
+		// a_minEm text heights (the label then wraps beside it).
+		float ScriptControlWidth(const std::string& a_label, float a_minEm)
+		{
+			const float avail = ImGui::GetContentRegionAvail().x;
+			const float half = avail * 0.5f;
+			const float least = std::min(ImGui::GetFontSize() * a_minEm, half);
+			const float room = avail - mcmstyle::LabelWidth(a_label) - ImGui::GetStyle().ItemInnerSpacing.x;
+			return std::clamp(room, least, std::max(least, half));
+		}
+
+		// 2.2.4: how wide an option is when nothing on it wraps - what the two-column layout checks against its column.
+		float OptionNeed(const Session& a_s, int a_slot)
+		{
+			const Option& o = a_s.options[a_slot];
+			if (o.type == kEmpty || (o.flags & kFlagHidden)) { return 0.0f; }
+			const ImGuiStyle& st = ImGui::GetStyle();
+			const float font = ImGui::GetFontSize();
+			const bool disabled = (o.flags & kFlagDisabled) != 0;
+			const std::string text = Tr(o.text);
+			float label = mcmstyle::LabelWidth(text);
+			if (disabled && o.type != kHeader && !text.empty()) { label += ImGui::CalcTextSize((std::string(icons::kLock) + "  ").c_str()).x; }
+			const float gap = st.ItemInnerSpacing.x;
+			switch (o.type)
+			{
+			case kHeader: return label;
+			case kText:
+			{
+				const float value = mcmstyle::LabelWidth(Tr(o.str));
+				return label + (label > 0.0f && value > 0.0f ? st.ItemSpacing.x * 3.0f : 0.0f) + value;
+			}
+			case kToggle: return ImGui::GetFrameHeight() * 2.0f + st.ItemSpacing.x + label;
+			case kSlider: return font * 7.0f + gap + label;
+			case kMenu: return font * 6.0f + gap + label;
+			case kInput: return font * 7.0f + gap + ImGui::CalcTextSize((std::string(icons::kPen) + "  ").c_str()).x + label;
+			case kColor: return ImGui::GetFrameHeight() + gap + ImGui::CalcTextSize((std::string(icons::kPalette) + "  ").c_str()).x + label;
+			case kKeymap:
+			{
+				const float button = ImGui::CalcTextSize((std::string(icons::kKeyboard) + "  " + KeyName(static_cast<int>(o.num))).c_str()).x + st.FramePadding.x * 2.0f;
+				const float unmap = (o.flags & kFlagWithUnmap) ? ImGui::CalcTextSize(icons::kClear).x + st.FramePadding.x * 2.0f + st.ItemSpacing.x : 0.0f;
+				return button + unmap + gap + label;
+			}
+			default: return label + font * 4.0f;
+			}
+		}
+
 		void DrawOption(int a_mod, const Session& a_s, int a_slot)
 		{
 			const Option& o = a_s.options[a_slot];
@@ -1065,6 +1111,9 @@ namespace mcmloader::scripts
 				std::string row = label.empty() ? value : label;
 				if (row.empty()) { row = " "; }
 				if (ImGui::Selectable((row + "###text").c_str())) { QueueSelect(a_mod, a_slot); }
+				// The help and reset menu belong to the row itself, so they are asked before the value line below.
+				HelpTooltip(a_mod, a_s, a_slot);
+				DefaultMenu(a_mod, a_slot);
 				if (!label.empty() && !value.empty())
 				{
 					const ImVec2 max = ImGui::GetItemRectMax();
@@ -1073,10 +1122,22 @@ namespace mcmloader::scripts
 					// 2.1.5: kept off the column's right edge, so a value never runs into the next column's label (the
 					// owner's Atlas screenshot: "DefaultGem Geodes") nor under the pane's edge ("Defaul").
 					const float gutter = ImGui::GetStyle().ItemSpacing.x;
-					ImGui::GetWindowDrawList()->AddText(ImVec2(max.x - w - gutter, min.y), ImGui::GetColorU32(ImGuiCol_TextDisabled), value.c_str());
+					// 2.2.4 (the menu render matrix: "Not Detected" / "API Consumer" drawn over SmoothCam's compatibility labels from
+					// text size 2.00): the value goes at the row's right end only while it clears the label; otherwise it goes on
+					// its own line under the label, indented.
+					if (mcmstyle::LabelWidth(label) + gutter * 2.0f + w <= max.x - min.x)
+					{
+						ImGui::GetWindowDrawList()->AddText(ImVec2(max.x - w - gutter, min.y), ImGui::GetColorU32(ImGuiCol_TextDisabled), value.c_str());
+					}
+					else
+					{
+						ImGui::Indent();
+						ImGui::PushTextWrapPos(0.0f);
+						ImGui::TextDisabled("%s", value.c_str());
+						ImGui::PopTextWrapPos();
+						ImGui::Unindent();
+					}
 				}
-				HelpTooltip(a_mod, a_s, a_slot);
-				DefaultMenu(a_mod, a_slot);
 				break;
 			}
 			case kToggle:
@@ -1103,7 +1164,8 @@ namespace mcmloader::scripts
 				const SliderParams& p = it->second;
 				float v = o.num;
 				const float before = v;
-				ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.5f);
+				// 2.2.4: half the row as before, less when the label needs the room (down to 7 text heights); the label wraps
+				ImGui::SetNextItemWidth(ScriptControlWidth(label, 7.0f));
 				if (precise::SliderFloat(("##slider" + std::to_string(a_slot)).c_str(), &v, p.min, p.max, format.c_str()))
 				{
 					// the slider's interval can be coarser than the shown digit: a one-digit nudge moves a whole interval
@@ -1114,14 +1176,13 @@ namespace mcmloader::scripts
 				}
 				HelpTooltip(a_mod, a_s, a_slot);
 				DefaultMenu(a_mod, a_slot);
-				ImGui::SameLine();
-				ImGui::TextUnformatted(label.c_str());
+				mcmstyle::LabelAfter(label);
 				break;
 			}
 			case kMenu:
 			{
 				const std::string current = Tr(o.str);
-				ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.5f);
+				ImGui::SetNextItemWidth(ScriptControlWidth(label, 6.0f));
 				const bool open = theme::BeginComboTight("##menu", current.c_str());
 				HelpTooltip(a_mod, a_s, a_slot);
 				if (open)
@@ -1151,21 +1212,22 @@ namespace mcmloader::scripts
 					g_menuAsked = -1;  // closed: the next opening asks again (a list can change with the mod's state)
 				}
 				DefaultMenu(a_mod, a_slot);
-				ImGui::SameLine();
-				ImGui::TextUnformatted(label.c_str());
+				mcmstyle::LabelAfter(label);
 				break;
 			}
 			case kColor:
 			{
 				const auto rgb = static_cast<std::uint32_t>(static_cast<std::int64_t>(o.num)) & 0xFFFFFF;
 				float col[3]{ ((rgb >> 16) & 0xFF) / 255.0f, ((rgb >> 8) & 0xFF) / 255.0f, (rgb & 0xFF) / 255.0f };
-				if (ImGui::ColorEdit3(label.empty() ? "##color" : (std::string(icons::kPalette) + "  " + label).c_str(), col, ImGuiColorEditFlags_NoInputs))
+				// 2.2.4: the swatch, then its label wrapped inside the row (ColorEdit3's own label would run past the edge)
+				if (ImGui::ColorEdit3("##color", col, ImGuiColorEditFlags_NoInputs))
 				{
 					const auto c = [](float f) { return static_cast<std::uint32_t>(std::lround(std::clamp(f, 0.0f, 1.0f) * 255.0f)); };
 					QueueColor(a_mod, a_slot, static_cast<int>((c(col[0]) << 16) | (c(col[1]) << 8) | c(col[2])));
 				}
 				HelpTooltip(a_mod, a_s, a_slot);
 				DefaultMenu(a_mod, a_slot);
+				if (!label.empty()) { mcmstyle::LabelAfter(std::string(icons::kPalette) + "  " + label); }
 				break;
 			}
 			case kKeymap:
@@ -1185,8 +1247,7 @@ namespace mcmloader::scripts
 					ImGui::SameLine();
 					if (ImGui::SmallButton((std::string(icons::kClear) + "##unmap").c_str())) { QueueKey(a_mod, a_slot, -1); }  // SkyUI's unmap sends -1
 				}
-				ImGui::SameLine();
-				ImGui::TextUnformatted(label.c_str());
+				mcmstyle::LabelAfter(label);
 				if (waiting && !input::IsKeyCaptureArmed())
 				{
 					// (device << 32) | code - 0 keyboard (DirectInput scan code), 1 mouse
@@ -1207,14 +1268,13 @@ namespace mcmloader::scripts
 			{
 				char buffer[512]{};
 				strncpy_s(buffer, o.str.c_str(), _TRUNCATE);
-				ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.5f);
+				ImGui::SetNextItemWidth(ScriptControlWidth(std::string(icons::kPen) + "  " + label, 7.0f));
 				ImGui::InputText("##input", buffer, sizeof(buffer));
 				keyboard::NoteTextField(ImGui::GetItemID());
 				if (ImGui::IsItemDeactivatedAfterEdit() && o.str != buffer) { QueueInput(a_mod, a_slot, buffer); }
 				HelpTooltip(a_mod, a_s, a_slot);
 				DefaultMenu(a_mod, a_slot);
-				ImGui::SameLine();
-				ImGui::TextUnformatted((std::string(icons::kPen) + "  " + label).c_str());
+				mcmstyle::LabelAfter(std::string(icons::kPen) + "  " + label);
 				break;
 			}
 			default:
@@ -1341,18 +1401,41 @@ namespace mcmloader::scripts
 				// the left column's right-aligned values no longer touch the right column's labels; the player's row
 				// spacing and label / value colours for the body (PageScope).
 				const mcmstyle::PageScope look;
-				if (ImGui::BeginTable("##skyuipage", 2, ImGuiTableFlags_SizingStretchSame))
+				// 2.2.4 (the menu render matrix: SmoothCam's right column cut "Force camera to thirdpers(on)" at the window's
+				// edge from text size 2.00, and its status values sat on their labels): the two columns stay only while every
+				// option fits its column whole; otherwise the page is ONE column - the left column's options, then the right
+				// column's, so each section keeps its own options under it.
+				const float column = (ImGui::GetContentRegionAvail().x - mcmstyle::PageScope::ColumnPadding() * 4.0f) * 0.5f;
+				float widest = 0.0f;
+				for (int i = 0; i <= last; ++i) { widest = std::max(widest, OptionNeed(s, i)); }
+				if (widest <= column)
 				{
-					for (int row = 0; row <= last / 2; ++row)
+					if (ImGui::BeginTable("##skyuipage", 2, ImGuiTableFlags_SizingStretchSame))
 					{
-						ImGui::TableNextRow();
-						for (int col = 0; col < 2; ++col)
+						for (int row = 0; row <= last / 2; ++row)
 						{
-							ImGui::TableNextColumn();
-							DrawOption(a_mod, s, row * 2 + col);
+							ImGui::TableNextRow();
+							for (int col = 0; col < 2; ++col)
+							{
+								ImGui::TableNextColumn();
+								DrawOption(a_mod, s, row * 2 + col);
+							}
 						}
+						ImGui::EndTable();
 					}
-					ImGui::EndTable();
+				}
+				else
+				{
+					static std::pair<unsigned, int> s_oneColumnLogged{ 0u, -100 };
+					if (s_oneColumnLogged != std::make_pair(static_cast<unsigned>(s.generation), page))
+					{
+						s_oneColumnLogged = { static_cast<unsigned>(s.generation), page };
+						logger::info("MCM scripts: page {} drawn as one column (widest option {:.0f} px, column {:.0f} px)", page, widest, column);
+					}
+					for (int col = 0; col < 2; ++col)
+					{
+						for (int row = 0; row <= last / 2; ++row) { DrawOption(a_mod, s, row * 2 + col); }
+					}
 				}
 			}
 			DrawQuestion();

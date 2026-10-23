@@ -1,6 +1,6 @@
 ApocryphaRealm Menu Framework
 =============================
-Version 2.2.4
+Version 2.3.0
 
 An original, GPL-3.0-or-later in-game menu framework (embedding Dear ImGui) - a one-for-one
 replacement for SKSE Menu Framework's consumer surface, plus user-friendly features that do
@@ -79,7 +79,8 @@ reading.
 WHAT CHANGED
 ------------
 
-Version 2.2.4
+Version 2.3.0
+Pages read properly at big text sizes (checked at 1080p, 1440p and 4K up to text size 2.50): the list of menus on the left no longer gets narrower at the biggest text size, a name too long for it ends in "..." and shows whole in a tooltip, and the Filter and Sort buttons move to a second line instead of being cut. Converted MCM pages switch to one column when two do not fit, keep values off their labels and wrap long labels; colour boxes keep a sensible width. A mod's long text lines wrap inside its page, and a slider's value is never hidden under its handle. For mod authors: a new C API call, AMF_GetSideListRect, gives the left list's position. Also fixes a crash that only TestBench driving could cause.
 Controls page: the Unbind buttons are no longer cut off at the right edge at a large text size. The button column now fits Rebind and Unbind at every text size, and when the window is too narrow for both side by side, Unbind sits under Rebind.
 
 Version 2.2.3

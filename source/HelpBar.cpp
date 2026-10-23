@@ -44,6 +44,11 @@ namespace helpbar
 		g_inModPage = true;
 	}
 
+	bool InModPage()
+	{
+		return g_inModPage;
+	}
+
 	void LeaveModPage(const std::string& a_pageKey)
 	{
 		g_inModPage = false;

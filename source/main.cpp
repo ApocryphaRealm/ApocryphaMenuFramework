@@ -284,6 +284,21 @@ AMF_API bool AMF_DrawThemeFrame(void* a_drawList, float a_x0, float a_y0, float 
 	return renderer::DrawThemeFrameAround(static_cast<ImDrawList*>(a_drawList), a_x0, a_y0, a_x1, a_y1);
 }
 
+// 2.3.0 (Item Explorer, owner-approved): the screen rect of the menu's side list (the "##side" pane of mod names) as drawn
+// in the most recent frame, in the swap-chain image's pixels (ImGui's screen coordinates). False - and the outputs left
+// untouched - while the menu is closed or the list was not drawn in this frame or the one before; call it from your page's
+// render callback. Any pointer may be null.
+AMF_API bool AMF_GetSideListRect(float* a_x0, float* a_y0, float* a_x1, float* a_y1)
+{
+	float x0 = 0.0f, y0 = 0.0f, x1 = 0.0f, y1 = 0.0f;
+	if (!renderer::GetSideListRect(x0, y0, x1, y1)) { return false; }
+	if (a_x0) { *a_x0 = x0; }
+	if (a_y0) { *a_y0 = y0; }
+	if (a_x1) { *a_x1 = x1; }
+	if (a_y1) { *a_y1 = y1; }
+	return true;
+}
+
 AMF_API void AMF_ShowKeyboard()
 {
 	keyboard::Show();

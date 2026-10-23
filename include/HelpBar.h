@@ -25,6 +25,8 @@ namespace helpbar
 	// (SetTooltip / SetItemTooltip) go to the bar instead of popping up. Same setting, same bar, same colour.
 	void EnterModPage();
 	void LeaveModPage(const std::string& a_pageKey);
+	// 2.2.4: whether a registered mod page is being drawn right now (render thread) - the consumer text exports wrap there.
+	bool InModPage();
 
 	// Renderer: whether the content pane leaves room for the bar this frame (the setting on, and a page asked last frame),
 	// the bar's own height, the right pane's rect (for the popup form), and drawing the bar at the cursor.

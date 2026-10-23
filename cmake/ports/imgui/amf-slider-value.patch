@@ -1,0 +1,40 @@
+diff --git a/imgui_widgets.cpp b/imgui_widgets.cpp
+index 3d83d39..0d8bd73 100644
+--- a/imgui_widgets.cpp
++++ b/imgui_widgets.cpp
+@@ -3137,7 +3137,34 @@ bool ImGui::SliderScalar(const char* label, ImGuiDataType data_type, void* p_dat
+     const char* value_buf_end = value_buf + DataTypeFormatString(value_buf, IM_ARRAYSIZE(value_buf), data_type, p_data, format);
+     if (g.LogEnabled)
+         LogSetNextTextDecoration("{", "}");
+-    RenderTextClipped(frame_bb.Min, frame_bb.Max, value_buf, value_buf_end, NULL, ImVec2(0.5f, 0.5f));
++    // AMF 2.2.4 (amf-slider-value.patch): the value is never left under the grab. Centred as before while it clears the
++    // grab; when the grab sits on it, it moves to the wider side of the grab that holds it whole; when neither side does
++    // (a frame too narrow for its value at a big text size), it stays centred on a plate in the frame's colour.
++    ImVec2 value_min = frame_bb.Min, value_max = frame_bb.Max;
++    if (grab_bb.Max.x > grab_bb.Min.x)
++    {
++        const ImVec2 value_size = CalcTextSize(value_buf, value_buf_end, false);
++        const float centre = (frame_bb.Min.x + frame_bb.Max.x) * 0.5f;
++        if (centre - value_size.x * 0.5f < grab_bb.Max.x && grab_bb.Min.x < centre + value_size.x * 0.5f)
++        {
++            const float pad = style.FramePadding.x;
++            const float left_room = grab_bb.Min.x - frame_bb.Min.x - pad;
++            const float right_room = frame_bb.Max.x - grab_bb.Max.x - pad;
++            if (right_room >= value_size.x && right_room >= left_room)
++                value_min.x = grab_bb.Max.x;
++            else if (left_room >= value_size.x)
++                value_max.x = grab_bb.Min.x;
++            else
++            {
++                const float x0 = ImMax(frame_bb.Min.x, centre - value_size.x * 0.5f - pad * 0.5f);
++                const float x1 = ImMin(frame_bb.Max.x, centre + value_size.x * 0.5f + pad * 0.5f);
++                const float y0 = ImMax(frame_bb.Min.y, (frame_bb.Min.y + frame_bb.Max.y - value_size.y) * 0.5f);
++                const float y1 = ImMin(frame_bb.Max.y, y0 + value_size.y);
++                window->DrawList->AddRectFilled(ImVec2(x0, y0), ImVec2(x1, y1), frame_col | IM_COL32_A_MASK, style.FrameRounding);
++            }
++        }
++    }
++    RenderTextClipped(value_min, value_max, value_buf, value_buf_end, NULL, ImVec2(0.5f, 0.5f));
+ 
+     if (label_size.x > 0.0f)
+         RenderText(ImVec2(frame_bb.Max.x + style.ItemInnerSpacing.x, frame_bb.Min.y + style.FramePadding.y), label);

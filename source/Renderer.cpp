@@ -69,6 +69,9 @@ namespace renderer
 {
 	// Search-box mirrors (driving tool). Written on the render thread, read on the listener thread.
 	std::atomic<float> g_searchRect[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+	// 2.3.0: the side list's rect as drawn in frame g_sideRectFrame (AMF_GetSideListRect). Render thread.
+	std::atomic<float> g_sideRect[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+	std::atomic<int> g_sideRectFrame{ -1 };
 	std::atomic<bool> g_searchActive{ false };
 	std::atomic<int> g_searchLen{ 0 };
 	std::mutex g_searchTextLock;
@@ -3281,6 +3284,44 @@ namespace renderer
 			return step;
 		}
 
+		// 2.2.4 (the menu render matrix: "Unofficial Skyrim Special Edition Patch.esp (INI, game settings)" was cut to
+		// "...Patch." at the side pane's edge, mid-name, with nothing to say more was there): a name wider than its room is
+		// shortened at a whole UTF-8 character and ends in "..."; a_cut says so, and the caller shows the whole name as a
+		// tooltip. A name that fits comes back unchanged.
+		std::string EllipsizeToWidth(const std::string& a_text, float a_room, bool* a_cut)
+		{
+			if (a_cut) { *a_cut = false; }
+			if (a_room <= 0.0f || ImGui::CalcTextSize(a_text.c_str()).x <= a_room) { return a_text; }
+			constexpr const char* kDots = "...";
+			const float dots = ImGui::CalcTextSize(kDots).x;
+			std::vector<std::size_t> cuts;   // byte offsets where a character starts, then the end
+			for (std::size_t i = 0; i < a_text.size(); ++i)
+			{
+				if ((static_cast<unsigned char>(a_text[i]) & 0xC0) != 0x80) { cuts.push_back(i); }
+			}
+			cuts.push_back(a_text.size());
+			std::size_t lo = 0, hi = cuts.size() - 1;   // the longest prefix that still fits with the dots
+			while (lo < hi)
+			{
+				const std::size_t mid = (lo + hi + 1) / 2;
+				if (ImGui::CalcTextSize(a_text.c_str(), a_text.c_str() + cuts[mid]).x + dots <= a_room) { lo = mid; }
+				else { hi = mid - 1; }
+			}
+			std::string out = a_text.substr(0, cuts[lo]);
+			while (!out.empty() && out.back() == ' ') { out.pop_back(); }
+			if (a_cut) { *a_cut = true; }
+			return out + kDots;
+		}
+
+		// The whole name of a shortened row, under the mouse or the controller highlight.
+		void FullNameTooltip(bool a_cut, const std::string& a_name)
+		{
+			if (a_cut && (ImGui::IsItemHovered() || (ImGui::IsItemFocused() && GImGui && GImGui->NavDisableMouseHover)))
+			{
+				ImGui::SetTooltip("%s", a_name.c_str());
+			}
+		}
+
 		void DrawSeparatorRow(const std::vector<registry::Entry>& a_entries, const personalization::DisplayEntry& a_row,
 							  bool a_contextMenu, bool a_favouriteKey)
 		{
@@ -3292,18 +3333,23 @@ namespace renderer
 
 			// the name (and, folded, how many menus it holds) is the row's one label - one nav stop; the fold arrow is drawn
 			// in front of it, ImGui's own tree arrow (down when open, right when folded)
-			char label[160];
-			if (a_row.collapsed) { std::snprintf(label, sizeof(label), "%s  (%d)", a_row.displayName.c_str(), a_row.children); }
-			else { std::snprintf(label, sizeof(label), "%s", a_row.displayName.c_str()); }
 			const float arrowRoom = ImGui::GetFontSize() * 1.1f;
 			const ImVec2 arrowAt(rowTopLeft.x + gutter, rowTopLeft.y);
 			ImGui::Indent(gutter + arrowRoom);
+			// 2.2.4: a name too wide for the pane ends in "..." (the "(n)" count is kept whole) and shows whole in a tooltip
+			char count[24] = "";
+			if (a_row.collapsed) { std::snprintf(count, sizeof(count), "  (%d)", a_row.children); }
+			bool cut = false;
+			const std::string shown = EllipsizeToWidth(a_row.displayName, ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize(count).x, &cut);
+			char label[200];
+			std::snprintf(label, sizeof(label), "%s%s", shown.c_str(), count);
 			ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
 			// "###sep": one ID whether folded or open. The "(n)" in the label made it a different item on every fold, so the
 			// highlight held an ID that no longer existed and the next A did nothing until the player moved off and back (the
 			// owner, 2026-10-07: after Fold, a separator "will not let me unfold it until I select a different separator").
 			std::strncat(label, "###sep", sizeof(label) - std::strlen(label) - 1);
 			const bool picked = ImGui::Selectable(label, false);
+			FullNameTooltip(cut, a_row.displayName);
 			ImGui::PopStyleColor();
 			ImGui::Unindent(gutter + arrowRoom);
 			ImGui::RenderArrow(ImGui::GetWindowDrawList(), arrowAt, ImGui::GetColorU32(ImGuiCol_Text),
@@ -4254,8 +4300,17 @@ namespace renderer
 						const float grown = std::min(self->Size.x + (needed + rightMin + between - avail), display.x * 0.98f);
 						if (grown > self->Size.x + 0.5f) { ImGui::SetWindowSize(ImVec2(grown, self->Size.y)); }
 					}
-					const float most = std::max(avail * 0.30f, avail - rightMin - between);
-					leftWidth = std::clamp(needed, avail * 0.30f, most);
+					// 2.2.4 (the menu render matrix, 2026-10-22: at text size 2.50 the pane came out NARROWER than at 2.00 - the
+					// page's 28-character minimum grew with the text and took the room, so Filter and Sort were cut mid-letter and
+					// long names cut with no ellipsis). The page's minimum no longer squeezes the pane below half the window: the
+					// pane takes what its names need, up to whatever the page leaves or HALF the window, whichever is more, and
+					// never less than 14 characters (bounded by 30% and 50% of the window) - so once the page's minimum passes half
+					// the window a bigger text size never gives a narrower pane. A name still wider than that is shortened with
+					// "..." and shows whole in a tooltip (EllipsizeToWidth), and the row of controls above the list wraps.
+					const float fontPx = ImGui::GetFontSize();
+					const float least = std::clamp(fontPx * 14.0f, avail * 0.30f, avail * 0.50f);
+					const float most = std::max({ least, avail * 0.50f, avail - rightMin - between });
+					leftWidth = std::clamp(needed, least, most);
 				}
 
 				// SMF SHAPE (design decision, 2026-08-30): a one-for-one replacement of SKSE Menu Framework's
@@ -4319,6 +4374,19 @@ namespace renderer
 				if (imguihost::AnyShown()) { sideItem(icons::Label(icons::kWindow, TR("AMF_OtherMenus", "Other menus")).c_str(), "othermenus"); }
 				ImGui::Separator();
 				ImGui::TextDisabled("%s", icons::Label(icons::kPuzzle, TR("AMF_Mods", "Mods")).c_str());
+				// 2.2.4 (the menu render matrix: at text size 2.50 Filter and Sort were cut mid-letter at the pane's edge): each
+				// control of this row goes on the same line only while it fits whole; otherwise it starts the next line.
+				const auto sameLineIfFits = [](float a_width) {
+					const float right = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x;
+					if (ImGui::GetItemRectMax().x + ImGui::GetStyle().ItemSpacing.x + a_width <= right) { ImGui::SameLine(); }
+				};
+				const auto toggleWidth = [](const char* a_label) {
+					const float label = ImGui::CalcTextSize(a_label, nullptr, true).x;
+					return ImGui::GetFrameHeight() * 2.0f + (label > 0.0f ? ImGui::GetStyle().ItemSpacing.x + label : 0.0f);
+				};
+				const auto smallButtonWidth = [](const char* a_label) {
+					return ImGui::CalcTextSize(a_label, nullptr, true).x + ImGui::GetStyle().FramePadding.x * 2.0f;
+				};
 
 				// THE MODS ROW (2.1.1 - the owner, 2026-10-05: "we only need one toggle because switched off, it would be Z to A,
 				// and switch on, it would be A to Z ... just have a tick box next to the sorting toggle. Whether they want
@@ -4341,15 +4409,15 @@ namespace renderer
 													 : (s_ascending ? personalization::SortMode::kAlphaAsc : personalization::SortMode::kAlphaDesc));
 						settings::Save();
 					};
-					ImGui::SameLine();
+					sameLineIfFits(ImGui::GetFrameHeight());
 					if (ImGui::Checkbox("##alphabetical", &alphabetical)) { apply(); }   // rule-32: ok - owner-named exception (the owner, 2026-10-12: "It was indeed supposed to be a tick box next to a toggle.")
 					NoteHoverFrame();   // 2.1.6: the mouse gets the frame the controller gets (the owner, 2026-10-08)
 					if (ImGui::IsItemHovered()) { ImGui::SetTooltip("%s", TR("AMF_SortAlphaTip", "Sort the list alphabetically. Off: the order you arranged by hand.")); }
-					ImGui::SameLine();
 					ImGui::BeginDisabled(!alphabetical);
 					// "###sortdir": the label flips A-Z / Z-A, and a label-made ID would make every press a new item - the next A did
 					// nothing until the highlight left and came back (the owner, 2026-10-07, on the Filter +/- buttons; same cause)
 					const std::string sortDirLabel = std::string(s_ascending ? TR("AMF_SortAsc", "A-Z") : TR("AMF_SortDesc", "Z-A")) + "###sortdir";
+					sameLineIfFits(toggleWidth(sortDirLabel.c_str()));
 					ImGui::BeginGroup();   // the switch and its label as one item, for the hover frame
 					if (widgets::Toggle(sortDirLabel.c_str(), &s_ascending)) { apply(); }
 					ImGui::EndGroup();
@@ -4363,10 +4431,11 @@ namespace renderer
 					{
 						auto& foldValues = settings::Get();
 						const auto separators = personalization::Separators();
-						ImGui::SameLine();
+						const std::string foldLabel = icons::Label(icons::kFolder, TR("AMF_FoldAll", "Fold"));
+						sameLineIfFits(toggleWidth(foldLabel.c_str()));
 						ImGui::BeginDisabled(separators.empty());
 						ImGui::BeginGroup();
-						if (widgets::Toggle(icons::Label(icons::kFolder, TR("AMF_FoldAll", "Fold")).c_str(), &foldValues.foldAllSeparators))
+						if (widgets::Toggle(foldLabel.c_str(), &foldValues.foldAllSeparators))
 						{
 							int changed = 0;
 							for (const auto& s : separators)
@@ -4397,7 +4466,6 @@ namespace renderer
 						auto& filterValues = settings::Get();
 						const bool filtering = std::any_of(filterValues.listFilters.begin(), filterValues.listFilters.end(),
 														   [](const settings::Values::FilterWord& f) { return f.state != 0; });
-						ImGui::SameLine();
 						if (filtering) { ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_SliderGrab)); }
 						// "Filter (n)" while words are in use (the owner, 2026-10-07: a saved "-mcm" hid every converted page and the
 						// groups looked empty - the tinted text alone did not show in Norden - Black, whose tint is near white)
@@ -4405,6 +4473,7 @@ namespace renderer
 															   [](const settings::Values::FilterWord& f) { return f.state != 0; });
 						const std::string filterLabel = icons::Label(icons::kFilter, TR("AMF_FilterButton", "Filter")) +
 														(activeWords > 0 ? " (" + std::to_string(activeWords) + ")" : std::string()) + "###listfilterbtn";
+						sameLineIfFits(smallButtonWidth(filterLabel.c_str()));
 						if (ImGui::SmallButton(filterLabel.c_str())) { ImGui::OpenPopup("##listfilter"); }
 						NoteHoverFrame();   // 2.1.6: the mouse gets the frame the controller gets (the owner, 2026-10-08)
 						if (filtering) { ImGui::PopStyleColor(); }
@@ -4492,8 +4561,9 @@ namespace renderer
 					const auto& sortValues = settings::Get();
 					if (sortValues.loadMcmHelperConfigs || sortValues.loadSkyUIScriptMenus)
 					{
-						ImGui::SameLine();
-						const bool sortPressed = ImGui::SmallButton(icons::Label(icons::kSortAZ, TR("AMF_SortButton", "Sort")).c_str());
+						const std::string sortLabel = icons::Label(icons::kSortAZ, TR("AMF_SortButton", "Sort"));
+						sameLineIfFits(smallButtonWidth(sortLabel.c_str()));
+						const bool sortPressed = ImGui::SmallButton(sortLabel.c_str());
 						NoteHoverFrame();   // 2.1.6: the mouse gets the frame the controller gets (the owner, 2026-10-08)
 						if (sortPressed)
 						{
@@ -4652,8 +4722,13 @@ namespace renderer
 					// a mod under a separator sits one step in, so the group reads as a group
 					const float rowIndent = gutter + (!flatList && row.depth > 0 ? ImGui::GetFontSize() * 0.9f : 0.0f);
 					ImGui::Indent(rowIndent);
-					const bool picked = ImGui::Selectable(row.displayName.c_str(), isOpen);
+					// 2.2.4: a name too wide for the pane ends in "..." and shows whole in a tooltip; "###row" keeps one ID
+					// whether or not it is shortened (the pane's width changes with the text size)
+					bool nameCut = false;
+					const std::string shownName = EllipsizeToWidth(row.displayName, ImGui::GetContentRegionAvail().x, &nameCut);
+					const bool picked = ImGui::Selectable((shownName + "###row").c_str(), isOpen);
 					NoteHoverFrame();   // 2.1.5: the theme's frame round the menu name under the mouse
+					FullNameTooltip(nameCut, row.displayName);
 					ImGui::Unindent(rowIndent);
 
 					// the picked-up mod is boxed, so it reads as held rather than merely highlighted
@@ -4847,6 +4922,10 @@ namespace renderer
 				// popup instead (the frame would jump to wherever the modal sat).
 				const ImVec2 sidePaneMin = ImGui::GetItemRectMin();
 				const ImVec2 sidePaneMax = ImGui::GetItemRectMax();
+				// 2.3.0: published for AMF_GetSideListRect (pages that place things beside the list, e.g. Item Explorer)
+				g_sideRect[0].store(sidePaneMin.x); g_sideRect[1].store(sidePaneMin.y);
+				g_sideRect[2].store(sidePaneMax.x); g_sideRect[3].store(sidePaneMax.y);
+				g_sideRectFrame.store(ImGui::GetFrameCount());
 
 				// The rename modal the right-click menu asks for. Opened and drawn OUT HERE, at the
 				// window's own id level, so it is one popup rather than one per row.
@@ -5763,6 +5842,16 @@ namespace renderer
 	bool IsMainWindowVisible()
 	{
 		return g_windowVisible.load(std::memory_order_relaxed);
+	}
+
+	bool GetSideListRect(float& a_x0, float& a_y0, float& a_x1, float& a_y1)
+	{
+		// valid while the menu is up and the side list was drawn this frame or the one before (a page's render callback runs
+		// after the list in the same frame); screen pixels of the swap-chain image, ImGui's coordinates
+		const int drawn = g_sideRectFrame.load();
+		if (!g_windowVisible.load(std::memory_order_relaxed) || drawn < 0 || !GImGui || ImGui::GetFrameCount() - drawn > 1) { return false; }
+		a_x0 = g_sideRect[0].load(); a_y0 = g_sideRect[1].load(); a_x1 = g_sideRect[2].load(); a_y1 = g_sideRect[3].load();
+		return a_x1 > a_x0 && a_y1 > a_y0;
 	}
 
 	bool ConsumerWindowOwnsInput()

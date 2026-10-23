@@ -52,6 +52,9 @@ namespace renderer
 	// present thunk. Atomic: touched from the input thread, read on the render thread.
 	void ToggleMainWindow();
 	bool IsMainWindowVisible();
+	// 2.3.0 (AMF_GetSideListRect): the side list's ("##side") screen rect as drawn in the latest frame; false while the
+	// menu is closed or the list was not drawn in this frame or the previous one. Render thread (a page's callback).
+	bool GetSideListRect(float& a_x0, float& a_y0, float& a_x1, float& a_y1);
 
 	// The resolution scale (display height / 1080, never below 1) the style was scaled by at start-up
 	// (ImGuiStyle::ScaleAllSizes). Render thread.

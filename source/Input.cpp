@@ -504,6 +504,19 @@ namespace input
 	// what the `type`/`key` record ops could not exercise (they enter at the record queue, after
 	// the first look), and the reported search-box freeze lives in exactly that gap.
 
+	// Whether the event-list slot a hook further out handed us may be written. Another plugin's hook can pass a pointer to a
+	// `static const` empty list in its own .rdata (1.7.9, Haron's crash - AltTabFix.dll; 2.2.4, the menu render matrix -
+	// ImmersiveEquipmentDisplays.dll+0x3B4E08, its read-only "no events" constant, handed on while IED's window had the
+	// input). Writing there is an access violation, so every write to the slot asks first.
+	bool SlotWritable(RE::InputEvent* const* a_slot)
+	{
+		if (!a_slot) { return false; }
+		MEMORY_BASIC_INFORMATION mbi{};
+		return VirtualQuery(a_slot, &mbi, sizeof(mbi)) == sizeof(mbi) && mbi.State == MEM_COMMIT &&
+			   (mbi.Protect & (PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)) != 0 &&
+			   (mbi.Protect & PAGE_GUARD) == 0;
+	}
+
 	namespace inject
 	{
 		struct Press { RE::INPUT_DEVICE device; std::uint32_t code; int framesLeft; bool downSent; };
@@ -763,7 +776,12 @@ namespace input
 					SetSticksCaptured(false);
 				}
 
-				inject::Service(a_events);   // driver-side presses/characters, ahead of everything below
+				// Driver-side presses/characters, ahead of everything below - spliced into a LOCAL head, never into the slot
+				// itself (2.2.4: the menu render matrix crashed here, textcore::CharArbiter::Emit at Input.cpp:524 by the PDB's
+				// folded name, writing an injected wheel event into ImmersiveEquipmentDisplays.dll's read-only empty list). The
+				// list reaches the game through writeBack below, which writes the slot only when it is writable.
+				RE::InputEvent* spliced = *a_events;
+				inject::Service(&spliced);
 
 				const bool menuOpen = renderer::IsMainWindowVisible();
 				// A mod's own window that is open and blocking (2.0.4), as the renderer published it. Read
@@ -773,7 +791,7 @@ namespace input
 				const bool controllerMode = UsingController();
 				const bool awaitingRebind = g_awaitingRebind.load(std::memory_order_acquire);
 
-				RE::InputEvent* head = *a_events;
+				RE::InputEvent* head = spliced;
 				RE::InputEvent* previous = nullptr;
 				RE::InputEvent* current = head;
 
@@ -960,12 +978,7 @@ namespace input
 					{
 						return slot;
 					}
-					MEMORY_BASIC_INFORMATION mbi{};
-					const bool writable =
-						VirtualQuery(slot, &mbi, sizeof(mbi)) == sizeof(mbi) && mbi.State == MEM_COMMIT &&
-						(mbi.Protect & (PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)) != 0 &&
-						(mbi.Protect & PAGE_GUARD) == 0;
-					if (writable)
+					if (SlotWritable(slot))
 					{
 						*slot = a_head;
 						return slot;
@@ -1128,7 +1141,8 @@ namespace input
 					else { prev = e; }
 					e = next;
 				}
-				if (head != gameHead) { *a_events = head; }
+				// written only when changed AND writable (2.2.4, SlotWritable): the same rule as the input hook's writeBack
+				if (head != gameHead && SlotWritable(a_events)) { *a_events = head; }
 			}
 		};
 	}

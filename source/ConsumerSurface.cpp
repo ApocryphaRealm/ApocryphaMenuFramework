@@ -1,5 +1,7 @@
 #include "ConsumerSurface.h"
 
+#include "HelpBar.h"   // InModPage: where a consumer's text wraps (2.2.4)
+
 #include "Renderer.h"
 #include "Theme.h"
 #include "utils/Logger.h"
@@ -672,6 +674,35 @@ void amf_ConsumerSameLine(float a_offsetFromStartX, float a_spacing)
 		}
 	}
 	ImGui::SameLine(a_offsetFromStartX, a_spacing);
+}
+
+// 2.2.4 (the menu render matrix, 2026-10-22: Compass Navigation Overhaul's INI path line, drawn with TextDisabled, was cut
+// mid-word at the window's right edge from text size 2.00): a mod's plain text on its AMF page wraps inside the page. The
+// seven text exports (tools/harden-cimgui.py) call this pair around ImGui's own call. Wrapping goes on only while a mod page
+// is being drawn (never in a mod's own window or HUD element), only when the mod set no wrap position itself, and never
+// where wrapping could feed back into a size or is unwanted: a table or legacy column (an auto-fit column measures its
+// text), a window that sizes itself to its contents, a popup or tooltip, a window that scrolls sideways, or a line with
+// under six characters of room left. Text that fits its line draws exactly as before.
+bool amf_BeginConsumerText()
+{
+	ImGuiContext* g = GImGui;
+	if (!g || !helpbar::InModPage()) { return false; }
+	ImGuiWindow* window = g->CurrentWindow;
+	if (!window || window->SkipItems || window->DC.TextWrapPos >= 0.0f || g->CurrentTable || window->DC.CurrentColumns) { return false; }
+	if ((window->Flags & (ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_Popup | ImGuiWindowFlags_Tooltip |
+						  ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_AlwaysHorizontalScrollbar)) != 0 ||
+		(window->ChildFlags & ImGuiChildFlags_AutoResizeX) != 0)
+	{
+		return false;
+	}
+	if (ImGui::GetContentRegionAvail().x < ImGui::GetFontSize() * 6.0f) { return false; }
+	ImGui::PushTextWrapPos(0.0f);
+	return true;
+}
+
+void amf_EndConsumerText(bool a_pushed)
+{
+	if (a_pushed) { ImGui::PopTextWrapPos(); }
 }
 
 // 2.1.9 (the owner, on Simple Timed Block's SKSE Menu Framework page): a consumer's Checkbox drew a stock tick box - against
