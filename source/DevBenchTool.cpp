@@ -9,6 +9,8 @@
 
 #include "DevBench/DevBenchAPI.h"
 #include "Input.h"
+#include "Keyboard.h"
+#include "GameField.h"
 #include "MainMenuDriver.h"
 #include "McmLoader.h"
 #include "Renderer.h"
@@ -654,6 +656,20 @@ namespace devbenchtool
 							 (renderer::WantsTextInput() ? "true" : "false") + "}";
 				}
 			}
+			else if (op == "keyboard")
+			{
+				// 2.3.0 THE UNIVERSAL KEYBOARD (Keyboard.h): do=state|open [menu]|close|press row col|type text|key name|layout name
+				const std::string what = JsonStr(args, "do");
+				const std::string arg = !JsonStr(args, "text").empty() ? JsonStr(args, "text") :
+										!JsonStr(args, "name").empty() ? JsonStr(args, "name") : JsonStr(args, "menu");
+				result = keyboard::ToolJson(what, arg, static_cast<int>(JsonNum(args, "row", -1)), static_cast<int>(JsonNum(args, "col", -1)));
+			}
+			else if (op == "gamefield")
+			{
+				// 2.3.0: the game half (GameField.h). do=probe [menu] (READ-ONLY: which menus and fields are found, which member
+				// paths answer, and per route how many edits reached the field) | state | start [menu] | detect | route n
+				result = gamefield::ToolJson(args);
+			}
 			else if (op == "state" || op.empty())
 			{
 				result = renderer::GetMenuStateJson();
@@ -897,7 +913,11 @@ namespace devbenchtool
 			"(ids oar, cs, ied, optiscaler, enb) - as the page's buttons: open closes this menu first, then OAR's API call or the mod's key "
 			"(SendInput, game in the foreground only) over the next frames; refused while the game is loading or before its main menu. "
 			"list carries each mod's path (game: its key is pressed into the game's own input events; win32: SendInput), injectorReady, and hold (AMF holds this key: applies, available, held, restored - a mod manager put the file back -, amfKey - the free key AMF holds or would hold -, configKey, liveKey, pending, why, config, backup); "
-			"hold {id, on} writes AMF's key into that mod's own config (on) or the original back from <config>.amf-key-backup (off), as the row's switch.\","
+			"hold {id, on} writes AMF's key into that mod's own config (on) or the original back from <config>.amf-key-backup (off), as the row's switch. "
+			"2.3.0 the universal keyboard: keyboard do=state (keyboard + game snapshot) | open [menu=<game menu>: its start gesture] | close | "
+			"press {row, col} | type {text} | key {name: back|space|clear|shift|enter|done|a|b} | layout {name: en|de|fr|es|it|pl|cs|ru|ja|ko|next|prev}; "
+			"gamefield do=probe [menu] (READ-ONLY: open menus, adapter, which member paths answer, the focused field, its type and text, "
+			"158716/B612, per route sent/proven/unchanged) | state | start [menu] | detect | route {n: 1|2|3, 0 = automatic}.\","
 			"\"inputSchema\":{\"type\":\"object\",\"properties\":{"
 			"\"op\":{\"type\":\"string\"},\"node\":{\"type\":\"string\"},"
 			"\"mod\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"position\":{\"type\":\"string\"},"

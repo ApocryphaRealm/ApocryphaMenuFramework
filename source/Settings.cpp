@@ -281,6 +281,29 @@ namespace settings
 				"; and a key grid appears across the bottom of the screen; the D-pad walks it, A types,\n"
 				"; B goes back to the box. 0 turns it off.\n"
 				"bOnScreenKeyboard=" << (a_v.onScreenKeyboard ? 1 : 0) << "\n"
+				"; 2.3.0: the same keyboard also types into the GAME's own text boxes (SkyUI's item and spell search,\n"
+				"; the map's location finder, the enchanting name box, SkyUI's MCM text boxes, other menus' prompts).\n"
+				"bKeyboardGameFields=" << (a_v.keyboardGameFields ? 1 : 0) << "\n"
+				"; 1 = it opens by itself when one of those boxes starts taking text. 0 = only the open button or Up.\n"
+				"bKeyboardAutoOpen=" << (a_v.keyboardAutoOpen ? 1 : 0) << "\n"
+				"; 1 = also with keyboard and mouse. 0 (the default) = only while you are on a controller.\n"
+				"bKeyboardWithMouse=" << (a_v.keyboardWithMouse ? 1 : 0) << "\n"
+				"; Which game boxes it types into (1 = yes):\n"
+				"bKeyboardItemSearch=" << (a_v.keyboardItemSearch ? 1 : 0) << "\n"
+				"bKeyboardMapSearch=" << (a_v.keyboardMapSearch ? 1 : 0) << "\n"
+				"bKeyboardEnchantName=" << (a_v.keyboardEnchantName ? 1 : 0) << "\n"
+				"bKeyboardMcmDialog=" << (a_v.keyboardMcmDialog ? 1 : 0) << "\n"
+				"bKeyboardOtherPrompts=" << (a_v.keyboardOtherPrompts ? 1 : 0) << "\n"
+				"; 1 = in an item or spell list, Up on the first row moves to the search box and opens the keyboard.\n"
+				"bKeyboardUpOpensSearch=" << (a_v.keyboardUpOpensSearch ? 1 : 0) << "\n"
+				"; The pad button that opens the keyboard on a menu's search box (item and spell lists) or the map's\n"
+				"; location finder, as an XInput mask: 64 (0x0040) = L3 (the default), 128 = R3, 32 = Back, 0 = none.\n"
+				"iKeyboardOpenPad=" << a_v.keyboardOpenPad << "\n"
+				"; Layout: auto (follows the game's language), en, de, fr, es, it, pl, cs, ru, ja, ko. LB / RB change it.\n"
+				"sKeyboardLayout=" << a_v.keyboardLayout << "\n"
+				"; Size of the keyboard (0.50-2.00) and where it sits: 0 = bottom of the screen, 1 = top.\n"
+				"fKeyboardScale=" << a_v.keyboardScale << "\n"
+				"iKeyboardPosition=" << a_v.keyboardPosition << "\n"
 				"; Keyboard or controller navigation is DETECTED from whatever you last used, and is\n"
 				"; not a setting: press a key or move the mouse for keyboard navigation, touch the\n"
 				"; pad for controller navigation. The menu shows which one it is reading.\n"
@@ -688,6 +711,26 @@ namespace settings
 
 			ReadNumber(entries, "Input.uToggleKey", g_values.toggleKey);
 			ReadBool(entries, "Input.bOnScreenKeyboard", g_values.onScreenKeyboard);
+			// 2.3.0: the universal keyboard (GameField.h)
+			ReadBool(entries, "Input.bKeyboardGameFields", g_values.keyboardGameFields);
+			ReadBool(entries, "Input.bKeyboardAutoOpen", g_values.keyboardAutoOpen);
+			ReadBool(entries, "Input.bKeyboardWithMouse", g_values.keyboardWithMouse);
+			ReadBool(entries, "Input.bKeyboardItemSearch", g_values.keyboardItemSearch);
+			ReadBool(entries, "Input.bKeyboardMapSearch", g_values.keyboardMapSearch);
+			ReadBool(entries, "Input.bKeyboardEnchantName", g_values.keyboardEnchantName);
+			ReadBool(entries, "Input.bKeyboardMcmDialog", g_values.keyboardMcmDialog);
+			ReadBool(entries, "Input.bKeyboardOtherPrompts", g_values.keyboardOtherPrompts);
+			ReadBool(entries, "Input.bKeyboardUpOpensSearch", g_values.keyboardUpOpensSearch);
+			ReadNumber(entries, "Input.iKeyboardOpenPad", g_values.keyboardOpenPad);
+			if (const auto kl = entries.find("Input.sKeyboardLayout"); kl != entries.end() && !kl->second.empty()) { g_values.keyboardLayout = kl->second; }
+			ReadNumber(entries, "Input.fKeyboardScale", g_values.keyboardScale);
+			if (!(g_values.keyboardScale >= 0.5f && g_values.keyboardScale <= 2.0f))
+			{
+				logger::warn("settings: fKeyboardScale {:.2f} outside [0.50, 2.00]; 1.00 used", g_values.keyboardScale);
+				g_values.keyboardScale = 1.0f;
+			}
+			ReadNumber(entries, "Input.iKeyboardPosition", g_values.keyboardPosition);
+			if (g_values.keyboardPosition != 0 && g_values.keyboardPosition != 1) { g_values.keyboardPosition = 0; }
 			ReadBool(entries, "Menu.bPauseGame", g_values.pauseGameWhileOpen);
 			ReadBool(entries, "Menu.bKeepCameraAwake", g_values.keepCameraAwake);
 			ReadNumber(entries, "Menu.fPointerSpeed", g_values.pointerSpeed);

@@ -1,5 +1,6 @@
 #include <atomic>
 #include <fstream>
+#include "GameField.h"
 #include "AMF/API.h"
 #include "DevBenchTool.h"
 #include "FlickHost.h"
@@ -172,6 +173,8 @@ namespace
 			// The row in the GAME's own System menu. Installed here because the UI singleton is
 			// reliably up by kDataLoaded; a first failed lookup is never treated as permanent.
 			systemrow::Install();
+			// 2.3.0 the universal keyboard: the menu sink for the game's text boxes, and the co-installed keyboards (GameField.h)
+			gamefield::Install();
 
 			break;
 		default:

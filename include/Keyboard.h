@@ -60,6 +60,14 @@ namespace keyboard
 	void Show();
 	void Hide();
 
-	// For the DevBench state: {"open":..,"capturing":..,"target":..,"cursor":[r,c],"text":".."}
+	// For the DevBench state: {"open":..,"capturing":..,"target":..,"cursor":[r,c],"text":".."} - a snapshot the render
+	// thread writes every frame, so any thread may read it.
 	std::string StateJson();
+
+	// 2.3.0 THE UNIVERSAL KEYBOARD: the same keyboard types into the GAME's text boxes too (GameField.h), in eleven
+	// layouts (KeyboardLayouts.h), with LT = Backspace, RT = Space, LB / RB = layout (owner decision D5).
+	// DevBench amf.menu op=keyboard (listener thread; everything but state is queued for the next frame):
+	//   do=state | open [menu=<a game menu>: its start gesture] | close | press row col | type text | key name
+	//   (back|space|clear|shift|enter|done|a|b) | layout name (en|de|...|next|prev)
+	std::string ToolJson(const std::string& a_what, const std::string& a_arg, int a_row, int a_col);
 }

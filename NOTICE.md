@@ -45,3 +45,10 @@ permissions with credit. The rest of every theme is original art drawn by `tools
   permission.
 
 The Edge theme uses no art from Edge UI. It is drawn from scratch to match its look.
+
+## Credit for the universal keyboard's map of the game's text boxes
+
+The menus and SkyUI hooks for game text boxes were mapped from shazdeh2's Virtual Keyboard (Nexus 158716,
+https://www.nexusmods.com/skyrimspecialedition/mods/158716), whose permissions allow modification and asset use. AMF's
+universal keyboard (2.3.0, `source/GameField.cpp`) is AMF's own code on AMF's own keyboard; no file of that mod - its
+Flash files, its script or its plugin - is shipped, and it is not required.

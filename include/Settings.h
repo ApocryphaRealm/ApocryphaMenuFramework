@@ -102,6 +102,25 @@ namespace settings
 		// across the bottom of the screen that types into whichever text box a page has highlighted.
 		// See Keyboard.h. Off hides it entirely; consumer mods can still summon it by export.
 		bool onScreenKeyboard = true;    // bOnScreenKeyboard
+		// 2.3.0 THE UNIVERSAL KEYBOARD (the owner, 2026-10-23: "like the universal keyboard mod", built into the open 2.3.0):
+		// the same keyboard also types into the GAME's own text boxes - SkyUI's item and spell search, the map's location
+		// finder, the enchanting table's name box, SkyUI's MCM text dialog, and any other menu's text prompt (GameField.h).
+		// Compiled defaults equal the shipped INI (rule 16).
+		bool keyboardGameFields = true;      // bKeyboardGameFields - the whole game-field half
+		bool keyboardAutoOpen = true;        // bKeyboardAutoOpen - open when a game text box starts taking text
+		bool keyboardWithMouse = false;      // bKeyboardWithMouse - also with keyboard and mouse (off = controller only)
+		bool keyboardItemSearch = true;      // bKeyboardItemSearch - SkyUI item and spell search
+		bool keyboardMapSearch = true;       // bKeyboardMapSearch - the map's location finder
+		bool keyboardEnchantName = true;     // bKeyboardEnchantName - enchanting: naming the item
+		bool keyboardMcmDialog = true;       // bKeyboardMcmDialog - SkyUI's MCM text dialog
+		bool keyboardOtherPrompts = true;    // bKeyboardOtherPrompts - any other menu's text prompt
+		bool keyboardUpOpensSearch = true;   // bKeyboardUpOpensSearch - Up on the first row moves to the search box
+		// iKeyboardOpenPad: the XInput mask of the pad button that opens the keyboard on the current menu's search box
+		// (item and spell menus) or the location finder (map). 0x0040 = L3, from DEFAULT-KEYS.md (game menus only). 0 = none.
+		std::int32_t keyboardOpenPad = 0x0040;
+		std::string keyboardLayout = "auto";   // sKeyboardLayout - "auto" follows the game's language, else a layout id (KeyboardLayouts.h)
+		float keyboardScale = 1.0f;          // fKeyboardScale - 0.50-2.00, a precise slider (rule 68)
+		std::int32_t keyboardPosition = 0;   // iKeyboardPosition - 0 bottom of the screen, 1 top
 
 		// [Menu] bPauseGame (the owner, 2026-09-22: "next amf update gets a toggle in settings to stop time while
 		// menu is active"): while this window is open the game is paused the way its own menus pause it - world

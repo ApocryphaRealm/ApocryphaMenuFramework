@@ -1,5 +1,7 @@
 #include "Renderer.h"
 #include "Keyboard.h"
+#include "GameField.h"
+#include "KeyboardLayouts.h"
 #include "McmLoader.h"
 #include "RememberedSettings.h"
 #include "McmScripts.h"
@@ -2312,6 +2314,142 @@ namespace renderer
 								   "and a key grid appears across the bottom of the screen. The D-pad walks the keys, A types one, B puts "
 								   "the highlight back on the box, X is shift and Y is backspace. It works in every mod's page. Off: text "
 								   "boxes take a real keyboard only."));
+
+				// 2.3.0 THE UNIVERSAL KEYBOARD (the owner, 2026-10-23): the same keyboard in the GAME's own text boxes (GameField.h)
+				if (values.onScreenKeyboard)
+				{
+					ImGui::Indent();
+					if (widgets::Toggle(TR("AMF_KbGameFields", "Also type into the game's own text boxes"), &values.keyboardGameFields))
+					{
+						logger::info("settings page: keyboard in game text boxes -> {}", values.keyboardGameFields);
+						settings::Save();
+					}
+					ImGui::TextWrapped("%s", TR("AMF_KbGameFieldsHelp", "On: the keyboard also types into SkyUI's item and spell search, the map's "
+									   "location finder, the enchanting table's name box, SkyUI's MCM text boxes and other menus' text prompts. "
+									   "In an item or spell list, press Up on the first item (or the open button) to move to the search box. "
+									   "B once gives the box back, B twice ends typing, Start is Done."));
+					if (values.keyboardGameFields)
+					{
+						if (widgets::Toggle(TR("AMF_KbAutoOpen", "Open by itself when a game text box starts taking text"), &values.keyboardAutoOpen))
+						{
+							logger::info("settings page: keyboard auto-open -> {}", values.keyboardAutoOpen);
+							settings::Save();
+						}
+						if (widgets::Toggle(TR("AMF_KbWithMouse", "Also with keyboard and mouse (off: controller only)"), &values.keyboardWithMouse))
+						{
+							logger::info("settings page: keyboard with keyboard and mouse -> {}", values.keyboardWithMouse);
+							settings::Save();
+						}
+						if (widgets::Toggle(TR("AMF_KbUpOpens", "Up on the first item moves to the search box"), &values.keyboardUpOpensSearch))
+						{
+							logger::info("settings page: Up on the first item opens the search -> {}", values.keyboardUpOpensSearch);
+							settings::Save();
+						}
+						// which boxes: one group, three wide
+						if (ImGui::BeginTable("##kbmenus", 3, ImGuiTableFlags_SizingStretchSame))
+						{
+							struct Row { const char* key; const char* english; bool* value; const char* log; };
+							const Row rows[] = {
+								{ "AMF_KbItemSearch", "Item and spell search", &values.keyboardItemSearch, "item search" },
+								{ "AMF_KbMapSearch", "Map location finder", &values.keyboardMapSearch, "map finder" },
+								{ "AMF_KbEnchantName", "Enchanting name box", &values.keyboardEnchantName, "enchanting name" },
+								{ "AMF_KbMcmDialog", "SkyUI MCM text boxes", &values.keyboardMcmDialog, "MCM dialog" },
+								{ "AMF_KbOtherPrompts", "Other text prompts", &values.keyboardOtherPrompts, "other prompts" },
+							};
+							for (const Row& r : rows)
+							{
+								ImGui::TableNextColumn();
+								if (widgets::Toggle(TR(r.key, r.english), r.value))
+								{
+									logger::info("settings page: keyboard {} -> {}", r.log, *r.value);
+									settings::Save();
+								}
+							}
+							ImGui::EndTable();
+						}
+						// the open button (DEFAULT-KEYS.md: L3, game menus only)
+						{
+							struct Pad { std::int32_t mask; const char* key; const char* english; };
+							const Pad pads[] = { { 0x0040, "AMF_PadL3", "L3 (left stick click)" }, { 0x0080, "AMF_PadR3", "R3 (right stick click)" },
+								{ 0x0020, "AMF_PadBack", "Back / View" }, { 0, "AMF_PadNone", "None" } };
+							const char* preview = TR("AMF_PadNone", "None");
+							for (const Pad& p : pads) { if (p.mask == values.keyboardOpenPad) { preview = TR(p.key, p.english); } }
+							ImGui::SetNextItemWidth(ImGui::GetFontSize() * 14.0f);
+							if (theme::BeginComboTight(TR("AMF_KbOpenPad", "Open button on a menu's search box"), preview))
+							{
+								for (const Pad& p : pads)
+								{
+									if (ImGui::Selectable(TR(p.key, p.english), p.mask == values.keyboardOpenPad))
+									{
+										values.keyboardOpenPad = p.mask;
+										logger::info("settings page: keyboard open button -> 0x{:04X}", p.mask);
+										settings::Save();
+									}
+								}
+								ImGui::EndCombo();
+							}
+						}
+					}
+					// layout, size and place - for every target
+					{
+						std::string preview = TR("AMF_KbLayoutAuto", "Follow the game's language");
+						for (int i = 0; i < kblayout::kLayoutCount; ++i) { if (values.keyboardLayout == kblayout::kLayouts[i].id) { preview = kblayout::kLayouts[i].label; } }
+						ImGui::SetNextItemWidth(ImGui::GetFontSize() * 14.0f);
+						if (theme::BeginComboTight(TR("AMF_KbLayout", "Keyboard layout"), preview.c_str()))
+						{
+							if (ImGui::Selectable(TR("AMF_KbLayoutAuto", "Follow the game's language"), values.keyboardLayout == "auto"))
+							{
+								values.keyboardLayout = "auto";
+								logger::info("settings page: keyboard layout -> auto");
+								settings::Save();
+							}
+							for (int i = 0; i < kblayout::kLayoutCount; ++i)
+							{
+								if (ImGui::Selectable(kblayout::kLayouts[i].label, values.keyboardLayout == kblayout::kLayouts[i].id))
+								{
+									values.keyboardLayout = kblayout::kLayouts[i].id;
+									logger::info("settings page: keyboard layout -> {}", values.keyboardLayout);
+									settings::Save();
+								}
+							}
+							ImGui::EndCombo();
+						}
+					}
+					ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
+					precise::SliderFloat(TR("AMF_KbScale", "Keyboard size"), &values.keyboardScale, 0.5f, 2.0f, "%.2f");   // applied live
+					if (ImGui::IsItemDeactivatedAfterEdit())
+					{
+						logger::info("settings page: keyboard size -> {:.2f}", values.keyboardScale);
+						settings::Save();
+					}
+					{
+						const char* places[] = { TR("AMF_KbBottom", "Bottom of the screen"), TR("AMF_KbTop", "Top of the screen") };
+						const int at = values.keyboardPosition == 1 ? 1 : 0;
+						ImGui::SetNextItemWidth(ImGui::GetFontSize() * 14.0f);
+						if (theme::BeginComboTight(TR("AMF_KbPosition", "Keyboard position"), places[at]))
+						{
+							for (int i = 0; i < 2; ++i)
+							{
+								if (ImGui::Selectable(places[i], i == at))
+								{
+									values.keyboardPosition = i;
+									logger::info("settings page: keyboard position -> {}", i == 1 ? "top" : "bottom");
+									settings::Save();
+								}
+							}
+							ImGui::EndCombo();
+						}
+					}
+					if (gamefield::VirtualKeyboardInstalled())
+					{
+						ImGui::TextDisabled("%s", TR("AMF_KbOwnedVK", "Virtual Keyboard (Nexus 158716) is installed: it keeps the item, map and enchanting boxes, and AMF types into the rest."));
+					}
+					if (gamefield::B612Installed())
+					{
+						ImGui::TextDisabled("%s", TR("AMF_KbOwnedB612", "B612 is installed: its own text box keeps its own keyboard."));
+					}
+					ImGui::Unindent();
+				}
 				ImGui::Spacing();
 
 				// INPUT MODE IS DETECTED, AND IS NOT A SETTING (author, 2026-09-04: "I want the auto

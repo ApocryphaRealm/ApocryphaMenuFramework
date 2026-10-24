@@ -22,6 +22,8 @@
 #include <imgui.h>
 
 #include <cstring>
+#include <string>
+#include <vector>
 
 namespace keyboardkeys
 {
@@ -44,8 +46,38 @@ namespace keyboardkeys
 		const char* done;
 	};
 
-	// The widest row has 10 keys; the rectangle table is sized with room to spare.
+	// The widest row has 15 keys (the Japanese and Czech layouts, KeyboardLayouts.h); the rectangle table is sized to 16.
 	inline constexpr int kMaxCols = 16;
+
+	// 2.3.0 (the universal keyboard): the four character rows of the layout in use, each key a UTF-8 string, already
+	// shifted by the caller. The action row stays kActionRow.
+	struct KeyGrid
+	{
+		std::vector<std::string> rows[4];
+		int Length(int a_row) const { return a_row == kActionRow ? kActionCount : static_cast<int>(rows[a_row].size()); }
+		int Widest() const
+		{
+			int w = 0;
+			for (const auto& r : rows) { w = static_cast<int>(r.size()) > w ? static_cast<int>(r.size()) : w; }
+			return w < 10 ? 10 : w;
+		}
+	};
+
+	// The English grid the keyboard drew before layouts existed.
+	inline KeyGrid EnglishGrid(bool a_shift)
+	{
+		KeyGrid g;
+		for (int r = 0; r < 4; ++r)
+		{
+			for (const char* p = kRows[r]; *p; ++p)
+			{
+				char c = *p;
+				if (a_shift && c >= 'a' && c <= 'z') { c = static_cast<char>(c - 'a' + 'A'); }
+				g.rows[r].push_back(std::string(1, c));
+			}
+		}
+		return g;
+	}
 
 	// What the mouse is doing, from the caller (nullptr = no mouse state, as in the offline render).
 	struct KeyMouse
@@ -76,17 +108,18 @@ namespace keyboardkeys
 		}
 	}
 
-	// The width of the keyboard window for key size a_k (10 keys across the widest row).
-	inline float WindowWidth(float a_k)
+	// The width of the keyboard window for key size a_k (a_cols keys across the widest row; 10 before layouts).
+	inline float WindowWidth(float a_k, int a_cols = 10)
 	{
 		const ImGuiStyle& st = ImGui::GetStyle();
-		return 10.0f * a_k + 9.0f * st.ItemSpacing.x + st.WindowPadding.x * 2.0f;
+		const float cols = static_cast<float>(a_cols);
+		return cols * a_k + (cols - 1.0f) * st.ItemSpacing.x + st.WindowPadding.x * 2.0f;
 	}
 
 	// Draws the five rows inside the current window. a_row / a_col: the cursor. Returns true when a key was clicked and
 	// gives its row and column. a_mouse: the hover / held state the caller tracks (see above); a_rects: filled with every
 	// key's screen rectangle when given.
-	inline bool DrawRows(const ActionLabels& a_labels, int a_row, int a_col, bool a_shift, float a_k, int& a_outRow, int& a_outCol,
+	inline bool DrawGrid(const ActionLabels& a_labels, const KeyGrid& a_grid, int a_row, int a_col, float a_k, int& a_outRow, int& a_outCol,
 		const KeyMouse* a_mouse = nullptr, KeyRect (*a_rects)[kMaxCols] = nullptr)
 	{
 		const float gap = ImGui::GetStyle().ItemSpacing.x;
@@ -96,7 +129,7 @@ namespace keyboardkeys
 		bool any = false;
 		for (int r = 0; r < kRowCount; ++r)
 		{
-			const int len = RowLength(r);
+			const int len = a_grid.Length(r);
 			// centre the shorter rows
 			const float rowWidth = (r == kActionRow) ? (a_k * 1.6F + a_k * 4.0F + a_k * 1.8F + a_k * 1.8F + a_k * 1.6F + 4.0F * gap) : (len * a_k + (len - 1) * gap);
 			ImGui::SetCursorPosX((ImGui::GetWindowSize().x - rowWidth) * 0.5F);
@@ -135,9 +168,7 @@ namespace keyboardkeys
 				bool pressed = false;
 				if (r != kActionRow)
 				{
-					char label[2] = { kRows[r][c], '\0' };
-					if (a_shift && label[0] >= 'a' && label[0] <= 'z') { label[0] = static_cast<char>(label[0] - 'a' + 'A'); }
-					pressed = ImGui::Button(label, ImVec2(a_k, a_k));
+					pressed = ImGui::Button(a_grid.rows[r][c].c_str(), ImVec2(a_k, a_k));
 				}
 				else
 				{
@@ -158,5 +189,12 @@ namespace keyboardkeys
 			}
 		}
 		return any;
+	}
+
+	// The pre-layout call (the offline render): the English grid.
+	inline bool DrawRows(const ActionLabels& a_labels, int a_row, int a_col, bool a_shift, float a_k, int& a_outRow, int& a_outCol,
+		const KeyMouse* a_mouse = nullptr, KeyRect (*a_rects)[kMaxCols] = nullptr)
+	{
+		return DrawGrid(a_labels, EnglishGrid(a_shift), a_row, a_col, a_k, a_outRow, a_outCol, a_mouse, a_rects);
 	}
 }

@@ -75,11 +75,17 @@ reading.
   * A opens a drop-down, the sticks choose, A confirms.
   * B cancels, START closes the menu. The D-pad does everything the left stick does.
   * Leaving the options to the left puts you back on the entry whose page is open.
+  * The on-screen keyboard types into the game's own text boxes too: SkyUI's item and spell
+    search, the map's location finder, the enchanting name box, SkyUI's MCM text boxes and
+    other menus' prompts. In an item or spell list press Up on the first item (or L3) to reach
+    the search box. D-pad and A type, LT backspace, RT space, LB / RB change the layout (eleven,
+    Korean and Japanese included), B once gives the box back, B twice ends, Start is Done.
 
 WHAT CHANGED
 ------------
 
 Version 2.3.0
+The universal on-screen keyboard: on a controller, AMF's keyboard now types into the game's own text boxes - SkyUI's item and spell search, the map's location finder, the enchanting name box, SkyUI's MCM text dialog and other menus' text prompts - in eleven layouts (Korean syllables and a Japanese kana grid included), with LT backspace, RT space and LB / RB for the layout. Up on the first item of a list (or L3) opens the search box. With Virtual Keyboard (Nexus 158716) installed, its boxes are left to it. Settings > Framework Settings, under the on-screen keyboard.
 Pages read properly at big text sizes (checked at 1080p, 1440p and 4K up to text size 2.50): the list of menus on the left no longer gets narrower at the biggest text size, a name too long for it ends in "..." and shows whole in a tooltip, and the Filter and Sort buttons move to a second line instead of being cut. Converted MCM pages switch to one column when two do not fit, keep values off their labels and wrap long labels; colour boxes keep a sensible width. A mod's long text lines wrap inside its page, and a slider's value is never hidden under its handle. For mod authors: a new C API call, AMF_GetSideListRect, gives the left list's position. Also fixes a crash that only TestBench driving could cause.
 Controls page: the Unbind buttons are no longer cut off at the right edge at a large text size. The button column now fits Rebind and Unbind at every text size, and when the window is too narrow for both side by side, Unbind sits under Rebind.
 Settings > Window has two new choices. Move style: Anywhere (drag the top row or any empty part of the menu), Top edge (only the top row, as before) or Fixed (the menu stays put - no moving, no resizing); it replaces the "Move the window" switch. Resize style: Centred (both sides move about the middle, as before) or Edges (the side you drag moves and the opposite one stays put, like a normal window). In every style the menu now stays inside the screen - resizing it in a corner no longer pushes it past the edge (thanks to ssuamier for the report).
@@ -344,6 +350,12 @@ Rebindable menu toggle key (default F1), with press-capture rebinding.
 Per-save settings for registered mods, stored beside your save and restored when it loads.
 Added a hang watchdog: if the game stops producing frames, the framework closes the process itself, which works even when Task Manager cannot.
 Settings persist to a plain INI file, never through Windows' cached profile API.
+
+CREDITS
+-------
+  * shazdeh2 - Virtual Keyboard (Nexus 158716): the menus and SkyUI hooks for game text boxes
+    were mapped from it, whose permissions allow modification and asset use. AMF's keyboard is
+    its own code; none of that mod's files are shipped or needed.
 
 REQUIREMENTS
 ------------

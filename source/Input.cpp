@@ -1,6 +1,7 @@
 #include "Input.h"
 #include "ImguiHost.h"
 #include "Keyboard.h"
+#include "GameField.h"
 
 #include <chrono>
 #include <cmath>
@@ -787,6 +788,10 @@ namespace input
 				// A mod's own window that is open and blocking (2.0.4), as the renderer published it. Read
 				// once per dispatch like menuOpen, so one list is never split between two owners.
 				const bool consumerInput = !menuOpen && renderer::ConsumerWindowOwnsInput();
+				// 2.3.0 THE UNIVERSAL KEYBOARD (GameField.h): the game's text-entry edge and the device in use, then - read once
+				// per dispatch like menuOpen - whether the keyboard holds the pad over a game menu.
+				gamefield::OnDispatch(spliced, g_textInputAdded, menuOpen || consumerInput);
+				const gamefield::Claim gameClaim = gamefield::CurrentClaim();
 				const auto toggleKey = static_cast<std::uint32_t>(settings::Get().toggleKey);
 				const bool controllerMode = UsingController();
 				const bool awaitingRebind = g_awaitingRebind.load(std::memory_order_acquire);
@@ -900,6 +905,22 @@ namespace input
 						else
 						{
 							passThrough = TakeForImGui(current, button, "a mod's window");
+						}
+					}
+					else if (gamefield::TakeEvent(current, gameClaim))
+					{
+						// 2.3.0: THE KEYBOARD IS OPEN OVER A GAME MENU (or a gesture started one of its text boxes) - the
+						// pad is the keyboard's, and the menu underneath must not also move its list or close (plan 4e). As
+						// with our own window, a release passes only when the game saw its press.
+						passThrough = false;
+						if (IsRelease(button))
+						{
+							const auto held = g_gameHeldButtons.find(ButtonKey(button));
+							if (held != g_gameHeldButtons.end())
+							{
+								g_gameHeldButtons.erase(held);
+								passThrough = true;
+							}
 						}
 					}
 					else

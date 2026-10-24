@@ -117,6 +117,9 @@ Corrections from native speakers are welcome - the files are plain text.
 
 ## Credits
 
+- **shazdeh2** - Virtual Keyboard (Nexus 158716). The menus and SkyUI hooks for game text boxes were mapped from
+  shazdeh2's Virtual Keyboard, whose permissions allow modification and asset use; AMF's universal keyboard (2.3.0) is
+  built on AMF's own keyboard in C++, and none of that mod's files are shipped or needed.
 - **ccld** - Mod Function Menu (MIT). AMF shows Mod Function Menu's entries as one of its converted menus; that support
   is a clean reimplementation from Mod Function Menu's description and public SDK header, with none of its code.
 - **ccld** - Game Settings Override (GPL-3.0). AMF reads and writes Game Settings Override's documented file format and
