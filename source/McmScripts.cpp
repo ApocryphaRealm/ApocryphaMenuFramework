@@ -2,6 +2,7 @@
 
 #include "Input.h"
 #include "Keyboard.h"
+#include "McmLoader.h"
 #include "RememberedSettings.h"
 #include "McmShared.h"
 #include "McmStyle.h"
@@ -1579,6 +1580,7 @@ namespace mcmloader::scripts
 			}
 			logger::info("MCM scripts: discovery - {} script-only SkyUI menu(s) in this game, {} new, {} not registered with SkyUI's manager, {} left for a later pass (script variables not settled yet)",
 				found, added, unregistered, deferred);
+			mcmloader::WarmSortRules();   // the menus this pass found, judged off the render thread (McmLoader.h)
 		}
 
 		// After a load the configs register with SkyUI over the first half-minute: look a few times.

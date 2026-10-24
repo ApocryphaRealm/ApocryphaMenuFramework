@@ -82,6 +82,13 @@ namespace mcmloader
 	// is remembered there (McmSortLearned.txt) and the sort follows that before its name rules. Render thread, every
 	// frame the menu is open; it only does work when the list has changed.
 	void LearnFromLayoutIfChanged();
+	// 2.3.0 (the first-open frame profile, combined run 2026-10-24: the first opening's frame spent 30 ms in AMF before the
+	// menu drew, the log placing it around "MCM sort: 163 name rules ready"). The first LearnFromLayoutIfChanged judged
+	// every menu by the name rules - 163 std::regex searches over each menu's prepared names, about 20 ms for 85 menus
+	// off-game - on the render thread inside that frame. This judges them on a worker thread ahead of the first open
+	// (after the MCM Helper load and each script-menu discovery pass) so that open finds them cached. Cheap to call again:
+	// a menu already judged is a cache hit, and a call while one is running is dropped (the next pass picks up the rest).
+	void WarmSortRules();
 	// The category one entry would go to: its separator's shown name (translated). a_key is the import key.
 	std::string CategoryFor(const std::string& a_key, const std::string& a_entry);
 	bool CanRestoreBeforeSort();

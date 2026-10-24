@@ -2272,6 +2272,7 @@ namespace mcmloader
 		}
 		ApplyHelperVisibility();  // menus the player left out of AMF stay out
 		g_table = nullptr;  // each page sets its own mod's table when it draws
+		WarmSortRules();   // judged off the render thread, not in the first open's frame (McmLoader.h)
 	}
 
 	void Frame()

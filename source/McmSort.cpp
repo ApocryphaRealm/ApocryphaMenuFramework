@@ -13,8 +13,10 @@
 #include <filesystem>
 #include <fstream>
 #include <atomic>
+#include <chrono>
 #include <mutex>
 #include <regex>
+#include <thread>
 #include <unordered_map>
 
 // The MCM auto-sort - see McmLoader.h (SortIntoCategories) for what it does and why. The owner, 2026-10-05: "it can just
@@ -341,6 +343,28 @@ namespace mcmloader
 	}
 
 	std::string CategoryFor(const std::string& a_key, const std::string& a_entry) { return GroupName(GroupOf(a_key, a_entry)); }
+
+	void WarmSortRules()
+	{
+		static std::atomic<bool> s_running{ false };
+		if (s_running.exchange(true)) { return; }
+		std::thread([]() {
+			const auto start = std::chrono::steady_clock::now();
+			std::size_t menus = 0;
+			for (const auto& row : ImportList())   // the same rows LearnFromLayout judges (and the rest - one look each)
+			{
+				GroupOfRules(row.key, row.entry);
+				++menus;
+			}
+			{
+				std::scoped_lock l(g_learnLock);
+				LoadLearnedLocked();
+			}
+			logger::info("MCM sort: {} menu(s) judged ahead of the first open in {:.1f} ms (worker thread)", menus,
+				std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
+			s_running.store(false);
+		}).detach();
+	}
 
 	void LearnFromLayoutIfChanged()
 	{

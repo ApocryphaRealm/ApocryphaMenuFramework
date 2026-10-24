@@ -34,6 +34,15 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
   No behaviour changes.
 
 ### Fixed
+- **The session's first open spent 30 ms of one frame in AMF before the menu drew** (frame profile, combined run
+  2026-10-24: opening 1 frame 1 AMF 35.7 ms, 30.2 of it in the part the profile calls "backend"; a later opening's
+  longest frame 3.2 ms). The log put the time around "MCM sort: 163 name rules ready": the first open's
+  LearnFromLayoutIfChanged judged every MCM menu by the sort's name rules on the render thread - each menu's names
+  prepared with six regex replaces and searched by 163 rules, about 20 ms for 85 menus when timed off-game (compiling
+  the rules is only 0.5 ms). The menus are now judged on a worker thread after the MCM Helper load and after each
+  script-menu discovery pass ("MCM sort: N menu(s) judged ahead of the first open in X ms (worker thread)"), so the
+  first open finds every answer cached. Untested in game: the next profile should show opening 1's backend near
+  opening 2's.
 - **The universal keyboard's first test findings** (combined run 2026-10-23, batch 12):
   - **L3 on the map did nothing.** The map adapter looked for a showLocationFinder() on _root.Menu_mc / MapMenu_mc / Map_mc,
     which SkyUI's map never has. It now uses SkyUI's real objects (read from SkyUI 6.9's map.swf): _root.WorldMap's
