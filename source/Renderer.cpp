@@ -4524,14 +4524,18 @@ namespace renderer
 					// you can't see hardly anything on the right side"). The page pane keeps at least 28 characters' width;
 					// when the names and that minimum do not both fit, the window widens itself once (up to 98% of the screen;
 					// it is centred, so it grows both ways) - from the names alone, so it does not change with the mod picked.
-					const float rightMin = ImGui::GetFontSize() * 28.0f;
+					// 2.3.0 (retest R8: the window still bottomed out at 1219 px at the default text size, 24 px - the page's 28
+					// characters were 672 px and the names pane's 14 another 455, so the least window was 42 characters plus
+					// the gaps). The two minimums are now 18 and 12 characters - about 930 px at 24 px; a page row wider than
+					// its pane scrolls sideways (the content pane has a horizontal scroll bar) and a long name keeps its "...".
+					const float rightMin = ImGui::GetFontSize() * 18.0f;
 					const float between = ImGui::GetStyle().ItemSpacing.x + kKnotOutset * 4.0f;
 					// 2.3.0 (batch 12, A3 / observation D: the window would not drag narrower than 1481 px, 77% of the screen):
 					// the grow measured the WIDEST mod name in the list, so a long list's longest name set the window's least
 					// width. Since 2.2.4 a name wider than its pane is shortened with "..." (whole in a tooltip), so the grow
-					// needs only the pane's own least width (14 characters, or the names if narrower) beside the page's 28 -
-					// about 42 characters plus the gaps. The pane still takes the full width of its names when there is room.
-					const float namesLeast = std::min(needed, ImGui::GetFontSize() * 14.0f + gutter + st.WindowPadding.x * 2.0f + st.ScrollbarSize + st.ItemSpacing.x * 2.0f);
+					// needs only the pane's own least width (12 characters since R8, or the names if narrower) beside the page's 18 -
+					// about 30 characters plus the gaps. The pane still takes the full width of its names when there is room.
+					const float namesLeast = std::min(needed, ImGui::GetFontSize() * 12.0f + gutter + st.WindowPadding.x * 2.0f + st.ScrollbarSize + st.ItemSpacing.x * 2.0f);
 					if (avail < namesLeast + rightMin + between)
 					{
 						ImGuiWindow* self = ImGui::GetCurrentWindow();
@@ -5296,7 +5300,8 @@ namespace renderer
 				const bool helpBarOn = helpbar::Active();
 				const float helpBarGap = knot ? kKnotOutset * 4.0f : ImGui::GetStyle().ItemSpacing.y;
 				GImGuiScrollbarInset = paneScrollInset;
-				ImGui::BeginChild("##content", ImVec2(0.0f, helpBarOn ? -(helpbar::Height() + helpBarGap) : 0.0f), true);
+				// 2.3.0 (R8): a horizontal scroll bar, so a page row wider than a narrow window scrolls instead of being cut off.
+				ImGui::BeginChild("##content", ImVec2(0.0f, helpBarOn ? -(helpbar::Height() + helpBarGap) : 0.0f), ImGuiChildFlags_Border, ImGuiWindowFlags_HorizontalScrollbar);
 				GImGuiScrollbarInset = 0.0f;
 				// 2.1.6 (the owner: the background art "only changes the top row when it should apply to all of the background"):
 				// the panes paint their own colour over the window's, so the art is drawn in each pane too, over that colour

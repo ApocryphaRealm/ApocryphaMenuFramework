@@ -64,6 +64,10 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
   - **The main window would not drag narrower than about 77% of the screen**: it widened itself to fit the longest mod
     name in the list. It now widens only to the names pane's least width (14 characters) beside the page's 28, and
     longer names are shortened with "..." as before.
+  - **...and it still stopped at 1219 px** (retest R8, combined run 2026-10-24: "widened 1208 -> 1219 px for the names
+    pane's least width (455 ...) and the page's 672" - at the default text size, 24 px, those 14 + 28 characters plus
+    the gaps were the floor). The least widths are now 12 characters for the names and 18 for the page - about 930 px
+    at the default text size - and a page row wider than its pane scrolls sideways instead of being cut off.
 - **A saved full-screen window came back 20% tall** (combined run 2026-10-23, batch 9: User.ini held fHotkeyW 0.99875 and
   fHotkeyH 1; the menu opened 1495x216, the Search box hidden until it was dragged taller, and 0.2 was saved over the
   player's height). The menu had been opened while the game was in the background, drawing a 0x0 and then an 8x8 image
