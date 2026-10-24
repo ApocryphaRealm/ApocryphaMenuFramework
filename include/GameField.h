@@ -107,6 +107,9 @@ namespace gamefield
 	void ApplyEdit(int a_backspaces, const std::string& a_insertUtf8);
 	void SendEnter();
 	void EndInput(const char* a_why);   // the adapter's End (item search: endInput()), then the target is let go
+	// Parked: one step of the list under the box (-1 up, +1 down) - SkyUI's item, spell and map-finder lists, which hold
+	// their selection while their search is active. Nothing for a menu with no list.
+	void MoveList(int a_dir);
 
 	// The field's text as last read back (the keyboard's echo line), and whether a target is held.
 	std::string FieldText();

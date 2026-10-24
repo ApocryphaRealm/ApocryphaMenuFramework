@@ -301,6 +301,10 @@ namespace settings
 				"iKeyboardOpenPad=" << a_v.keyboardOpenPad << "\n"
 				"; Layout: auto (follows the game's language), en, de, fr, es, it, pl, cs, ru, ja, ko. LB / RB change it.\n"
 				"sKeyboardLayout=" << a_v.keyboardLayout << "\n"
+				"; 1 = the Korean and Japanese layouts in the GAME's text boxes too - only with a font mod that gives the game's\n"
+				"; menus Korean / Japanese / Chinese letters. 0 (the default) = the game's boxes use the Latin layout, because\n"
+				"; the game's own font draws those letters as empty boxes. AMF's own window always has every layout.\n"
+				"bKeyboardNativeCjkInGame=" << (a_v.keyboardNativeCjkInGame ? 1 : 0) << "\n"
 				"; Size of the keyboard (0.50-2.00) and where it sits: 0 = bottom of the screen, 1 = top.\n"
 				"fKeyboardScale=" << a_v.keyboardScale << "\n"
 				"iKeyboardPosition=" << a_v.keyboardPosition << "\n"
@@ -722,6 +726,7 @@ namespace settings
 			ReadBool(entries, "Input.bKeyboardOtherPrompts", g_values.keyboardOtherPrompts);
 			ReadBool(entries, "Input.bKeyboardUpOpensSearch", g_values.keyboardUpOpensSearch);
 			ReadNumber(entries, "Input.iKeyboardOpenPad", g_values.keyboardOpenPad);
+			ReadBool(entries, "Input.bKeyboardNativeCjkInGame", g_values.keyboardNativeCjkInGame);
 			if (const auto kl = entries.find("Input.sKeyboardLayout"); kl != entries.end() && !kl->second.empty()) { g_values.keyboardLayout = kl->second; }
 			ReadNumber(entries, "Input.fKeyboardScale", g_values.keyboardScale);
 			if (!(g_values.keyboardScale >= 0.5f && g_values.keyboardScale <= 2.0f))

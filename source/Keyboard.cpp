@@ -106,7 +106,8 @@ namespace keyboard
 
 		bool SettingOn() { return settings::Get().onScreenKeyboard; }
 
-		const kblayout::Layout& CurrentLayout()
+		// The chosen layout (g_layout), from sKeyboardLayout, LB / RB or DevBench.
+		void ChooseLayout()
 		{
 			const std::string& want = settings::Get().keyboardLayout;
 			if (g_layout < 0 || want != g_layoutSetting)
@@ -122,15 +123,43 @@ namespace keyboard
 				logger::debug("keyboard: layout {} ({})", kblayout::kLayouts[g_layout].id, want);
 				g_hangul.Reset();
 			}
-			return kblayout::kLayouts[g_layout];
+		}
+
+		// 2.3.0 (batch 12, T12): the game's own font has no Hangul or kana - 한글 and が arrived in the game's boxes and drew as
+		// empty boxes - so in a GAME box the Korean and Japanese layouts give way to the Latin one (the first, "en") unless
+		// bKeyboardNativeCjkInGame is on (a CJK font mod). Chinese is typed on the Latin layout everywhere. AMF's own window
+		// (ImGui, whose atlas carries the scripts) keeps every layout.
+		bool CjkFallsBack()
+		{
+			return kblayout::FallsBack(g_kind == TargetKind::kGame, settings::Get().keyboardNativeCjkInGame);
+		}
+
+		// The layout the keys are drawn and typed from: the chosen one, or the Latin one in its place (kblayout::EffectiveLayout).
+		int EffectiveLayout()
+		{
+			ChooseLayout();
+			return kblayout::EffectiveLayout(g_layout, g_kind == TargetKind::kGame, settings::Get().keyboardNativeCjkInGame);
+		}
+
+		const kblayout::Layout& CurrentLayout() { return kblayout::kLayouts[EffectiveLayout()]; }
+
+		// The hint line's note: shown in a game box when the fallback is in effect for this player (a Korean or Japanese layout
+		// was chosen, or the game is in Chinese / Japanese / Korean).
+		bool ShowCjkNote()
+		{
+			if (!CjkFallsBack()) { return false; }
+			if (kblayout::kLayouts[g_layout].kind != kblayout::Kind::kPlain) { return true; }
+			const std::string lang = strings::GameLanguageSetting();
+			return lang == "chinese" || lang == "japanese" || lang == "korean";
 		}
 
 		const KeyGrid& Grid()
 		{
 			const auto& lay = CurrentLayout();
-			if (g_gridLayout != g_layout || g_gridShift != g_shift)
+			const int effective = EffectiveLayout();
+			if (g_gridLayout != effective || g_gridShift != g_shift)
 			{
-				g_gridLayout = g_layout;
+				g_gridLayout = effective;
 				g_gridShift = g_shift;
 				for (int r = 0; r < 4; ++r)
 				{
@@ -150,8 +179,9 @@ namespace keyboard
 
 		void StepLayout(int a_dir)
 		{
-			CurrentLayout();
-			g_layout = (g_layout + a_dir + kblayout::kLayoutCount) % kblayout::kLayoutCount;
+			ChooseLayout();
+			// in a game box with the fallback on, the Korean and Japanese layouts are stepped over (they would only show "en")
+			g_layout = kblayout::NextLayout(g_layout, a_dir, g_kind == TargetKind::kGame, settings::Get().keyboardNativeCjkInGame);
 			g_hangul.Reset();
 			g_gridLayout = -2;
 			const int len = g_row == kActionRow ? kActionCount : static_cast<int>(Grid().rows[g_row].size());
@@ -401,7 +431,10 @@ namespace keyboard
 			const bool game = g_kind == TargetKind::kGame;
 			if (game && g_parked)
 			{
-				// parked: A brings the panel back, B again ends the input (the menu's own B works after that)
+				// parked: A brings the panel back, B again ends the input (the menu's own B works after that); the D-pad's
+				// up / down move the list underneath (the game thread hands them over only for a menu with a list)
+				if (a_mask == 0x0001 && a_down) { gamefield::MoveList(-1); }
+				if (a_mask == 0x0002 && a_down) { gamefield::MoveList(+1); }
 				if (a_mask == 0x1000 && a_down) { g_parked = false; gamefield::SetClaim(gamefield::Claim::kFull); logger::debug("keyboard: back from parked (A)"); }
 				if (a_mask == 0x2000 && a_down) { gamefield::EndInput("B twice"); Close("B twice (game field)"); }
 				return true;
@@ -652,10 +685,10 @@ namespace keyboard
 			const auto& lay = CurrentLayout();
 			ImGuiContext* g = GImGui;
 			char buf[2048];
-			std::snprintf(buf, sizeof(buf), "{\"open\":%s,\"capturing\":%s,\"forced\":%s,\"targetKind\":\"%s\",\"parked\":%s,\"target\":\"0x%08X\",\"targetActive\":%s,\"navOnTextField\":%s,\"row\":%d,\"col\":%d,\"shift\":%s,\"layout\":\"%s\",\"composing\":%s,\"typed\":%u,\"mouseTyped\":%u,\"mouseHeld\":%s,\"held\":[%d,%d],\"activations\":%u,\"fields\":%zu,\"pendingSteps\":%zu,\"text\":\"%s\"}",
+			std::snprintf(buf, sizeof(buf), "{\"open\":%s,\"capturing\":%s,\"forced\":%s,\"targetKind\":\"%s\",\"parked\":%s,\"target\":\"0x%08X\",\"targetActive\":%s,\"navOnTextField\":%s,\"row\":%d,\"col\":%d,\"shift\":%s,\"layout\":\"%s\",\"chosenLayout\":\"%s\",\"cjkFallsBack\":%s,\"composing\":%s,\"typed\":%u,\"mouseTyped\":%u,\"mouseHeld\":%s,\"held\":[%d,%d],\"activations\":%u,\"fields\":%zu,\"pendingSteps\":%zu,\"text\":\"%s\"}",
 						  g_open ? "true" : "false", Capturing() ? "true" : "false", g_forced ? "true" : "false", g_kind == TargetKind::kGame ? "game" : "imgui",
 						  g_parked ? "true" : "false", g_target, (g && g->ActiveId == g_target && g_target) ? "true" : "false", (g && IsTextField(g->NavId)) ? "true" : "false",
-						  g_row, g_col, g_shift ? "true" : "false", lay.id, g_hangul.Composing() ? "true" : "false", g_typed, g_mouseTyped, g_mouseHeld ? "true" : "false",
+						  g_row, g_col, g_shift ? "true" : "false", lay.id, kblayout::kLayouts[g_layout].id, CjkFallsBack() ? "true" : "false", g_hangul.Composing() ? "true" : "false", g_typed, g_mouseTyped, g_mouseHeld ? "true" : "false",
 						  g_heldRow, g_heldCol, g_activations, g_fieldsLastFrame.size(), g_steps.size(), EscapeJson(text).c_str());
 			std::scoped_lock l(g_snapLock);
 			g_snapshot = buf;
@@ -699,16 +732,25 @@ namespace keyboard
 			if (g_kind == TargetKind::kGame) { gamefield::PublishRect(true, wr.Min.x, wr.Min.y, wr.Max.x, wr.Max.y); }
 		}
 
+		// The hint lines WRAP at the keyboard's width (batch 12: cut off at the right in en, de and ko - "X s..."): the window
+		// is as wide as its widest key row, and a hint longer than that ran past its edge.
+		ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
 		if (g_kind == TargetKind::kGame)
 		{
-			ImGui::TextDisabled("%s", TR("AMF_OskHintGame", "D-pad moves, A types, B goes back to the box (twice: done), X shift, Y backspace, Start done"));
+			ImGui::TextWrapped("%s", TR("AMF_OskHintGame", "D-pad moves, A types, B goes back to the box (twice: done), X shift, Y backspace, Start done"));
 		}
 		else
 		{
-			ImGui::TextDisabled("%s", TR("AMF_OskHint", "D-pad moves, A types, B goes back to the box, X shift, Y backspace"));
+			ImGui::TextWrapped("%s", TR("AMF_OskHint", "D-pad moves, A types, B goes back to the box, X shift, Y backspace"));
 		}
-		ImGui::TextDisabled("%s  |  %s: %s", TR("AMF_OskHintMore", "LT backspace, RT space, LB / RB layout"), TR("AMF_OskLayout", "Layout"),
-							kblayout::kLayouts[g_layout].label);
+		ImGui::TextWrapped("%s  |  %s: %s", TR("AMF_OskHintMore", "LT backspace, RT space, LB / RB layout"), TR("AMF_OskLayout", "Layout"),
+						   CurrentLayout().label);
+		if (ShowCjkNote())
+		{
+			ImGui::TextWrapped("%s", TR("AMF_OskCjkLatin", "The game's own font has no Korean, Japanese or Chinese letters, so its text boxes "
+										"get the Latin layout (Settings: Korean and Japanese layouts in the game's text boxes)."));
+		}
+		ImGui::PopStyleColor();
 		if (g_kind == TargetKind::kGame)
 		{
 			// the echo: what the game's box holds, read back from it (its box may sit under the keyboard)

@@ -80,6 +80,8 @@ reading.
     other menus' prompts. In an item or spell list press Up on the first item (or L3) to reach
     the search box. D-pad and A type, LT backspace, RT space, LB / RB change the layout (eleven,
     Korean and Japanese included), B once gives the box back, B twice ends, Start is Done.
+    In the game's own boxes Korean and Japanese use the Latin layout, because the game's font
+    has no Hangul or kana; a toggle brings them back for players with a CJK font mod.
 
 WHAT CHANGED
 ------------

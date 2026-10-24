@@ -34,6 +34,27 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
   No behaviour changes.
 
 ### Fixed
+- **The universal keyboard's first test findings** (combined run 2026-10-23, batch 12):
+  - **L3 on the map did nothing.** The map adapter looked for a showLocationFinder() on _root.Menu_mc / MapMenu_mc / Map_mc,
+    which SkyUI's map never has. It now uses SkyUI's real objects (read from SkyUI 6.9's map.swf): _root.WorldMap's
+    LocalMapMenu.showLocationFinder() opens the finder (as F does), then the finder's searchWidget.startInput() starts its
+    search (as Space does) once the panel reports itself shown. B twice ends that search as it does in the item lists.
+  - **LB / RB closed the keyboard in AMF's own window** after one layout step: the bumpers also stepped the page's tabs, the
+    page was rebuilt under the text box and the box let go. The tab step now stands down while the keyboard is up.
+  - **Korean and Japanese drew as empty boxes in the game's text boxes** (the game's font has no Hangul or kana; German,
+    Polish, Czech and Russian are fine). In the game's boxes the Korean and Japanese layouts now give way to the Latin
+    one, LB / RB step past them there, and the hint line says why. New toggle (bKeyboardNativeCjkInGame, off) brings them
+    back for players with a CJK font mod. AMF's own window keeps every layout. Three new strings in all eleven languages.
+  - **While parked (after the first B) the D-pad did not move the list**: SkyUI locks the list's selection for as long as
+    its search is active. D-pad up / down now move the item, spell or map-finder list from AMF while parked.
+  - **L3 did not open the keyboard on a box already taking text** that was started with the keyboard or mouse (the MCM
+    dialog, the enchanting name). The open button now opens it on any game box that is taking text.
+  - **SkyUI's search started with a space** (" iron"): SkyUI empties its field with SetText(""), which leaves one space. A
+    freshly started SkyUI search holding just that space is emptied before the first key.
+  - **The keyboard's hint line was cut off on the right** (English, German, Korean): it now wraps at the keyboard's width.
+  - **The main window would not drag narrower than about 77% of the screen**: it widened itself to fit the longest mod
+    name in the list. It now widens only to the names pane's least width (14 characters) beside the page's 28, and
+    longer names are shortened with "..." as before.
 - **A saved full-screen window came back 20% tall** (combined run 2026-10-23, batch 9: User.ini held fHotkeyW 0.99875 and
   fHotkeyH 1; the menu opened 1495x216, the Search box hidden until it was dragged taller, and 0.2 was saved over the
   player's height). The menu had been opened while the game was in the background, drawing a 0x0 and then an 8x8 image

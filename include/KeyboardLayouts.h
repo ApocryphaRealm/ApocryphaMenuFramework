@@ -109,6 +109,30 @@ namespace kblayout
 		return "en";
 	}
 
+	// ---- the CJK fallback in the GAME's text boxes (2.3.0, batch 12 T12) ------------------------------
+	// The game's own font has no Hangul or kana (한글 and が arrived in its boxes and drew as empty boxes), so in a game box the
+	// Korean and Japanese layouts give way to the Latin one (index 0, "en") unless the player turned bKeyboardNativeCjkInGame on.
+	// AMF's own window (a_gameBox false) keeps every layout. Chinese is typed on the Latin layout everywhere (D3).
+	inline bool FallsBack(bool a_gameBox, bool a_nativeCjkInGame) { return a_gameBox && !a_nativeCjkInGame; }
+
+	inline int EffectiveLayout(int a_chosen, bool a_gameBox, bool a_nativeCjkInGame)
+	{
+		if (a_chosen < 0 || a_chosen >= kLayoutCount) { return 0; }
+		if (FallsBack(a_gameBox, a_nativeCjkInGame) && kLayouts[a_chosen].kind != Kind::kPlain) { return 0; }
+		return a_chosen;
+	}
+
+	// LB / RB: the next chosen layout a_dir away, stepping over the Korean and Japanese ones where they fall back.
+	inline int NextLayout(int a_chosen, int a_dir, bool a_gameBox, bool a_nativeCjkInGame)
+	{
+		int i = (a_chosen + a_dir % kLayoutCount + kLayoutCount) % kLayoutCount;
+		for (int guard = 0; FallsBack(a_gameBox, a_nativeCjkInGame) && kLayouts[i].kind != Kind::kPlain && guard < kLayoutCount; ++guard)
+		{
+			i = (i + a_dir % kLayoutCount + kLayoutCount) % kLayoutCount;
+		}
+		return i;
+	}
+
 	// ---- UTF-8 helpers ----------------------------------------------------------------------------
 	inline std::string Utf8(char32_t a_cp)
 	{

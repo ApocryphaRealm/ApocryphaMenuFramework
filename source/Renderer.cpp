@@ -2416,6 +2416,19 @@ namespace renderer
 							ImGui::EndCombo();
 						}
 					}
+					// 2.3.0: the game's font has no Korean / Japanese / Chinese letters (batch 12: tofu in every game box), so
+					// those layouts give way to the Latin one there unless the player has a CJK font mod
+					if (values.keyboardGameFields)
+					{
+						if (widgets::Toggle(TR("AMF_KbNativeCjk", "Korean and Japanese layouts in the game's text boxes too"), &values.keyboardNativeCjkInGame))
+						{
+							logger::info("settings page: native CJK layouts in game boxes -> {}", values.keyboardNativeCjkInGame);
+							settings::Save();
+						}
+						ImGui::TextWrapped("%s", TR("AMF_KbNativeCjkHelp", "Off: the game's own text boxes get the Latin layout, because the game's "
+										   "font draws Korean, Japanese and Chinese letters as empty boxes. Turn it on only with a font mod that adds "
+										   "those letters to the game's menus. This menu's own text boxes always have every layout."));
+					}
 					ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
 					precise::SliderFloat(TR("AMF_KbScale", "Keyboard size"), &values.keyboardScale, 0.5f, 2.0f, "%.2f");   // applied live
 					if (ImGui::IsItemDeactivatedAfterEdit())
@@ -4513,12 +4526,24 @@ namespace renderer
 					// it is centred, so it grows both ways) - from the names alone, so it does not change with the mod picked.
 					const float rightMin = ImGui::GetFontSize() * 28.0f;
 					const float between = ImGui::GetStyle().ItemSpacing.x + kKnotOutset * 4.0f;
-					if (avail < needed + rightMin + between)
+					// 2.3.0 (batch 12, A3 / observation D: the window would not drag narrower than 1481 px, 77% of the screen):
+					// the grow measured the WIDEST mod name in the list, so a long list's longest name set the window's least
+					// width. Since 2.2.4 a name wider than its pane is shortened with "..." (whole in a tooltip), so the grow
+					// needs only the pane's own least width (14 characters, or the names if narrower) beside the page's 28 -
+					// about 42 characters plus the gaps. The pane still takes the full width of its names when there is room.
+					const float namesLeast = std::min(needed, ImGui::GetFontSize() * 14.0f + gutter + st.WindowPadding.x * 2.0f + st.ScrollbarSize + st.ItemSpacing.x * 2.0f);
+					if (avail < namesLeast + rightMin + between)
 					{
 						ImGuiWindow* self = ImGui::GetCurrentWindow();
-						const float grown = std::min(self->Size.x + (needed + rightMin + between - avail), display.x * 0.98f);
+						const float grown = std::min(self->Size.x + (namesLeast + rightMin + between - avail), display.x * 0.98f);
 						if (grown > self->Size.x + 0.5f)
 						{
+							static int s_saidGrow = 0;
+							if (s_saidGrow++ < 10)
+							{
+								logger::debug("window: widened {:.0f} -> {:.0f} px for the names pane's least width ({:.0f} of {:.0f} the names want) and the page's {:.0f}",
+											  self->Size.x, grown, namesLeast, needed, rightMin);
+							}
 							ImGui::SetWindowSize(ImVec2(grown, self->Size.y));
 							// 2.3.0: growing to the right must not carry the window off the screen (Resize style Edges holds no
 							// centre that would bring it back next frame).
@@ -5517,9 +5542,17 @@ namespace renderer
 				// navigation gets controls of its own. The INNERMOST bar that exists takes the press:
 				// a mod's own tab bar if it drew one this frame, otherwise the framework's page bar.
 				{
+					// Both flags are always taken (a latched one would fire later), but not acted on while the on-screen keyboard
+					// is up: its LB / RB step the layout (2.3.0), and a tab step rebuilt the page under the text box, so the box
+					// let go of input and the keyboard closed with it (batch 12, T13: one layout step, then open false, nav on
+					// ##content) - the same guard Y's way up to the main tabs has.
 					const int step = (bindings::TakeTriggered(bindings::Action::kTabNext) ? 1 : 0) -
 									 (bindings::TakeTriggered(bindings::Action::kTabPrev) ? 1 : 0);
-					if (step != 0)
+					if (step != 0 && keyboard::Capturing())
+					{
+						logger::debug("nav: bumper left to the on-screen keyboard (its layout step), no tab step");
+					}
+					else if (step != 0)
 					{
 						// Inside a page with its own tabs (a mod's, or Appearance / MCM menus' sub-tabs) the bumpers walk ONLY
 						// those, wrapping round (the owner, 2026-10-07: "I actually want them to wrap around ... using the

@@ -63,7 +63,13 @@ namespace gamefield
 			"_root.Menu_mc.InventoryLists_mc.searchWidget", "_root.Menu_mc.inventoryLists.panelContainer.searchWidget" };
 		constexpr const char* kListCandidates[] = { "_root.Menu_mc.inventoryLists.itemList", "_root.Menu_mc.InventoryLists_mc.itemList",
 			"_root.Menu_mc.inventoryLists.panelContainer.itemList" };
-		constexpr const char* kMapCandidates[] = { "_root.Menu_mc", "_root.MapMenu_mc", "_root.Map_mc" };
+		// SkyUI's map (map.swf, Map.MapMenu): the menu object is _root.WorldMap; its LocalMapMenu.showLocationFinder() opens the
+		// finder panel (the F key / Find Location button), and the panel's search widget is started by Space
+		// (LocationFinder.handleInput -> searchWidget.startInput()). The panel is _level0.locationFinderFader.locationFinder,
+		// held by the menu as _locationFinder. Read from SkyUI 6.9 SE's map.swf / mapfinderpanel.swf (2.3.0 retest, the
+		// batch 12 probe found _root.WorldMap._locationFinder; the old candidates _root.Menu_mc / MapMenu_mc / Map_mc never existed).
+		constexpr const char* kMapOwner = "_root.WorldMap";
+		constexpr const char* kMapFinder = "_root.WorldMap._locationFinder";
 		constexpr const char* kVkClips[] = { "_root.items_vk", "_root.map_vk", "_root.enchanting_vk" };   // 158716's injected clips
 
 		enum class Kind { kItem, kMagic, kMap, kEnchant, kMcm, kGeneric };
@@ -120,7 +126,7 @@ namespace gamefield
 		{
 			std::string searchPath;    // SkyUI's searchWidget, when found
 			std::string listPath;      // the item list (selectedIndex), when found
-			std::string finderOwner;   // the clip whose showLocationFinder() opens the map's finder
+			std::string finderOwner;   // the map menu object (_root.WorldMap) whose LocalMapMenu.showLocationFinder() opens the finder
 			std::string subtype;       // Crafting Menu: _root.Menu._subtypeName
 			std::string url;
 			bool vkClips = false;      // 158716's clips are in this menu
@@ -155,6 +161,7 @@ namespace gamefield
 		std::atomic<bool> g_padInUse{ false };
 		std::atomic<int> g_listIndex{ -2 };        // the top item list's selectedIndex after the last press; -2 unknown
 		std::atomic<bool> g_topSearchKnown{ false };
+		std::atomic<bool> g_parkList{ false };      // parked over a menu whose list AMF moves itself (D-pad up / down)
 		std::atomic<bool> g_rectValid{ false };
 		std::atomic<float> g_rect[4]{};
 		std::atomic<long long> g_explicitUntilMs{ 0 };
@@ -290,6 +297,21 @@ namespace gamefield
 			return ok ? std::string(v.GetString()) : std::string();
 		}
 
+		bool GetBool(RE::GFxMovieView* a_mv, const std::string& a_path)
+		{
+			RE::GFxValue v;
+			return a_mv && a_mv->GetVariable(&v, a_path.c_str()) && v.IsBool() && v.GetBool();
+		}
+
+		// SkyUI's SearchWidget.startInput() empties its field with the engine's TextField.SetText(""), and the field reads back ONE
+		// SPACE straight after (batch 12: " " at detection, 7 ms after startInput() and before AMF's first edit, on every
+		// start - the pad's L3 / Up and SkyUI's own Space key alike; P7's real keys "ir" landed BEFORE it, at the caret
+		// setSelection(0,0) put at 0). So a freshly started search field holding exactly " " is emptied before the first key.
+		bool IsSkyUiSearch(std::string_view a_adapter)
+		{
+			return a_adapter == "skyui-item-search" || a_adapter == "skyui-magic-search" || a_adapter == "map-location-finder";
+		}
+
 		bool GetNum(RE::GFxMovieView* a_mv, const std::string& a_path, double& a_out)
 		{
 			RE::GFxValue v;
@@ -388,7 +410,9 @@ namespace gamefield
 			}
 			if (k == Kind::kMap)
 			{
-				for (const char* p : kMapCandidates) { if (Avail(mv, std::string(p) + ".showLocationFinder")) { c.finderOwner = p; break; } }
+				if (Avail(mv, std::string(kMapOwner) + ".LocalMapMenu.showLocationFinder")) { c.finderOwner = kMapOwner; }
+				if (Avail(mv, std::string(kMapFinder) + ".searchWidget.startInput")) { c.searchPath = std::string(kMapFinder) + ".searchWidget"; }
+				if (Avail(mv, std::string(kMapFinder) + ".list.selectedIndex")) { c.listPath = std::string(kMapFinder) + ".list"; }
 			}
 			if (k == Kind::kEnchant) { c.subtype = GetStr(mv, "_root.Menu._subtypeName"); }
 			double idx = -1;
@@ -403,7 +427,7 @@ namespace gamefield
 				slot = c;
 				slot.probes = probes;
 				const bool complete = (k == Kind::kItem || k == Kind::kMagic) ? (!c.searchPath.empty() && !c.listPath.empty()) :
-									  (k == Kind::kMap) ? !c.finderOwner.empty() : true;
+									  (k == Kind::kMap) ? (!c.finderOwner.empty() && !c.searchPath.empty()) : true;
 				retry = !complete && probes < 4;
 				log = !wasLogged && (complete || !retry);
 				slot.logged = wasLogged || log;
@@ -482,6 +506,13 @@ namespace gamefield
 				const auto& s = settings::Get();
 				const bool device = t.explicitOpen || g_padInUse.load() || s.keyboardWithMouse;
 				const bool open = t.explicitOpen || (s.keyboardAutoOpen && device);
+				if (open && t.text == " " && IsSkyUiSearch(t.adapter))
+				{
+					// the one space startInput()'s SetText("") leaves (IsSkyUiSearch above) - gone before the first key
+					mv->SetVariable((path + ".text").c_str(), "");
+					t.text = GetStr(mv, path + ".text");
+					logger::debug("keyboard: {} started holding ' ' (SetText(\"\") in startInput) - emptied, now '{}'", path, t.text);
+				}
 				bool same = false;
 				{
 					std::scoped_lock l(g_lock);
@@ -517,6 +548,28 @@ namespace gamefield
 			if (changed) { logger::debug("keyboard: no game field taken - {}", why); }
 		}
 
+		// The map's finder panel shows a few frames after showLocationFinder() (from the world map the game first toggles to the
+		// local map); its search is started the moment it reports itself shown, looked at every 5 dispatches, a_tries times.
+		void StartMapSearch(const std::string& a_menu, int a_tries)
+		{
+			const std::string menuName = a_menu;
+			After(5, [menuName, a_tries]() {
+				auto menu = FindMenu(menuName, {});
+				if (!menu) { return; }
+				RE::GFxMovieView* mv = menu->uiMovie.get();
+				if (!GetBool(mv, std::string(kMapFinder) + "._bShown"))
+				{
+					if (a_tries > 1) { StartMapSearch(menuName, a_tries - 1); }
+					else { logger::info("keyboard: the map's location finder did not show - its search was not started"); }
+					return;
+				}
+				const bool called = mv->Invoke((std::string(kMapFinder) + ".searchWidget.startInput").c_str(), nullptr, nullptr, 0);
+				logger::debug("keyboard: the map's finder is shown - {}.searchWidget.startInput() -> {}", kMapFinder, called);
+				g_explicitUntilMs.store(NowMs() + 2500);
+				After(4, []() { Detect(true); });
+			});
+		}
+
 		void Start(const std::string& a_menu)
 		{
 			auto menu = FindMenu(a_menu, {});
@@ -534,10 +587,21 @@ namespace gamefield
 				called = mv->Invoke((c.searchPath + ".startInput").c_str(), nullptr, nullptr, 0);
 				logger::debug("keyboard: {}.startInput() on {} -> {}", c.searchPath, a_menu, called);
 			}
-			else if (k == Kind::kMap && !c.finderOwner.empty())
+			else if (k == Kind::kMap && !c.finderOwner.empty() && !c.searchPath.empty())
 			{
-				called = mv->Invoke((c.finderOwner + ".showLocationFinder").c_str(), nullptr, nullptr, 0);
-				logger::debug("keyboard: {}.showLocationFinder() on {} -> {}", c.finderOwner, a_menu, called);
+				// as the player does it: F opens the finder panel (LocalMapMenu.showLocationFinder()), then Space starts its
+				// search (searchWidget.startInput()) - the second once the panel says it is shown (its _bShown)
+				if (GetBool(mv, std::string(kMapFinder) + "._bShown"))
+				{
+					called = mv->Invoke((c.searchPath + ".startInput").c_str(), nullptr, nullptr, 0);
+					logger::debug("keyboard: the map's finder is shown - {}.startInput() -> {}", c.searchPath, called);
+				}
+				else
+				{
+					called = mv->Invoke((c.finderOwner + ".LocalMapMenu.showLocationFinder").c_str(), nullptr, nullptr, 0);
+					logger::debug("keyboard: {}.LocalMapMenu.showLocationFinder() on {} -> {} - its search starts once the panel is shown", c.finderOwner, a_menu, called);
+					StartMapSearch(a_menu, 40);
+				}
 			}
 			else
 			{
@@ -668,7 +732,7 @@ namespace gamefield
 					if (auto it = g_cache.find(a_t.menu); it != g_cache.end()) { c = it->second; }
 				}
 				const Kind k = KindOf(a_t.menu);
-				if ((k == Kind::kItem || k == Kind::kMagic) && !c.searchPath.empty() && g_gameWants.load())
+				if ((k == Kind::kItem || k == Kind::kMagic || k == Kind::kMap) && !c.searchPath.empty() && g_gameWants.load())
 				{
 					const bool ok = menu->uiMovie->Invoke((c.searchPath + ".endInput").c_str(), nullptr, nullptr, 0);
 					logger::debug("keyboard: {}.endInput() -> {}", c.searchPath, ok);
@@ -857,7 +921,10 @@ namespace gamefield
 		}
 		if (a_claim == Claim::kParked)
 		{
-			if (pad && (code == 0x1000 || code == 0x2000))
+			// D-pad up / down while parked move the list underneath (MoveList): SkyUI holds the list's selection while
+			// its search is active, so the game's own D-pad cannot (InventoryLists.onSearchInputStart)
+			const bool listMove = (code == 0x0001 || code == 0x0002) && g_parkList.load(std::memory_order_acquire);
+			if (pad && (code == 0x1000 || code == 0x2000 || listMove))
 			{
 				if (down) { g_consumedPad.insert(code); queue({ 0, code, true }); }
 				return true;
@@ -868,9 +935,26 @@ namespace gamefield
 		// no claim: the gestures that START a field, in the item lists and the map
 		if (!pad || !down) { return false; }
 		std::string top;
+		bool hasTarget = false;
 		{
 			std::scoped_lock l(g_lock);
 			top = TopMenuLocked();
+			hasTarget = g_hasTarget;
+		}
+		// A BOX ALREADY TAKING TEXT that the keyboard was not opened on (it was started with the keyboard or mouse - "not
+		// opened: keyboard and mouse in use" - or auto-open is off): the open button opens it there, in every menu (the
+		// MCM dialog and the enchanting name box included, which have no start gesture of their own). Batch 12: L3 did
+		// nothing there, because this branch only knew the item lists and the map, and stood down while g_gameWants.
+		{
+			const auto& s0 = settings::Get();
+			if (g_gameWants.load() && !hasTarget && s0.onScreenKeyboard && s0.keyboardGameFields && s0.keyboardOpenPad != 0 &&
+				code == static_cast<std::uint32_t>(s0.keyboardOpenPad))
+			{
+				g_consumedPad.insert(code);
+				logger::debug("keyboard: the open button on {} while its text box is taking text - opening the keyboard there", top);
+				AddUITask([]() { Detect(true); });
+				return true;
+			}
 		}
 		const Kind k = KindOf(top);
 		if (k == Kind::kItem || k == Kind::kMagic)
@@ -930,6 +1014,44 @@ namespace gamefield
 			g_hasTarget = false;
 			g_pad.clear();
 		}
+		bool list = false;
+		if (a_claim == Claim::kParked)
+		{
+			std::scoped_lock l(g_lock);
+			if (auto it = g_cache.find(g_target.menu); g_hasTarget && it != g_cache.end()) { list = !it->second.listPath.empty(); }
+		}
+		g_parkList.store(list, std::memory_order_release);
+	}
+
+	void MoveList(int a_dir)
+	{
+		std::string menuName, listPath;
+		{
+			std::scoped_lock l(g_lock);
+			if (!g_hasTarget) { return; }
+			menuName = g_target.menu;
+			if (auto it = g_cache.find(menuName); it != g_cache.end()) { listPath = it->second.listPath; }
+		}
+		if (listPath.empty()) { return; }
+		AddUITask([menuName, listPath, a_dir]() {
+			auto menu = FindMenu(menuName, {});
+			if (!menu) { return; }
+			RE::GFxMovieView* mv = menu->uiMovie.get();
+			// SkyUI's onSearchInputStart set disableSelection (and disableInput) on the list until the search ends, and
+			// ScrollingList.moveSelectionUp/Down do nothing while it is set: lifted for the one step, then put back, so the
+			// list stays as SkyUI keeps it while its search is active
+			const std::string flag = listPath + ".disableSelection";
+			RE::GFxValue was;
+			const bool haveWas = mv->GetVariable(&was, flag.c_str());
+			mv->SetVariable(flag.c_str(), RE::GFxValue(false));
+			RE::GFxValue arg(false);   // a_bScrollPage: one row
+			const bool ok = mv->Invoke((listPath + (a_dir < 0 ? ".moveSelectionUp" : ".moveSelectionDown")).c_str(), nullptr, &arg, 1);
+			if (haveWas) { mv->SetVariable(flag.c_str(), was); }
+			double idx = -1;
+			GetNum(mv, listPath + ".selectedIndex", idx);
+			g_listIndex.store(static_cast<int>(idx), std::memory_order_release);
+			logger::debug("keyboard: parked - D-pad {} moved {} -> {} (selectedIndex {})", a_dir < 0 ? "up" : "down", listPath, ok, static_cast<int>(idx));
+		});
 	}
 
 	void PublishRect(bool a_valid, float a_x0, float a_y0, float a_x1, float a_y1)
@@ -1047,7 +1169,14 @@ namespace gamefield
 						}
 						for (const char* p : kListCandidates) { paths.push_back(std::string(p) + ".selectedIndex"); }
 					}
-					if (k == Kind::kMap) { for (const char* p : kMapCandidates) { paths.push_back(std::string(p) + ".showLocationFinder"); } }
+					if (k == Kind::kMap)
+					{
+						paths.push_back(std::string(kMapOwner) + ".LocalMapMenu.showLocationFinder");
+						for (const char* mem : { "", "._bShown", ".searchWidget.startInput", ".searchWidget.endInput", ".searchWidget.textField", ".list.selectedIndex" })
+						{
+							paths.push_back(std::string(kMapFinder) + mem);
+						}
+					}
 					if (k == Kind::kEnchant) { paths.push_back("_root.Menu._subtypeName"); paths.push_back("_root.Menu.ItemInfo"); paths.push_back("_root.Menu.ItemCard"); }
 					if (k == Kind::kMcm) { paths.push_back("_root.ConfigPanelFader.configPanel"); }
 					for (const char* p : kVkClips) { paths.push_back(p); }

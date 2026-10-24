@@ -119,6 +119,10 @@ namespace settings
 		// (item and spell menus) or the location finder (map). 0x0040 = L3, from DEFAULT-KEYS.md (game menus only). 0 = none.
 		std::int32_t keyboardOpenPad = 0x0040;
 		std::string keyboardLayout = "auto";   // sKeyboardLayout - "auto" follows the game's language, else a layout id (KeyboardLayouts.h)
+		// bKeyboardNativeCjkInGame: off (the default) = in the GAME's text boxes the Korean and Japanese layouts give way to the
+		// Latin one, because the game's font draws those letters as empty boxes (batch 12, T12: 한글 and が arrived, tofu drawn);
+		// on = for a player with a CJK font mod. AMF's own window always has every layout.
+		bool keyboardNativeCjkInGame = false;
 		float keyboardScale = 1.0f;          // fKeyboardScale - 0.50-2.00, a precise slider (rule 68)
 		std::int32_t keyboardPosition = 0;   // iKeyboardPosition - 0 bottom of the screen, 1 top
 

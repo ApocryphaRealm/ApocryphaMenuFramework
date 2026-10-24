@@ -117,6 +117,45 @@ namespace
 		Check(ToKatakana(0x30FC) == 0x30FC, "kana: the long mark stays");
 	}
 
+	// 2.3.0 (batch 12, T12): Korean and Japanese give way to the Latin layout in the GAME's boxes unless the native toggle is on
+	void CjkFallback()
+	{
+		using namespace kblayout;
+		const int ja = FindLayout("ja"), ko = FindLayout("ko"), de = FindLayout("de"), ru = FindLayout("ru"), en = FindLayout("en");
+		Check(en == 0, "cjk: the Latin layout the fallback uses is index 0 (en)");
+		Check(EffectiveLayout(ja, true, false) == en && EffectiveLayout(ko, true, false) == en, "cjk: ja / ko fall back to en in a game box by default");
+		Check(EffectiveLayout(ja, true, true) == ja && EffectiveLayout(ko, true, true) == ko, "cjk: the native toggle keeps ja / ko in a game box");
+		Check(EffectiveLayout(ja, false, false) == ja && EffectiveLayout(ko, false, false) == ko, "cjk: AMF's own window keeps ja / ko");
+		Check(EffectiveLayout(de, true, false) == de && EffectiveLayout(ru, true, false) == ru, "cjk: de / ru stay themselves in a game box");
+		Check(EffectiveLayout(-1, true, false) == 0 && EffectiveLayout(kLayoutCount, false, false) == 0, "cjk: an index out of range gives en");
+		// stepping in a game box with the fallback never lands on ja / ko, and visits every plain layout
+		bool hitCjk = false;
+		for (int dir : { +1, -1 })
+		{
+			int i = en;
+			for (int n = 0; n < kLayoutCount * 2; ++n)
+			{
+				i = NextLayout(i, dir, true, false);
+				if (kLayouts[i].kind != Kind::kPlain) { hitCjk = true; }
+			}
+		}
+		Check(!hitCjk, "cjk: LB / RB in a game box step over ja / ko");
+		int plain = 0;
+		for (int i = 0; i < kLayoutCount; ++i) { if (kLayouts[i].kind == Kind::kPlain) { ++plain; } }
+		{
+			int i = en, steps = 0;
+			do { i = NextLayout(i, +1, true, false); ++steps; } while (i != en && steps < 100);
+			Check(steps == plain, "cjk: RB in a game box cycles through the " + std::to_string(plain) + " plain layouts and back");
+		}
+		{
+			int i = en, steps = 0;
+			do { i = NextLayout(i, +1, false, false); ++steps; } while (i != en && steps < 100);
+			Check(steps == kLayoutCount, "cjk: RB in AMF's window cycles through all " + std::to_string(kLayoutCount) + " layouts");
+		}
+		Check(NextLayout(ru, +1, true, true) == ja && NextLayout(ja, +1, true, true) == ko, "cjk: with the native toggle a game box steps ru -> ja -> ko");
+		Check(NextLayout(ru, +1, true, false) == en && NextLayout(en, -1, true, false) == ru, "cjk: without it, ru -> en and en <- ru (ja / ko skipped)");
+	}
+
 	void Utf()
 	{
 		using namespace kblayout;
@@ -136,6 +175,7 @@ int main()
 	Layouts();
 	Hangul();
 	Kana();
+	CjkFallback();
 	Utf();
 	std::cout << "keyboard_layout_check: " << g_pass << " of " << (g_pass + g_fail) << " passed\n";
 	return g_fail == 0 ? 0 : 1;
