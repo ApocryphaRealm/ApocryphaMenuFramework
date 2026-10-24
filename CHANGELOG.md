@@ -23,6 +23,16 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 
 ## 2.3.0 - 2026-10-23 - untested - on-screen keyboard keys take the theme's button shape, mouse typing works, one-shot Shift; window Move style and Resize style settings, the window kept inside the screen; pages render properly at big text sizes; side list rect for pages; a TestBench crash fixed
 
+### Diagnostics
+- **Frame profile after each opening** (the to-do entry of 2026-10-16: the session's first open draws at 0.8-1.8 fps for a
+  second or two; later opens are normal). The guess - the font atlas built on first open - does not match the logs: the
+  atlas is built at data load (8 ms) and no rebuild or texture load happens at the first open. So it is measured first:
+  for 120 frames after every opening, AMF logs each slow frame (over 100 ms between Presents, or over 30 ms of its own
+  work, plus the first five) with the time of each part of its frame - font atlas, the DX11/Win32 backends, ImGui's
+  NewFrame, the MCM loader, other mods' windows, its own menu, the draw - and a summary line per opening. A long interval
+  with a short AMF part points outside AMF's frame. FrameProfileCore.h, checked off-game by tools\frame_profile_check.bat.
+  No behaviour changes.
+
 ### Fixed
 - **A saved full-screen window came back 20% tall** (combined run 2026-10-23, batch 9: User.ini held fHotkeyW 0.99875 and
   fHotkeyH 1; the menu opened 1495x216, the Search box hidden until it was dragged taller, and 0.2 was saved over the

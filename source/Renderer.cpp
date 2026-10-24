@@ -37,6 +37,7 @@
 #include "Watchdog.h"
 #include "GlyphCore.h"
 #include "ListCore.h"
+#include "FrameProfileCore.h"
 #include "WindowGeometryCore.h"
 #include "utils/ToggleSwitch.h"
 #include "utils/Logger.h"
@@ -5563,6 +5564,53 @@ namespace renderer
 				}
 				consumer::NoteRenderThread();   // 2.1.9 (theme-switch-fix): the immediate context's thread, for LoadTexture's mips
 
+				// FIRST-OPEN FRAME PROFILE (2.3.0, FrameProfileCore.h - the to-do entry of 2026-10-16: the session's first
+				// open draws at 0.8-1.8 fps for a second or two). For the frames after each opening: the interval since the
+				// last Present and the time of each part of AMF's frame, a line per slow frame and a summary per opening.
+				// Measured before anything is changed - the font-atlas guess did not hold up against the logs.
+				static frameprofile::Tracker s_prof;
+				static auto s_lastPresent = std::chrono::steady_clock::now();
+				const auto profNow = std::chrono::steady_clock::now();
+				const auto profMs = [](std::chrono::steady_clock::duration a_d) { return std::chrono::duration<double, std::milli>(a_d).count(); };
+				frameprofile::Frame profFrame;
+				profFrame.intervalMs = profMs(profNow - s_lastPresent);
+				s_lastPresent = profNow;
+				const bool profOn = s_prof.Begin(IsMainWindowVisible());
+				auto profLast = profNow;
+				const auto profMark = [&](int a_part) {
+					if (!profOn) { return; }
+					const auto t = std::chrono::steady_clock::now();
+					profFrame.partMs[a_part] += profMs(t - profLast);
+					profLast = t;
+				};
+				const auto profEnd = [&]() {
+					if (!profOn) { return; }
+					if (s_prof.Record(profFrame))
+					{
+						std::string parts;
+						for (int p = 0; p < frameprofile::kPartCount; ++p)
+						{
+							parts += std::format("{}{} {:.1f}", p ? ", " : "", frameprofile::kPartNames[p], profFrame.partMs[p]);
+						}
+						logger::info("frame profile: opening {} frame {}: interval {:.1f} ms, AMF {:.1f} ms ({}) - heaviest {}",
+							s_prof.Openings(), s_prof.FrameIndex(), profFrame.intervalMs, profFrame.AmfMs(), parts,
+							frameprofile::kPartNames[frameprofile::Tracker::Heaviest(profFrame)]);
+					}
+					if (s_prof.SummaryDue())
+					{
+						const auto& s = s_prof.GetSummary();
+						std::string maxParts;
+						for (int p = 0; p < frameprofile::kPartCount; ++p)
+						{
+							maxParts += std::format("{}{} {:.1f}", p ? ", " : "", frameprofile::kPartNames[p], s.maxPartMs[p]);
+						}
+						logger::info("frame profile: opening {} ({}) - {} frames in {:.0f} ms, {} over {:.0f} ms, longest interval {:.1f} ms; "
+									 "AMF {:.0f} ms in all, longest {:.1f} ms; longest per part: {}",
+							s.opening, s.opening == 1 ? "the session's first" : "a later one", s.frames, s.sumIntervalMs, s.slowFrames,
+							frameprofile::kSlowIntervalMs, s.maxIntervalMs, s.sumAmfMs, s.maxAmfMs, maxParts);
+					}
+				};
+
 				// SKSE MENU FRAMEWORK'S EVENTS (2.1.4 - NPC Preset Applier, a Nexus report 2026-10-07: its portraits were
 				// queued and never made under AMF). SMF 3 sends its RegisterEvent / RegisterEventPriority listeners four
 				// events from its frame (QTR-Modding/SKSE-Menu-Framework-3, Hooks.cpp Render and WindowManager.cpp):
@@ -5606,6 +5654,7 @@ namespace renderer
 					ImGui_ImplDX11_InvalidateDeviceObjects();
 					AddMissedGlyphs();
 				}
+				profMark(frameprofile::kAtlas);
 
 				ImGui_ImplDX11_NewFrame();
 				ImGui_ImplWin32_NewFrame();
@@ -5870,9 +5919,12 @@ namespace renderer
 				}
 
 				watchdog::Tick();  // liveness signal for the hang watchdog
+				profMark(frameprofile::kBackend);
 				ImGui::NewFrame();
+				profMark(frameprofile::kImGuiNewFrame);
 				mcmloader::Frame();  // MCM loader: OnConfigClose when an MCM entry stops being drawn
 				prisma::Frame();     // 2.1.6: Prisma_OnSettingsApplied when a Prisma page is left
+				profMark(frameprofile::kMcm);
 
 				// The game's own HUD opacity, re-read every frame so the options slider is
 				// followed live (theme spec point 3), applied as the ONE global multiplier.
@@ -5884,6 +5936,7 @@ namespace renderer
 				// decide through the IsOpen flag it was handed - not ours.
 				consumer::DrawHudElements();
 				consumer::DrawWindows();
+				profMark(frameprofile::kModWindows);
 
 				// Which stick drives ImGui follows "is an item being edited" (the controller scheme in
 				// Input.cpp). The framework window samples it while it draws; with only a mod's window
@@ -5946,9 +5999,12 @@ namespace renderer
 				}
 
 				flick::EndFrame();   // 2.1.6: a FLICK page left (or the menu closed) gets its OnClose
+				profMark(frameprofile::kMenu);
 
 				ImGui::Render();
 				ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+				profMark(frameprofile::kRender);
+				profEnd();
 				compat::FireMenuEvent(compat::MenuEvent::kAfterRender);   // SMF's event 4 (see the top of this frame)
 				imguihost::Frame();   // next after 2.1.9: other mods' menus - a queued key press steps on, OAR's state is read
 
