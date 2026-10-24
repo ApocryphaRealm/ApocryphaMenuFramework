@@ -872,14 +872,21 @@ namespace tomlpages
 	{
 		std::scoped_lock l(g_lock);
 		if (g_pages.empty()) { return; }
+		// 2.3.0: skipped when neither the registry nor the TOML list changed since the last Sync (as IniPages::Sync)
+		static std::uint64_t s_doneGeneration = ~0ull;
+		static std::size_t s_donePages = 0;
+		if (registry::Generation() == s_doneGeneration && g_pages.size() == s_donePages) { return; }
 		std::set<std::string> ours;
 		for (const Page& p : g_pages) { ours.insert(p.entry); }
-		std::vector<registry::Entry> others;
-		for (registry::Entry& e : registry::Snapshot())
+		struct Other
+		{
+			std::string name, title, module;
+		};
+		std::vector<Other> others;   // each entry normalised once, not once per page
+		for (const registry::Entry& e : registry::Snapshot())
 		{
 			if (ours.contains(e.modName)) { continue; }
-			e.pages.clear();
-			others.push_back(std::move(e));
+			others.push_back({ e.modName, inicore::Normal(e.modName), inicore::Normal(e.module) });
 		}
 		bool changed = false;
 		for (std::size_t i = 0; i < g_pages.size(); ++i)
@@ -887,9 +894,10 @@ namespace tomlpages
 			Page& p = g_pages[i];
 			if (!p.ownPage.empty()) { continue; }
 			std::string own;
-			for (const registry::Entry& e : others)
+			const std::string base = inicore::Normal(p.base);
+			for (const Other& e : others)
 			{
-				if (inicore::IsOwnPage(p.matchNames, p.base, e.modName, e.module)) { own = e.modName; break; }
+				if (inicore::IsOwnPageNormal(p.matchNames, base, e.title, e.module)) { own = e.name; break; }
 			}
 			if (!own.empty())
 			{
@@ -914,6 +922,8 @@ namespace tomlpages
 			changed = true;
 		}
 		if (changed) { ApplyVisibilityLocked(); }
+		s_doneGeneration = registry::Generation();   // after our own registrations, so they do not count as a change
+		s_donePages = g_pages.size();
 	}
 
 	void Tick()

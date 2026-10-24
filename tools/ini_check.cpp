@@ -203,6 +203,27 @@ int main(int argc, char** argv)
 	Check(!inicore::IsOwnPage({ "lockedemptycontaineractivatetextfix" }, "LockedEmptyContainerActivateTextFix", "ApocryphaRealm Lock Interaction Overhaul",
 							  "lockinteractionoverhaul"),
 		  "a different INI with a similar name keeps its page");
+	// 2.3.0: Sync normalises each registry entry once and asks IsOwnPageNormal - the same answer as IsOwnPage every time
+	{
+		struct Case { std::vector<std::string> names; const char *base, *title, *module; };
+		const Case cases[] = {
+			{ lio, "LockInteractionOverhaul", "ApocryphaRealm Lock Interaction Overhaul", "lockinteractionoverhaul" },
+			{ lio, "LockInteractionOverhaul", "ApocryphaRealm Lock Interaction Overhaul", "" },
+			{ lio, "LockInteractionOverhaul", "Lock Interaction Overhaul (MCM)", "" },
+			{ { "blockoverhaul" }, "blockOverhaul", "Block Overhaul", "blockoverhaul" },
+			{ lio, "LockInteractionOverhaul", "Remember Lockpick Angle", "rememberlockpickangle" },
+			{ { "lockedemptycontaineractivatetextfix" }, "LockedEmptyContainerActivateTextFix", "ApocryphaRealm Lock Interaction Overhaul",
+			  "lockinteractionoverhaul" },
+			{ lio, "LockInteractionOverhaul", "", "" },
+		};
+		bool same = true;
+		for (const Case& c : cases)
+		{
+			same = same && inicore::IsOwnPage(c.names, c.base, c.title, c.module) ==
+							   inicore::IsOwnPageNormal(c.names, inicore::Normal(c.base), inicore::Normal(c.title), inicore::Normal(c.module));
+		}
+		Check(same, "IsOwnPageNormal (pre-normalised names, 2.3.0 Sync) answers as IsOwnPage in every case above");
+	}
 
 	std::cout << "== DLL version-resource names (the v4 test: \"TODO: <Product name> (INI)\")\n";
 	const std::string acc = "AlternateConversationCamera";

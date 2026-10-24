@@ -42,7 +42,13 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
   the rules is only 0.5 ms). The menus are now judged on a worker thread after the MCM Helper load and after each
   script-menu discovery pass ("MCM sort: N menu(s) judged ahead of the first open in X ms (worker thread)"), so the
   first open finds every answer cached. Untested in game: the next profile should show opening 1's backend near
-  opening 2's.
+  opening 2's. Tested (request 1733): the longest AMF frame of the first open fell from 35.7 to 12.6 ms and the sort
+  line now lands before the first open - but the first frame of EVERY opening still spent 5-7 ms there. Next fix: the
+  INI and TOML page syncs, which run as the menu opens, matched every INI / TOML page against every registered entry,
+  normalising both names each time. They now return at once when neither the registry nor their own lists changed since
+  the last sync (nothing else feeds the answer), and when they do run each entry is normalised once
+  (inicore::IsOwnPageNormal, the same answer as IsOwnPage - tools\ini_check 210/210). Each opening now logs "frame
+  profile: opening's own work - input X ms, INI page sync Y ms, TOML page sync Z ms" so what is left is named.
 - **The universal keyboard's first test findings** (combined run 2026-10-23, batch 12):
   - **L3 on the map did nothing.** The map adapter looked for a showLocationFinder() on _root.Menu_mc / MapMenu_mc / Map_mc,
     which SkyUI's map never has. It now uses SkyUI's real objects (read from SkyUI 6.9's map.swf): _root.WorldMap's

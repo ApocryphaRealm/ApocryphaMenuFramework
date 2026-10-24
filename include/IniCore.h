@@ -140,6 +140,15 @@ namespace inicore
 		return !m.empty() && m == b;
 	}
 
+	// The same answer from names already passed through Normal() (2.3.0: INI / TOML Sync normalises each registry entry
+	// once, not once per page - the first frame of every opening spent 5-7 ms in that loop, combined run 2026-10-24).
+	inline bool IsOwnPageNormal(const std::vector<std::string>& a_names, const std::string& a_normalBase,
+								const std::string& a_normalTitle, const std::string& a_normalModule)
+	{
+		if (!a_normalTitle.empty() && std::find(a_names.begin(), a_names.end(), a_normalTitle) != a_names.end()) { return true; }
+		return !a_normalModule.empty() && a_normalModule == a_normalBase;
+	}
+
 	// EACH INI PAGE STARTS OFF (2.2.0; the owner, 2026-10-13: "I want the INI feature of AMF to default to on, but I want all
 	// of the named INI files defaulted to off, so that they can just look for the specific INI file they want and not have all
 	// of them on"). [IniMenus] sOn holds the pages the player turned on, by id ("skse/plugins/foo.ini", "data/bar.ini"),

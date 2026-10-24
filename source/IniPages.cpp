@@ -985,15 +985,24 @@ namespace inipages
 	{
 		std::scoped_lock l(g_lock);
 		if (g_mods.empty()) { return; }
+		// 2.3.0: nothing to do when neither the registry nor the INI list has changed since the last Sync - the answer
+		// depends on nothing else. It ran on every opening's first frame (and every frame of the INI settings list),
+		// matching each INI against every entry: 5-7 ms of the first frame of each opening (combined run 2026-10-24).
+		static std::uint64_t s_doneGeneration = ~0ull;
+		static std::size_t s_doneMods = 0;
+		if (registry::Generation() == s_doneGeneration && g_mods.size() == s_doneMods) { return; }
 		std::set<std::string> ours;
 		for (const Mod& m : g_mods) { ours.insert(m.entry); }
-		// every OTHER entry, against each INI: by its title, and by the DLL that registered it
-		std::vector<registry::Entry> others;
-		for (registry::Entry& e : registry::Snapshot())
+		// every OTHER entry, against each INI: by its title, and by the DLL that registered it - each normalised once
+		struct Other
+		{
+			std::string name, title, module;
+		};
+		std::vector<Other> others;
+		for (const registry::Entry& e : registry::Snapshot())
 		{
 			if (ours.contains(e.modName)) { continue; }
-			e.pages.clear();   // only the name and the module are read here
-			others.push_back(std::move(e));
+			others.push_back({ e.modName, inicore::Normal(e.modName), inicore::Normal(e.module) });
 		}
 		bool changed = false;
 		for (std::size_t i = 0; i < g_mods.size(); ++i)
@@ -1001,9 +1010,10 @@ namespace inipages
 			Mod& m = g_mods[i];
 			if (!m.ownPage.empty()) { continue; }
 			std::string own;
-			for (const registry::Entry& e : others)
+			const std::string base = inicore::Normal(m.base);
+			for (const Other& e : others)
 			{
-				if (inicore::IsOwnPage(m.matchNames, m.base, e.modName, e.module)) { own = e.modName; break; }
+				if (inicore::IsOwnPageNormal(m.matchNames, base, e.title, e.module)) { own = e.name; break; }
 			}
 			if (!own.empty())
 			{
@@ -1031,6 +1041,8 @@ namespace inipages
 			changed = true;
 		}
 		if (changed) { ApplyVisibilityLocked(); }
+		s_doneGeneration = registry::Generation();   // after our own registrations, so they do not count as a change
+		s_doneMods = g_mods.size();
 	}
 
 	std::string DllProductName(const std::string& a_base) { return DllName(fs::path(a_base + ".dll").wstring(), a_base + ".dll"); }
