@@ -324,6 +324,18 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
   slider, an export slider, Deep Snow's band slider with its HighlightNudge and DEM's NudgeableSlider (one step a tap,
   never two in one frame while held at 60 and 144 fps), the D-pad, Up / Down, Enter and Space, text fields, a plain row.
 
+### Added (null self-test, 2026-10-25)
+- **DevBench amf.menu op=nulltest** (the null-check plan's in-game proof, rule 64): hands nulls to a handful of the exports a
+  mod built for SKSE Menu Framework calls - 14 cimgui calls (a null label, value pointer, method self, combo callback,
+  out-struct and text) inside a hidden, input-less window of the frame, and 18 SKSE Menu Framework / AMF C-API calls
+  (AddSectionItem, RenameSection, DeleteSection, RegisterInpoutEvent, RegisterEventPriority, AddWindow, LoadTexture,
+  AMF_RegisterPage with each name or the callback null, AMF_SetPageVisible, AMF_DrawThemeFrame, AMF_GetSideListRect,
+  AMF_GetStick, SMF_GetReservedKeyCodes' size probe) on the render thread - and returns JSON with each call, what was null,
+  what its guard promises and what came back, plus a check that no page or window was added. Every call is a no-op and is
+  logged at info. Like every amf.menu op it exists only where DevBench is installed; it registers, draws and writes nothing.
+  NullSelfTest.h / NullSelfTestCore.h; the cimgui half checked off-game by the new tools\null_selftest_check.bat (22
+  checks against the generated cimgui.cpp, including the control: the same null handed to Dear ImGui with no guard faults).
+
 ## 2.2.3 - 2026-10-21 - untested - dropdowns on SkyUI MCM pages fill when AMF is opened from the Journal's System menu
 
 ### Fixed (dropdowns on converted MCM pages)

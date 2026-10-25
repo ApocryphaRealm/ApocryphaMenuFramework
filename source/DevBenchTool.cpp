@@ -7,6 +7,7 @@
 #include "MfmPages.h"
 #include "ImguiHost.h"
 #include "SystemRow.h"
+#include "NullSelfTest.h"
 
 #include "DevBench/DevBenchAPI.h"
 #include "Input.h"
@@ -681,6 +682,13 @@ namespace devbenchtool
 				// paths answer, and per route how many edits reached the field) | state | start [menu] | detect | route n
 				result = gamefield::ToolJson(args);
 			}
+			else if (op == "nulltest")
+			{
+				// 2.3.0 null self-test (NullSelfTest.h, plan amf-null-checks section 6): nulls handed to a handful of cimgui, SKSE
+				// Menu Framework and AMF C-API exports on the render thread; each must be a logged no-op. Registers, draws and
+				// writes nothing. Returns every call with what was null, what its guard promises and what came back.
+				result = nullselftest::RunJson(5000);
+			}
 			else if (op == "state" || op.empty())
 			{
 				result = renderer::GetMenuStateJson();
@@ -934,7 +942,10 @@ namespace devbenchtool
 			"158716/B612, per route sent/proven/unchanged) | state | start [menu] | detect | route {n: 1|2|3, 0 = automatic}. "
 			"2.3.0 settings presets: presets do=list | save {name, skip:[group keys]} | diff {name, shipped} | load {keys:[group keys], after diff; "
 			"default the mods switched on} | delete {name} | status (busy, phase, last, inUse, compare {ready, rows, notInstalled, ticked, groups}). "
-			"save / diff / load start the work and return; poll status.\","
+			"save / diff / load start the work and return; poll status. "
+			"2.3.0 nulltest: hands nulls to a handful of cimgui, SKSE Menu Framework and AMF C-API exports on the render thread "
+			"(labels, value pointers, self, callbacks, AMF_RegisterPage names) and returns {ok, passed, total, cimgui:[...], api:[...]}, "
+			"each {call, null, expected, got, ok}; every call is a logged no-op - nothing is registered, drawn or written.\","
 			"\"inputSchema\":{\"type\":\"object\",\"properties\":{"
 			"\"op\":{\"type\":\"string\"},\"node\":{\"type\":\"string\"},"
 			"\"mod\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"position\":{\"type\":\"string\"},"

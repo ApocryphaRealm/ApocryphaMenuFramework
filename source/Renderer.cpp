@@ -56,6 +56,7 @@
 #include <imgui_internal.h>
 #include "PreciseSlider.h"
 #include "NavSide.h"
+#include "NullSelfTest.h"
 #include "TabFit.h"   // rows that fit the pane at big text sizes (2.3.0, retest 453d U1)   // when a Left press inside a page may go back to the mod list (2.3.0)
 #include <vector>
 // The vcpkg imgui port installs the binding headers FLAT at the include root, not under
@@ -6097,6 +6098,9 @@ namespace renderer
 						break;
 					}
 				}
+				// 2.3.0: DevBench amf.menu op=nulltest - nulls handed to a handful of exports, inside this frame (NullSelfTest.h);
+				// nothing unless a run was asked for
+				nullselftest::Frame();
 				profMark(frameprofile::kImGuiNewFrame);
 				mcmloader::Frame();  // MCM loader: OnConfigClose when an MCM entry stops being drawn
 				prisma::Frame();     // 2.1.6: Prisma_OnSettingsApplied when a Prisma page is left
