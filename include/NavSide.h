@@ -16,7 +16,7 @@
 //     or a mod's through the exports. Each of those calls NoteArrowItem() right after it is drawn;
 //   - the page did not take the press itself - ImGui made a Left move request this frame and a widget cancelled it
 //     (NavMoveRequestCancel), which is how a page that steps its own value on Left says "mine".
-// Left on a plain row (a switch, a button, a text line, a key binding) still goes back to the list; B still leaves too.
+// Left on a plain row (a switch, a button, a text line, a key binding) still goes back to the list.
 // The decision itself is LeftPressMayLeave() - a pure function, proven off-game by tools\nav_left_check.bat.
 // ============================================================================================================
 
