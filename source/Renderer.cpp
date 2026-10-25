@@ -5694,8 +5694,25 @@ namespace renderer
 				}
 				profMark(frameprofile::kAtlas);
 
+				// 2.3.0: the backend part split further (opening 1's frame 1 still had ~3 ms of it after the opening's own work
+				// was timed at 0.2 ms, combined run 2026-10-24) - logged below for a profiled frame whose backend is over 2 ms
+				constexpr int kBackSubs = 9;
+				static constexpr const char* kBackSubNames[kBackSubs] = { "DX11 NewFrame", "Win32 NewFrame", "display size + launcher",
+					"pause + idle camera", "opening + page syncs", "MCM layout learn", "queued input", "art reload + render jobs",
+					"nav flags + text input + field watch" };
+				double backSub[kBackSubs]{};
+				auto backLast = std::chrono::steady_clock::now();
+				const auto backMark = [&](int a_sub) {
+					if (!profOn) { return; }
+					const auto t = std::chrono::steady_clock::now();
+					backSub[a_sub] += profMs(t - backLast);
+					backLast = t;
+				};
+
 				ImGui_ImplDX11_NewFrame();
+				backMark(0);
 				ImGui_ImplWin32_NewFrame();
+				backMark(1);
 
 				// THE IMAGE, NOT THE WINDOW (2.0.8 - Soulsthat, 2026-10-04, 2560x1440: the menu and its tooltips clipped at the
 				// right and bottom, the right side before the left). The Win32 backend sizes the display from the game WINDOW's
@@ -5738,6 +5755,7 @@ namespace renderer
 				}
 
 				const bool visible = g_windowVisible.load(std::memory_order_acquire);
+				backMark(2);
 
 				// TWO STATES, NOT ONE (2.0.4). `visible` is OUR menu: it alone pauses the game, takes
 				// Escape as "close" and draws the framework window. `interactive` is "someone on screen
@@ -5791,6 +5809,7 @@ namespace renderer
 					// page's scripts, time runs, so it is held again)
 					SyncIdleCamera(visible && settings::Get().keepCameraAwake && !(ownPause && !s_lifted));
 				}
+				backMark(3);
 
 				// Open-transition work happens HERE, not in ToggleMainWindow - the toggle is
 				// flipped on the input thread, and cursor centring touches ImGui state.
@@ -5827,7 +5846,9 @@ namespace renderer
 					inipages::RefreshTick();
 					tomlpages::Tick();
 				}
+				backMark(4);
 				if (visible) { mcmloader::LearnFromLayoutIfChanged(); }   // the sort learns from menus moved by hand
+				backMark(5);
 				// Published only AFTER the rising edge has cleared the queue, so nothing the input thread
 				// queues for a mod's window can be thrown away as stale by the edge that let it in.
 				g_consumerInput.store(consumerOwnsInput, std::memory_order_release);
@@ -5839,11 +5860,13 @@ namespace renderer
 				{
 					input::ProcessQueuedEvents();
 				}
+				backMark(6);
 
 				ImGuiIO& io = ImGui::GetIO();
 
 				if (g_artReloadPending.exchange(false, std::memory_order_acq_rel)) { skin::Reload(); }   // 2.1.6, op=art
 				RunRenderJobs();   // 2.1.9 (theme-switch-fix): DevBench op=theme / op=skinreload, run here and not on the listener
+				backMark(7);
 
 				// Software cursor while the menu (or a mod's blocking window) has the input - the game
 				// hides and recentres the OS cursor at will, so ImGui draws its own at the position we
@@ -5966,6 +5989,18 @@ namespace renderer
 				}
 
 				watchdog::Tick();  // liveness signal for the hang watchdog
+				backMark(8);
+				if (profOn)
+				{
+					double backTotal = 0.0;
+					for (double v : backSub) { backTotal += v; }
+					if (backTotal > 2.0)
+					{
+						std::string subs;
+						for (int i = 0; i < kBackSubs; ++i) { subs += std::format("{}{} {:.1f}", i ? ", " : "", kBackSubNames[i], backSub[i]); }
+						logger::info("frame profile: opening {} frame {}: backend {:.1f} ms - {}", s_prof.Openings(), s_prof.FrameIndex() + 1, backTotal, subs);
+					}
+				}
 				profMark(frameprofile::kBackend);
 				ImGui::NewFrame();
 				profMark(frameprofile::kImGuiNewFrame);

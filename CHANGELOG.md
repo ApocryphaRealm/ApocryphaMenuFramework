@@ -32,6 +32,11 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
   NewFrame, the MCM loader, other mods' windows, its own menu, the draw - and a summary line per opening. A long interval
   with a short AMF part points outside AMF's frame. FrameProfileCore.h, checked off-game by tools\frame_profile_check.bat.
   No behaviour changes.
+- **The backend part split** (opening 1's first frame still spent about 3 ms there after the opening's own work - input,
+  the INI and TOML page syncs - was timed at 0.2 ms, combined run 2026-10-24). A profiled frame whose backend part is over
+  2 ms logs it by piece: the DX11 and Win32 backends' NewFrame, the display size and launcher check, the pause and idle
+  camera, the opening and page syncs, the MCM layout learning, the queued input, the art reload and render jobs, and the
+  nav flags, text input and text-field watch. No behaviour changes.
 
 ### Fixed
 - **The session's first open spent 30 ms of one frame in AMF before the menu drew** (frame profile, combined run
