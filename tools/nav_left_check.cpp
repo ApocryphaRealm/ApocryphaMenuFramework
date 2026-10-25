@@ -37,8 +37,11 @@
 #include <imgui.h>
 #include <imgui_internal.h>
 
+#include <cmath>
+#include <cstdio>
 #include <iostream>
 #include <string>
+#include <utility>
 
 namespace
 {
@@ -56,6 +59,7 @@ namespace
 	int     g_focusRequest = -1;   // focus this item (SetFocusID) the next frame it is drawn
 
 	float  g_speed = 0.5f;          // AMF Example's Speed: precise::SliderFloat 0..1 "%.2f"
+	int    g_speedApplies = 0;      // how often precise::ApplyNow said "apply" for Speed (Window opacity's theme::Apply, S10)
 	double g_scale = 0.5;           // a consumer's igSliderScalar (double) 0..1 "%.3f"
 	float  g_drag = 1.0f;           // a consumer's igDragFloat
 	float  g_triple[3] = { 1, 2, 3 };
@@ -77,6 +81,7 @@ namespace
 	bool   g_amfStep = false;       // Renderer.cpp's a_enabled: the menu is up and taking input (off for sections 1-7)
 	navside::HighlightStep g_step = navside::HighlightStep::kNone;
 	bool   g_enterTweaked = false;  // EnterActivatesArrowItem turned this frame's Enter into an activation
+	bool   g_clickActivated = false;// ActivateAfterClick turned the first press after a mouse click into an activation
 	bool   g_escBefore = false;     // EscapeClosesAPopup() read just before NewFrame (Renderer.cpp's escClosesPopup)
 	int    g_popupsAfterNewFrame = 0;
 
@@ -192,15 +197,18 @@ namespace
 		g_escBefore = navside::EscapeClosesAPopup();
 		ImGui::NewFrame();
 		g_popupsAfterNewFrame = GImGui->OpenPopupStack.Size;
-		g_enterTweaked = navside::EnterActivatesArrowItem();   // Renderer.cpp: right after NewFrame
+		g_clickActivated = navside::ActivateAfterClick();      // Renderer.cpp: right after NewFrame, first
+		g_enterTweaked = navside::EnterActivatesArrowItem();   // Renderer.cpp: then this
 		g_step = navside::StepHighlightedArrowItem(g_amfStep, false);   // Renderer.cpp: next, every frame (8. ONE WAY)
+		navside::HoldTweakAtKeyRepeat();   // Renderer.cpp: then this (S8: a held key steps at the key-repeat rate)
 		ImGui::SetNextWindowPos(ImVec2(20, 20));
 		ImGui::SetNextWindowSize(ImVec2(1200, 1040));
 		ImGui::Begin("###amf-page", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
 		ImGui::Button("A plain row");
 		Mark(kRow);
 		ImGui::SetNextItemWidth(500);
-		precise::SliderFloat("Speed", &g_speed, 0.0f, 1.0f, "%.2f");   // AMF's own / a converted menu's slider
+		// AMF's own / a converted menu's slider; applied the way Renderer.cpp applies Window opacity (S10: precise::ApplyNow)
+		if (precise::ApplyNow(precise::SliderFloat("Speed", &g_speed, 0.0f, 1.0f, "%.2f"))) { ++g_speedApplies; }
 		Mark(kPrecise);
 		{
 			// the generated igSliderScalar body: ImGui's slider, then the wheel helper (which notes the highlight)
@@ -615,6 +623,47 @@ int main()
 			Check(r.press == HighlightStep::kStarted && near(afterRight, 0.51f) && r.navAfter == g_ids[kPrecise],
 				  "8b: Right on a highlighted AMF precise slider: 0.50 -> 0.51, highlight kept");
 			Check(near(g_speed, 0.50f) && l.navAfter == g_ids[kPrecise], "8b: ... Left: back to 0.50");
+			// S8 (combined run 3266, 2026-10-25: Skyrim crashed holding Right on DEM's Offset X): a HELD key steps at the
+			// key-repeat rate - the first press, then after io.KeyRepeatDelay (0.275 s) one step every io.KeyRepeatRate (0.050 s):
+			// about 1 + (1 - 0.275) / 0.05 = 15 in a one-second hold, at any frame rate. ImGui's own nav tweak repeats at
+			// 0.72 x delay and 0.30 x rate (0.198 s / 0.015 s, about 54 a second) - one a frame at 60 fps.
+			auto steps = [&](int a_frames, float a_dt) {
+				FocusOn(kPrecise);
+				g_speed = 0.0f;
+				Settle(1);
+				const Hold h = holdRight(kPrecise, &g_speed, a_frames, a_dt);
+				return std::pair<int, Hold>{ static_cast<int>(std::lround(h.total / 0.01f)), h };
+			};
+			const auto [n60, h60] = steps(60, dt60);
+			const auto [n144, h144] = steps(144, dt144);
+			std::printf("    (S8 hold: %d steps in 1 s at 60 fps, %d at 144 fps; io repeat delay %.3f, rate %.3f after the hold)\n", n60, n144,
+				io.KeyRepeatDelay, io.KeyRepeatRate);
+			Check(n60 >= 13 && n60 <= 17 && h60.stayed && h60.maxStep < 0.01f + 1e-4f,
+				  "8b S8: Right HELD 1 s at 60 fps on a highlighted precise slider: about 15 steps (the key-repeat rate), not one a frame; highlight kept");
+			Check(n144 >= 13 && n144 <= 17 && h144.stayed && h144.maxStep < 0.01f + 1e-4f,
+				  "8b S8: ... held 1 s at 144 fps: the same about 15, not 54 or 144");
+			Check(near(io.KeyRepeatDelay, 0.275f) && near(io.KeyRepeatRate, 0.050f), "8b S8: ... and ImGui's repeat settings are back to their own values once the key is let go");
+			g_speed = 0.50f;
+			const Tap again = tapSide(true);
+			Check(again.press == HighlightStep::kStarted && near(g_speed, 0.51f), "8b S8: a TAP after the hold is still exactly one step (0.50 -> 0.51)");
+			// S10 (combined run 3266: each tap on Window opacity logged TWO theme applies, one on the press, one on the release):
+			// a slider applied through precise::ApplyNow applies ONCE a tap; held, once a step (live)
+			g_speed = 0.50f;
+			g_speedApplies = 0;
+			const Tap s10 = tapSide(true);
+			const int tapApplies = g_speedApplies;
+			std::printf("    (S10: %d apply(ies) for one tap)\n", tapApplies);
+			Check(s10.press == HighlightStep::kStarted && near(g_speed, 0.51f) && tapApplies == 1,
+				  "8b S10: one tap on a highlighted slider applied through ApplyNow: ONE apply (not one on the press and one on the release)");
+			g_speed = 0.0f;
+			g_speedApplies = 0;
+			FocusOn(kPrecise);
+			Settle(1);
+			const Hold s10h = holdRight(kPrecise, &g_speed, 60, dt60);
+			const int heldSteps = static_cast<int>(std::lround(s10h.total / 0.01f));
+			Check(g_speedApplies == heldSteps, "8b S10: held 1 s: one apply per step, live (" + std::to_string(g_speedApplies) + " applies, " +
+				  std::to_string(heldSteps) + " steps)");
+			g_speed = 0.50f;
 		}
 		// c. a mod's slider through the export (igSliderFloat's generated body), 0..100 "%.1f": ImGui alone moves 1.0 - the export holds it to 0.1
 		{
@@ -664,6 +713,10 @@ int main()
 				  "8e (DEM N4): clicked DEM slider, Right: 0.50 -> 0.51 - one step (NudgeableSlider adds none when the slider moved), highlight kept");
 			const Hold h = holdRight(kDem, &g_dem, 144, dt144);
 			Check(h.stayed && h.total > 0.0f && h.maxStep < 0.01f + 1e-4f, "8e: ... held 1 s at 144 fps: never two steps in one frame, highlight kept");
+			const int demSteps = static_cast<int>(std::lround(h.total / 0.01f));
+			std::printf("    (S8 DEM hold: %d steps in 1 s at 144 fps)\n", demSteps);
+			Check(demSteps >= 13 && demSteps <= 17,
+				  "8e S8: ... and about 15 steps in that second (the key-repeat rate), not one a frame - the hold that crashed DEM in combined run 3266");
 			g_dem = 0.50f;
 			Frame(false, true); Frame(false, false);   // Enter activates it (EnterActivatesArrowItem), as before
 			const bool active = GImGui->ActiveId == g_ids[kDem];
@@ -731,6 +784,25 @@ int main()
 			Frame(false, true); Frame(false, false); Settle(2);
 			Check(enterActive && r.press == HighlightStep::kNone && near(g_speed, 0.51f) && stillActive && GImGui->ActiveId == 0,
 				  "8h: Enter activates the slider, Right steps it once, it stays active after Right is let go, Enter releases it");
+			// combined run 3266: the FIRST Enter after a mouse click on a slider did nothing; the second activated it
+			{
+				g_speed = 0.50f;
+				io.AddMousePosEvent(g_mid[kPrecise].x, g_mid[kPrecise].y); Frame();
+				io.AddMouseButtonEvent(0, true);  Frame();
+				io.AddMouseButtonEvent(0, false); Frame();
+				io.AddMousePosEvent(-FLT_MAX, -FLT_MAX); Settle(2);
+				const bool clicked = GImGui->NavId == g_ids[kPrecise] && GImGui->ActiveId == 0;
+				Frame(false, true);
+				const bool tweakedFirst = g_enterTweaked;
+				Frame(false, false);
+				const bool activeFirst = GImGui->ActiveId == g_ids[kPrecise] && !ImGui::TempInputIsActive(g_ids[kPrecise]);
+				std::printf("    (click then Enter: clicked %d, nav %u active %u, Enter turned %d, NavDisableHighlight %d)\n", clicked ? 1 : 0,
+					GImGui->NavId, GImGui->ActiveId, tweakedFirst ? 1 : 0, GImGui->NavDisableHighlight ? 1 : 0);
+				Check(clicked && activeFirst, "8h: after a mouse click and release on a slider, the FIRST Enter activates it (no number box)");
+				if (GImGui->ActiveId != 0) { Frame(false, true); Frame(false, false); }
+				Settle(2);
+				g_speed = 0.50f;
+			}
 			press(ImGuiKey_Space);
 			const bool spaceActive = GImGui->ActiveId == g_ids[kPrecise];
 			press(ImGuiKey_Space);

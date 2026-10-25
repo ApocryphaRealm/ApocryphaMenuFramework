@@ -164,6 +164,33 @@ namespace navside
 		return true;
 	}
 
+	// Right after ImGui::NewFrame, BEFORE EnterActivatesArrowItem (2.3.0; combined run 3266, reproduced twice: the first Enter
+	// after a mouse click on a slider did nothing, the second activated it). A mouse click leaves the clicked slider as the
+	// nav item but sets NavDisableHighlight (the highlight is hidden while the mouse is in use), and Dear ImGui 1.90.8's
+	// NavUpdate turns Enter / Space / the pad's A into an activation only while the highlight is shown - so the first press
+	// was spent on nothing (tools\nav_left_check.cpp 8h measured it: after the click NavDisableHighlight 1, NavActivateId 0).
+	// For a slider or drag (by ImGui's own state, as above) that press now does what it does once the highlight shows: it
+	// shows the highlight and activates the item as a tweak (Enter, Space and A alike - no number box; Ctrl+click still
+	// types). Anything else keeps ImGui's behaviour. True when the press was turned into the activation.
+	inline bool ActivateAfterClick()
+	{
+		ImGuiContext* const g = GImGui;
+		if (!g || !g->NavDisableHighlight || g->NavId == 0 || !g->NavWindow || g->ActiveId != 0 || g->NavActivateId != 0) return false;
+		if (g->IO.MouseDown[ImGuiMouseButton_Left]) return false;
+		if (!NavOnKnownArrowItem() && !(detail::g_ctx == g && detail::g_navId == g->NavId && detail::g_frame == g->FrameCount - 1)) return false;
+		const bool keyboardNav = (g->IO.ConfigFlags & ImGuiConfigFlags_NavEnableKeyboard) != 0;
+		const bool padNav = (g->IO.ConfigFlags & ImGuiConfigFlags_NavEnableGamepad) != 0;
+		const bool keys = keyboardNav && (ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false) ||
+		                                  ImGui::IsKeyPressed(ImGuiKey_Space, false));
+		const bool pad = padNav && ImGui::IsKeyPressed(ImGuiKey_NavGamepadActivate, false);
+		if (!keys && !pad) return false;
+		g->NavDisableHighlight = false;
+		g->NavActivateId = g->NavActivateDownId = g->NavActivatePressedId = g->NavId;
+		g->NavActivateFlags = ImGuiActivateFlags_PreferTweak;
+		g->NavInputSource = pad && !keys ? ImGuiInputSource_Gamepad : ImGuiInputSource_Keyboard;
+		return true;
+	}
+
 	// ---------------------------------------------------------------------------------------------------------------------
 	// ONE WAY for sliders (2.3.0; the owner, via Main Agent, 2026-10-25: a highlighted slider steps on Left/Right and the
 	// D-pad without activation, in every mod - design and double-step proof in 4. plans\amf-null-checks\ONE-WAY-SLIDERS.md).
@@ -284,6 +311,83 @@ namespace navside
 		detail::g_stepId = nav;
 		detail::g_stepFrame = g->FrameCount;
 		return HighlightStep::kStarted;
+	}
+
+	// ---------------------------------------------------------------------------------------------------------------------
+	// A HELD key steps a slider at the key-repeat rate, never every frame (2.3.0; combined run 3266, 2026-10-25, step S8:
+	// Skyrim crashed in Scaleform - SkyrimSE+0FFE143, the same place as DEM 1.7.5's typed-scale crash - while Right was held
+	// on DEM's Offset X slider). Dear ImGui's keyboard / pad tweak of an ACTIVE slider repeats at its "nav tweak" rate:
+	// 0.72 x io.KeyRepeatDelay, then 0.30 x io.KeyRepeatRate (0.198 s, then every 0.015 s - about 54 steps a second, one a
+	// frame at 60 fps; tools\nav_left_check.cpp measured 49 at 60 fps and 55 at 144 before this). A mod that applies each
+	// change (DEM re-applies its minimap display) then does that every frame.
+	//
+	// So while a slider or drag that the keyboard or pad is stepping is active and Left / Right (D-pad left / right) is
+	// held, AMF paces the held key itself: it keeps its own clock of the hold and, right after NewFrame, writes the key's
+	// DownDuration as 0 ("pressed") on the press and on each key-repeat tick - after io.KeyRepeatDelay (0.275 s), one every
+	// io.KeyRepeatRate (0.050 s), DEM's own nudge timing - and as 0.1 s (below every repeat delay ImGui uses) on every other
+	// frame. Every reader of that key on this context - ImGui's tweak in each copy of ImGui, DEM's NudgeableSlider
+	// (IsKeyPressed with repeat), Deep Snow's helper - then sees one press on exactly those frames: about 15 steps in a
+	// one-second hold at any frame rate, one step a tap, and never a navigation-move repeat (that waits 0.198 s). Changing
+	// io.KeyRepeatDelay / Rate instead was tried first and dropped: it moves the default repeat too, so DEM's nudge then
+	// fired on other frames and added steps (20 a second in the check). A text field is never touched.
+	// Right after StepHighlightedArrowItem, every frame (Renderer.cpp; tools\nav_left_check.cpp section 8b and 8e).
+	namespace detail
+	{
+		inline ImGuiContext* g_repeatCtx = nullptr;
+		inline bool          g_repeatHeld = false;
+		inline float         g_repeatClock = 0.0f;   // seconds the hold has lasted, by AMF's own count
+		inline constexpr float kPacedIdle = 0.1f;    // a held key's DownDuration on a frame that is no tick
+
+		inline void PaceKey(ImGuiContext* a_g, ImGuiKey a_key, bool a_tick)
+		{
+			ImGuiKeyData* const data = ImGui::GetKeyData(a_g, a_key);
+			if (data && data->Down) { data->DownDuration = a_tick ? 0.0f : kPacedIdle; }
+		}
+	}
+
+	// True while it paces a held key.
+	inline bool HoldTweakAtKeyRepeat()
+	{
+		ImGuiContext* const g = GImGui;
+		if (!g) return false;
+		if (detail::g_repeatCtx != g)
+		{
+			detail::g_repeatCtx = g;
+			detail::g_repeatHeld = false;
+		}
+		const ImGuiID active = g->ActiveId;
+		const bool byKeys = g->ActiveIdSource == ImGuiInputSource_Keyboard || g->ActiveIdSource == ImGuiInputSource_Gamepad;
+		const bool stepper = active != 0 && (active == detail::g_stepId || detail::KnownArrow(active)) && !detail::KnownText(active) &&
+		                     g->TempInputId != active;
+		if (!(stepper && byKeys && detail::HorizontalKeyDown()))
+		{
+			detail::g_repeatHeld = false;
+			return false;
+		}
+		const ImGuiKey keys[] = { ImGuiKey_LeftArrow, ImGuiKey_RightArrow, ImGuiKey_GamepadDpadLeft, ImGuiKey_GamepadDpadRight };
+		bool tick = false;
+		if (!detail::g_repeatHeld)
+		{
+			// the hold starts: its clock starts at the longest real hold (0 on the press frame - a key held from before the
+			// slider became active keeps its time); a press frame is a tick
+			float longest = 0.0f;
+			for (const ImGuiKey key : keys)
+			{
+				const ImGuiKeyData* const data = ImGui::GetKeyData(g, key);
+				if (data && data->Down && data->DownDuration > longest) { longest = data->DownDuration; }
+			}
+			detail::g_repeatClock = longest;
+			detail::g_repeatHeld = true;
+			tick = longest == 0.0f;
+		}
+		else
+		{
+			const float before = detail::g_repeatClock;
+			detail::g_repeatClock += g->IO.DeltaTime;
+			tick = ImGui::CalcTypematicRepeatAmount(before, detail::g_repeatClock, g->IO.KeyRepeatDelay, g->IO.KeyRepeatRate) > 0;
+		}
+		for (const ImGuiKey key : keys) { detail::PaceKey(g, key, tick); }
+		return true;
 	}
 
 	// This frame, after the page is drawn: is the highlight inside a popup (an open combo, a context menu, a modal)?

@@ -6071,6 +6071,12 @@ namespace renderer
 				// the whole menu. ImGui's NewFrame closes the popup on that Escape, so whether one was open is read just before it.
 				const bool escClosesPopup = navside::EscapeClosesAPopup();
 				ImGui::NewFrame();
+				// 2.3.0 (combined run 3266): the first Enter / Space / A after a mouse click on a slider or drag activates it - ImGui
+				// spent that press on showing the hidden highlight (NavSide.h ActivateAfterClick)
+				if (navside::ActivateAfterClick())
+				{
+					logger::debug("nav: the first press after a click activates slider/drag {}", GImGui ? GImGui->NavId : 0u);
+				}
 				// 2.3.0 (26d2 N3): keyboard Enter on a slider or drag activates it, as Space and A do, instead of opening its
 				// number box - turned before any page draws, so every copy of ImGui drawing on this context sees it (NavSide.h)
 				if (navside::EnterActivatesArrowItem())
@@ -6096,6 +6102,15 @@ namespace renderer
 						break;
 					default:
 						break;
+					}
+					// S8 (combined run 3266): a held Left / Right steps a slider at the key-repeat rate (0.275 s, then every 0.050 s),
+					// never every frame - a mod that applies each change (DEM re-applies its minimap) did so 50 times a second
+					static bool repeatHeld = false;
+					if (const bool held = navside::HoldTweakAtKeyRepeat(); held != repeatHeld)
+					{
+						repeatHeld = held;
+						logger::debug("nav: held slider/drag {} - {}", GImGui ? GImGui->ActiveId : 0u,
+									  held ? "steps at the key-repeat rate while the key is held" : "hold ended, ImGui's repeat restored");
 					}
 				}
 				// 2.3.0: DevBench amf.menu op=nulltest - nulls handed to a handful of exports, inside this frame (NullSelfTest.h);

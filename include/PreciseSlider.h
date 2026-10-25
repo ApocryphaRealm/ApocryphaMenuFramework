@@ -335,12 +335,36 @@ namespace precise
 	// before Enter). For a slider whose change is heavy to apply (the theme), call right after it with what it returned: true
 	// for a change to apply now - a drag, a nudge, a wheel notch, and a typed number once it settles (Enter, or the field let
 	// go) - and false for each keystroke of a number still being typed (Ctrl+click), whose value is in the variable already.
+	// 2.3.0 (combined run 3266, S10: each TAP on Window opacity applied the theme twice - on the press, which stepped it, and
+	// again on the release, when the one-way step let it go and ImGui reported "deactivated after edit"): the let-go applies
+	// only a change that was held back - a typed number - never one already applied. One apply a tap, one a typed entry, one a
+	// step while held, live while dragging or wheeling (tools\nav_left_check.cpp 8b S10, tools\slider_wheel_check).
+	namespace detail
+	{
+		inline ImGuiID g_applyHeldBack = 0;   // the item whose typed number has not been applied yet
+	}
+
 	inline bool ApplyNow(bool a_changed)
 	{
 		if (!GImGui) return a_changed;
 		const ImGuiID id = GImGui->LastItemData.ID;
-		if (ImGui::IsItemDeactivatedAfterEdit()) return true;
-		return a_changed && !(id != 0 && ImGui::TempInputIsActive(id));
+		const bool typing = id != 0 && ImGui::TempInputIsActive(id);
+		if (a_changed && typing)
+		{
+			detail::g_applyHeldBack = id;   // a keystroke of a number still being typed: held back until it settles
+			return false;
+		}
+		if (a_changed)
+		{
+			if (detail::g_applyHeldBack == id) { detail::g_applyHeldBack = 0; }
+			return true;
+		}
+		if (id != 0 && detail::g_applyHeldBack == id && ImGui::IsItemDeactivatedAfterEdit())
+		{
+			detail::g_applyHeldBack = 0;   // the typed number settled (Enter, or the field let go): apply it once
+			return true;
+		}
+		return false;
 	}
 
 	inline bool SliderFloat(const char* a_label, float* a_v, float a_min, float a_max, const char* a_format)
