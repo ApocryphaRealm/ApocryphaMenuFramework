@@ -479,4 +479,51 @@ namespace presetscore
 		for (const auto& n : a_user) { out.push_back({ n, false }); }
 		return out;
 	}
+
+	inline int IndexOf(const std::vector<Listed>& a_list, const std::string& a_name, bool a_shipped)
+	{
+		for (std::size_t i = 0; i < a_list.size(); ++i)
+		{
+			if (a_list[i].shipped == a_shipped && a_list[i].name == a_name) { return static_cast<int>(i); }
+		}
+		return -1;
+	}
+
+	// The Preset dropdown's pick (Settings > General > Presets). Held by NAME; empty = the preset in use.
+	// 2.3.0 (retest batch B-20261025-053652-453d, c0a3: after the preset in use was deleted through DevBench, the dropdown
+	// kept showing "AMF Test Shipped" - picked earlier by hand - while Default was in use). The page cleared the pick only
+	// after ITS OWN save, load and delete buttons; a change made anywhere else (DevBench, a load finishing later) left it,
+	// and a preset in use missing from a list read before the change showed the first row (a shipped preset) instead.
+	// Now any change of the preset in use - whoever made it - drops the pick, and the caller re-reads the list.
+	struct DropdownPick
+	{
+		std::string name;
+		bool shipped = false;
+		std::string inUseSeen;   // the preset in use when the pick was last checked
+	};
+
+	// True when the preset in use changed since the last call: the pick is dropped and the list should be read again.
+	inline bool DropdownInUseChanged(DropdownPick& a_pick, const std::string& a_inUse)
+	{
+		if (a_pick.inUseSeen == a_inUse) { return false; }
+		a_pick.inUseSeen = a_inUse;
+		a_pick.name.clear();
+		a_pick.shipped = false;
+		return true;
+	}
+
+	// The row the dropdown shows: the pick while it is still listed, else the preset in use. -1 = the preset in use is not
+	// in this list (one read before it changed): the dropdown shows the in-use name and nothing is picked - never another
+	// preset's row in its place.
+	inline int DropdownRow(const std::vector<Listed>& a_list, DropdownPick& a_pick, const std::string& a_inUse)
+	{
+		int row = a_pick.name.empty() ? -1 : IndexOf(a_list, a_pick.name, a_pick.shipped);
+		if (row < 0)
+		{
+			a_pick.name.clear();
+			a_pick.shipped = false;
+			row = IndexOf(a_list, a_inUse, false);
+		}
+		return row;
+	}
 }

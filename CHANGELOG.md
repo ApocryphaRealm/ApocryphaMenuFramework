@@ -234,6 +234,13 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
   nothing showed a dropdown had been open. Whether a dropdown or context menu is open is now read just before, and that
   Escape only closes it. With nothing open, Escape closes the menu as before. NavSide.h (EscapeClosesAPopup), checked by
   nav_left_check (the cause and the fix on live frames).
+- **The Preset dropdown follows the preset in use, whoever changed it** (c0a3 "Other": after the preset in use was
+  deleted through DevBench, the dropdown kept showing "AMF Test Shipped" while Default was in use). The pick was dropped
+  only after the page's own Save, Load and Delete buttons, so a pick made earlier (the shipped preset, in P10) outlived a
+  change made through DevBench; and a preset in use missing from a list read before the change showed the first row - a
+  shipped preset - in its place. Now any change of the preset in use drops the pick and reads the list again, and a
+  preset in use that is not listed yet shows its own name with nothing picked. PresetsCore.h (DropdownPick,
+  DropdownRow), checked by tools\presets_check.bat (47 checks, 6 new for this).
 
 ## 2.2.3 - 2026-10-21 - untested - dropdowns on SkyUI MCM pages fill when AMF is opened from the Journal's System menu
 

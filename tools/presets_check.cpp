@@ -214,6 +214,32 @@ int main(int argc, char** argv)
 			"shipped presets first (read only), then the player's; a name in both is listed twice, a duplicate once");
 	}
 
+	// ---- the dropdown's pick (retest batch B-20261025-053652-453d, c0a3: after the preset in use was deleted through
+	// DevBench, the dropdown kept showing "AMF Test Shipped" while Default was in use)
+	{
+		auto before = MergeLists({ "PT A", "Default" }, { "AMF Test Shipped" });   // [0] the shipped one, [1] Default, [2] PT A
+		DropdownPick pick;
+		DropdownInUseChanged(pick, "PT A");
+		Check(DropdownRow(before, pick, "PT A") == IndexOf(before, "PT A", false), "with nothing picked the dropdown shows the preset in use");
+		pick.name = "AMF Test Shipped"; pick.shipped = true;   // the player picks the shipped preset (P10), and does not load it
+		Check(!DropdownInUseChanged(pick, "PT A") && DropdownRow(before, pick, "PT A") == 0, "a pick is held while the preset in use stays the same");
+		// DevBench deletes "PT A" (the preset in use): the preset in use becomes Default; the list read before still has PT A
+		const bool changed = DropdownInUseChanged(pick, "Default");
+		Check(changed && pick.name.empty(), "FIX: the preset in use changing (here a DevBench delete) drops the pick - the page reads the list again");
+		const auto after = MergeLists({ "Default" }, { "AMF Test Shipped" });
+		const int row = DropdownRow(after, pick, "Default");
+		Check(row >= 0 && after[static_cast<std::size_t>(row)].name == "Default" && !after[static_cast<std::size_t>(row)].shipped,
+			"FIX: the dropdown then shows Default (in use), not AMF Test Shipped");
+		DropdownPick stale;
+		DropdownInUseChanged(stale, "Default");
+		const auto old = MergeLists({ "PT A" }, { "AMF Test Shipped" });   // a list read before the change: no Default in it
+		Check(DropdownRow(old, stale, "Default") == -1, "FIX: a preset in use missing from the list shows nothing picked - never the first row (a shipped preset) in its place");
+		DropdownPick gone;
+		DropdownInUseChanged(gone, "Default");
+		gone.name = "PT B";   // picked, then deleted elsewhere while the preset in use stayed the same
+		Check(DropdownRow(after, gone, "Default") == IndexOf(after, "Default", false) && gone.name.empty(), "a picked preset deleted elsewhere falls back to the preset in use");
+	}
+
 	for (int i = 1; i < argc; ++i) { FolderRoundTrips(argv[i]); }
 
 	std::cout << "presets_check: " << g_pass << " of " << (g_pass + g_fail) << " passed\n";

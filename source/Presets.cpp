@@ -710,9 +710,9 @@ namespace presets
 
 		// The pick is held by NAME (2.3.0, the 2026-10-25 run): an index into the list pointed at another preset as soon as a
 		// load's backup or a delete changed the list ("Backup ..." showed where the preset in use had been). Empty = the preset
-		// in use; set to it again after every save, load and delete.
-		std::string g_pickName;
-		bool g_pickShipped = false;
+		// in use; dropped whenever the preset in use changes, whoever changed it (pc::DropdownPick - retest 453d, c0a3: a
+		// DevBench delete of the preset in use left a shipped preset picked).
+		pc::DropdownPick g_pick;
 		char g_newName[64] = {};
 		bool g_confirmDelete = false;
 		std::set<std::string> g_skip;    // groups left out of Save
@@ -752,20 +752,15 @@ namespace presets
 			s_list = List();
 			s_listedAt = ImGui::GetTime();
 		}
-		auto indexOf = [&](const std::string& a_name, bool a_shipped) {
-			for (int i = 0; i < static_cast<int>(s_list.size()); ++i)
-			{
-				if (s_list[static_cast<std::size_t>(i)].shipped == a_shipped && s_list[static_cast<std::size_t>(i)].name == a_name) { return i; }
-			}
-			return -1;
-		};
-		int pick = g_pickName.empty() ? -1 : indexOf(g_pickName, g_pickShipped);
-		if (pick < 0)
+		if (pc::DropdownInUseChanged(g_pick, inUse))
 		{
-			g_pickName.clear();
-			pick = indexOf(inUse, false);
-			if (pick < 0 && !s_list.empty()) { pick = 0; }
+			// the preset in use changed - a save, a load, a delete, here or through DevBench: read the list again now
+			s_list = List();
+			s_listedAt = ImGui::GetTime();
+			g_confirmDelete = false;
+			logger::debug("presets: the preset in use is \"{}\" - the dropdown follows it", inUse);
 		}
+		int pick = pc::DropdownRow(s_list, g_pick, inUse);
 		auto shownName = [&](const pc::Listed& a_l) {
 			std::string s = a_l.name;
 			if (a_l.shipped) { s += std::string(" ") + TR("AMF_SetPresetShipped", "(shipped)"); }
@@ -786,7 +781,8 @@ namespace presets
 			const float wantH = rows * itemH + ImGui::GetStyle().WindowPadding.y * 2.0f + 2.0f;
 			ImGui::SetNextWindowSizeConstraints(ImVec2(0.0f, 0.0f), ImVec2(FLT_MAX, wantH < maxH ? wantH : maxH));
 		}
-		if (theme::BeginComboTight(TR("AMF_SetPresetPick", "Preset"), picked ? shownName(*picked).c_str() : "", ImGuiComboFlags_HeightLargest))
+		const std::string preview = picked ? shownName(*picked) : inUse + " " + TR("AMF_SetPresetInUseMark", "(in use)");
+		if (theme::BeginComboTight(TR("AMF_SetPresetPick", "Preset"), preview.c_str(), ImGuiComboFlags_HeightLargest))
 		{
 			for (int i = 0; i < static_cast<int>(s_list.size()); ++i)
 			{
@@ -794,8 +790,8 @@ namespace presets
 				if (ImGui::Selectable(shownName(item).c_str(), i == pick))
 				{
 					pick = i;
-					g_pickName = item.name;
-					g_pickShipped = item.shipped;
+					g_pick.name = item.name;
+					g_pick.shipped = item.shipped;
 					g_confirmDelete = false;
 				}
 				if (i == pick && ImGui::IsWindowAppearing()) { ImGui::SetItemDefaultFocus(); }
@@ -833,7 +829,7 @@ namespace presets
 				}
 				g_confirmDelete = false;
 				s_listedAt = -10.0;
-				g_pickName.clear();   // back to the preset in use
+				g_pick.name.clear();   // back to the preset in use
 			}
 			ImGui::SameLine();
 			if (ImGui::Button((icons::Label(icons::kClear, TR("AMF_SetPresetDeleteNo", "Keep it")) + "###presetkeep").c_str())) { g_confirmDelete = false; }
@@ -851,7 +847,7 @@ namespace presets
 		{
 			if (StartSave(g_newName, g_skip)) { g_newName[0] = '\0'; }
 			s_listedAt = -10.0;
-			g_pickName.clear();   // the saved preset is the one in use
+			g_pick.name.clear();   // the saved preset is the one in use
 		}
 		if (!named) { ImGui::EndDisabled(); }
 
