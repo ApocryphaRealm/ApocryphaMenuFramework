@@ -30,20 +30,42 @@ WHAT IS GUARDED, AND WHAT DELIBERATELY IS NOT
        these are the values a widget writes through, and ImGui dereferences them unconditionally.
        Guarded: return a default.
 
-       EXCEPT any whose name begins with `p_`. That is ImGui's own convention for an OPTIONAL
-       pointer, and getting this wrong would be worse than the crash: igBegin(name, p_open, flags)
-       is called with p_open = NULL by every window that has no close button, and guarding it would
-       silently stop those windows drawing. Only four such names exist in this cimgui - p_open,
-       p_selected, p_visible, p_dst_size - and all four are left alone.
+       EXCEPT any whose name begins with `p_` - those are decided by shape 5 below, from what ImGui
+       accepts: igBegin(name, p_open, flags) is called with p_open = NULL by every window that has no
+       close button, and guarding it would silently stop those windows drawing, but Selectable's
+       p_selected and SliderScalar's p_data are read unconditionally.
 
     4. A `const char*` FIRST parameter - the label, str_id, fmt or name a widget is keyed on.
        Substituted with "" rather than returning, so the call still happens, which is what the
        hand-written wrappers did.
 
-       Only the first parameter. Later `const char*` parameters are left alone on purpose, because
-       for several of them NULL is meaningful rather than a mistake - igTextUnformatted's text_end,
-       igLogToFile's filename - and substituting "" would change behaviour instead of preventing a
-       crash.
+    5. (2.3.0) EVERY OTHER POINTER PARAMETER that Dear ImGui reads - so that "every pointer AMF reads is
+       null-checked" is true of the consumer surface, as tools/null_check_audit.py measures it. Until 2.3.0 the
+       four shapes above were all, and 564 exported pointer parameters went unguarded (12 of them p_data, which
+       DragScalar / SliderScalar / InputScalar dereference). A parameter is guarded when the wrapper reads
+       through it or hands it to a Dear ImGui slot that does not take NULL. A slot takes NULL when
+         - its declaration in imgui.h / imgui_internal.h gives it a NULL default (read from vcpkg's headers in a
+           configured build tree, exactly as the audit reads them through libclang), or
+         - tools/imgui-null-ok.json lists it, with the line in imgui.cpp that handles the NULL (p_open,
+           FocusWindow's window, PushFont's font, MenuItem's p_selected, ...). The audit reads the same file,
+           so the two cannot disagree.
+       What the guard does:
+         - `self` anywhere (also after a pOut), any other object pointer, a function pointer, a writable
+           buffer: return the function's default value;
+         - a `const char*` with a string default in imgui.h ("%.3f", "%d", "%.0f deg"): substitute it;
+         - the end of a [begin, end) range whose begin is already proven: end = begin + strlen(begin), which is
+           what ImGui does itself wherever it accepts a NULL end;
+         - a range's begin, a mode / file name / font data, a text ImGui reads at given offsets: return;
+         - any other `const char*` (a format, a label, a hint): substitute "", so the call still happens.
+       Later `const char*` parameters where NULL is meaningful - igTextUnformatted's text_end,
+       igLogToFile's filename - have a NULL default or a list entry, so they stay unguarded.
+
+THE PROOF THAT THE GUARDS CHANGE NOTHING ELSE
+    Every guard line ends in "// AMF null guard". Generate a copy without them and compare:
+        python tools/harden-cimgui.py --no-guards --out <scratch>\\cimgui-unguarded.cpp
+    source/cimgui/cimgui.cpp with its marked lines removed must equal that copy line for line, and the copy
+    differs from upstream only in the rewritten bodies described below (text fields, headers, SameLine,
+    Checkbox, sliders, drags, tooltips, text). `--out <path>` writes anywhere without touching the compiled copy.
 
 RE-VENDORING A NEWER CIMGUI
     Drop the new cimgui.cpp/cimgui.h into extern/<tag>/, point SOURCE below at it, and run this
@@ -99,11 +121,240 @@ def split_args(args: str):
     return out
 
 
+# ------------------------------------------------------------------ Dear ImGui's own declarations (2.3.0)
+# The guards below the first four shapes are decided from what Dear ImGui itself accepts, read from the imgui.h and
+# imgui_internal.h the build compiles against (vcpkg's, under build\<preset>\vcpkg_installed\<triplet>\include) - the
+# same declarations tools/null_check_audit.py reads through libclang - plus tools/imgui-null-ok.json, the one list both
+# tools read of parameters ImGui takes as NULL without saying so in a default.
+NULL_DEFAULT = re.compile(r"=\s*(NULL|nullptr|0|0u|\(\w+\)0)\s*$")      # the audit's param_default_is_null, verbatim
+
+
+def _strip_comments(text: str) -> str:
+    text = re.sub(r"/\*.*?\*/", lambda m: re.sub(r"[^\n]", " ", m.group(0)), text, flags=re.S)
+    return re.sub(r'//[^\n"]*$', "", text, flags=re.M)
+
+
+def _block_end(text: str, i: int) -> int:
+    """text[i] == '{'; the index just past its matching '}'."""
+    d = 0
+    for j in range(i, len(text)):
+        if text[j] == "{":
+            d += 1
+        elif text[j] == "}":
+            d -= 1
+            if d == 0:
+                return j + 1
+    return len(text)
+
+
+def param_name(a: str) -> str:
+    a = re.sub(r"\s*=.*$", "", a).strip()
+    m = re.search(r"\(\s*[A-Z_]*\s*\*\s*(\w+)\s*\)", a)        # int (IMGUI_CDECL *compare_func)(...)
+    if m:
+        return m.group(1)
+    m = re.search(r"(\w+)\s*(\[[^\]]*\])?$", a)
+    return m.group(1) if m else a
+
+
+class ImGuiHeaders:
+    """Every function declaration in imgui.h + imgui_internal.h, by (scope, name): scope is a struct name, "ImGui", or
+    "" for a free function. A declaration's parameters keep their default text."""
+
+    DECL = re.compile(r"\b(\w+)\s*\(([^;{}()]*(?:\([^()]*\)[^;{}()]*)*)\)\s*(?:const)?\s*"
+                      r"(?:IM_FMTARGS\(\d\)|IM_FMTLIST\(\d\))?\s*[;{]")
+
+    def __init__(self, include_dir: str):
+        self.decls = {}
+        self.pointer_typedefs, self.fnptr_typedefs = set(), set()
+        for fn in ("imgui.h", "imgui_internal.h"):
+            text = _strip_comments(io.open(os.path.join(include_dir, fn), encoding="utf-8").read())
+            spans = []
+            for m in re.finditer(r"\bnamespace\s+ImGui\s*\{", text):
+                spans.append((m.end() - 1, _block_end(text, m.end() - 1), "ImGui"))
+            for m in re.finditer(r"^\s*struct\s+(?:IMGUI_API\s+)?(\w+)\b[^;{()]*\{", text, re.M):
+                spans.append((m.end() - 1, _block_end(text, m.end() - 1), m.group(1)))
+            for m in re.finditer(r"typedef\s+[^;]*?\(\s*[A-Z_]*\s*\*\s*(\w+)\s*\)\s*\([^;]*\);", text):
+                self.fnptr_typedefs.add(m.group(1))
+            for m in re.finditer(r"typedef\s+[\w\s]+\*\s*(\w+)\s*;", text):
+                self.pointer_typedefs.add(m.group(1))
+            for m in self.DECL.finditer(text):
+                name = m.group(1)
+                if name in ("if", "for", "while", "switch", "return", "sizeof", "IM_ASSERT", "IM_MSVC_RUNTIME_CHECKS_OFF"):
+                    continue
+                inner = [s for s in spans if s[0] < m.start() < s[1]]
+                scope = min(inner, key=lambda s: s[1] - s[0])[2] if inner else ""
+                self.decls.setdefault((scope, name), []).append(split_args(m.group(2)))
+
+    def lookup(self, scope: str, name: str, arg_names):
+        """The declaration a call with these arguments reaches: same arity, then the most parameter names in common."""
+        cands = self.decls.get((scope, name)) or ([] if scope else self.decls.get(("ImGui", name), []))
+        best, best_score = None, -1
+        for params in cands:
+            if params == ["void"]:
+                params = []
+            required = sum(1 for p in params if "=" not in p)
+            if not (required <= len(arg_names) <= len(params)):
+                continue
+            score = sum(1 for i, a in enumerate(arg_names) if a and param_name(params[i]) == a)
+            if score > best_score:
+                best, best_score = params, score
+        return best
+
+
+def find_imgui_include() -> str:
+    """vcpkg's ImGui headers in a configured build tree; every copy found must be the same file."""
+    found = []
+    bdir = os.path.join(HERE, "build")
+    for preset in sorted(os.listdir(bdir)) if os.path.isdir(bdir) else []:
+        inst = os.path.join(bdir, preset, "vcpkg_installed")
+        for trip in sorted(os.listdir(inst)) if os.path.isdir(inst) else []:
+            inc = os.path.join(inst, trip, "include")
+            if os.path.isfile(os.path.join(inc, "imgui.h")) and os.path.isfile(os.path.join(inc, "imgui_internal.h")):
+                found.append(inc)
+    if not found:
+        raise SystemExit("no imgui.h under build\\<preset>\\vcpkg_installed\\<triplet>\\include - run configure.bat or "
+                         "configure17.bat first (the guards are decided from Dear ImGui's own declarations)")
+    first = [io.open(os.path.join(found[0], f), "rb").read() for f in ("imgui.h", "imgui_internal.h")]
+    for inc in found[1:]:
+        if [io.open(os.path.join(inc, f), "rb").read() for f in ("imgui.h", "imgui_internal.h")] != first:
+            raise SystemExit("the build trees hold different imgui.h / imgui_internal.h (%s vs %s)" % (found[0], inc))
+    ver = re.search(rb'#define\s+IMGUI_VERSION\s+"([^"]+)"', first[0])
+    if not ver or ver.group(1) != b"1.90.8":
+        raise SystemExit("vcpkg's imgui.h is %s, this cimgui is generated for 1.90.8" % (ver.group(1) if ver else "unversioned"))
+    return found[0]
+
+
+def load_null_ok():
+    with io.open(os.path.join(HERE, "tools", "imgui-null-ok.json"), encoding="utf-8") as f:
+        d = __import__("json").load(f)
+    return {e["param"] for e in d["names"]}, {(e["callee"], e["param"]) for e in d["params"]}
+
+
+CALL = re.compile(r"(ImGui::|self->|\b)([A-Za-z_]\w*)\s*\(")
+CAST = re.compile(r"^\(\s*(?:const\s+)?[\w:]+(?:\s*\*)*\s*\)\s*")
+NOT_CALLS = {"if", "return", "sizeof", "IM_PLACEMENT_NEW", "IM_NEW", "IM_DELETE", "IM_ALLOC", "IM_FREE"}
+
+
+def calls_in(body: str):
+    """Every call in a wrapper body: (scope, name, [argument texts])."""
+    out = []
+    for m in CALL.finditer(body):
+        if m.group(2) in NOT_CALLS:
+            continue
+        j = k = m.end()
+        d = 1
+        while k < len(body) and d:
+            if body[k] == "(":
+                d += 1
+            elif body[k] == ")":
+                d -= 1
+            k += 1
+        out.append((m.group(1), m.group(2), split_args(body[j:k - 1])))
+    return out
+
+
+def bare_arg(a: str) -> str:
+    """An argument's parameter name once casts and parentheses are taken off ("" when it is an expression)."""
+    a = a.strip()
+    while True:
+        b = CAST.sub("", a)
+        if b.startswith("(") and b.endswith(")"):
+            b = b[1:-1].strip()
+        if b == a:
+            break
+        a = b
+    return a if re.fullmatch(r"[A-Za-z_]\w*", a) else ""
+
+
+def param_type(a: str) -> str:
+    a = re.sub(r"\s*=.*$", "", a).strip()
+    m = re.search(r"\(\s*\*\s*\w+\s*\)", a)
+    if m:
+        return a[:m.start()].strip() + "(*)" + a[m.end():]
+    m = re.match(r"^(.*?)(\w+)\s*(\[[^\]]*\])?$", a)
+    return (m.group(1).strip() + ("*" if m.group(3) else "")) if m else a
+
+
+# Non-first strings that must never become "": a mode for fopen (the CRT's invalid-parameter handler ends the process on
+# an empty mode), a file or font to load, and texts ImGui reads at offsets it was given (a base the line index points
+# into, the atlas's rectangle drawn from a string, a position inside a caller's text that ImGui walks back from).
+RETURN_ON_NULL_STRINGS = {"mode", "filename", "compressed_font_data_base85", "dst_name", "in_str", "base", "in_text_curr"}
+# Functions whose "nothing found" is -1, not 0.
+RETURN_OVERRIDE = {"igTypingSelectFindMatch": "return -1;", "igTypingSelectFindBestLeadingMatch": "return -1;",
+                   "igTypingSelectFindNextSingleCharMatch": "return -1;"}
+
+
+def new_guards(name, ret, params, body, hdr, null_ok_names, null_ok_at, already):
+    """The 2.3.0 guards: every pointer parameter Dear ImGui reads, not only the four first-parameter shapes."""
+    ret_default = RETURN_OVERRIDE.get(name, default_return(ret))
+    names = [param_name(p) for p in params]
+    types = {param_name(p): param_type(p) for p in params}
+    self_type = re.sub(r"\b(const|struct)\b|\*", "", types.get("self", "")).strip()
+    calls = calls_in(body)
+    out = []
+    for i, p in enumerate(params):
+        n, t = names[i], types[names[i]]
+        if n in already or "va_list" in t:
+            continue
+        is_fnptr = "(*)" in t or t in hdr.fnptr_typedefs
+        is_ptr = is_fnptr or "*" in t or t in hdr.pointer_typedefs or re.sub(r"^const\s+", "", t) in hdr.pointer_typedefs
+        if not is_ptr:
+            continue
+        P = re.escape(n)
+        derefs = bool(re.search(r"\b" + P + r"\s*->|(^|[=(,;{\s])\*\s*" + P + r"\b|\b" + P + r"\s*\[|\b" + P + r"\s*\(", body))
+        needs, dflt = derefs, None
+        for scope, cname, args in calls:
+            arg_names = [bare_arg(a) for a in args]
+            if n not in arg_names:
+                continue
+            idx = arg_names.index(n)
+            qscope = "ImGui" if scope == "ImGui::" else (self_type if scope == "self->" else "")
+            decl = hdr.lookup(qscope, cname, arg_names)
+            if decl is None:
+                if not qscope and (cname, cname) in hdr.decls:
+                    continue            # a constructor stores what it is given (the audit counts no read either)
+                needs = True            # va_start, a macro, a function ImGui does not declare: not proven
+                continue
+            cp = decl[idx]
+            cpn = param_name(cp)
+            if qscope:
+                qual = qscope + "::" + cname
+            else:
+                qual = cname if ("", cname) in hdr.decls else "ImGui::" + cname
+            if NULL_DEFAULT.search(cp) or cpn in null_ok_names or (qual, cpn) in null_ok_at:
+                continue                # Dear ImGui takes NULL here - a guard would change what the call does
+            needs = True
+            m = re.search(r'=\s*("(?:[^"\\]|\\.)*")\s*$', cp)
+            if m and dflt is None:
+                dflt = m.group(1)
+        if not needs:
+            continue
+        flat = re.sub(r"\s+", " ", t)
+        if n == "self":
+            out.append((f"if (!self) {{ {ret_default} }}", "self"))
+        elif flat in ("const char*", "const char *"):
+            begin = next((b for b in (n[:-4], n[:-4] + "_begin") if n.endswith("_end") and b in names[:i]), None)
+            if dflt is not None:
+                out.append((f"if (!{n}) {{ {n} = {dflt}; }}", "string-default"))
+            elif (n.endswith("_end") and begin and re.sub(r"\s+", "", types[begin]) == "constchar*"
+                  and (begin in already or any(L.startswith(f"if (!{begin})") for L, _ in out))):
+                # the begin is already proven non-null above, so strlen(begin) reads a real string
+                out.append((f"if (!{n}) {{ {n} = {begin} + strlen({begin}); }}", "string-end"))
+            elif (n.endswith("_end") or n in RETURN_ON_NULL_STRINGS or (n + "_end") in names
+                  or (n.endswith("_begin") and (n[:-6] + "_end") in names)):
+                out.append((f"if (!{n}) {{ {ret_default} }}", "pointer"))
+            else:
+                out.append((f'if (!{n}) {{ {n} = ""; }}', "string-empty"))
+        else:
+            out.append((f"if (!{n}) {{ {ret_default} }}", "fnptr" if is_fnptr else "pointer"))
+    return out
+
+
 def guards_for(ret: str, args_text: str):
     """The guard lines for one function, in the order they should appear."""
     args = split_args(args_text)
     if not args or args == ["void"]:
-        return []
+        return [], set()
     lines, seen = [], set()
     ret_default = default_return(ret)
 
@@ -131,7 +382,7 @@ def guards_for(ret: str, args_text: str):
             continue
         seen.add(name)
         lines.append(f"if (!{name}) {{ {ret_default} }}")
-    return lines
+    return lines, seen
 
 
 def main() -> int:
@@ -206,20 +457,32 @@ def main() -> int:
     # sideways. Text that fits draws exactly as before.
     TEXTS = {"igTextUnformatted", "igText", "igTextV", "igTextColored", "igTextColoredV", "igTextDisabled", "igTextDisabledV"}
     texts = 0
+    hdr = ImGuiHeaders(find_imgui_include())
+    null_ok_names, null_ok_at = load_null_ok()
     for m in fn.finditer(src):
         ret, name, args = m.group(2).strip(), m.group(3), m.group(4).strip()
-        lines = guards_for(ret, args)
+        lines, seen = guards_for(ret, args)
+        kinds = []
+        for L in lines:
+            if L.startswith("if (!self)"): kinds.append("self")
+            elif L.startswith("if (!pOut)"): kinds.append("pOut")
+            elif '= ""' in L: kinds.append("string")
+            else: kinds.append("outparam")
+        # 2.3.0: every other pointer parameter Dear ImGui reads, decided from the upstream body's own calls
+        upstream_body = src[m.end():src.index("\n}", m.end())]
+        for L, kind in new_guards(name, ret, split_args(args), upstream_body, hdr, null_ok_names, null_ok_at, seen):
+            lines.append(L)
+            kinds.append(kind)
         out.append(src[pos:m.end()])
         pos = m.end()
         # The guards come FIRST. Until 2.0.6 they were appended after a rewritten body below, which put
         # the text fields' label guard after their `return` - unreachable, so a null label still crashed.
+        if "--no-guards" in sys.argv:   # the identity proof's other half (docstring, THE PROOF)
+            lines = []
         if lines:
             touched += 1
-            for L in lines:
-                if L.startswith("if (!self)"): counted["self"] += 1
-                elif L.startswith("if (!pOut)"): counted["pOut"] += 1
-                elif '= ""' in L: counted["string"] += 1
-                else: counted["outparam"] += 1
+            for k in kinds:
+                counted[k] = counted.get(k, 0) + 1
             # the marker goes on EVERY guard line, so grepping for it is an exact audit of what
             # this script changed - nothing has to be inferred from a line's position
             marker = "   // AMF null guard"
@@ -341,9 +604,10 @@ def main() -> int:
         "// exports wrap a mod's tooltip to the window it draws in (ConsumerTooltip.h, 2.2.2); the plain text exports wrap\n"
         "// a mod's text inside its AMF page (2.2.4); the drag and multi-value slider exports note the highlight so Left\n"
         "// adjusts them instead of leaving the page (2.3.0).\n"
-        "// The generator's docstring explains exactly what is guarded and what is deliberately not -\n"
-        "// in particular that ImGui's optional p_* pointers are left alone, because guarding p_open\n"
-        "// would stop every window without a close button from drawing.\n"
+        "// The generator's docstring explains exactly what is guarded and what is deliberately not. Since 2.3.0 every\n"
+        "// pointer parameter Dear ImGui reads is guarded; one that ImGui takes as NULL (a NULL default in imgui.h, or\n"
+        "// tools/imgui-null-ok.json - p_open, FocusWindow's window, PushFont's font) is left alone, because guarding\n"
+        "// p_open would stop every window without a close button from drawing.\n"
         "// ============================================================================================\n"
     )
     # 1.8.9: the text-field hook the four rewritten exports call (defined in Keyboard.cpp).
@@ -373,16 +637,23 @@ def main() -> int:
             + "".join(out))
     assert text.count('#include "cimgui.h"\n') == 1
     text = text.replace('#include "cimgui.h"\n', '#include "cimgui.h"\n#include "ConsumerTooltip.h"   // AMF: wrapped tooltips (2.2.2)\n', 1)
-    os.makedirs(os.path.dirname(TARGET), exist_ok=True)
-    io.open(TARGET, "w", encoding="utf-8", newline="\n").write(text)
+    target = TARGET
+    if "--out" in sys.argv:             # a dry run somewhere else (the compiled copy is left alone)
+        target = os.path.abspath(sys.argv[sys.argv.index("--out") + 1])
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    io.open(target, "w", encoding="utf-8", newline="\n").write(text)
 
     total = sum(counted.values())
-    print(f"generated {os.path.relpath(TARGET, HERE)}")
+    print(f"generated {target}")
     print(f"  {touched} of the functions gained a guard, {total} guards in total:")
     print(f"     self pointer      {counted['self']}")
     print(f"     pOut out-struct   {counted['pOut']}")
     print(f"     label/str_id/fmt  {counted['string']}  (substituted with \"\", not returned)")
-    print(f"     value out-params  {counted['outparam']}  (p_* optional pointers excluded)")
+    print(f"     value out-params  {counted['outparam']}  (p_* names excluded from this shape)")
+    print(f"   2.3.0 - every other pointer Dear ImGui reads (imgui.h defaults + tools/imgui-null-ok.json decide):")
+    for k, label in (("pointer", "pointer -> return"), ("fnptr", "function pointer"), ("string-default", "string -> imgui.h default"),
+                     ("string-empty", 'string -> ""'), ("string-end", "range end -> begin + strlen")):
+        print(f"     {label:<30}{counted.get(k, 0)}")
     print(f"  {noted} text-field exports note their item; {len(wrapped)} header exports get the stock widening:")
     print("     " + ", ".join(wrapped))
     return 0

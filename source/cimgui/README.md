@@ -11,8 +11,10 @@ globs `source/*.cpp`, so keeping it there would compile both and collide on ever
 **Why the guards.** A consumer reaches these functions through raw pointers it resolved by name, so
 nothing validates what it passes; the wrappers this framework used to hand-write checked every
 pointer and string, and cimgui's do not. The generator's docstring says exactly what is guarded and
-what is deliberately left alone - notably ImGui's optional `p_*` pointers, because guarding
-`igBegin`'s `p_open` would stop every window without a close button from drawing.
+what is deliberately left alone. Since 2.3.0 every pointer parameter Dear ImGui reads is guarded; a
+parameter ImGui takes as NULL is left alone - a `= NULL` default in vcpkg's `imgui.h`, or an entry in
+`tools/imgui-null-ok.json` (which `tools/null_check_audit.py` reads too) - because guarding `igBegin`'s
+`p_open` would stop every window without a close button from drawing.
 
 ## Why they are in this repository
 

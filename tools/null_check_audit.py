@@ -1191,7 +1191,15 @@ def is_test_position(n, par):
     return False
 
 
-IMGUI_NULL_OK = {"p_open", "p_visible", "p_dst_size", "ptr_id", "user_data"}
+# Dear ImGui parameters that take NULL although imgui.h gives them no default: one list, tools/imgui-null-ok.json, read
+# here and by tools/harden-cimgui.py (which leaves exactly these unguarded), so the audit and the generator cannot disagree.
+def _load_null_ok():
+    with open(os.path.join(HERE, "imgui-null-ok.json"), encoding="utf-8") as f:
+        d = json.load(f)
+    return {e["param"] for e in d["names"]}, {(e["callee"], e["param"]) for e in d["params"]}
+
+
+IMGUI_NULL_OK, IMGUI_NULL_OK_AT = _load_null_ok()
 
 
 def passed_to_null_default(n, par):
@@ -1222,10 +1230,12 @@ def passed_to_null_default(n, par):
             if idx < len(cparams) and param_default_is_null(cparams[idx]):
                 return True
             # Dear ImGui parameters that take NULL although they have no default (read in imgui.cpp / imgui_widgets.cpp
-            # 1.90.8): the optional window flags pointers, and pointers ImGui only hashes as an ID or hands back to the
-            # caller's own callback. NOT every p_*: p_data is dereferenced by DragScalar / SliderScalar / InputScalar.
-            if idx < len(cparams) and (cparams[idx].spelling or "") in IMGUI_NULL_OK:
-                return True
+            # 1.90.8; tools/imgui-null-ok.json gives the line for each). NOT every p_*: p_data is dereferenced by
+            # DragScalar / SliderScalar / InputScalar, and Selectable(label, bool* p_selected) reads *p_selected.
+            if idx < len(cparams):
+                pn = cparams[idx].spelling or ""
+                if pn in IMGUI_NULL_OK or (qualified(callee), pn) in IMGUI_NULL_OK_AT:
+                    return True
             return False
         return False
     return False

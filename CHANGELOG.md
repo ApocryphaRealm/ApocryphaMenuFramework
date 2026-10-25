@@ -38,6 +38,25 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
   camera, the opening and page syncs, the MCM layout learning, the queued input, the art reload and render jobs, and the
   nav flags, text input and text-field watch. No behaviour changes.
 
+### Fixed (null checks on every cimgui export)
+- **A null passed to one of the 1,397 cimgui exports could still crash the game in 424 of them** (the Nexus page claims
+  audit of 2026-10-25: the page said every entry point was null-checked; the generator guarded only a null `self`, a null
+  `pOut`, a null first `const char*` and a non-`p_` value out-pointer, so 564 pointer parameters were read unchecked -
+  among them `p_data` of DragScalar / SliderScalar / InputScalar and their N / V forms, which ImGui dereferences).
+  `tools/harden-cimgui.py` now guards every pointer parameter Dear ImGui reads: `self` on every method wrapper (also
+  after a `pOut`), every other object pointer, function pointer and writable buffer (return the function's default),
+  a format with a default in `imgui.h` (`"%.3f"`, `"%d"`, `"%.0f deg"` substituted), a range end (`end = begin +
+  strlen(begin)` once the begin is proven), and any other text (`""`). 498 new guards; 1,154 in 850 functions in all.
+  Fixed-size array parameters (`float v[2]` of DragFloat2 and the like, 29) are guarded too.
+- **What ImGui takes as NULL stays unguarded**, so no valid call changes: a `= NULL` default in vcpkg's `imgui.h` /
+  `imgui_internal.h` (read by the generator from the configured build tree), or an entry in the new
+  `tools/imgui-null-ok.json` (95 slots, each with the line in ImGui 1.90.8 that handles the NULL - FocusWindow(NULL)
+  clears the focus, PushFont(NULL) pushes the default font, MenuItem's `p_selected`, texture ids). The audit reads the
+  same file, so the generator and `tools/null_check_audit.py` cannot disagree. `cimgui.cpp` is regenerated, never
+  edited: with its `// AMF null guard` lines removed it equals `harden-cimgui.py --no-guards` line for line.
+- The null-check gate's count (`tools/null_check_gate.py`) falls from 1,289 to 725: cimgui 564 -> 0; AMF's own two
+  exports and 723 reads inside AMF's own code are next. Export parity unchanged on both lines.
+
 ### Fixed
 - **The session's first open spent 30 ms of one frame in AMF before the menu drew** (frame profile, combined run
   2026-10-24: opening 1 frame 1 AMF 35.7 ms, 30.2 of it in the part the profile calls "backend"; a later opening's

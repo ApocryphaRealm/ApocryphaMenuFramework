@@ -13,9 +13,10 @@
 // exports wrap a mod's tooltip to the window it draws in (ConsumerTooltip.h, 2.2.2); the plain text exports wrap
 // a mod's text inside its AMF page (2.2.4); the drag and multi-value slider exports note the highlight so Left
 // adjusts them instead of leaving the page (2.3.0).
-// The generator's docstring explains exactly what is guarded and what is deliberately not -
-// in particular that ImGui's optional p_* pointers are left alone, because guarding p_open
-// would stop every window without a close button from drawing.
+// The generator's docstring explains exactly what is guarded and what is deliberately not. Since 2.3.0 every
+// pointer parameter Dear ImGui reads is guarded; one that ImGui takes as NULL (a NULL default in imgui.h, or
+// tools/imgui-null-ok.json - p_open, FocusWindow's window, PushFont's font) is left alone, because guarding
+// p_open would stop every window without a close button from drawing.
 // ============================================================================================
 void amf_NoteTextField(unsigned int a_itemId);
 void amf_BeginConsumerHeader();
@@ -632,6 +633,7 @@ CIMGUI_API void igTextV(const char* fmt,va_list args)
 }
 CIMGUI_API void igTextColored(const ImVec4 col,const char* fmt,...)
 {
+    if (!fmt) { fmt = ""; }   // AMF null guard
     va_list args;
     va_start(args, fmt);
     const bool amf_t = amf_BeginConsumerText();   // AMF: wraps inside the page (2.2.4)
@@ -641,6 +643,7 @@ CIMGUI_API void igTextColored(const ImVec4 col,const char* fmt,...)
 }
 CIMGUI_API void igTextColoredV(const ImVec4 col,const char* fmt,va_list args)
 {
+    if (!fmt) { fmt = ""; }   // AMF null guard
     const bool amf_t = amf_BeginConsumerText();   // AMF: wraps inside the page (2.2.4)
     ImGui::TextColoredV(col,fmt,args);
     amf_EndConsumerText(amf_t);
@@ -678,6 +681,7 @@ CIMGUI_API void igTextWrappedV(const char* fmt,va_list args)
 CIMGUI_API void igLabelText(const char* label,const char* fmt,...)
 {
     if (!label) { label = ""; }   // AMF null guard
+    if (!fmt) { fmt = ""; }   // AMF null guard
     va_list args;
     va_start(args, fmt);
     ImGui::LabelTextV(label,fmt,args);
@@ -686,6 +690,7 @@ CIMGUI_API void igLabelText(const char* label,const char* fmt,...)
 CIMGUI_API void igLabelTextV(const char* label,const char* fmt,va_list args)
 {
     if (!label) { label = ""; }   // AMF null guard
+    if (!fmt) { fmt = ""; }   // AMF null guard
     return ImGui::LabelTextV(label,fmt,args);
 }
 CIMGUI_API void igBulletText(const char* fmt,...)
@@ -785,24 +790,28 @@ CIMGUI_API bool igCombo_Str_arr(const char* label,int* current_item,const char* 
 {
     if (!label) { label = ""; }   // AMF null guard
     if (!current_item) { return false; }   // AMF null guard
+    if (!items) { return false; }   // AMF null guard
     return ImGui::Combo(label,current_item,items,items_count,popup_max_height_in_items);
 }
 CIMGUI_API bool igCombo_Str(const char* label,int* current_item,const char* items_separated_by_zeros,int popup_max_height_in_items)
 {
     if (!label) { label = ""; }   // AMF null guard
     if (!current_item) { return false; }   // AMF null guard
+    if (!items_separated_by_zeros) { items_separated_by_zeros = ""; }   // AMF null guard
     return ImGui::Combo(label,current_item,items_separated_by_zeros,popup_max_height_in_items);
 }
 CIMGUI_API bool igCombo_FnStrPtr(const char* label,int* current_item,const char*(*getter)(void* user_data,int idx),void* user_data,int items_count,int popup_max_height_in_items)
 {
     if (!label) { label = ""; }   // AMF null guard
     if (!current_item) { return false; }   // AMF null guard
+    if (!getter) { return false; }   // AMF null guard
     return ImGui::Combo(label,current_item,getter,user_data,items_count,popup_max_height_in_items);
 }
 CIMGUI_API bool igDragFloat(const char* label,float* v,float v_speed,float v_min,float v_max,const char* format,ImGuiSliderFlags flags)
 {
     if (!label) { label = ""; }   // AMF null guard
     if (!v) { return false; }   // AMF null guard
+    if (!format) { format = "%.3f"; }   // AMF null guard
     const bool amf_r = ImGui::DragFloat(label,v,v_speed,v_min,v_max,format,flags);
     amf_NoteArrowItem();   // AMF: Left/Right adjust it, so Left stays on the page (2.3.0)
     return amf_r;
@@ -810,6 +819,8 @@ CIMGUI_API bool igDragFloat(const char* label,float* v,float v_speed,float v_min
 CIMGUI_API bool igDragFloat2(const char* label,float v[2],float v_speed,float v_min,float v_max,const char* format,ImGuiSliderFlags flags)
 {
     if (!label) { label = ""; }   // AMF null guard
+    if (!v) { return false; }   // AMF null guard
+    if (!format) { format = "%.3f"; }   // AMF null guard
     const bool amf_r = ImGui::DragFloat2(label,v,v_speed,v_min,v_max,format,flags);
     amf_NoteArrowItem();   // AMF: Left/Right adjust it, so Left stays on the page (2.3.0)
     return amf_r;
@@ -817,6 +828,8 @@ CIMGUI_API bool igDragFloat2(const char* label,float v[2],float v_speed,float v_
 CIMGUI_API bool igDragFloat3(const char* label,float v[3],float v_speed,float v_min,float v_max,const char* format,ImGuiSliderFlags flags)
 {
     if (!label) { label = ""; }   // AMF null guard
+    if (!v) { return false; }   // AMF null guard
+    if (!format) { format = "%.3f"; }   // AMF null guard
     const bool amf_r = ImGui::DragFloat3(label,v,v_speed,v_min,v_max,format,flags);
     amf_NoteArrowItem();   // AMF: Left/Right adjust it, so Left stays on the page (2.3.0)
     return amf_r;
@@ -824,6 +837,8 @@ CIMGUI_API bool igDragFloat3(const char* label,float v[3],float v_speed,float v_
 CIMGUI_API bool igDragFloat4(const char* label,float v[4],float v_speed,float v_min,float v_max,const char* format,ImGuiSliderFlags flags)
 {
     if (!label) { label = ""; }   // AMF null guard
+    if (!v) { return false; }   // AMF null guard
+    if (!format) { format = "%.3f"; }   // AMF null guard
     const bool amf_r = ImGui::DragFloat4(label,v,v_speed,v_min,v_max,format,flags);
     amf_NoteArrowItem();   // AMF: Left/Right adjust it, so Left stays on the page (2.3.0)
     return amf_r;
@@ -833,6 +848,7 @@ CIMGUI_API bool igDragFloatRange2(const char* label,float* v_current_min,float* 
     if (!label) { label = ""; }   // AMF null guard
     if (!v_current_min) { return false; }   // AMF null guard
     if (!v_current_max) { return false; }   // AMF null guard
+    if (!format) { format = "%.3f"; }   // AMF null guard
     const bool amf_r = ImGui::DragFloatRange2(label,v_current_min,v_current_max,v_speed,v_min,v_max,format,format_max,flags);
     amf_NoteArrowItem();   // AMF: Left/Right adjust it, so Left stays on the page (2.3.0)
     return amf_r;
@@ -841,6 +857,7 @@ CIMGUI_API bool igDragInt(const char* label,int* v,float v_speed,int v_min,int v
 {
     if (!label) { label = ""; }   // AMF null guard
     if (!v) { return false; }   // AMF null guard
+    if (!format) { format = "%d"; }   // AMF null guard
     const bool amf_r = ImGui::DragInt(label,v,v_speed,v_min,v_max,format,flags);
     amf_NoteArrowItem();   // AMF: Left/Right adjust it, so Left stays on the page (2.3.0)
     return amf_r;
@@ -848,6 +865,8 @@ CIMGUI_API bool igDragInt(const char* label,int* v,float v_speed,int v_min,int v
 CIMGUI_API bool igDragInt2(const char* label,int v[2],float v_speed,int v_min,int v_max,const char* format,ImGuiSliderFlags flags)
 {
     if (!label) { label = ""; }   // AMF null guard
+    if (!v) { return false; }   // AMF null guard
+    if (!format) { format = "%d"; }   // AMF null guard
     const bool amf_r = ImGui::DragInt2(label,v,v_speed,v_min,v_max,format,flags);
     amf_NoteArrowItem();   // AMF: Left/Right adjust it, so Left stays on the page (2.3.0)
     return amf_r;
@@ -855,6 +874,8 @@ CIMGUI_API bool igDragInt2(const char* label,int v[2],float v_speed,int v_min,in
 CIMGUI_API bool igDragInt3(const char* label,int v[3],float v_speed,int v_min,int v_max,const char* format,ImGuiSliderFlags flags)
 {
     if (!label) { label = ""; }   // AMF null guard
+    if (!v) { return false; }   // AMF null guard
+    if (!format) { format = "%d"; }   // AMF null guard
     const bool amf_r = ImGui::DragInt3(label,v,v_speed,v_min,v_max,format,flags);
     amf_NoteArrowItem();   // AMF: Left/Right adjust it, so Left stays on the page (2.3.0)
     return amf_r;
@@ -862,6 +883,8 @@ CIMGUI_API bool igDragInt3(const char* label,int v[3],float v_speed,int v_min,in
 CIMGUI_API bool igDragInt4(const char* label,int v[4],float v_speed,int v_min,int v_max,const char* format,ImGuiSliderFlags flags)
 {
     if (!label) { label = ""; }   // AMF null guard
+    if (!v) { return false; }   // AMF null guard
+    if (!format) { format = "%d"; }   // AMF null guard
     const bool amf_r = ImGui::DragInt4(label,v,v_speed,v_min,v_max,format,flags);
     amf_NoteArrowItem();   // AMF: Left/Right adjust it, so Left stays on the page (2.3.0)
     return amf_r;
@@ -871,6 +894,7 @@ CIMGUI_API bool igDragIntRange2(const char* label,int* v_current_min,int* v_curr
     if (!label) { label = ""; }   // AMF null guard
     if (!v_current_min) { return false; }   // AMF null guard
     if (!v_current_max) { return false; }   // AMF null guard
+    if (!format) { format = "%d"; }   // AMF null guard
     const bool amf_r = ImGui::DragIntRange2(label,v_current_min,v_current_max,v_speed,v_min,v_max,format,format_max,flags);
     amf_NoteArrowItem();   // AMF: Left/Right adjust it, so Left stays on the page (2.3.0)
     return amf_r;
@@ -878,6 +902,7 @@ CIMGUI_API bool igDragIntRange2(const char* label,int* v_current_min,int* v_curr
 CIMGUI_API bool igDragScalar(const char* label,ImGuiDataType data_type,void* p_data,float v_speed,const void* p_min,const void* p_max,const char* format,ImGuiSliderFlags flags)
 {
     if (!label) { label = ""; }   // AMF null guard
+    if (!p_data) { return false; }   // AMF null guard
     const bool amf_r = ImGui::DragScalar(label,data_type,p_data,v_speed,p_min,p_max,format,flags);
     amf_NoteArrowItem();   // AMF: Left/Right adjust it, so Left stays on the page (2.3.0)
     return amf_r;
@@ -885,6 +910,7 @@ CIMGUI_API bool igDragScalar(const char* label,ImGuiDataType data_type,void* p_d
 CIMGUI_API bool igDragScalarN(const char* label,ImGuiDataType data_type,void* p_data,int components,float v_speed,const void* p_min,const void* p_max,const char* format,ImGuiSliderFlags flags)
 {
     if (!label) { label = ""; }   // AMF null guard
+    if (!p_data) { return false; }   // AMF null guard
     const bool amf_r = ImGui::DragScalarN(label,data_type,p_data,components,v_speed,p_min,p_max,format,flags);
     amf_NoteArrowItem();   // AMF: Left/Right adjust it, so Left stays on the page (2.3.0)
     return amf_r;
@@ -893,6 +919,7 @@ CIMGUI_API bool igSliderFloat(const char* label,float* v,float v_min,float v_max
 {
     if (!label) { label = ""; }   // AMF null guard
     if (!v) { return false; }   // AMF null guard
+    if (!format) { format = "%.3f"; }   // AMF null guard
     const bool amf_r = ImGui::SliderFloat(label,v,v_min,v_max,format,flags);
     const bool amf_w = amf_ConsumerSliderWheel(ImGuiDataType_Float, v, &v_min, &v_max, format);   // AMF: the wheel nudges a slider (2.2.0)
     return amf_r || amf_w;
@@ -900,6 +927,8 @@ CIMGUI_API bool igSliderFloat(const char* label,float* v,float v_min,float v_max
 CIMGUI_API bool igSliderFloat2(const char* label,float v[2],float v_min,float v_max,const char* format,ImGuiSliderFlags flags)
 {
     if (!label) { label = ""; }   // AMF null guard
+    if (!v) { return false; }   // AMF null guard
+    if (!format) { format = "%.3f"; }   // AMF null guard
     const bool amf_r = ImGui::SliderFloat2(label,v,v_min,v_max,format,flags);
     amf_NoteArrowItem();   // AMF: Left/Right adjust it, so Left stays on the page (2.3.0)
     return amf_r;
@@ -907,6 +936,8 @@ CIMGUI_API bool igSliderFloat2(const char* label,float v[2],float v_min,float v_
 CIMGUI_API bool igSliderFloat3(const char* label,float v[3],float v_min,float v_max,const char* format,ImGuiSliderFlags flags)
 {
     if (!label) { label = ""; }   // AMF null guard
+    if (!v) { return false; }   // AMF null guard
+    if (!format) { format = "%.3f"; }   // AMF null guard
     const bool amf_r = ImGui::SliderFloat3(label,v,v_min,v_max,format,flags);
     amf_NoteArrowItem();   // AMF: Left/Right adjust it, so Left stays on the page (2.3.0)
     return amf_r;
@@ -914,6 +945,8 @@ CIMGUI_API bool igSliderFloat3(const char* label,float v[3],float v_min,float v_
 CIMGUI_API bool igSliderFloat4(const char* label,float v[4],float v_min,float v_max,const char* format,ImGuiSliderFlags flags)
 {
     if (!label) { label = ""; }   // AMF null guard
+    if (!v) { return false; }   // AMF null guard
+    if (!format) { format = "%.3f"; }   // AMF null guard
     const bool amf_r = ImGui::SliderFloat4(label,v,v_min,v_max,format,flags);
     amf_NoteArrowItem();   // AMF: Left/Right adjust it, so Left stays on the page (2.3.0)
     return amf_r;
@@ -922,6 +955,7 @@ CIMGUI_API bool igSliderAngle(const char* label,float* v_rad,float v_degrees_min
 {
     if (!label) { label = ""; }   // AMF null guard
     if (!v_rad) { return false; }   // AMF null guard
+    if (!format) { format = "%.0f deg"; }   // AMF null guard
     const bool amf_r = ImGui::SliderAngle(label,v_rad,v_degrees_min,v_degrees_max,format,flags);
     const bool amf_w = amf_ConsumerSliderAngleWheel(v_rad, v_degrees_min, v_degrees_max, format);   // AMF: the wheel nudges a slider (2.2.0)
     return amf_r || amf_w;
@@ -930,6 +964,7 @@ CIMGUI_API bool igSliderInt(const char* label,int* v,int v_min,int v_max,const c
 {
     if (!label) { label = ""; }   // AMF null guard
     if (!v) { return false; }   // AMF null guard
+    if (!format) { format = "%d"; }   // AMF null guard
     const bool amf_r = ImGui::SliderInt(label,v,v_min,v_max,format,flags);
     const bool amf_w = amf_ConsumerSliderWheel(ImGuiDataType_S32, v, &v_min, &v_max, format);   // AMF: the wheel nudges a slider (2.2.0)
     return amf_r || amf_w;
@@ -937,6 +972,8 @@ CIMGUI_API bool igSliderInt(const char* label,int* v,int v_min,int v_max,const c
 CIMGUI_API bool igSliderInt2(const char* label,int v[2],int v_min,int v_max,const char* format,ImGuiSliderFlags flags)
 {
     if (!label) { label = ""; }   // AMF null guard
+    if (!v) { return false; }   // AMF null guard
+    if (!format) { format = "%d"; }   // AMF null guard
     const bool amf_r = ImGui::SliderInt2(label,v,v_min,v_max,format,flags);
     amf_NoteArrowItem();   // AMF: Left/Right adjust it, so Left stays on the page (2.3.0)
     return amf_r;
@@ -944,6 +981,8 @@ CIMGUI_API bool igSliderInt2(const char* label,int v[2],int v_min,int v_max,cons
 CIMGUI_API bool igSliderInt3(const char* label,int v[3],int v_min,int v_max,const char* format,ImGuiSliderFlags flags)
 {
     if (!label) { label = ""; }   // AMF null guard
+    if (!v) { return false; }   // AMF null guard
+    if (!format) { format = "%d"; }   // AMF null guard
     const bool amf_r = ImGui::SliderInt3(label,v,v_min,v_max,format,flags);
     amf_NoteArrowItem();   // AMF: Left/Right adjust it, so Left stays on the page (2.3.0)
     return amf_r;
@@ -951,6 +990,8 @@ CIMGUI_API bool igSliderInt3(const char* label,int v[3],int v_min,int v_max,cons
 CIMGUI_API bool igSliderInt4(const char* label,int v[4],int v_min,int v_max,const char* format,ImGuiSliderFlags flags)
 {
     if (!label) { label = ""; }   // AMF null guard
+    if (!v) { return false; }   // AMF null guard
+    if (!format) { format = "%d"; }   // AMF null guard
     const bool amf_r = ImGui::SliderInt4(label,v,v_min,v_max,format,flags);
     amf_NoteArrowItem();   // AMF: Left/Right adjust it, so Left stays on the page (2.3.0)
     return amf_r;
@@ -958,6 +999,9 @@ CIMGUI_API bool igSliderInt4(const char* label,int v[4],int v_min,int v_max,cons
 CIMGUI_API bool igSliderScalar(const char* label,ImGuiDataType data_type,void* p_data,const void* p_min,const void* p_max,const char* format,ImGuiSliderFlags flags)
 {
     if (!label) { label = ""; }   // AMF null guard
+    if (!p_data) { return false; }   // AMF null guard
+    if (!p_min) { return false; }   // AMF null guard
+    if (!p_max) { return false; }   // AMF null guard
     const bool amf_r = ImGui::SliderScalar(label,data_type,p_data,p_min,p_max,format,flags);
     const bool amf_w = amf_ConsumerSliderWheel(data_type, p_data, p_min, p_max, format);   // AMF: the wheel nudges a slider (2.2.0)
     return amf_r || amf_w;
@@ -965,6 +1009,9 @@ CIMGUI_API bool igSliderScalar(const char* label,ImGuiDataType data_type,void* p
 CIMGUI_API bool igSliderScalarN(const char* label,ImGuiDataType data_type,void* p_data,int components,const void* p_min,const void* p_max,const char* format,ImGuiSliderFlags flags)
 {
     if (!label) { label = ""; }   // AMF null guard
+    if (!p_data) { return false; }   // AMF null guard
+    if (!p_min) { return false; }   // AMF null guard
+    if (!p_max) { return false; }   // AMF null guard
     const bool amf_r = ImGui::SliderScalarN(label,data_type,p_data,components,p_min,p_max,format,flags);
     amf_NoteArrowItem();   // AMF: Left/Right adjust it, so Left stays on the page (2.3.0)
     return amf_r;
@@ -973,6 +1020,7 @@ CIMGUI_API bool igVSliderFloat(const char* label,const ImVec2 size,float* v,floa
 {
     if (!label) { label = ""; }   // AMF null guard
     if (!v) { return false; }   // AMF null guard
+    if (!format) { format = "%.3f"; }   // AMF null guard
     const bool amf_r = ImGui::VSliderFloat(label,size,v,v_min,v_max,format,flags);
     const bool amf_w = amf_ConsumerSliderWheel(ImGuiDataType_Float, v, &v_min, &v_max, format);   // AMF: the wheel nudges a slider (2.2.0)
     return amf_r || amf_w;
@@ -981,6 +1029,7 @@ CIMGUI_API bool igVSliderInt(const char* label,const ImVec2 size,int* v,int v_mi
 {
     if (!label) { label = ""; }   // AMF null guard
     if (!v) { return false; }   // AMF null guard
+    if (!format) { format = "%d"; }   // AMF null guard
     const bool amf_r = ImGui::VSliderInt(label,size,v,v_min,v_max,format,flags);
     const bool amf_w = amf_ConsumerSliderWheel(ImGuiDataType_S32, v, &v_min, &v_max, format);   // AMF: the wheel nudges a slider (2.2.0)
     return amf_r || amf_w;
@@ -988,6 +1037,9 @@ CIMGUI_API bool igVSliderInt(const char* label,const ImVec2 size,int* v,int v_mi
 CIMGUI_API bool igVSliderScalar(const char* label,const ImVec2 size,ImGuiDataType data_type,void* p_data,const void* p_min,const void* p_max,const char* format,ImGuiSliderFlags flags)
 {
     if (!label) { label = ""; }   // AMF null guard
+    if (!p_data) { return false; }   // AMF null guard
+    if (!p_min) { return false; }   // AMF null guard
+    if (!p_max) { return false; }   // AMF null guard
     const bool amf_r = ImGui::VSliderScalar(label,size,data_type,p_data,p_min,p_max,format,flags);
     const bool amf_w = amf_ConsumerSliderWheel(data_type, p_data, p_min, p_max, format);   // AMF: the wheel nudges a slider (2.2.0)
     return amf_r || amf_w;
@@ -995,6 +1047,7 @@ CIMGUI_API bool igVSliderScalar(const char* label,const ImVec2 size,ImGuiDataTyp
 CIMGUI_API bool igInputText(const char* label,char* buf,size_t buf_size,ImGuiInputTextFlags flags,ImGuiInputTextCallback callback,void* user_data)
 {
     if (!label) { label = ""; }   // AMF null guard
+    if (!buf) { return false; }   // AMF null guard
     const bool amf_r = ImGui::InputText(label,buf,buf_size,flags,callback,user_data);   // AMF keyboard: note the text field
     amf_NoteTextField(ImGui::GetItemID());
     return amf_r;
@@ -1002,6 +1055,7 @@ CIMGUI_API bool igInputText(const char* label,char* buf,size_t buf_size,ImGuiInp
 CIMGUI_API bool igInputTextMultiline(const char* label,char* buf,size_t buf_size,const ImVec2 size,ImGuiInputTextFlags flags,ImGuiInputTextCallback callback,void* user_data)
 {
     if (!label) { label = ""; }   // AMF null guard
+    if (!buf) { return false; }   // AMF null guard
     const bool amf_r = ImGui::InputTextMultiline(label,buf,buf_size,size,flags,callback,user_data);   // AMF keyboard: note the text field
     amf_NoteTextField(ImGui::GetItemID());
     return amf_r;
@@ -1009,6 +1063,7 @@ CIMGUI_API bool igInputTextMultiline(const char* label,char* buf,size_t buf_size
 CIMGUI_API bool igInputTextWithHint(const char* label,const char* hint,char* buf,size_t buf_size,ImGuiInputTextFlags flags,ImGuiInputTextCallback callback,void* user_data)
 {
     if (!label) { label = ""; }   // AMF null guard
+    if (!buf) { return false; }   // AMF null guard
     const bool amf_r = ImGui::InputTextWithHint(label,hint,buf,buf_size,flags,callback,user_data);   // AMF keyboard: note the text field
     amf_NoteTextField(ImGui::GetItemID());
     return amf_r;
@@ -1017,21 +1072,28 @@ CIMGUI_API bool igInputFloat(const char* label,float* v,float step,float step_fa
 {
     if (!label) { label = ""; }   // AMF null guard
     if (!v) { return false; }   // AMF null guard
+    if (!format) { format = "%.3f"; }   // AMF null guard
     return ImGui::InputFloat(label,v,step,step_fast,format,flags);
 }
 CIMGUI_API bool igInputFloat2(const char* label,float v[2],const char* format,ImGuiInputTextFlags flags)
 {
     if (!label) { label = ""; }   // AMF null guard
+    if (!v) { return false; }   // AMF null guard
+    if (!format) { format = "%.3f"; }   // AMF null guard
     return ImGui::InputFloat2(label,v,format,flags);
 }
 CIMGUI_API bool igInputFloat3(const char* label,float v[3],const char* format,ImGuiInputTextFlags flags)
 {
     if (!label) { label = ""; }   // AMF null guard
+    if (!v) { return false; }   // AMF null guard
+    if (!format) { format = "%.3f"; }   // AMF null guard
     return ImGui::InputFloat3(label,v,format,flags);
 }
 CIMGUI_API bool igInputFloat4(const char* label,float v[4],const char* format,ImGuiInputTextFlags flags)
 {
     if (!label) { label = ""; }   // AMF null guard
+    if (!v) { return false; }   // AMF null guard
+    if (!format) { format = "%.3f"; }   // AMF null guard
     return ImGui::InputFloat4(label,v,format,flags);
 }
 CIMGUI_API bool igInputInt(const char* label,int* v,int step,int step_fast,ImGuiInputTextFlags flags)
@@ -1043,52 +1105,62 @@ CIMGUI_API bool igInputInt(const char* label,int* v,int step,int step_fast,ImGui
 CIMGUI_API bool igInputInt2(const char* label,int v[2],ImGuiInputTextFlags flags)
 {
     if (!label) { label = ""; }   // AMF null guard
+    if (!v) { return false; }   // AMF null guard
     return ImGui::InputInt2(label,v,flags);
 }
 CIMGUI_API bool igInputInt3(const char* label,int v[3],ImGuiInputTextFlags flags)
 {
     if (!label) { label = ""; }   // AMF null guard
+    if (!v) { return false; }   // AMF null guard
     return ImGui::InputInt3(label,v,flags);
 }
 CIMGUI_API bool igInputInt4(const char* label,int v[4],ImGuiInputTextFlags flags)
 {
     if (!label) { label = ""; }   // AMF null guard
+    if (!v) { return false; }   // AMF null guard
     return ImGui::InputInt4(label,v,flags);
 }
 CIMGUI_API bool igInputDouble(const char* label,double* v,double step,double step_fast,const char* format,ImGuiInputTextFlags flags)
 {
     if (!label) { label = ""; }   // AMF null guard
     if (!v) { return false; }   // AMF null guard
+    if (!format) { format = "%.6f"; }   // AMF null guard
     return ImGui::InputDouble(label,v,step,step_fast,format,flags);
 }
 CIMGUI_API bool igInputScalar(const char* label,ImGuiDataType data_type,void* p_data,const void* p_step,const void* p_step_fast,const char* format,ImGuiInputTextFlags flags)
 {
     if (!label) { label = ""; }   // AMF null guard
+    if (!p_data) { return false; }   // AMF null guard
     return ImGui::InputScalar(label,data_type,p_data,p_step,p_step_fast,format,flags);
 }
 CIMGUI_API bool igInputScalarN(const char* label,ImGuiDataType data_type,void* p_data,int components,const void* p_step,const void* p_step_fast,const char* format,ImGuiInputTextFlags flags)
 {
     if (!label) { label = ""; }   // AMF null guard
+    if (!p_data) { return false; }   // AMF null guard
     return ImGui::InputScalarN(label,data_type,p_data,components,p_step,p_step_fast,format,flags);
 }
 CIMGUI_API bool igColorEdit3(const char* label,float col[3],ImGuiColorEditFlags flags)
 {
     if (!label) { label = ""; }   // AMF null guard
+    if (!col) { return false; }   // AMF null guard
     return ImGui::ColorEdit3(label,col,flags);
 }
 CIMGUI_API bool igColorEdit4(const char* label,float col[4],ImGuiColorEditFlags flags)
 {
     if (!label) { label = ""; }   // AMF null guard
+    if (!col) { return false; }   // AMF null guard
     return ImGui::ColorEdit4(label,col,flags);
 }
 CIMGUI_API bool igColorPicker3(const char* label,float col[3],ImGuiColorEditFlags flags)
 {
     if (!label) { label = ""; }   // AMF null guard
+    if (!col) { return false; }   // AMF null guard
     return ImGui::ColorPicker3(label,col,flags);
 }
 CIMGUI_API bool igColorPicker4(const char* label,float col[4],ImGuiColorEditFlags flags,const float* ref_col)
 {
     if (!label) { label = ""; }   // AMF null guard
+    if (!col) { return false; }   // AMF null guard
     return ImGui::ColorPicker4(label,col,flags,ref_col);
 }
 CIMGUI_API bool igColorButton(const char* desc_id,const ImVec4 col,ImGuiColorEditFlags flags,const ImVec2 size)
@@ -1111,6 +1183,7 @@ CIMGUI_API bool igTreeNode_Str(const char* label)
 CIMGUI_API bool igTreeNode_StrStr(const char* str_id,const char* fmt,...)
 {
     if (!str_id) { str_id = ""; }   // AMF null guard
+    if (!fmt) { fmt = ""; }   // AMF null guard
     va_list args;
     va_start(args, fmt);
     amf_BeginConsumerHeader();   // AMF: stock header widening (2.0.6)
@@ -1121,6 +1194,7 @@ CIMGUI_API bool igTreeNode_StrStr(const char* str_id,const char* fmt,...)
 }
 CIMGUI_API bool igTreeNode_Ptr(const void* ptr_id,const char* fmt,...)
 {
+    if (!fmt) { fmt = ""; }   // AMF null guard
     va_list args;
     va_start(args, fmt);
     amf_BeginConsumerHeader();   // AMF: stock header widening (2.0.6)
@@ -1132,6 +1206,7 @@ CIMGUI_API bool igTreeNode_Ptr(const void* ptr_id,const char* fmt,...)
 CIMGUI_API bool igTreeNodeV_Str(const char* str_id,const char* fmt,va_list args)
 {
     if (!str_id) { str_id = ""; }   // AMF null guard
+    if (!fmt) { fmt = ""; }   // AMF null guard
     amf_BeginConsumerHeader();   // AMF: stock header widening (2.0.6)
     const bool amf_r = ImGui::TreeNodeV(str_id,fmt,args);
     amf_EndConsumerHeader();
@@ -1139,6 +1214,7 @@ CIMGUI_API bool igTreeNodeV_Str(const char* str_id,const char* fmt,va_list args)
 }
 CIMGUI_API bool igTreeNodeV_Ptr(const void* ptr_id,const char* fmt,va_list args)
 {
+    if (!fmt) { fmt = ""; }   // AMF null guard
     amf_BeginConsumerHeader();   // AMF: stock header widening (2.0.6)
     const bool amf_r = ImGui::TreeNodeV(ptr_id,fmt,args);
     amf_EndConsumerHeader();
@@ -1155,6 +1231,7 @@ CIMGUI_API bool igTreeNodeEx_Str(const char* label,ImGuiTreeNodeFlags flags)
 CIMGUI_API bool igTreeNodeEx_StrStr(const char* str_id,ImGuiTreeNodeFlags flags,const char* fmt,...)
 {
     if (!str_id) { str_id = ""; }   // AMF null guard
+    if (!fmt) { fmt = ""; }   // AMF null guard
     va_list args;
     va_start(args, fmt);
     amf_BeginConsumerHeader();   // AMF: stock header widening (2.0.6)
@@ -1165,6 +1242,7 @@ CIMGUI_API bool igTreeNodeEx_StrStr(const char* str_id,ImGuiTreeNodeFlags flags,
 }
 CIMGUI_API bool igTreeNodeEx_Ptr(const void* ptr_id,ImGuiTreeNodeFlags flags,const char* fmt,...)
 {
+    if (!fmt) { fmt = ""; }   // AMF null guard
     va_list args;
     va_start(args, fmt);
     amf_BeginConsumerHeader();   // AMF: stock header widening (2.0.6)
@@ -1176,6 +1254,7 @@ CIMGUI_API bool igTreeNodeEx_Ptr(const void* ptr_id,ImGuiTreeNodeFlags flags,con
 CIMGUI_API bool igTreeNodeExV_Str(const char* str_id,ImGuiTreeNodeFlags flags,const char* fmt,va_list args)
 {
     if (!str_id) { str_id = ""; }   // AMF null guard
+    if (!fmt) { fmt = ""; }   // AMF null guard
     amf_BeginConsumerHeader();   // AMF: stock header widening (2.0.6)
     const bool amf_r = ImGui::TreeNodeExV(str_id,flags,fmt,args);
     amf_EndConsumerHeader();
@@ -1183,6 +1262,7 @@ CIMGUI_API bool igTreeNodeExV_Str(const char* str_id,ImGuiTreeNodeFlags flags,co
 }
 CIMGUI_API bool igTreeNodeExV_Ptr(const void* ptr_id,ImGuiTreeNodeFlags flags,const char* fmt,va_list args)
 {
+    if (!fmt) { fmt = ""; }   // AMF null guard
     amf_BeginConsumerHeader();   // AMF: stock header widening (2.0.6)
     const bool amf_r = ImGui::TreeNodeExV(ptr_id,flags,fmt,args);
     amf_EndConsumerHeader();
@@ -1233,6 +1313,7 @@ CIMGUI_API bool igSelectable_Bool(const char* label,bool selected,ImGuiSelectabl
 CIMGUI_API bool igSelectable_BoolPtr(const char* label,bool* p_selected,ImGuiSelectableFlags flags,const ImVec2 size)
 {
     if (!label) { label = ""; }   // AMF null guard
+    if (!p_selected) { return false; }   // AMF null guard
     return ImGui::Selectable(label,p_selected,flags,size);
 }
 CIMGUI_API bool igBeginListBox(const char* label,const ImVec2 size)
@@ -1248,32 +1329,38 @@ CIMGUI_API bool igListBox_Str_arr(const char* label,int* current_item,const char
 {
     if (!label) { label = ""; }   // AMF null guard
     if (!current_item) { return false; }   // AMF null guard
+    if (!items) { return false; }   // AMF null guard
     return ImGui::ListBox(label,current_item,items,items_count,height_in_items);
 }
 CIMGUI_API bool igListBox_FnStrPtr(const char* label,int* current_item,const char*(*getter)(void* user_data,int idx),void* user_data,int items_count,int height_in_items)
 {
     if (!label) { label = ""; }   // AMF null guard
     if (!current_item) { return false; }   // AMF null guard
+    if (!getter) { return false; }   // AMF null guard
     return ImGui::ListBox(label,current_item,getter,user_data,items_count,height_in_items);
 }
 CIMGUI_API void igPlotLines_FloatPtr(const char* label,const float* values,int values_count,int values_offset,const char* overlay_text,float scale_min,float scale_max,ImVec2 graph_size,int stride)
 {
     if (!label) { label = ""; }   // AMF null guard
+    if (!values) { return; }   // AMF null guard
     return ImGui::PlotLines(label,values,values_count,values_offset,overlay_text,scale_min,scale_max,graph_size,stride);
 }
 CIMGUI_API void igPlotLines_FnFloatPtr(const char* label,float(*values_getter)(void* data,int idx),void* data,int values_count,int values_offset,const char* overlay_text,float scale_min,float scale_max,ImVec2 graph_size)
 {
     if (!label) { label = ""; }   // AMF null guard
+    if (!values_getter) { return; }   // AMF null guard
     return ImGui::PlotLines(label,values_getter,data,values_count,values_offset,overlay_text,scale_min,scale_max,graph_size);
 }
 CIMGUI_API void igPlotHistogram_FloatPtr(const char* label,const float* values,int values_count,int values_offset,const char* overlay_text,float scale_min,float scale_max,ImVec2 graph_size,int stride)
 {
     if (!label) { label = ""; }   // AMF null guard
+    if (!values) { return; }   // AMF null guard
     return ImGui::PlotHistogram(label,values,values_count,values_offset,overlay_text,scale_min,scale_max,graph_size,stride);
 }
 CIMGUI_API void igPlotHistogram_FnFloatPtr(const char* label,float(*values_getter)(void* data,int idx),void* data,int values_count,int values_offset,const char* overlay_text,float scale_min,float scale_max,ImVec2 graph_size)
 {
     if (!label) { label = ""; }   // AMF null guard
+    if (!values_getter) { return; }   // AMF null guard
     return ImGui::PlotHistogram(label,values_getter,data,values_count,values_offset,overlay_text,scale_min,scale_max,graph_size);
 }
 CIMGUI_API void igValue_Bool(const char* prefix,bool b)
@@ -1570,6 +1657,7 @@ CIMGUI_API void igSetNextWindowDockID(ImGuiID dock_id,ImGuiCond cond)
 }
 CIMGUI_API void igSetNextWindowClass(const ImGuiWindowClass* window_class)
 {
+    if (!window_class) { return; }   // AMF null guard
     return ImGui::SetNextWindowClass(window_class);
 }
 CIMGUI_API ImGuiID igGetWindowDockID()
@@ -1612,6 +1700,7 @@ CIMGUI_API bool igBeginDragDropSource(ImGuiDragDropFlags flags)
 CIMGUI_API bool igSetDragDropPayload(const char* type,const void* data,size_t sz,ImGuiCond cond)
 {
     if (!type) { type = ""; }   // AMF null guard
+    if (!data) { return false; }   // AMF null guard
     return ImGui::SetDragDropPayload(type,data,sz,cond);
 }
 CIMGUI_API void igEndDragDropSource()
@@ -1748,10 +1837,12 @@ CIMGUI_API ImDrawList* igGetForegroundDrawList_Nil()
 }
 CIMGUI_API ImDrawList* igGetBackgroundDrawList_ViewportPtr(ImGuiViewport* viewport)
 {
+    if (!viewport) { return nullptr; }   // AMF null guard
     return ImGui::GetBackgroundDrawList(viewport);
 }
 CIMGUI_API ImDrawList* igGetForegroundDrawList_ViewportPtr(ImGuiViewport* viewport)
 {
+    if (!viewport) { return nullptr; }   // AMF null guard
     return ImGui::GetForegroundDrawList(viewport);
 }
 CIMGUI_API bool igIsRectVisible_Nil(const ImVec2 size)
@@ -1789,6 +1880,7 @@ CIMGUI_API ImGuiStorage* igGetStateStorage()
 CIMGUI_API void igCalcTextSize(ImVec2 *pOut,const char* text,const char* text_end,bool hide_text_after_double_hash,float wrap_width)
 {
     if (!pOut) { return; }   // AMF null guard
+    if (!text) { return; }   // AMF null guard
     *pOut = ImGui::CalcTextSize(text,text_end,hide_text_after_double_hash,wrap_width);
 }
 CIMGUI_API void igColorConvertU32ToFloat4(ImVec4 *pOut,ImU32 in)
@@ -1966,10 +2058,15 @@ CIMGUI_API bool igDebugCheckVersionAndDataLayout(const char* version_str,size_t 
 }
 CIMGUI_API void igSetAllocatorFunctions(ImGuiMemAllocFunc alloc_func,ImGuiMemFreeFunc free_func,void* user_data)
 {
+    if (!alloc_func) { return; }   // AMF null guard
+    if (!free_func) { return; }   // AMF null guard
     return ImGui::SetAllocatorFunctions(alloc_func,free_func,user_data);
 }
 CIMGUI_API void igGetAllocatorFunctions(ImGuiMemAllocFunc* p_alloc_func,ImGuiMemFreeFunc* p_free_func,void** p_user_data)
 {
+    if (!p_alloc_func) { return; }   // AMF null guard
+    if (!p_free_func) { return; }   // AMF null guard
+    if (!p_user_data) { return; }   // AMF null guard
     return ImGui::GetAllocatorFunctions(p_alloc_func,p_free_func,p_user_data);
 }
 CIMGUI_API void* igMemAlloc(size_t size)
@@ -2089,6 +2186,7 @@ CIMGUI_API void ImGuiIO_AddInputCharacterUTF16(ImGuiIO* self,ImWchar16 c)
 CIMGUI_API void ImGuiIO_AddInputCharactersUTF8(ImGuiIO* self,const char* str)
 {
     if (!self) { return; }   // AMF null guard
+    if (!str) { str = ""; }   // AMF null guard
     return self->AddInputCharactersUTF8(str);
 }
 CIMGUI_API void ImGuiIO_SetKeyEventNativeData(ImGuiIO* self,ImGuiKey key,int native_keycode,int native_scancode,int native_legacy_index)
@@ -2137,6 +2235,7 @@ CIMGUI_API void ImGuiInputTextCallbackData_DeleteChars(ImGuiInputTextCallbackDat
 CIMGUI_API void ImGuiInputTextCallbackData_InsertChars(ImGuiInputTextCallbackData* self,int pos,const char* text,const char* text_end)
 {
     if (!self) { return; }   // AMF null guard
+    if (!text) { return; }   // AMF null guard
     return self->InsertChars(pos,text,text_end);
 }
 CIMGUI_API void ImGuiInputTextCallbackData_SelectAll(ImGuiInputTextCallbackData* self)
@@ -2180,6 +2279,7 @@ CIMGUI_API void ImGuiPayload_Clear(ImGuiPayload* self)
 CIMGUI_API bool ImGuiPayload_IsDataType(ImGuiPayload* self,const char* type)
 {
     if (!self) { return false; }   // AMF null guard
+    if (!type) { type = ""; }   // AMF null guard
     return self->IsDataType(type);
 }
 CIMGUI_API bool ImGuiPayload_IsPreview(ImGuiPayload* self)
@@ -2214,11 +2314,13 @@ CIMGUI_API void ImGuiTextFilter_destroy(ImGuiTextFilter* self)
 CIMGUI_API bool ImGuiTextFilter_Draw(ImGuiTextFilter* self,const char* label,float width)
 {
     if (!self) { return false; }   // AMF null guard
+    if (!label) { label = "Filter (inc,-exc)"; }   // AMF null guard
     return self->Draw(label,width);
 }
 CIMGUI_API bool ImGuiTextFilter_PassFilter(ImGuiTextFilter* self,const char* text,const char* text_end)
 {
     if (!self) { return false; }   // AMF null guard
+    if (!text) { return false; }   // AMF null guard
     return self->PassFilter(text,text_end);
 }
 CIMGUI_API void ImGuiTextFilter_Build(ImGuiTextFilter* self)
@@ -2258,6 +2360,7 @@ CIMGUI_API bool ImGuiTextRange_empty(ImGuiTextRange* self)
 CIMGUI_API void ImGuiTextRange_split(ImGuiTextRange* self,char separator,ImVector_ImGuiTextRange* out)
 {
     if (!self) { return; }   // AMF null guard
+    if (!out) { return; }   // AMF null guard
     return self->split(separator,out);
 }
 CIMGUI_API ImGuiTextBuffer* ImGuiTextBuffer_ImGuiTextBuffer(void)
@@ -2307,11 +2410,13 @@ CIMGUI_API const char* ImGuiTextBuffer_c_str(ImGuiTextBuffer* self)
 CIMGUI_API void ImGuiTextBuffer_append(ImGuiTextBuffer* self,const char* str,const char* str_end)
 {
     if (!self) { return; }   // AMF null guard
+    if (!str) { return; }   // AMF null guard
     return self->append(str,str_end);
 }
 CIMGUI_API void ImGuiTextBuffer_appendfv(ImGuiTextBuffer* self,const char* fmt,va_list args)
 {
     if (!self) { return; }   // AMF null guard
+    if (!fmt) { fmt = ""; }   // AMF null guard
     return self->appendfv(fmt,args);
 }
 CIMGUI_API ImGuiStoragePair* ImGuiStoragePair_ImGuiStoragePair_Int(ImGuiID _key,int _val)
@@ -2511,16 +2616,19 @@ CIMGUI_API void ImDrawListSplitter_ClearFreeMemory(ImDrawListSplitter* self)
 CIMGUI_API void ImDrawListSplitter_Split(ImDrawListSplitter* self,ImDrawList* draw_list,int count)
 {
     if (!self) { return; }   // AMF null guard
+    if (!draw_list) { return; }   // AMF null guard
     return self->Split(draw_list,count);
 }
 CIMGUI_API void ImDrawListSplitter_Merge(ImDrawListSplitter* self,ImDrawList* draw_list)
 {
     if (!self) { return; }   // AMF null guard
+    if (!draw_list) { return; }   // AMF null guard
     return self->Merge(draw_list);
 }
 CIMGUI_API void ImDrawListSplitter_SetCurrentChannel(ImDrawListSplitter* self,ImDrawList* draw_list,int channel_idx)
 {
     if (!self) { return; }   // AMF null guard
+    if (!draw_list) { return; }   // AMF null guard
     return self->SetCurrentChannel(draw_list,channel_idx);
 }
 CIMGUI_API ImDrawList* ImDrawList_ImDrawList(ImDrawListSharedData* shared_data)
@@ -2560,11 +2668,13 @@ CIMGUI_API void ImDrawList_PopTextureID(ImDrawList* self)
 CIMGUI_API void ImDrawList_GetClipRectMin(ImVec2 *pOut,ImDrawList* self)
 {
     if (!pOut) { return; }   // AMF null guard
+    if (!self) { return; }   // AMF null guard
     *pOut = self->GetClipRectMin();
 }
 CIMGUI_API void ImDrawList_GetClipRectMax(ImVec2 *pOut,ImDrawList* self)
 {
     if (!pOut) { return; }   // AMF null guard
+    if (!self) { return; }   // AMF null guard
     *pOut = self->GetClipRectMax();
 }
 CIMGUI_API void ImDrawList_AddLine(ImDrawList* self,const ImVec2 p1,const ImVec2 p2,ImU32 col,float thickness)
@@ -2640,11 +2750,13 @@ CIMGUI_API void ImDrawList_AddEllipseFilled(ImDrawList* self,const ImVec2 center
 CIMGUI_API void ImDrawList_AddText_Vec2(ImDrawList* self,const ImVec2 pos,ImU32 col,const char* text_begin,const char* text_end)
 {
     if (!self) { return; }   // AMF null guard
+    if (!text_begin) { return; }   // AMF null guard
     return self->AddText(pos,col,text_begin,text_end);
 }
 CIMGUI_API void ImDrawList_AddText_FontPtr(ImDrawList* self,const ImFont* font,float font_size,const ImVec2 pos,ImU32 col,const char* text_begin,const char* text_end,float wrap_width,const ImVec4* cpu_fine_clip_rect)
 {
     if (!self) { return; }   // AMF null guard
+    if (!text_begin) { return; }   // AMF null guard
     return self->AddText(font,font_size,pos,col,text_begin,text_end,wrap_width,cpu_fine_clip_rect);
 }
 CIMGUI_API void ImDrawList_AddBezierCubic(ImDrawList* self,const ImVec2 p1,const ImVec2 p2,const ImVec2 p3,const ImVec2 p4,ImU32 col,float thickness,int num_segments)
@@ -2660,16 +2772,19 @@ CIMGUI_API void ImDrawList_AddBezierQuadratic(ImDrawList* self,const ImVec2 p1,c
 CIMGUI_API void ImDrawList_AddPolyline(ImDrawList* self,const ImVec2* points,int num_points,ImU32 col,ImDrawFlags flags,float thickness)
 {
     if (!self) { return; }   // AMF null guard
+    if (!points) { return; }   // AMF null guard
     return self->AddPolyline(points,num_points,col,flags,thickness);
 }
 CIMGUI_API void ImDrawList_AddConvexPolyFilled(ImDrawList* self,const ImVec2* points,int num_points,ImU32 col)
 {
     if (!self) { return; }   // AMF null guard
+    if (!points) { return; }   // AMF null guard
     return self->AddConvexPolyFilled(points,num_points,col);
 }
 CIMGUI_API void ImDrawList_AddConcavePolyFilled(ImDrawList* self,const ImVec2* points,int num_points,ImU32 col)
 {
     if (!self) { return; }   // AMF null guard
+    if (!points) { return; }   // AMF null guard
     return self->AddConcavePolyFilled(points,num_points,col);
 }
 CIMGUI_API void ImDrawList_AddImage(ImDrawList* self,ImTextureID user_texture_id,const ImVec2 p_min,const ImVec2 p_max,const ImVec2 uv_min,const ImVec2 uv_max,ImU32 col)
@@ -2750,6 +2865,7 @@ CIMGUI_API void ImDrawList_PathRect(ImDrawList* self,const ImVec2 rect_min,const
 CIMGUI_API void ImDrawList_AddCallback(ImDrawList* self,ImDrawCallback callback,void* callback_data)
 {
     if (!self) { return; }   // AMF null guard
+    if (!callback) { return; }   // AMF null guard
     return self->AddCallback(callback,callback_data);
 }
 CIMGUI_API void ImDrawList_AddDrawCmd(ImDrawList* self)
@@ -2884,6 +3000,7 @@ CIMGUI_API void ImDrawData_Clear(ImDrawData* self)
 CIMGUI_API void ImDrawData_AddDrawList(ImDrawData* self,ImDrawList* draw_list)
 {
     if (!self) { return; }   // AMF null guard
+    if (!draw_list) { return; }   // AMF null guard
     return self->AddDrawList(draw_list);
 }
 CIMGUI_API void ImDrawData_DeIndexAllBuffers(ImDrawData* self)
@@ -2937,16 +3054,19 @@ CIMGUI_API void ImFontGlyphRangesBuilder_AddChar(ImFontGlyphRangesBuilder* self,
 CIMGUI_API void ImFontGlyphRangesBuilder_AddText(ImFontGlyphRangesBuilder* self,const char* text,const char* text_end)
 {
     if (!self) { return; }   // AMF null guard
+    if (!text) { return; }   // AMF null guard
     return self->AddText(text,text_end);
 }
 CIMGUI_API void ImFontGlyphRangesBuilder_AddRanges(ImFontGlyphRangesBuilder* self,const ImWchar* ranges)
 {
     if (!self) { return; }   // AMF null guard
+    if (!ranges) { return; }   // AMF null guard
     return self->AddRanges(ranges);
 }
 CIMGUI_API void ImFontGlyphRangesBuilder_BuildRanges(ImFontGlyphRangesBuilder* self,ImVector_ImWchar* out_ranges)
 {
     if (!self) { return; }   // AMF null guard
+    if (!out_ranges) { return; }   // AMF null guard
     return self->BuildRanges(out_ranges);
 }
 CIMGUI_API ImFontAtlasCustomRect* ImFontAtlasCustomRect_ImFontAtlasCustomRect(void)
@@ -2975,6 +3095,7 @@ CIMGUI_API void ImFontAtlas_destroy(ImFontAtlas* self)
 CIMGUI_API ImFont* ImFontAtlas_AddFont(ImFontAtlas* self,const ImFontConfig* font_cfg)
 {
     if (!self) { return nullptr; }   // AMF null guard
+    if (!font_cfg) { return nullptr; }   // AMF null guard
     return self->AddFont(font_cfg);
 }
 CIMGUI_API ImFont* ImFontAtlas_AddFontDefault(ImFontAtlas* self,const ImFontConfig* font_cfg)
@@ -2985,21 +3106,25 @@ CIMGUI_API ImFont* ImFontAtlas_AddFontDefault(ImFontAtlas* self,const ImFontConf
 CIMGUI_API ImFont* ImFontAtlas_AddFontFromFileTTF(ImFontAtlas* self,const char* filename,float size_pixels,const ImFontConfig* font_cfg,const ImWchar* glyph_ranges)
 {
     if (!self) { return nullptr; }   // AMF null guard
+    if (!filename) { return nullptr; }   // AMF null guard
     return self->AddFontFromFileTTF(filename,size_pixels,font_cfg,glyph_ranges);
 }
 CIMGUI_API ImFont* ImFontAtlas_AddFontFromMemoryTTF(ImFontAtlas* self,void* font_data,int font_data_size,float size_pixels,const ImFontConfig* font_cfg,const ImWchar* glyph_ranges)
 {
     if (!self) { return nullptr; }   // AMF null guard
+    if (!font_data) { return nullptr; }   // AMF null guard
     return self->AddFontFromMemoryTTF(font_data,font_data_size,size_pixels,font_cfg,glyph_ranges);
 }
 CIMGUI_API ImFont* ImFontAtlas_AddFontFromMemoryCompressedTTF(ImFontAtlas* self,const void* compressed_font_data,int compressed_font_data_size,float size_pixels,const ImFontConfig* font_cfg,const ImWchar* glyph_ranges)
 {
     if (!self) { return nullptr; }   // AMF null guard
+    if (!compressed_font_data) { return nullptr; }   // AMF null guard
     return self->AddFontFromMemoryCompressedTTF(compressed_font_data,compressed_font_data_size,size_pixels,font_cfg,glyph_ranges);
 }
 CIMGUI_API ImFont* ImFontAtlas_AddFontFromMemoryCompressedBase85TTF(ImFontAtlas* self,const char* compressed_font_data_base85,float size_pixels,const ImFontConfig* font_cfg,const ImWchar* glyph_ranges)
 {
     if (!self) { return nullptr; }   // AMF null guard
+    if (!compressed_font_data_base85) { return nullptr; }   // AMF null guard
     return self->AddFontFromMemoryCompressedBase85TTF(compressed_font_data_base85,size_pixels,font_cfg,glyph_ranges);
 }
 CIMGUI_API void ImFontAtlas_ClearInputData(ImFontAtlas* self)
@@ -3033,6 +3158,7 @@ CIMGUI_API void ImFontAtlas_GetTexDataAsAlpha8(ImFontAtlas* self,unsigned char**
     if (!out_width) { return; }   // AMF null guard
     if (!out_height) { return; }   // AMF null guard
     if (!out_bytes_per_pixel) { return; }   // AMF null guard
+    if (!out_pixels) { return; }   // AMF null guard
     return self->GetTexDataAsAlpha8(out_pixels,out_width,out_height,out_bytes_per_pixel);
 }
 CIMGUI_API void ImFontAtlas_GetTexDataAsRGBA32(ImFontAtlas* self,unsigned char** out_pixels,int* out_width,int* out_height,int* out_bytes_per_pixel)
@@ -3041,6 +3167,7 @@ CIMGUI_API void ImFontAtlas_GetTexDataAsRGBA32(ImFontAtlas* self,unsigned char**
     if (!out_width) { return; }   // AMF null guard
     if (!out_height) { return; }   // AMF null guard
     if (!out_bytes_per_pixel) { return; }   // AMF null guard
+    if (!out_pixels) { return; }   // AMF null guard
     return self->GetTexDataAsRGBA32(out_pixels,out_width,out_height,out_bytes_per_pixel);
 }
 CIMGUI_API bool ImFontAtlas_IsBuilt(ImFontAtlas* self)
@@ -3106,6 +3233,7 @@ CIMGUI_API int ImFontAtlas_AddCustomRectRegular(ImFontAtlas* self,int width,int 
 CIMGUI_API int ImFontAtlas_AddCustomRectFontGlyph(ImFontAtlas* self,ImFont* font,ImWchar id,int width,int height,float advance_x,const ImVec2 offset)
 {
     if (!self) { return 0; }   // AMF null guard
+    if (!font) { return 0; }   // AMF null guard
     return self->AddCustomRectFontGlyph(font,id,width,height,advance_x,offset);
 }
 CIMGUI_API ImFontAtlasCustomRect* ImFontAtlas_GetCustomRectByIndex(ImFontAtlas* self,int index)
@@ -3116,11 +3244,18 @@ CIMGUI_API ImFontAtlasCustomRect* ImFontAtlas_GetCustomRectByIndex(ImFontAtlas* 
 CIMGUI_API void ImFontAtlas_CalcCustomRectUV(ImFontAtlas* self,const ImFontAtlasCustomRect* rect,ImVec2* out_uv_min,ImVec2* out_uv_max)
 {
     if (!self) { return; }   // AMF null guard
+    if (!rect) { return; }   // AMF null guard
+    if (!out_uv_min) { return; }   // AMF null guard
+    if (!out_uv_max) { return; }   // AMF null guard
     return self->CalcCustomRectUV(rect,out_uv_min,out_uv_max);
 }
 CIMGUI_API bool ImFontAtlas_GetMouseCursorTexData(ImFontAtlas* self,ImGuiMouseCursor cursor,ImVec2* out_offset,ImVec2* out_size,ImVec2 out_uv_border[2],ImVec2 out_uv_fill[2])
 {
     if (!self) { return false; }   // AMF null guard
+    if (!out_offset) { return false; }   // AMF null guard
+    if (!out_size) { return false; }   // AMF null guard
+    if (!out_uv_border) { return false; }   // AMF null guard
+    if (!out_uv_fill) { return false; }   // AMF null guard
     return self->GetMouseCursorTexData(cursor,out_offset,out_size,out_uv_border,out_uv_fill);
 }
 CIMGUI_API ImFont* ImFont_ImFont(void)
@@ -3160,21 +3295,28 @@ CIMGUI_API const char* ImFont_GetDebugName(ImFont* self)
 CIMGUI_API void ImFont_CalcTextSizeA(ImVec2 *pOut,ImFont* self,float size,float max_width,float wrap_width,const char* text_begin,const char* text_end,const char** remaining)
 {
     if (!pOut) { return; }   // AMF null guard
+    if (!self) { return; }   // AMF null guard
+    if (!text_begin) { return; }   // AMF null guard
     *pOut = self->CalcTextSizeA(size,max_width,wrap_width,text_begin,text_end,remaining);
 }
 CIMGUI_API const char* ImFont_CalcWordWrapPositionA(ImFont* self,float scale,const char* text,const char* text_end,float wrap_width)
 {
     if (!self) { return nullptr; }   // AMF null guard
+    if (!text) { return nullptr; }   // AMF null guard
+    if (!text_end) { text_end = text + strlen(text); }   // AMF null guard
     return self->CalcWordWrapPositionA(scale,text,text_end,wrap_width);
 }
 CIMGUI_API void ImFont_RenderChar(ImFont* self,ImDrawList* draw_list,float size,const ImVec2 pos,ImU32 col,ImWchar c)
 {
     if (!self) { return; }   // AMF null guard
+    if (!draw_list) { return; }   // AMF null guard
     return self->RenderChar(draw_list,size,pos,col,c);
 }
 CIMGUI_API void ImFont_RenderText(ImFont* self,ImDrawList* draw_list,float size,const ImVec2 pos,ImU32 col,const ImVec4 clip_rect,const char* text_begin,const char* text_end,float wrap_width,bool cpu_fine_clip)
 {
     if (!self) { return; }   // AMF null guard
+    if (!draw_list) { return; }   // AMF null guard
+    if (!text_begin) { return; }   // AMF null guard
     return self->RenderText(draw_list,size,pos,col,clip_rect,text_begin,text_end,wrap_width,cpu_fine_clip);
 }
 CIMGUI_API void ImFont_BuildLookupTable(ImFont* self)
@@ -3224,11 +3366,13 @@ CIMGUI_API void ImGuiViewport_destroy(ImGuiViewport* self)
 CIMGUI_API void ImGuiViewport_GetCenter(ImVec2 *pOut,ImGuiViewport* self)
 {
     if (!pOut) { return; }   // AMF null guard
+    if (!self) { return; }   // AMF null guard
     *pOut = self->GetCenter();
 }
 CIMGUI_API void ImGuiViewport_GetWorkCenter(ImVec2 *pOut,ImGuiViewport* self)
 {
     if (!pOut) { return; }   // AMF null guard
+    if (!self) { return; }   // AMF null guard
     *pOut = self->GetWorkCenter();
 }
 CIMGUI_API ImGuiPlatformIO* ImGuiPlatformIO_ImGuiPlatformIO(void)
@@ -3260,6 +3404,7 @@ CIMGUI_API void ImGuiPlatformImeData_destroy(ImGuiPlatformImeData* self)
 }
 CIMGUI_API ImGuiID igImHashData(const void* data,size_t data_size,ImGuiID seed)
 {
+    if (!data) { return 0; }   // AMF null guard
     return ImHashData(data,data_size,seed);
 }
 CIMGUI_API ImGuiID igImHashStr(const char* data,size_t data_size,ImGuiID seed)
@@ -3269,6 +3414,8 @@ CIMGUI_API ImGuiID igImHashStr(const char* data,size_t data_size,ImGuiID seed)
 }
 CIMGUI_API void igImQsort(void* base,size_t count,size_t size_of_element,int(*compare_func)(void const*,void const*))
 {
+    if (!base) { return; }   // AMF null guard
+    if (!compare_func) { return; }   // AMF null guard
     return ImQsort(base,count,size_of_element,compare_func);
 }
 CIMGUI_API ImU32 igImAlphaBlendColors(ImU32 col_a,ImU32 col_b)
@@ -3290,15 +3437,19 @@ CIMGUI_API int igImUpperPowerOfTwo(int v)
 CIMGUI_API int igImStricmp(const char* str1,const char* str2)
 {
     if (!str1) { str1 = ""; }   // AMF null guard
+    if (!str2) { str2 = ""; }   // AMF null guard
     return ImStricmp(str1,str2);
 }
 CIMGUI_API int igImStrnicmp(const char* str1,const char* str2,size_t count)
 {
     if (!str1) { str1 = ""; }   // AMF null guard
+    if (!str2) { str2 = ""; }   // AMF null guard
     return ImStrnicmp(str1,str2,count);
 }
 CIMGUI_API void igImStrncpy(char* dst,const char* src,size_t count)
 {
+    if (!dst) { return; }   // AMF null guard
+    if (!src) { src = ""; }   // AMF null guard
     return ImStrncpy(dst,src,count);
 }
 CIMGUI_API char* igImStrdup(const char* str)
@@ -3308,25 +3459,31 @@ CIMGUI_API char* igImStrdup(const char* str)
 }
 CIMGUI_API char* igImStrdupcpy(char* dst,size_t* p_dst_size,const char* str)
 {
+    if (!dst) { return nullptr; }   // AMF null guard
+    if (!str) { str = ""; }   // AMF null guard
     return ImStrdupcpy(dst,p_dst_size,str);
 }
 CIMGUI_API const char* igImStrchrRange(const char* str_begin,const char* str_end,char c)
 {
     if (!str_begin) { str_begin = ""; }   // AMF null guard
+    if (!str_end) { str_end = str_begin + strlen(str_begin); }   // AMF null guard
     return ImStrchrRange(str_begin,str_end,c);
 }
 CIMGUI_API const char* igImStreolRange(const char* str,const char* str_end)
 {
     if (!str) { str = ""; }   // AMF null guard
+    if (!str_end) { str_end = str + strlen(str); }   // AMF null guard
     return ImStreolRange(str,str_end);
 }
 CIMGUI_API const char* igImStristr(const char* haystack,const char* haystack_end,const char* needle,const char* needle_end)
 {
     if (!haystack) { haystack = ""; }   // AMF null guard
+    if (!needle) { return nullptr; }   // AMF null guard
     return ImStristr(haystack,haystack_end,needle,needle_end);
 }
 CIMGUI_API void igImStrTrimBlanks(char* str)
 {
+    if (!str) { return; }   // AMF null guard
     return ImStrTrimBlanks(str);
 }
 CIMGUI_API const char* igImStrSkipBlank(const char* str)
@@ -3336,10 +3493,13 @@ CIMGUI_API const char* igImStrSkipBlank(const char* str)
 }
 CIMGUI_API int igImStrlenW(const ImWchar* str)
 {
+    if (!str) { return 0; }   // AMF null guard
     return ImStrlenW(str);
 }
 CIMGUI_API const ImWchar* igImStrbolW(const ImWchar* buf_mid_line,const ImWchar* buf_begin)
 {
+    if (!buf_mid_line) { return nullptr; }   // AMF null guard
+    if (!buf_begin) { return nullptr; }   // AMF null guard
     return ImStrbolW(buf_mid_line,buf_begin);
 }
 CIMGUI_API char igImToUpper(char c)
@@ -3356,6 +3516,8 @@ CIMGUI_API bool igImCharIsBlankW(unsigned int c)
 }
 CIMGUI_API int igImFormatString(char* buf,size_t buf_size,const char* fmt,...)
 {
+    if (!buf) { return 0; }   // AMF null guard
+    if (!fmt) { fmt = ""; }   // AMF null guard
     va_list args;
     va_start(args, fmt);
     int ret = ImFormatStringV(buf,buf_size,fmt,args);
@@ -3364,10 +3526,14 @@ CIMGUI_API int igImFormatString(char* buf,size_t buf_size,const char* fmt,...)
 }
 CIMGUI_API int igImFormatStringV(char* buf,size_t buf_size,const char* fmt,va_list args)
 {
+    if (!buf) { return 0; }   // AMF null guard
+    if (!fmt) { fmt = ""; }   // AMF null guard
     return ImFormatStringV(buf,buf_size,fmt,args);
 }
 CIMGUI_API void igImFormatStringToTempBuffer(const char** out_buf,const char** out_buf_end,const char* fmt,...)
 {
+    if (!out_buf) { return; }   // AMF null guard
+    if (!fmt) { fmt = ""; }   // AMF null guard
     va_list args;
     va_start(args, fmt);
     ImFormatStringToTempBufferV(out_buf,out_buf_end,fmt,args);
@@ -3375,6 +3541,8 @@ CIMGUI_API void igImFormatStringToTempBuffer(const char** out_buf,const char** o
 }
 CIMGUI_API void igImFormatStringToTempBufferV(const char** out_buf,const char** out_buf_end,const char* fmt,va_list args)
 {
+    if (!out_buf) { return; }   // AMF null guard
+    if (!fmt) { fmt = ""; }   // AMF null guard
     return ImFormatStringToTempBufferV(out_buf,out_buf_end,fmt,args);
 }
 CIMGUI_API const char* igImParseFormatFindStart(const char* format)
@@ -3390,16 +3558,19 @@ CIMGUI_API const char* igImParseFormatFindEnd(const char* format)
 CIMGUI_API const char* igImParseFormatTrimDecorations(const char* format,char* buf,size_t buf_size)
 {
     if (!format) { format = ""; }   // AMF null guard
+    if (!buf) { return nullptr; }   // AMF null guard
     return ImParseFormatTrimDecorations(format,buf,buf_size);
 }
 CIMGUI_API void igImParseFormatSanitizeForPrinting(const char* fmt_in,char* fmt_out,size_t fmt_out_size)
 {
     if (!fmt_in) { fmt_in = ""; }   // AMF null guard
+    if (!fmt_out) { return; }   // AMF null guard
     return ImParseFormatSanitizeForPrinting(fmt_in,fmt_out,fmt_out_size);
 }
 CIMGUI_API const char* igImParseFormatSanitizeForScanning(const char* fmt_in,char* fmt_out,size_t fmt_out_size)
 {
     if (!fmt_in) { fmt_in = ""; }   // AMF null guard
+    if (!fmt_out) { return nullptr; }   // AMF null guard
     return ImParseFormatSanitizeForScanning(fmt_in,fmt_out,fmt_out_size);
 }
 CIMGUI_API int igImParseFormatPrecision(const char* format,int default_value)
@@ -3409,20 +3580,25 @@ CIMGUI_API int igImParseFormatPrecision(const char* format,int default_value)
 }
 CIMGUI_API const char* igImTextCharToUtf8(char out_buf[5],unsigned int c)
 {
+    if (!out_buf) { return nullptr; }   // AMF null guard
     return ImTextCharToUtf8(out_buf,c);
 }
 CIMGUI_API int igImTextStrToUtf8(char* out_buf,int out_buf_size,const ImWchar* in_text,const ImWchar* in_text_end)
 {
+    if (!out_buf) { return 0; }   // AMF null guard
+    if (!in_text) { return 0; }   // AMF null guard
     return ImTextStrToUtf8(out_buf,out_buf_size,in_text,in_text_end);
 }
 CIMGUI_API int igImTextCharFromUtf8(unsigned int* out_char,const char* in_text,const char* in_text_end)
 {
     if (!out_char) { return 0; }   // AMF null guard
+    if (!in_text) { return 0; }   // AMF null guard
     return ImTextCharFromUtf8(out_char,in_text,in_text_end);
 }
 CIMGUI_API int igImTextStrFromUtf8(ImWchar* out_buf,int out_buf_size,const char* in_text,const char* in_text_end,const char** in_remaining)
 {
     if (!out_buf) { return 0; }   // AMF null guard
+    if (!in_text) { return 0; }   // AMF null guard
     return ImTextStrFromUtf8(out_buf,out_buf_size,in_text,in_text_end,in_remaining);
 }
 CIMGUI_API int igImTextCountCharsFromUtf8(const char* in_text,const char* in_text_end)
@@ -3437,11 +3613,13 @@ CIMGUI_API int igImTextCountUtf8BytesFromChar(const char* in_text,const char* in
 }
 CIMGUI_API int igImTextCountUtf8BytesFromStr(const ImWchar* in_text,const ImWchar* in_text_end)
 {
+    if (!in_text) { return 0; }   // AMF null guard
     return ImTextCountUtf8BytesFromStr(in_text,in_text_end);
 }
 CIMGUI_API const char* igImTextFindPreviousUtf8Codepoint(const char* in_text_start,const char* in_text_curr)
 {
     if (!in_text_start) { in_text_start = ""; }   // AMF null guard
+    if (!in_text_curr) { return nullptr; }   // AMF null guard
     return ImTextFindPreviousUtf8Codepoint(in_text_start,in_text_curr);
 }
 CIMGUI_API int igImTextCountLines(const char* in_text,const char* in_text_end)
@@ -3452,28 +3630,36 @@ CIMGUI_API int igImTextCountLines(const char* in_text,const char* in_text_end)
 CIMGUI_API ImFileHandle igImFileOpen(const char* filename,const char* mode)
 {
     if (!filename) { filename = ""; }   // AMF null guard
+    if (!mode) { return {}; }   // AMF null guard
     return ImFileOpen(filename,mode);
 }
 CIMGUI_API bool igImFileClose(ImFileHandle file)
 {
+    if (!file) { return false; }   // AMF null guard
     return ImFileClose(file);
 }
 CIMGUI_API ImU64 igImFileGetSize(ImFileHandle file)
 {
+    if (!file) { return 0; }   // AMF null guard
     return ImFileGetSize(file);
 }
 CIMGUI_API ImU64 igImFileRead(void* data,ImU64 size,ImU64 count,ImFileHandle file)
 {
+    if (!data) { return 0; }   // AMF null guard
+    if (!file) { return 0; }   // AMF null guard
     return ImFileRead(data,size,count,file);
 }
 CIMGUI_API ImU64 igImFileWrite(const void* data,ImU64 size,ImU64 count,ImFileHandle file)
 {
+    if (!data) { return 0; }   // AMF null guard
+    if (!file) { return 0; }   // AMF null guard
     return ImFileWrite(data,size,count,file);
 }
 CIMGUI_API void* igImFileLoadToMemory(const char* filename,const char* mode,size_t* out_file_size,int padding_bytes)
 {
     if (!filename) { filename = ""; }   // AMF null guard
     if (!out_file_size) { return nullptr; }   // AMF null guard
+    if (!mode) { return nullptr; }   // AMF null guard
     return ImFileLoadToMemory(filename,mode,out_file_size,padding_bytes);
 }
 CIMGUI_API float igImPow_Float(float x,float y)
@@ -3717,11 +3903,13 @@ CIMGUI_API ImRect* ImRect_ImRect_Float(float x1,float y1,float x2,float y2)
 CIMGUI_API void ImRect_GetCenter(ImVec2 *pOut,ImRect* self)
 {
     if (!pOut) { return; }   // AMF null guard
+    if (!self) { return; }   // AMF null guard
     *pOut = self->GetCenter();
 }
 CIMGUI_API void ImRect_GetSize(ImVec2 *pOut,ImRect* self)
 {
     if (!pOut) { return; }   // AMF null guard
+    if (!self) { return; }   // AMF null guard
     *pOut = self->GetSize();
 }
 CIMGUI_API float ImRect_GetWidth(ImRect* self)
@@ -3742,21 +3930,25 @@ CIMGUI_API float ImRect_GetArea(ImRect* self)
 CIMGUI_API void ImRect_GetTL(ImVec2 *pOut,ImRect* self)
 {
     if (!pOut) { return; }   // AMF null guard
+    if (!self) { return; }   // AMF null guard
     *pOut = self->GetTL();
 }
 CIMGUI_API void ImRect_GetTR(ImVec2 *pOut,ImRect* self)
 {
     if (!pOut) { return; }   // AMF null guard
+    if (!self) { return; }   // AMF null guard
     *pOut = self->GetTR();
 }
 CIMGUI_API void ImRect_GetBL(ImVec2 *pOut,ImRect* self)
 {
     if (!pOut) { return; }   // AMF null guard
+    if (!self) { return; }   // AMF null guard
     *pOut = self->GetBL();
 }
 CIMGUI_API void ImRect_GetBR(ImVec2 *pOut,ImRect* self)
 {
     if (!pOut) { return; }   // AMF null guard
+    if (!self) { return; }   // AMF null guard
     *pOut = self->GetBR();
 }
 CIMGUI_API bool ImRect_Contains_Vec2(ImRect* self,const ImVec2 p)
@@ -3837,6 +4029,7 @@ CIMGUI_API bool ImRect_IsInverted(ImRect* self)
 CIMGUI_API void ImRect_ToVec4(ImVec4 *pOut,ImRect* self)
 {
     if (!pOut) { return; }   // AMF null guard
+    if (!self) { return; }   // AMF null guard
     *pOut = self->ToVec4();
 }
 CIMGUI_API size_t igImBitArrayGetStorageSizeInBytes(int bitcount)
@@ -3850,6 +4043,7 @@ CIMGUI_API void igImBitArrayClearAllBits(ImU32* arr,int bitcount)
 }
 CIMGUI_API bool igImBitArrayTestBit(const ImU32* arr,int n)
 {
+    if (!arr) { return false; }   // AMF null guard
     return ImBitArrayTestBit(arr,n);
 }
 CIMGUI_API void igImBitArrayClearBit(ImU32* arr,int n)
@@ -3905,16 +4099,19 @@ CIMGUI_API int ImGuiTextIndex_size(ImGuiTextIndex* self)
 CIMGUI_API const char* ImGuiTextIndex_get_line_begin(ImGuiTextIndex* self,const char* base,int n)
 {
     if (!self) { return nullptr; }   // AMF null guard
+    if (!base) { return nullptr; }   // AMF null guard
     return self->get_line_begin(base,n);
 }
 CIMGUI_API const char* ImGuiTextIndex_get_line_end(ImGuiTextIndex* self,const char* base,int n)
 {
     if (!self) { return nullptr; }   // AMF null guard
+    if (!base) { return nullptr; }   // AMF null guard
     return self->get_line_end(base,n);
 }
 CIMGUI_API void ImGuiTextIndex_append(ImGuiTextIndex* self,const char* base,int old_size,int new_size)
 {
     if (!self) { return; }   // AMF null guard
+    if (!base) { return; }   // AMF null guard
     return self->append(base,old_size,new_size);
 }
 CIMGUI_API ImDrawListSharedData* ImDrawListSharedData_ImDrawListSharedData(void)
@@ -3943,6 +4140,7 @@ CIMGUI_API void ImDrawDataBuilder_destroy(ImDrawDataBuilder* self)
 CIMGUI_API void* ImGuiDataVarInfo_GetVarPtr(ImGuiDataVarInfo* self,void* parent)
 {
     if (!self) { return nullptr; }   // AMF null guard
+    if (!parent) { return nullptr; }   // AMF null guard
     return self->GetVarPtr(parent);
 }
 CIMGUI_API ImGuiStyleMod* ImGuiStyleMod_ImGuiStyleMod_Int(ImGuiStyleVar idx,int v)
@@ -4147,11 +4345,13 @@ CIMGUI_API void ImGuiStackSizes_destroy(ImGuiStackSizes* self)
 CIMGUI_API void ImGuiStackSizes_SetToContextState(ImGuiStackSizes* self,ImGuiContext* ctx)
 {
     if (!self) { return; }   // AMF null guard
+    if (!ctx) { return; }   // AMF null guard
     return self->SetToContextState(ctx);
 }
 CIMGUI_API void ImGuiStackSizes_CompareWithContextState(ImGuiStackSizes* self,ImGuiContext* ctx)
 {
     if (!self) { return; }   // AMF null guard
+    if (!ctx) { return; }   // AMF null guard
     return self->CompareWithContextState(ctx);
 }
 CIMGUI_API ImGuiPtrOrIndex* ImGuiPtrOrIndex_ImGuiPtrOrIndex_Ptr(void* ptr)
@@ -4237,6 +4437,7 @@ CIMGUI_API void ImGuiListClipperData_destroy(ImGuiListClipperData* self)
 CIMGUI_API void ImGuiListClipperData_Reset(ImGuiListClipperData* self,ImGuiListClipper* clipper)
 {
     if (!self) { return; }   // AMF null guard
+    if (!clipper) { return; }   // AMF null guard
     return self->Reset(clipper);
 }
 CIMGUI_API ImGuiNavItemData* ImGuiNavItemData_ImGuiNavItemData(void)
@@ -4342,6 +4543,7 @@ CIMGUI_API bool ImGuiDockNode_IsEmpty(ImGuiDockNode* self)
 CIMGUI_API void ImGuiDockNode_Rect(ImRect *pOut,ImGuiDockNode* self)
 {
     if (!pOut) { return; }   // AMF null guard
+    if (!self) { return; }   // AMF null guard
     *pOut = self->Rect();
 }
 CIMGUI_API void ImGuiDockNode_SetLocalFlags(ImGuiDockNode* self,ImGuiDockNodeFlags flags)
@@ -4380,11 +4582,13 @@ CIMGUI_API void ImGuiViewportP_ClearRequestFlags(ImGuiViewportP* self)
 CIMGUI_API void ImGuiViewportP_CalcWorkRectPos(ImVec2 *pOut,ImGuiViewportP* self,const ImVec2 off_min)
 {
     if (!pOut) { return; }   // AMF null guard
+    if (!self) { return; }   // AMF null guard
     *pOut = self->CalcWorkRectPos(off_min);
 }
 CIMGUI_API void ImGuiViewportP_CalcWorkRectSize(ImVec2 *pOut,ImGuiViewportP* self,const ImVec2 off_min,const ImVec2 off_max)
 {
     if (!pOut) { return; }   // AMF null guard
+    if (!self) { return; }   // AMF null guard
     *pOut = self->CalcWorkRectSize(off_min,off_max);
 }
 CIMGUI_API void ImGuiViewportP_UpdateWorkRect(ImGuiViewportP* self)
@@ -4395,16 +4599,19 @@ CIMGUI_API void ImGuiViewportP_UpdateWorkRect(ImGuiViewportP* self)
 CIMGUI_API void ImGuiViewportP_GetMainRect(ImRect *pOut,ImGuiViewportP* self)
 {
     if (!pOut) { return; }   // AMF null guard
+    if (!self) { return; }   // AMF null guard
     *pOut = self->GetMainRect();
 }
 CIMGUI_API void ImGuiViewportP_GetWorkRect(ImRect *pOut,ImGuiViewportP* self)
 {
     if (!pOut) { return; }   // AMF null guard
+    if (!self) { return; }   // AMF null guard
     *pOut = self->GetWorkRect();
 }
 CIMGUI_API void ImGuiViewportP_GetBuildWorkRect(ImRect *pOut,ImGuiViewportP* self)
 {
     if (!pOut) { return; }   // AMF null guard
+    if (!self) { return; }   // AMF null guard
     *pOut = self->GetBuildWorkRect();
 }
 CIMGUI_API ImGuiWindowSettings* ImGuiWindowSettings_ImGuiWindowSettings(void)
@@ -4487,6 +4694,7 @@ CIMGUI_API void ImGuiWindow_destroy(ImGuiWindow* self)
 CIMGUI_API ImGuiID ImGuiWindow_GetID_Str(ImGuiWindow* self,const char* str,const char* str_end)
 {
     if (!self) { return 0; }   // AMF null guard
+    if (!str) { return 0; }   // AMF null guard
     return self->GetID(str,str_end);
 }
 CIMGUI_API ImGuiID ImGuiWindow_GetID_Ptr(ImGuiWindow* self,const void* ptr)
@@ -4507,6 +4715,7 @@ CIMGUI_API ImGuiID ImGuiWindow_GetIDFromRectangle(ImGuiWindow* self,const ImRect
 CIMGUI_API void ImGuiWindow_Rect(ImRect *pOut,ImGuiWindow* self)
 {
     if (!pOut) { return; }   // AMF null guard
+    if (!self) { return; }   // AMF null guard
     *pOut = self->Rect();
 }
 CIMGUI_API float ImGuiWindow_CalcFontSize(ImGuiWindow* self)
@@ -4517,11 +4726,13 @@ CIMGUI_API float ImGuiWindow_CalcFontSize(ImGuiWindow* self)
 CIMGUI_API void ImGuiWindow_TitleBarRect(ImRect *pOut,ImGuiWindow* self)
 {
     if (!pOut) { return; }   // AMF null guard
+    if (!self) { return; }   // AMF null guard
     *pOut = self->TitleBarRect();
 }
 CIMGUI_API void ImGuiWindow_MenuBarRect(ImRect *pOut,ImGuiWindow* self)
 {
     if (!pOut) { return; }   // AMF null guard
+    if (!self) { return; }   // AMF null guard
     *pOut = self->MenuBarRect();
 }
 CIMGUI_API ImGuiTabItem* ImGuiTabItem_ImGuiTabItem(void)
@@ -4620,15 +4831,18 @@ CIMGUI_API ImGuiWindow* igFindWindowByName(const char* name)
 }
 CIMGUI_API void igUpdateWindowParentAndRootLinks(ImGuiWindow* window,ImGuiWindowFlags flags,ImGuiWindow* parent_window)
 {
+    if (!window) { return; }   // AMF null guard
     return ImGui::UpdateWindowParentAndRootLinks(window,flags,parent_window);
 }
 CIMGUI_API void igUpdateWindowSkipRefresh(ImGuiWindow* window)
 {
+    if (!window) { return; }   // AMF null guard
     return ImGui::UpdateWindowSkipRefresh(window);
 }
 CIMGUI_API void igCalcWindowNextAutoFitSize(ImVec2 *pOut,ImGuiWindow* window)
 {
     if (!pOut) { return; }   // AMF null guard
+    if (!window) { return; }   // AMF null guard
     *pOut = ImGui::CalcWindowNextAutoFitSize(window);
 }
 CIMGUI_API bool igIsWindowChildOf(ImGuiWindow* window,ImGuiWindow* potential_parent,bool popup_hierarchy,bool dock_hierarchy)
@@ -4637,53 +4851,66 @@ CIMGUI_API bool igIsWindowChildOf(ImGuiWindow* window,ImGuiWindow* potential_par
 }
 CIMGUI_API bool igIsWindowWithinBeginStackOf(ImGuiWindow* window,ImGuiWindow* potential_parent)
 {
+    if (!window) { return false; }   // AMF null guard
     return ImGui::IsWindowWithinBeginStackOf(window,potential_parent);
 }
 CIMGUI_API bool igIsWindowAbove(ImGuiWindow* potential_above,ImGuiWindow* potential_below)
 {
+    if (!potential_above) { return false; }   // AMF null guard
+    if (!potential_below) { return false; }   // AMF null guard
     return ImGui::IsWindowAbove(potential_above,potential_below);
 }
 CIMGUI_API bool igIsWindowNavFocusable(ImGuiWindow* window)
 {
+    if (!window) { return false; }   // AMF null guard
     return ImGui::IsWindowNavFocusable(window);
 }
 CIMGUI_API void igSetWindowPos_WindowPtr(ImGuiWindow* window,const ImVec2 pos,ImGuiCond cond)
 {
+    if (!window) { return; }   // AMF null guard
     return ImGui::SetWindowPos(window,pos,cond);
 }
 CIMGUI_API void igSetWindowSize_WindowPtr(ImGuiWindow* window,const ImVec2 size,ImGuiCond cond)
 {
+    if (!window) { return; }   // AMF null guard
     return ImGui::SetWindowSize(window,size,cond);
 }
 CIMGUI_API void igSetWindowCollapsed_WindowPtr(ImGuiWindow* window,bool collapsed,ImGuiCond cond)
 {
+    if (!window) { return; }   // AMF null guard
     return ImGui::SetWindowCollapsed(window,collapsed,cond);
 }
 CIMGUI_API void igSetWindowHitTestHole(ImGuiWindow* window,const ImVec2 pos,const ImVec2 size)
 {
+    if (!window) { return; }   // AMF null guard
     return ImGui::SetWindowHitTestHole(window,pos,size);
 }
 CIMGUI_API void igSetWindowHiddenAndSkipItemsForCurrentFrame(ImGuiWindow* window)
 {
+    if (!window) { return; }   // AMF null guard
     return ImGui::SetWindowHiddenAndSkipItemsForCurrentFrame(window);
 }
 CIMGUI_API void igSetWindowParentWindowForFocusRoute(ImGuiWindow* window,ImGuiWindow* parent_window)
 {
+    if (!window) { return; }   // AMF null guard
     return ImGui::SetWindowParentWindowForFocusRoute(window,parent_window);
 }
 CIMGUI_API void igWindowRectAbsToRel(ImRect *pOut,ImGuiWindow* window,const ImRect r)
 {
     if (!pOut) { return; }   // AMF null guard
+    if (!window) { return; }   // AMF null guard
     *pOut = ImGui::WindowRectAbsToRel(window,r);
 }
 CIMGUI_API void igWindowRectRelToAbs(ImRect *pOut,ImGuiWindow* window,const ImRect r)
 {
     if (!pOut) { return; }   // AMF null guard
+    if (!window) { return; }   // AMF null guard
     *pOut = ImGui::WindowRectRelToAbs(window,r);
 }
 CIMGUI_API void igWindowPosRelToAbs(ImVec2 *pOut,ImGuiWindow* window,const ImVec2 p)
 {
     if (!pOut) { return; }   // AMF null guard
+    if (!window) { return; }   // AMF null guard
     *pOut = ImGui::WindowPosRelToAbs(window,p);
 }
 CIMGUI_API void igFocusWindow(ImGuiWindow* window,ImGuiFocusRequestFlags flags)
@@ -4696,18 +4923,23 @@ CIMGUI_API void igFocusTopMostWindowUnderOne(ImGuiWindow* under_this_window,ImGu
 }
 CIMGUI_API void igBringWindowToFocusFront(ImGuiWindow* window)
 {
+    if (!window) { return; }   // AMF null guard
     return ImGui::BringWindowToFocusFront(window);
 }
 CIMGUI_API void igBringWindowToDisplayFront(ImGuiWindow* window)
 {
+    if (!window) { return; }   // AMF null guard
     return ImGui::BringWindowToDisplayFront(window);
 }
 CIMGUI_API void igBringWindowToDisplayBack(ImGuiWindow* window)
 {
+    if (!window) { return; }   // AMF null guard
     return ImGui::BringWindowToDisplayBack(window);
 }
 CIMGUI_API void igBringWindowToDisplayBehind(ImGuiWindow* window,ImGuiWindow* above_window)
 {
+    if (!window) { return; }   // AMF null guard
+    if (!above_window) { return; }   // AMF null guard
     return ImGui::BringWindowToDisplayBehind(window,above_window);
 }
 CIMGUI_API int igFindWindowDisplayIndex(ImGuiWindow* window)
@@ -4716,6 +4948,7 @@ CIMGUI_API int igFindWindowDisplayIndex(ImGuiWindow* window)
 }
 CIMGUI_API ImGuiWindow* igFindBottomMostVisibleWindowWithinBeginStack(ImGuiWindow* window)
 {
+    if (!window) { return nullptr; }   // AMF null guard
     return ImGui::FindBottomMostVisibleWindowWithinBeginStack(window);
 }
 CIMGUI_API void igSetNextWindowRefreshPolicy(ImGuiWindowRefreshFlags flags)
@@ -4724,6 +4957,7 @@ CIMGUI_API void igSetNextWindowRefreshPolicy(ImGuiWindowRefreshFlags flags)
 }
 CIMGUI_API void igSetCurrentFont(ImFont* font)
 {
+    if (!font) { return; }   // AMF null guard
     return ImGui::SetCurrentFont(font);
 }
 CIMGUI_API ImFont* igGetDefaultFont()
@@ -4732,10 +4966,14 @@ CIMGUI_API ImFont* igGetDefaultFont()
 }
 CIMGUI_API ImDrawList* igGetForegroundDrawList_WindowPtr(ImGuiWindow* window)
 {
+    if (!window) { return nullptr; }   // AMF null guard
     return ImGui::GetForegroundDrawList(window);
 }
 CIMGUI_API void igAddDrawListToDrawDataEx(ImDrawData* draw_data,ImVector_ImDrawListPtr* out_list,ImDrawList* draw_list)
 {
+    if (!draw_data) { return; }   // AMF null guard
+    if (!out_list) { return; }   // AMF null guard
+    if (!draw_list) { return; }   // AMF null guard
     return ImGui::AddDrawListToDrawDataEx(draw_data,out_list,draw_list);
 }
 CIMGUI_API void igInitialize()
@@ -4756,14 +4994,17 @@ CIMGUI_API void igUpdateHoveredWindowAndCaptureFlags()
 }
 CIMGUI_API void igFindHoveredWindowEx(const ImVec2 pos,bool find_first_and_in_any_viewport,ImGuiWindow** out_hovered_window,ImGuiWindow** out_hovered_window_under_moving_window)
 {
+    if (!out_hovered_window) { return; }   // AMF null guard
     return ImGui::FindHoveredWindowEx(pos,find_first_and_in_any_viewport,out_hovered_window,out_hovered_window_under_moving_window);
 }
 CIMGUI_API void igStartMouseMovingWindow(ImGuiWindow* window)
 {
+    if (!window) { return; }   // AMF null guard
     return ImGui::StartMouseMovingWindow(window);
 }
 CIMGUI_API void igStartMouseMovingWindowOrNode(ImGuiWindow* window,ImGuiDockNode* node,bool undock)
 {
+    if (!window) { return; }   // AMF null guard
     return ImGui::StartMouseMovingWindowOrNode(window,node,undock);
 }
 CIMGUI_API void igUpdateMouseMovingWindowNewFrame()
@@ -4776,30 +5017,39 @@ CIMGUI_API void igUpdateMouseMovingWindowEndFrame()
 }
 CIMGUI_API ImGuiID igAddContextHook(ImGuiContext* context,const ImGuiContextHook* hook)
 {
+    if (!context) { return 0; }   // AMF null guard
+    if (!hook) { return 0; }   // AMF null guard
     return ImGui::AddContextHook(context,hook);
 }
 CIMGUI_API void igRemoveContextHook(ImGuiContext* context,ImGuiID hook_to_remove)
 {
+    if (!context) { return; }   // AMF null guard
     return ImGui::RemoveContextHook(context,hook_to_remove);
 }
 CIMGUI_API void igCallContextHooks(ImGuiContext* context,ImGuiContextHookType type)
 {
+    if (!context) { return; }   // AMF null guard
     return ImGui::CallContextHooks(context,type);
 }
 CIMGUI_API void igTranslateWindowsInViewport(ImGuiViewportP* viewport,const ImVec2 old_pos,const ImVec2 new_pos)
 {
+    if (!viewport) { return; }   // AMF null guard
     return ImGui::TranslateWindowsInViewport(viewport,old_pos,new_pos);
 }
 CIMGUI_API void igScaleWindowsInViewport(ImGuiViewportP* viewport,float scale)
 {
+    if (!viewport) { return; }   // AMF null guard
     return ImGui::ScaleWindowsInViewport(viewport,scale);
 }
 CIMGUI_API void igDestroyPlatformWindow(ImGuiViewportP* viewport)
 {
+    if (!viewport) { return; }   // AMF null guard
     return ImGui::DestroyPlatformWindow(viewport);
 }
 CIMGUI_API void igSetWindowViewport(ImGuiWindow* window,ImGuiViewportP* viewport)
 {
+    if (!window) { return; }   // AMF null guard
+    if (!viewport) { return; }   // AMF null guard
     return ImGui::SetWindowViewport(window,viewport);
 }
 CIMGUI_API void igSetCurrentViewport(ImGuiWindow* window,ImGuiViewportP* viewport)
@@ -4808,6 +5058,7 @@ CIMGUI_API void igSetCurrentViewport(ImGuiWindow* window,ImGuiViewportP* viewpor
 }
 CIMGUI_API const ImGuiPlatformMonitor* igGetViewportPlatformMonitor(ImGuiViewport* viewport)
 {
+    if (!viewport) { return nullptr; }   // AMF null guard
     return ImGui::GetViewportPlatformMonitor(viewport);
 }
 CIMGUI_API ImGuiViewportP* igFindHoveredViewportFromPlatformWindowStack(const ImVec2 mouse_platform_pos)
@@ -4820,6 +5071,7 @@ CIMGUI_API void igMarkIniSettingsDirty_Nil()
 }
 CIMGUI_API void igMarkIniSettingsDirty_WindowPtr(ImGuiWindow* window)
 {
+    if (!window) { return; }   // AMF null guard
     return ImGui::MarkIniSettingsDirty(window);
 }
 CIMGUI_API void igClearIniSettings()
@@ -4828,6 +5080,7 @@ CIMGUI_API void igClearIniSettings()
 }
 CIMGUI_API void igAddSettingsHandler(const ImGuiSettingsHandler* handler)
 {
+    if (!handler) { return; }   // AMF null guard
     return ImGui::AddSettingsHandler(handler);
 }
 CIMGUI_API void igRemoveSettingsHandler(const char* type_name)
@@ -4851,6 +5104,7 @@ CIMGUI_API ImGuiWindowSettings* igFindWindowSettingsByID(ImGuiID id)
 }
 CIMGUI_API ImGuiWindowSettings* igFindWindowSettingsByWindow(ImGuiWindow* window)
 {
+    if (!window) { return nullptr; }   // AMF null guard
     return ImGui::FindWindowSettingsByWindow(window);
 }
 CIMGUI_API void igClearWindowSettings(const char* name)
@@ -4860,6 +5114,7 @@ CIMGUI_API void igClearWindowSettings(const char* name)
 }
 CIMGUI_API void igLocalizeRegisterEntries(const ImGuiLocEntry* entries,int count)
 {
+    if (!entries) { return; }   // AMF null guard
     return ImGui::LocalizeRegisterEntries(entries,count);
 }
 CIMGUI_API const char* igLocalizeGetMsg(ImGuiLocKey key)
@@ -4868,18 +5123,22 @@ CIMGUI_API const char* igLocalizeGetMsg(ImGuiLocKey key)
 }
 CIMGUI_API void igSetScrollX_WindowPtr(ImGuiWindow* window,float scroll_x)
 {
+    if (!window) { return; }   // AMF null guard
     return ImGui::SetScrollX(window,scroll_x);
 }
 CIMGUI_API void igSetScrollY_WindowPtr(ImGuiWindow* window,float scroll_y)
 {
+    if (!window) { return; }   // AMF null guard
     return ImGui::SetScrollY(window,scroll_y);
 }
 CIMGUI_API void igSetScrollFromPosX_WindowPtr(ImGuiWindow* window,float local_x,float center_x_ratio)
 {
+    if (!window) { return; }   // AMF null guard
     return ImGui::SetScrollFromPosX(window,local_x,center_x_ratio);
 }
 CIMGUI_API void igSetScrollFromPosY_WindowPtr(ImGuiWindow* window,float local_y,float center_y_ratio)
 {
+    if (!window) { return; }   // AMF null guard
     return ImGui::SetScrollFromPosY(window,local_y,center_y_ratio);
 }
 CIMGUI_API void igScrollToItem(ImGuiScrollFlags flags)
@@ -4888,15 +5147,18 @@ CIMGUI_API void igScrollToItem(ImGuiScrollFlags flags)
 }
 CIMGUI_API void igScrollToRect(ImGuiWindow* window,const ImRect rect,ImGuiScrollFlags flags)
 {
+    if (!window) { return; }   // AMF null guard
     return ImGui::ScrollToRect(window,rect,flags);
 }
 CIMGUI_API void igScrollToRectEx(ImVec2 *pOut,ImGuiWindow* window,const ImRect rect,ImGuiScrollFlags flags)
 {
     if (!pOut) { return; }   // AMF null guard
+    if (!window) { return; }   // AMF null guard
     *pOut = ImGui::ScrollToRectEx(window,rect,flags);
 }
 CIMGUI_API void igScrollToBringRectIntoView(ImGuiWindow* window,const ImRect rect)
 {
+    if (!window) { return; }   // AMF null guard
     return ImGui::ScrollToBringRectIntoView(window,rect);
 }
 CIMGUI_API ImGuiItemStatusFlags igGetItemStatusFlags()
@@ -4921,6 +5183,7 @@ CIMGUI_API void igSetActiveID(ImGuiID id,ImGuiWindow* window)
 }
 CIMGUI_API void igSetFocusID(ImGuiID id,ImGuiWindow* window)
 {
+    if (!window) { return; }   // AMF null guard
     return ImGui::SetFocusID(id,window);
 }
 CIMGUI_API void igClearActiveID()
@@ -4974,6 +5237,7 @@ CIMGUI_API bool igItemHoverable(const ImRect bb,ImGuiID id,ImGuiItemFlags item_f
 }
 CIMGUI_API bool igIsWindowContentHoverable(ImGuiWindow* window,ImGuiHoveredFlags flags)
 {
+    if (!window) { return false; }   // AMF null guard
     return ImGui::IsWindowContentHoverable(window,flags);
 }
 CIMGUI_API bool igIsClippedEx(const ImRect bb,ImGuiID id)
@@ -5008,6 +5272,7 @@ CIMGUI_API void igGetContentRegionMaxAbs(ImVec2 *pOut)
 }
 CIMGUI_API void igShrinkWidths(ImGuiShrinkWidthItem* items,int count,float width_excess)
 {
+    if (!items) { return; }   // AMF null guard
     return ImGui::ShrinkWidths(items,count,width_excess);
 }
 CIMGUI_API void igPushItemFlag(ImGuiItemFlags option,bool enabled)
@@ -5040,6 +5305,7 @@ CIMGUI_API void igLogToBuffer(int auto_open_depth)
 }
 CIMGUI_API void igLogRenderedText(const ImVec2* ref_pos,const char* text,const char* text_end)
 {
+    if (!text) { return; }   // AMF null guard
     return ImGui::LogRenderedText(ref_pos,text,text_end);
 }
 CIMGUI_API void igLogSetNextTextDecoration(const char* prefix,const char* suffix)
@@ -5087,6 +5353,7 @@ CIMGUI_API bool igBeginTooltipHidden()
 CIMGUI_API void igGetPopupAllowedExtentRect(ImRect *pOut,ImGuiWindow* window)
 {
     if (!pOut) { return; }   // AMF null guard
+    if (!window) { return; }   // AMF null guard
     *pOut = ImGui::GetPopupAllowedExtentRect(window);
 }
 CIMGUI_API ImGuiWindow* igGetTopMostPopupModal()
@@ -5104,11 +5371,13 @@ CIMGUI_API ImGuiWindow* igFindBlockingModal(ImGuiWindow* window)
 CIMGUI_API void igFindBestWindowPosForPopup(ImVec2 *pOut,ImGuiWindow* window)
 {
     if (!pOut) { return; }   // AMF null guard
+    if (!window) { return; }   // AMF null guard
     *pOut = ImGui::FindBestWindowPosForPopup(window);
 }
 CIMGUI_API void igFindBestWindowPosForPopupEx(ImVec2 *pOut,const ImVec2 ref_pos,const ImVec2 size,ImGuiDir* last_dir,const ImRect r_outer,const ImRect r_avoid,ImGuiPopupPositionPolicy policy)
 {
     if (!pOut) { return; }   // AMF null guard
+    if (!last_dir) { return; }   // AMF null guard
     *pOut = ImGui::FindBestWindowPosForPopupEx(ref_pos,size,last_dir,r_outer,r_avoid,policy);
 }
 CIMGUI_API bool igBeginViewportSideBar(const char* name,ImGuiViewport* viewport,ImGuiDir dir,float size,ImGuiWindowFlags window_flags)
@@ -5140,6 +5409,7 @@ CIMGUI_API void igEndComboPreview()
 }
 CIMGUI_API void igNavInitWindow(ImGuiWindow* window,bool force_reinit)
 {
+    if (!window) { return; }   // AMF null guard
     return ImGui::NavInitWindow(window,force_reinit);
 }
 CIMGUI_API void igNavInitRequestApplyResult()
@@ -5160,10 +5430,13 @@ CIMGUI_API void igNavMoveRequestForward(ImGuiDir move_dir,ImGuiDir clip_dir,ImGu
 }
 CIMGUI_API void igNavMoveRequestResolveWithLastItem(ImGuiNavItemData* result)
 {
+    if (!result) { return; }   // AMF null guard
     return ImGui::NavMoveRequestResolveWithLastItem(result);
 }
 CIMGUI_API void igNavMoveRequestResolveWithPastTreeNode(ImGuiNavItemData* result,ImGuiNavTreeNodeData* tree_node_data)
 {
+    if (!result) { return; }   // AMF null guard
+    if (!tree_node_data) { return; }   // AMF null guard
     return ImGui::NavMoveRequestResolveWithPastTreeNode(result,tree_node_data);
 }
 CIMGUI_API void igNavMoveRequestCancel()
@@ -5256,6 +5529,7 @@ CIMGUI_API ImGuiKey igConvertSingleModFlagToKey(ImGuiKey key)
 }
 CIMGUI_API ImGuiKeyData* igGetKeyData_ContextPtr(ImGuiContext* ctx,ImGuiKey key)
 {
+    if (!ctx) { return nullptr; }   // AMF null guard
     return ImGui::GetKeyData(ctx,key);
 }
 CIMGUI_API ImGuiKeyData* igGetKeyData_Key(ImGuiKey key)
@@ -5327,6 +5601,7 @@ CIMGUI_API bool igTestKeyOwner(ImGuiKey key,ImGuiID owner_id)
 }
 CIMGUI_API ImGuiKeyOwnerData* igGetKeyOwnerData(ImGuiContext* ctx,ImGuiKey key)
 {
+    if (!ctx) { return nullptr; }   // AMF null guard
     return ImGui::GetKeyOwnerData(ctx,key);
 }
 CIMGUI_API bool igIsKeyDown_ID(ImGuiKey key,ImGuiID owner_id)
@@ -5379,10 +5654,12 @@ CIMGUI_API ImGuiKeyRoutingData* igGetShortcutRoutingData(ImGuiKeyChord key_chord
 }
 CIMGUI_API void igDockContextInitialize(ImGuiContext* ctx)
 {
+    if (!ctx) { return; }   // AMF null guard
     return ImGui::DockContextInitialize(ctx);
 }
 CIMGUI_API void igDockContextShutdown(ImGuiContext* ctx)
 {
+    if (!ctx) { return; }   // AMF null guard
     return ImGui::DockContextShutdown(ctx);
 }
 CIMGUI_API void igDockContextClearNodes(ImGuiContext* ctx,ImGuiID root_id,bool clear_settings_refs)
@@ -5391,58 +5668,78 @@ CIMGUI_API void igDockContextClearNodes(ImGuiContext* ctx,ImGuiID root_id,bool c
 }
 CIMGUI_API void igDockContextRebuildNodes(ImGuiContext* ctx)
 {
+    if (!ctx) { return; }   // AMF null guard
     return ImGui::DockContextRebuildNodes(ctx);
 }
 CIMGUI_API void igDockContextNewFrameUpdateUndocking(ImGuiContext* ctx)
 {
+    if (!ctx) { return; }   // AMF null guard
     return ImGui::DockContextNewFrameUpdateUndocking(ctx);
 }
 CIMGUI_API void igDockContextNewFrameUpdateDocking(ImGuiContext* ctx)
 {
+    if (!ctx) { return; }   // AMF null guard
     return ImGui::DockContextNewFrameUpdateDocking(ctx);
 }
 CIMGUI_API void igDockContextEndFrame(ImGuiContext* ctx)
 {
+    if (!ctx) { return; }   // AMF null guard
     return ImGui::DockContextEndFrame(ctx);
 }
 CIMGUI_API ImGuiID igDockContextGenNodeID(ImGuiContext* ctx)
 {
+    if (!ctx) { return 0; }   // AMF null guard
     return ImGui::DockContextGenNodeID(ctx);
 }
 CIMGUI_API void igDockContextQueueDock(ImGuiContext* ctx,ImGuiWindow* target,ImGuiDockNode* target_node,ImGuiWindow* payload,ImGuiDir split_dir,float split_ratio,bool split_outer)
 {
+    if (!ctx) { return; }   // AMF null guard
+    if (!payload) { return; }   // AMF null guard
     return ImGui::DockContextQueueDock(ctx,target,target_node,payload,split_dir,split_ratio,split_outer);
 }
 CIMGUI_API void igDockContextQueueUndockWindow(ImGuiContext* ctx,ImGuiWindow* window)
 {
+    if (!ctx) { return; }   // AMF null guard
+    if (!window) { return; }   // AMF null guard
     return ImGui::DockContextQueueUndockWindow(ctx,window);
 }
 CIMGUI_API void igDockContextQueueUndockNode(ImGuiContext* ctx,ImGuiDockNode* node)
 {
+    if (!ctx) { return; }   // AMF null guard
+    if (!node) { return; }   // AMF null guard
     return ImGui::DockContextQueueUndockNode(ctx,node);
 }
 CIMGUI_API void igDockContextProcessUndockWindow(ImGuiContext* ctx,ImGuiWindow* window,bool clear_persistent_docking_ref)
 {
+    if (!ctx) { return; }   // AMF null guard
+    if (!window) { return; }   // AMF null guard
     return ImGui::DockContextProcessUndockWindow(ctx,window,clear_persistent_docking_ref);
 }
 CIMGUI_API void igDockContextProcessUndockNode(ImGuiContext* ctx,ImGuiDockNode* node)
 {
+    if (!ctx) { return; }   // AMF null guard
+    if (!node) { return; }   // AMF null guard
     return ImGui::DockContextProcessUndockNode(ctx,node);
 }
 CIMGUI_API bool igDockContextCalcDropPosForDocking(ImGuiWindow* target,ImGuiDockNode* target_node,ImGuiWindow* payload_window,ImGuiDockNode* payload_node,ImGuiDir split_dir,bool split_outer,ImVec2* out_pos)
 {
+    if (!out_pos) { return false; }   // AMF null guard
     return ImGui::DockContextCalcDropPosForDocking(target,target_node,payload_window,payload_node,split_dir,split_outer,out_pos);
 }
 CIMGUI_API ImGuiDockNode* igDockContextFindNodeByID(ImGuiContext* ctx,ImGuiID id)
 {
+    if (!ctx) { return nullptr; }   // AMF null guard
     return ImGui::DockContextFindNodeByID(ctx,id);
 }
 CIMGUI_API void igDockNodeWindowMenuHandler_Default(ImGuiContext* ctx,ImGuiDockNode* node,ImGuiTabBar* tab_bar)
 {
+    if (!node) { return; }   // AMF null guard
+    if (!tab_bar) { return; }   // AMF null guard
     return ImGui::DockNodeWindowMenuHandler_Default(ctx,node,tab_bar);
 }
 CIMGUI_API bool igDockNodeBeginAmendTabBar(ImGuiDockNode* node)
 {
+    if (!node) { return false; }   // AMF null guard
     return ImGui::DockNodeBeginAmendTabBar(node);
 }
 CIMGUI_API void igDockNodeEndAmendTabBar()
@@ -5451,18 +5748,22 @@ CIMGUI_API void igDockNodeEndAmendTabBar()
 }
 CIMGUI_API ImGuiDockNode* igDockNodeGetRootNode(ImGuiDockNode* node)
 {
+    if (!node) { return nullptr; }   // AMF null guard
     return ImGui::DockNodeGetRootNode(node);
 }
 CIMGUI_API bool igDockNodeIsInHierarchyOf(ImGuiDockNode* node,ImGuiDockNode* parent)
 {
+    if (!node) { return false; }   // AMF null guard
     return ImGui::DockNodeIsInHierarchyOf(node,parent);
 }
 CIMGUI_API int igDockNodeGetDepth(const ImGuiDockNode* node)
 {
+    if (!node) { return 0; }   // AMF null guard
     return ImGui::DockNodeGetDepth(node);
 }
 CIMGUI_API ImGuiID igDockNodeGetWindowMenuButtonId(const ImGuiDockNode* node)
 {
+    if (!node) { return 0; }   // AMF null guard
     return ImGui::DockNodeGetWindowMenuButtonId(node);
 }
 CIMGUI_API ImGuiDockNode* igGetWindowDockNode()
@@ -5471,22 +5772,27 @@ CIMGUI_API ImGuiDockNode* igGetWindowDockNode()
 }
 CIMGUI_API bool igGetWindowAlwaysWantOwnTabBar(ImGuiWindow* window)
 {
+    if (!window) { return false; }   // AMF null guard
     return ImGui::GetWindowAlwaysWantOwnTabBar(window);
 }
 CIMGUI_API void igBeginDocked(ImGuiWindow* window,bool* p_open)
 {
+    if (!window) { return; }   // AMF null guard
     return ImGui::BeginDocked(window,p_open);
 }
 CIMGUI_API void igBeginDockableDragDropSource(ImGuiWindow* window)
 {
+    if (!window) { return; }   // AMF null guard
     return ImGui::BeginDockableDragDropSource(window);
 }
 CIMGUI_API void igBeginDockableDragDropTarget(ImGuiWindow* window)
 {
+    if (!window) { return; }   // AMF null guard
     return ImGui::BeginDockableDragDropTarget(window);
 }
 CIMGUI_API void igSetWindowDock(ImGuiWindow* window,ImGuiID dock_id,ImGuiCond cond)
 {
+    if (!window) { return; }   // AMF null guard
     return ImGui::SetWindowDock(window,dock_id,cond);
 }
 CIMGUI_API void igDockBuilderDockWindow(const char* window_name,ImGuiID node_id)
@@ -5534,15 +5840,18 @@ CIMGUI_API ImGuiID igDockBuilderSplitNode(ImGuiID node_id,ImGuiDir split_dir,flo
 }
 CIMGUI_API void igDockBuilderCopyDockSpace(ImGuiID src_dockspace_id,ImGuiID dst_dockspace_id,ImVector_const_charPtr* in_window_remap_pairs)
 {
+    if (!in_window_remap_pairs) { return; }   // AMF null guard
     return ImGui::DockBuilderCopyDockSpace(src_dockspace_id,dst_dockspace_id,in_window_remap_pairs);
 }
 CIMGUI_API void igDockBuilderCopyNode(ImGuiID src_node_id,ImGuiID dst_node_id,ImVector_ImGuiID* out_node_remap_pairs)
 {
+    if (!out_node_remap_pairs) { return; }   // AMF null guard
     return ImGui::DockBuilderCopyNode(src_node_id,dst_node_id,out_node_remap_pairs);
 }
 CIMGUI_API void igDockBuilderCopyWindowSettings(const char* src_name,const char* dst_name)
 {
     if (!src_name) { src_name = ""; }   // AMF null guard
+    if (!dst_name) { return; }   // AMF null guard
     return ImGui::DockBuilderCopyWindowSettings(src_name,dst_name);
 }
 CIMGUI_API void igDockBuilderFinish(ImGuiID node_id)
@@ -5587,18 +5896,24 @@ CIMGUI_API ImGuiTypingSelectRequest* igGetTypingSelectRequest(ImGuiTypingSelectF
 }
 CIMGUI_API int igTypingSelectFindMatch(ImGuiTypingSelectRequest* req,int items_count,const char*(*get_item_name_func)(void*,int),void* user_data,int nav_item_idx)
 {
+    if (!get_item_name_func) { return -1; }   // AMF null guard
     return ImGui::TypingSelectFindMatch(req,items_count,get_item_name_func,user_data,nav_item_idx);
 }
 CIMGUI_API int igTypingSelectFindNextSingleCharMatch(ImGuiTypingSelectRequest* req,int items_count,const char*(*get_item_name_func)(void*,int),void* user_data,int nav_item_idx)
 {
+    if (!req) { return -1; }   // AMF null guard
+    if (!get_item_name_func) { return -1; }   // AMF null guard
     return ImGui::TypingSelectFindNextSingleCharMatch(req,items_count,get_item_name_func,user_data,nav_item_idx);
 }
 CIMGUI_API int igTypingSelectFindBestLeadingMatch(ImGuiTypingSelectRequest* req,int items_count,const char*(*get_item_name_func)(void*,int),void* user_data)
 {
+    if (!req) { return -1; }   // AMF null guard
+    if (!get_item_name_func) { return -1; }   // AMF null guard
     return ImGui::TypingSelectFindBestLeadingMatch(req,items_count,get_item_name_func,user_data);
 }
 CIMGUI_API void igSetWindowClipRectBeforeSetChannel(ImGuiWindow* window,const ImRect clip_rect)
 {
+    if (!window) { return; }   // AMF null guard
     return ImGui::SetWindowClipRectBeforeSetChannel(window,clip_rect);
 }
 CIMGUI_API void igBeginColumns(const char* str_id,int count,ImGuiOldColumnFlags flags)
@@ -5629,14 +5944,17 @@ CIMGUI_API ImGuiID igGetColumnsID(const char* str_id,int count)
 }
 CIMGUI_API ImGuiOldColumns* igFindOrCreateColumns(ImGuiWindow* window,ImGuiID id)
 {
+    if (!window) { return nullptr; }   // AMF null guard
     return ImGui::FindOrCreateColumns(window,id);
 }
 CIMGUI_API float igGetColumnOffsetFromNorm(const ImGuiOldColumns* columns,float offset_norm)
 {
+    if (!columns) { return 0.0f; }   // AMF null guard
     return ImGui::GetColumnOffsetFromNorm(columns,offset_norm);
 }
 CIMGUI_API float igGetColumnNormFromOffset(const ImGuiOldColumns* columns,float offset)
 {
+    if (!columns) { return 0.0f; }   // AMF null guard
     return ImGui::GetColumnNormFromOffset(columns,offset);
 }
 CIMGUI_API void igTableOpenContextMenu(int column_n)
@@ -5677,6 +5995,7 @@ CIMGUI_API void igTablePopBackgroundChannel()
 }
 CIMGUI_API void igTableAngledHeadersRowEx(ImGuiID row_id,float angle,float max_label_width,const ImGuiTableHeaderData* data,int data_count)
 {
+    if (!data) { return; }   // AMF null guard
     return ImGui::TableAngledHeadersRowEx(row_id,angle,max_label_width,data,data_count);
 }
 CIMGUI_API ImGuiTable* igGetCurrentTable()
@@ -5694,123 +6013,155 @@ CIMGUI_API bool igBeginTableEx(const char* name,ImGuiID id,int columns_count,ImG
 }
 CIMGUI_API void igTableBeginInitMemory(ImGuiTable* table,int columns_count)
 {
+    if (!table) { return; }   // AMF null guard
     return ImGui::TableBeginInitMemory(table,columns_count);
 }
 CIMGUI_API void igTableBeginApplyRequests(ImGuiTable* table)
 {
+    if (!table) { return; }   // AMF null guard
     return ImGui::TableBeginApplyRequests(table);
 }
 CIMGUI_API void igTableSetupDrawChannels(ImGuiTable* table)
 {
+    if (!table) { return; }   // AMF null guard
     return ImGui::TableSetupDrawChannels(table);
 }
 CIMGUI_API void igTableUpdateLayout(ImGuiTable* table)
 {
+    if (!table) { return; }   // AMF null guard
     return ImGui::TableUpdateLayout(table);
 }
 CIMGUI_API void igTableUpdateBorders(ImGuiTable* table)
 {
+    if (!table) { return; }   // AMF null guard
     return ImGui::TableUpdateBorders(table);
 }
 CIMGUI_API void igTableUpdateColumnsWeightFromWidth(ImGuiTable* table)
 {
+    if (!table) { return; }   // AMF null guard
     return ImGui::TableUpdateColumnsWeightFromWidth(table);
 }
 CIMGUI_API void igTableDrawBorders(ImGuiTable* table)
 {
+    if (!table) { return; }   // AMF null guard
     return ImGui::TableDrawBorders(table);
 }
 CIMGUI_API void igTableDrawDefaultContextMenu(ImGuiTable* table,ImGuiTableFlags flags_for_section_to_display)
 {
+    if (!table) { return; }   // AMF null guard
     return ImGui::TableDrawDefaultContextMenu(table,flags_for_section_to_display);
 }
 CIMGUI_API bool igTableBeginContextMenuPopup(ImGuiTable* table)
 {
+    if (!table) { return false; }   // AMF null guard
     return ImGui::TableBeginContextMenuPopup(table);
 }
 CIMGUI_API void igTableMergeDrawChannels(ImGuiTable* table)
 {
+    if (!table) { return; }   // AMF null guard
     return ImGui::TableMergeDrawChannels(table);
 }
 CIMGUI_API ImGuiTableInstanceData* igTableGetInstanceData(ImGuiTable* table,int instance_no)
 {
+    if (!table) { return nullptr; }   // AMF null guard
     return ImGui::TableGetInstanceData(table,instance_no);
 }
 CIMGUI_API ImGuiID igTableGetInstanceID(ImGuiTable* table,int instance_no)
 {
+    if (!table) { return 0; }   // AMF null guard
     return ImGui::TableGetInstanceID(table,instance_no);
 }
 CIMGUI_API void igTableSortSpecsSanitize(ImGuiTable* table)
 {
+    if (!table) { return; }   // AMF null guard
     return ImGui::TableSortSpecsSanitize(table);
 }
 CIMGUI_API void igTableSortSpecsBuild(ImGuiTable* table)
 {
+    if (!table) { return; }   // AMF null guard
     return ImGui::TableSortSpecsBuild(table);
 }
 CIMGUI_API ImGuiSortDirection igTableGetColumnNextSortDirection(ImGuiTableColumn* column)
 {
+    if (!column) { return {}; }   // AMF null guard
     return ImGui::TableGetColumnNextSortDirection(column);
 }
 CIMGUI_API void igTableFixColumnSortDirection(ImGuiTable* table,ImGuiTableColumn* column)
 {
+    if (!table) { return; }   // AMF null guard
+    if (!column) { return; }   // AMF null guard
     return ImGui::TableFixColumnSortDirection(table,column);
 }
 CIMGUI_API float igTableGetColumnWidthAuto(ImGuiTable* table,ImGuiTableColumn* column)
 {
+    if (!table) { return 0.0f; }   // AMF null guard
+    if (!column) { return 0.0f; }   // AMF null guard
     return ImGui::TableGetColumnWidthAuto(table,column);
 }
 CIMGUI_API void igTableBeginRow(ImGuiTable* table)
 {
+    if (!table) { return; }   // AMF null guard
     return ImGui::TableBeginRow(table);
 }
 CIMGUI_API void igTableEndRow(ImGuiTable* table)
 {
+    if (!table) { return; }   // AMF null guard
     return ImGui::TableEndRow(table);
 }
 CIMGUI_API void igTableBeginCell(ImGuiTable* table,int column_n)
 {
+    if (!table) { return; }   // AMF null guard
     return ImGui::TableBeginCell(table,column_n);
 }
 CIMGUI_API void igTableEndCell(ImGuiTable* table)
 {
+    if (!table) { return; }   // AMF null guard
     return ImGui::TableEndCell(table);
 }
 CIMGUI_API void igTableGetCellBgRect(ImRect *pOut,const ImGuiTable* table,int column_n)
 {
     if (!pOut) { return; }   // AMF null guard
+    if (!table) { return; }   // AMF null guard
     *pOut = ImGui::TableGetCellBgRect(table,column_n);
 }
 CIMGUI_API const char* igTableGetColumnName_TablePtr(const ImGuiTable* table,int column_n)
 {
+    if (!table) { return nullptr; }   // AMF null guard
     return ImGui::TableGetColumnName(table,column_n);
 }
 CIMGUI_API ImGuiID igTableGetColumnResizeID(ImGuiTable* table,int column_n,int instance_no)
 {
+    if (!table) { return 0; }   // AMF null guard
     return ImGui::TableGetColumnResizeID(table,column_n,instance_no);
 }
 CIMGUI_API float igTableGetMaxColumnWidth(const ImGuiTable* table,int column_n)
 {
+    if (!table) { return 0.0f; }   // AMF null guard
     return ImGui::TableGetMaxColumnWidth(table,column_n);
 }
 CIMGUI_API void igTableSetColumnWidthAutoSingle(ImGuiTable* table,int column_n)
 {
+    if (!table) { return; }   // AMF null guard
     return ImGui::TableSetColumnWidthAutoSingle(table,column_n);
 }
 CIMGUI_API void igTableSetColumnWidthAutoAll(ImGuiTable* table)
 {
+    if (!table) { return; }   // AMF null guard
     return ImGui::TableSetColumnWidthAutoAll(table);
 }
 CIMGUI_API void igTableRemove(ImGuiTable* table)
 {
+    if (!table) { return; }   // AMF null guard
     return ImGui::TableRemove(table);
 }
 CIMGUI_API void igTableGcCompactTransientBuffers_TablePtr(ImGuiTable* table)
 {
+    if (!table) { return; }   // AMF null guard
     return ImGui::TableGcCompactTransientBuffers(table);
 }
 CIMGUI_API void igTableGcCompactTransientBuffers_TableTempDataPtr(ImGuiTableTempData* table)
 {
+    if (!table) { return; }   // AMF null guard
     return ImGui::TableGcCompactTransientBuffers(table);
 }
 CIMGUI_API void igTableGcCompactSettings()
@@ -5819,18 +6170,22 @@ CIMGUI_API void igTableGcCompactSettings()
 }
 CIMGUI_API void igTableLoadSettings(ImGuiTable* table)
 {
+    if (!table) { return; }   // AMF null guard
     return ImGui::TableLoadSettings(table);
 }
 CIMGUI_API void igTableSaveSettings(ImGuiTable* table)
 {
+    if (!table) { return; }   // AMF null guard
     return ImGui::TableSaveSettings(table);
 }
 CIMGUI_API void igTableResetSettings(ImGuiTable* table)
 {
+    if (!table) { return; }   // AMF null guard
     return ImGui::TableResetSettings(table);
 }
 CIMGUI_API ImGuiTableSettings* igTableGetBoundSettings(ImGuiTable* table)
 {
+    if (!table) { return nullptr; }   // AMF null guard
     return ImGui::TableGetBoundSettings(table);
 }
 CIMGUI_API void igTableSettingsAddSettingsHandler()
@@ -5851,102 +6206,137 @@ CIMGUI_API ImGuiTabBar* igGetCurrentTabBar()
 }
 CIMGUI_API bool igBeginTabBarEx(ImGuiTabBar* tab_bar,const ImRect bb,ImGuiTabBarFlags flags)
 {
+    if (!tab_bar) { return false; }   // AMF null guard
     return ImGui::BeginTabBarEx(tab_bar,bb,flags);
 }
 CIMGUI_API ImGuiTabItem* igTabBarFindTabByID(ImGuiTabBar* tab_bar,ImGuiID tab_id)
 {
+    if (!tab_bar) { return nullptr; }   // AMF null guard
     return ImGui::TabBarFindTabByID(tab_bar,tab_id);
 }
 CIMGUI_API ImGuiTabItem* igTabBarFindTabByOrder(ImGuiTabBar* tab_bar,int order)
 {
+    if (!tab_bar) { return nullptr; }   // AMF null guard
     return ImGui::TabBarFindTabByOrder(tab_bar,order);
 }
 CIMGUI_API ImGuiTabItem* igTabBarFindMostRecentlySelectedTabForActiveWindow(ImGuiTabBar* tab_bar)
 {
+    if (!tab_bar) { return nullptr; }   // AMF null guard
     return ImGui::TabBarFindMostRecentlySelectedTabForActiveWindow(tab_bar);
 }
 CIMGUI_API ImGuiTabItem* igTabBarGetCurrentTab(ImGuiTabBar* tab_bar)
 {
+    if (!tab_bar) { return nullptr; }   // AMF null guard
     return ImGui::TabBarGetCurrentTab(tab_bar);
 }
 CIMGUI_API int igTabBarGetTabOrder(ImGuiTabBar* tab_bar,ImGuiTabItem* tab)
 {
+    if (!tab_bar) { return 0; }   // AMF null guard
+    if (!tab) { return 0; }   // AMF null guard
     return ImGui::TabBarGetTabOrder(tab_bar,tab);
 }
 CIMGUI_API const char* igTabBarGetTabName(ImGuiTabBar* tab_bar,ImGuiTabItem* tab)
 {
+    if (!tab_bar) { return nullptr; }   // AMF null guard
+    if (!tab) { return nullptr; }   // AMF null guard
     return ImGui::TabBarGetTabName(tab_bar,tab);
 }
 CIMGUI_API void igTabBarAddTab(ImGuiTabBar* tab_bar,ImGuiTabItemFlags tab_flags,ImGuiWindow* window)
 {
+    if (!tab_bar) { return; }   // AMF null guard
+    if (!window) { return; }   // AMF null guard
     return ImGui::TabBarAddTab(tab_bar,tab_flags,window);
 }
 CIMGUI_API void igTabBarRemoveTab(ImGuiTabBar* tab_bar,ImGuiID tab_id)
 {
+    if (!tab_bar) { return; }   // AMF null guard
     return ImGui::TabBarRemoveTab(tab_bar,tab_id);
 }
 CIMGUI_API void igTabBarCloseTab(ImGuiTabBar* tab_bar,ImGuiTabItem* tab)
 {
+    if (!tab_bar) { return; }   // AMF null guard
+    if (!tab) { return; }   // AMF null guard
     return ImGui::TabBarCloseTab(tab_bar,tab);
 }
 CIMGUI_API void igTabBarQueueFocus(ImGuiTabBar* tab_bar,ImGuiTabItem* tab)
 {
+    if (!tab_bar) { return; }   // AMF null guard
+    if (!tab) { return; }   // AMF null guard
     return ImGui::TabBarQueueFocus(tab_bar,tab);
 }
 CIMGUI_API void igTabBarQueueReorder(ImGuiTabBar* tab_bar,ImGuiTabItem* tab,int offset)
 {
+    if (!tab_bar) { return; }   // AMF null guard
+    if (!tab) { return; }   // AMF null guard
     return ImGui::TabBarQueueReorder(tab_bar,tab,offset);
 }
 CIMGUI_API void igTabBarQueueReorderFromMousePos(ImGuiTabBar* tab_bar,ImGuiTabItem* tab,ImVec2 mouse_pos)
 {
+    if (!tab_bar) { return; }   // AMF null guard
+    if (!tab) { return; }   // AMF null guard
     return ImGui::TabBarQueueReorderFromMousePos(tab_bar,tab,mouse_pos);
 }
 CIMGUI_API bool igTabBarProcessReorder(ImGuiTabBar* tab_bar)
 {
+    if (!tab_bar) { return false; }   // AMF null guard
     return ImGui::TabBarProcessReorder(tab_bar);
 }
 CIMGUI_API bool igTabItemEx(ImGuiTabBar* tab_bar,const char* label,bool* p_open,ImGuiTabItemFlags flags,ImGuiWindow* docked_window)
 {
+    if (!tab_bar) { return false; }   // AMF null guard
+    if (!label) { label = ""; }   // AMF null guard
     return ImGui::TabItemEx(tab_bar,label,p_open,flags,docked_window);
 }
 CIMGUI_API void igTabItemCalcSize_Str(ImVec2 *pOut,const char* label,bool has_close_button_or_unsaved_marker)
 {
     if (!pOut) { return; }   // AMF null guard
+    if (!label) { label = ""; }   // AMF null guard
     *pOut = ImGui::TabItemCalcSize(label,has_close_button_or_unsaved_marker);
 }
 CIMGUI_API void igTabItemCalcSize_WindowPtr(ImVec2 *pOut,ImGuiWindow* window)
 {
     if (!pOut) { return; }   // AMF null guard
+    if (!window) { return; }   // AMF null guard
     *pOut = ImGui::TabItemCalcSize(window);
 }
 CIMGUI_API void igTabItemBackground(ImDrawList* draw_list,const ImRect bb,ImGuiTabItemFlags flags,ImU32 col)
 {
+    if (!draw_list) { return; }   // AMF null guard
     return ImGui::TabItemBackground(draw_list,bb,flags,col);
 }
 CIMGUI_API void igTabItemLabelAndCloseButton(ImDrawList* draw_list,const ImRect bb,ImGuiTabItemFlags flags,ImVec2 frame_padding,const char* label,ImGuiID tab_id,ImGuiID close_button_id,bool is_contents_visible,bool* out_just_closed,bool* out_text_clipped)
 {
     if (!out_just_closed) { return; }   // AMF null guard
     if (!out_text_clipped) { return; }   // AMF null guard
+    if (!draw_list) { return; }   // AMF null guard
+    if (!label) { label = ""; }   // AMF null guard
     return ImGui::TabItemLabelAndCloseButton(draw_list,bb,flags,frame_padding,label,tab_id,close_button_id,is_contents_visible,out_just_closed,out_text_clipped);
 }
 CIMGUI_API void igRenderText(ImVec2 pos,const char* text,const char* text_end,bool hide_text_after_hash)
 {
+    if (!text) { return; }   // AMF null guard
     return ImGui::RenderText(pos,text,text_end,hide_text_after_hash);
 }
 CIMGUI_API void igRenderTextWrapped(ImVec2 pos,const char* text,const char* text_end,float wrap_width)
 {
+    if (!text) { return; }   // AMF null guard
     return ImGui::RenderTextWrapped(pos,text,text_end,wrap_width);
 }
 CIMGUI_API void igRenderTextClipped(const ImVec2 pos_min,const ImVec2 pos_max,const char* text,const char* text_end,const ImVec2* text_size_if_known,const ImVec2 align,const ImRect* clip_rect)
 {
+    if (!text) { return; }   // AMF null guard
     return ImGui::RenderTextClipped(pos_min,pos_max,text,text_end,text_size_if_known,align,clip_rect);
 }
 CIMGUI_API void igRenderTextClippedEx(ImDrawList* draw_list,const ImVec2 pos_min,const ImVec2 pos_max,const char* text,const char* text_end,const ImVec2* text_size_if_known,const ImVec2 align,const ImRect* clip_rect)
 {
+    if (!draw_list) { return; }   // AMF null guard
+    if (!text) { return; }   // AMF null guard
     return ImGui::RenderTextClippedEx(draw_list,pos_min,pos_max,text,text_end,text_size_if_known,align,clip_rect);
 }
 CIMGUI_API void igRenderTextEllipsis(ImDrawList* draw_list,const ImVec2 pos_min,const ImVec2 pos_max,float clip_max_x,float ellipsis_max_x,const char* text,const char* text_end,const ImVec2* text_size_if_known)
 {
+    if (!draw_list) { return; }   // AMF null guard
+    if (!text) { return; }   // AMF null guard
     return ImGui::RenderTextEllipsis(draw_list,pos_min,pos_max,clip_max_x,ellipsis_max_x,text,text_end,text_size_if_known);
 }
 CIMGUI_API void igRenderFrame(ImVec2 p_min,ImVec2 p_max,ImU32 fill_col,bool border,float rounding)
@@ -5959,6 +6349,7 @@ CIMGUI_API void igRenderFrameBorder(ImVec2 p_min,ImVec2 p_max,float rounding)
 }
 CIMGUI_API void igRenderColorRectWithAlphaCheckerboard(ImDrawList* draw_list,ImVec2 p_min,ImVec2 p_max,ImU32 fill_col,float grid_step,ImVec2 grid_off,float rounding,ImDrawFlags flags)
 {
+    if (!draw_list) { return; }   // AMF null guard
     return ImGui::RenderColorRectWithAlphaCheckerboard(draw_list,p_min,p_max,fill_col,grid_step,grid_off,rounding,flags);
 }
 CIMGUI_API void igRenderNavHighlight(const ImRect bb,ImGuiID id,ImGuiNavHighlightFlags flags)
@@ -5976,30 +6367,37 @@ CIMGUI_API void igRenderMouseCursor(ImVec2 pos,float scale,ImGuiMouseCursor mous
 }
 CIMGUI_API void igRenderArrow(ImDrawList* draw_list,ImVec2 pos,ImU32 col,ImGuiDir dir,float scale)
 {
+    if (!draw_list) { return; }   // AMF null guard
     return ImGui::RenderArrow(draw_list,pos,col,dir,scale);
 }
 CIMGUI_API void igRenderBullet(ImDrawList* draw_list,ImVec2 pos,ImU32 col)
 {
+    if (!draw_list) { return; }   // AMF null guard
     return ImGui::RenderBullet(draw_list,pos,col);
 }
 CIMGUI_API void igRenderCheckMark(ImDrawList* draw_list,ImVec2 pos,ImU32 col,float sz)
 {
+    if (!draw_list) { return; }   // AMF null guard
     return ImGui::RenderCheckMark(draw_list,pos,col,sz);
 }
 CIMGUI_API void igRenderArrowPointingAt(ImDrawList* draw_list,ImVec2 pos,ImVec2 half_sz,ImGuiDir direction,ImU32 col)
 {
+    if (!draw_list) { return; }   // AMF null guard
     return ImGui::RenderArrowPointingAt(draw_list,pos,half_sz,direction,col);
 }
 CIMGUI_API void igRenderArrowDockMenu(ImDrawList* draw_list,ImVec2 p_min,float sz,ImU32 col)
 {
+    if (!draw_list) { return; }   // AMF null guard
     return ImGui::RenderArrowDockMenu(draw_list,p_min,sz,col);
 }
 CIMGUI_API void igRenderRectFilledRangeH(ImDrawList* draw_list,const ImRect rect,ImU32 col,float x_start_norm,float x_end_norm,float rounding)
 {
+    if (!draw_list) { return; }   // AMF null guard
     return ImGui::RenderRectFilledRangeH(draw_list,rect,col,x_start_norm,x_end_norm,rounding);
 }
 CIMGUI_API void igRenderRectFilledWithHole(ImDrawList* draw_list,const ImRect outer,const ImRect inner,ImU32 col,float rounding)
 {
+    if (!draw_list) { return; }   // AMF null guard
     return ImGui::RenderRectFilledWithHole(draw_list,outer,inner,col,rounding);
 }
 CIMGUI_API ImDrawFlags igCalcRoundingFlagsForRectInRect(const ImRect r_in,const ImRect r_outer,float threshold)
@@ -6031,11 +6429,14 @@ CIMGUI_API void igSeparatorEx(ImGuiSeparatorFlags flags,float thickness)
 }
 CIMGUI_API void igSeparatorTextEx(ImGuiID id,const char* label,const char* label_end,float extra_width)
 {
+    if (!label) { return; }   // AMF null guard
+    if (!label_end) { label_end = label + strlen(label); }   // AMF null guard
     return ImGui::SeparatorTextEx(id,label,label_end,extra_width);
 }
 CIMGUI_API bool igCheckboxFlags_S64Ptr(const char* label,ImS64* flags,ImS64 flags_value)
 {
     if (!label) { label = ""; }   // AMF null guard
+    if (!flags) { return false; }   // AMF null guard
     return ImGui::CheckboxFlags(label,flags,flags_value);
 }
 CIMGUI_API bool igCheckboxFlags_U64Ptr(const char* label,ImU64* flags,ImU64 flags_value)
@@ -6058,23 +6459,28 @@ CIMGUI_API void igScrollbar(ImGuiAxis axis)
 }
 CIMGUI_API bool igScrollbarEx(const ImRect bb,ImGuiID id,ImGuiAxis axis,ImS64* p_scroll_v,ImS64 avail_v,ImS64 contents_v,ImDrawFlags flags)
 {
+    if (!p_scroll_v) { return false; }   // AMF null guard
     return ImGui::ScrollbarEx(bb,id,axis,p_scroll_v,avail_v,contents_v,flags);
 }
 CIMGUI_API void igGetWindowScrollbarRect(ImRect *pOut,ImGuiWindow* window,ImGuiAxis axis)
 {
     if (!pOut) { return; }   // AMF null guard
+    if (!window) { return; }   // AMF null guard
     *pOut = ImGui::GetWindowScrollbarRect(window,axis);
 }
 CIMGUI_API ImGuiID igGetWindowScrollbarID(ImGuiWindow* window,ImGuiAxis axis)
 {
+    if (!window) { return 0; }   // AMF null guard
     return ImGui::GetWindowScrollbarID(window,axis);
 }
 CIMGUI_API ImGuiID igGetWindowResizeCornerID(ImGuiWindow* window,int n)
 {
+    if (!window) { return 0; }   // AMF null guard
     return ImGui::GetWindowResizeCornerID(window,n);
 }
 CIMGUI_API ImGuiID igGetWindowResizeBorderID(ImGuiWindow* window,ImGuiDir dir)
 {
+    if (!window) { return 0; }   // AMF null guard
     return ImGui::GetWindowResizeBorderID(window,dir);
 }
 CIMGUI_API bool igButtonBehavior(const ImRect bb,ImGuiID id,bool* out_hovered,bool* out_held,ImGuiButtonFlags flags)
@@ -6085,10 +6491,17 @@ CIMGUI_API bool igButtonBehavior(const ImRect bb,ImGuiID id,bool* out_hovered,bo
 }
 CIMGUI_API bool igDragBehavior(ImGuiID id,ImGuiDataType data_type,void* p_v,float v_speed,const void* p_min,const void* p_max,const char* format,ImGuiSliderFlags flags)
 {
+    if (!p_v) { return false; }   // AMF null guard
+    if (!format) { format = ""; }   // AMF null guard
     return ImGui::DragBehavior(id,data_type,p_v,v_speed,p_min,p_max,format,flags);
 }
 CIMGUI_API bool igSliderBehavior(const ImRect bb,ImGuiID id,ImGuiDataType data_type,void* p_v,const void* p_min,const void* p_max,const char* format,ImGuiSliderFlags flags,ImRect* out_grab_bb)
 {
+    if (!p_v) { return false; }   // AMF null guard
+    if (!p_min) { return false; }   // AMF null guard
+    if (!p_max) { return false; }   // AMF null guard
+    if (!format) { format = ""; }   // AMF null guard
+    if (!out_grab_bb) { return false; }   // AMF null guard
     return ImGui::SliderBehavior(bb,id,data_type,p_v,p_min,p_max,format,flags,out_grab_bb);
 }
 CIMGUI_API bool igSplitterBehavior(const ImRect bb,ImGuiID id,ImGuiAxis axis,float* size1,float* size2,float min_size1,float min_size2,float hover_extend,float hover_visibility_delay,ImU32 bg_col)
@@ -6099,6 +6512,7 @@ CIMGUI_API bool igSplitterBehavior(const ImRect bb,ImGuiID id,ImGuiAxis axis,flo
 }
 CIMGUI_API bool igTreeNodeBehavior(ImGuiID id,ImGuiTreeNodeFlags flags,const char* label,const char* label_end)
 {
+    if (!label) { return false; }   // AMF null guard
     amf_BeginConsumerHeader();   // AMF: stock header widening (2.0.6)
     const bool amf_r = ImGui::TreeNodeBehavior(id,flags,label,label_end);
     amf_EndConsumerHeader();
@@ -6126,28 +6540,42 @@ CIMGUI_API const ImGuiDataTypeInfo* igDataTypeGetInfo(ImGuiDataType data_type)
 }
 CIMGUI_API int igDataTypeFormatString(char* buf,int buf_size,ImGuiDataType data_type,const void* p_data,const char* format)
 {
+    if (!buf) { return 0; }   // AMF null guard
+    if (!p_data) { return 0; }   // AMF null guard
+    if (!format) { format = ""; }   // AMF null guard
     return ImGui::DataTypeFormatString(buf,buf_size,data_type,p_data,format);
 }
 CIMGUI_API void igDataTypeApplyOp(ImGuiDataType data_type,int op,void* output,const void* arg_1,const void* arg_2)
 {
+    if (!output) { return; }   // AMF null guard
+    if (!arg_1) { return; }   // AMF null guard
+    if (!arg_2) { return; }   // AMF null guard
     return ImGui::DataTypeApplyOp(data_type,op,output,arg_1,arg_2);
 }
 CIMGUI_API bool igDataTypeApplyFromText(const char* buf,ImGuiDataType data_type,void* p_data,const char* format,void* p_data_when_empty)
 {
     if (!buf) { buf = ""; }   // AMF null guard
+    if (!p_data) { return false; }   // AMF null guard
+    if (!format) { format = ""; }   // AMF null guard
     return ImGui::DataTypeApplyFromText(buf,data_type,p_data,format,p_data_when_empty);
 }
 CIMGUI_API int igDataTypeCompare(ImGuiDataType data_type,const void* arg_1,const void* arg_2)
 {
+    if (!arg_1) { return 0; }   // AMF null guard
+    if (!arg_2) { return 0; }   // AMF null guard
     return ImGui::DataTypeCompare(data_type,arg_1,arg_2);
 }
 CIMGUI_API bool igDataTypeClamp(ImGuiDataType data_type,void* p_data,const void* p_min,const void* p_max)
 {
+    if (!p_data) { return false; }   // AMF null guard
+    if (!p_min) { return false; }   // AMF null guard
+    if (!p_max) { return false; }   // AMF null guard
     return ImGui::DataTypeClamp(data_type,p_data,p_min,p_max);
 }
 CIMGUI_API bool igInputTextEx(const char* label,const char* hint,char* buf,int buf_size,const ImVec2 size_arg,ImGuiInputTextFlags flags,ImGuiInputTextCallback callback,void* user_data)
 {
     if (!label) { label = ""; }   // AMF null guard
+    if (!buf) { return false; }   // AMF null guard
     const bool amf_r = ImGui::InputTextEx(label,hint,buf,buf_size,size_arg,flags,callback,user_data);   // AMF keyboard: note the text field
     amf_NoteTextField(ImGui::GetItemID());
     return amf_r;
@@ -6158,10 +6586,15 @@ CIMGUI_API void igInputTextDeactivateHook(ImGuiID id)
 }
 CIMGUI_API bool igTempInputText(const ImRect bb,ImGuiID id,const char* label,char* buf,int buf_size,ImGuiInputTextFlags flags)
 {
+    if (!label) { label = ""; }   // AMF null guard
+    if (!buf) { return false; }   // AMF null guard
     return ImGui::TempInputText(bb,id,label,buf,buf_size,flags);
 }
 CIMGUI_API bool igTempInputScalar(const ImRect bb,ImGuiID id,const char* label,ImGuiDataType data_type,void* p_data,const char* format,const void* p_clamp_min,const void* p_clamp_max)
 {
+    if (!label) { label = ""; }   // AMF null guard
+    if (!p_data) { return false; }   // AMF null guard
+    if (!format) { format = ""; }   // AMF null guard
     return ImGui::TempInputScalar(bb,id,label,data_type,p_data,format,p_clamp_min,p_clamp_max);
 }
 CIMGUI_API bool igTempInputIsActive(ImGuiID id)
@@ -6174,35 +6607,44 @@ CIMGUI_API ImGuiInputTextState* igGetInputTextState(ImGuiID id)
 }
 CIMGUI_API void igSetNextItemRefVal(ImGuiDataType data_type,void* p_data)
 {
+    if (!p_data) { return; }   // AMF null guard
     return ImGui::SetNextItemRefVal(data_type,p_data);
 }
 CIMGUI_API void igColorTooltip(const char* text,const float* col,ImGuiColorEditFlags flags)
 {
     if (!text) { text = ""; }   // AMF null guard
+    if (!col) { return; }   // AMF null guard
     return ImGui::ColorTooltip(text,col,flags);
 }
 CIMGUI_API void igColorEditOptionsPopup(const float* col,ImGuiColorEditFlags flags)
 {
+    if (!col) { return; }   // AMF null guard
     return ImGui::ColorEditOptionsPopup(col,flags);
 }
 CIMGUI_API void igColorPickerOptionsPopup(const float* ref_col,ImGuiColorEditFlags flags)
 {
+    if (!ref_col) { return; }   // AMF null guard
     return ImGui::ColorPickerOptionsPopup(ref_col,flags);
 }
 CIMGUI_API int igPlotEx(ImGuiPlotType plot_type,const char* label,float(*values_getter)(void* data,int idx),void* data,int values_count,int values_offset,const char* overlay_text,float scale_min,float scale_max,const ImVec2 size_arg)
 {
+    if (!label) { label = ""; }   // AMF null guard
+    if (!values_getter) { return 0; }   // AMF null guard
     return ImGui::PlotEx(plot_type,label,values_getter,data,values_count,values_offset,overlay_text,scale_min,scale_max,size_arg);
 }
 CIMGUI_API void igShadeVertsLinearColorGradientKeepAlpha(ImDrawList* draw_list,int vert_start_idx,int vert_end_idx,ImVec2 gradient_p0,ImVec2 gradient_p1,ImU32 col0,ImU32 col1)
 {
+    if (!draw_list) { return; }   // AMF null guard
     return ImGui::ShadeVertsLinearColorGradientKeepAlpha(draw_list,vert_start_idx,vert_end_idx,gradient_p0,gradient_p1,col0,col1);
 }
 CIMGUI_API void igShadeVertsLinearUV(ImDrawList* draw_list,int vert_start_idx,int vert_end_idx,const ImVec2 a,const ImVec2 b,const ImVec2 uv_a,const ImVec2 uv_b,bool clamp)
 {
+    if (!draw_list) { return; }   // AMF null guard
     return ImGui::ShadeVertsLinearUV(draw_list,vert_start_idx,vert_end_idx,a,b,uv_a,uv_b,clamp);
 }
 CIMGUI_API void igShadeVertsTransformPos(ImDrawList* draw_list,int vert_start_idx,int vert_end_idx,const ImVec2 pivot_in,float cos_a,float sin_a,const ImVec2 pivot_out)
 {
+    if (!draw_list) { return; }   // AMF null guard
     return ImGui::ShadeVertsTransformPos(draw_list,vert_start_idx,vert_end_idx,pivot_in,cos_a,sin_a,pivot_out);
 }
 CIMGUI_API void igGcCompactTransientMiscBuffers()
@@ -6211,10 +6653,12 @@ CIMGUI_API void igGcCompactTransientMiscBuffers()
 }
 CIMGUI_API void igGcCompactTransientWindowBuffers(ImGuiWindow* window)
 {
+    if (!window) { return; }   // AMF null guard
     return ImGui::GcCompactTransientWindowBuffers(window);
 }
 CIMGUI_API void igGcAwakeTransientWindowBuffers(ImGuiWindow* window)
 {
+    if (!window) { return; }   // AMF null guard
     return ImGui::GcAwakeTransientWindowBuffers(window);
 }
 CIMGUI_API void igDebugLog(const char* fmt,...)
@@ -6232,6 +6676,7 @@ CIMGUI_API void igDebugLogV(const char* fmt,va_list args)
 }
 CIMGUI_API void igDebugAllocHook(ImGuiDebugAllocInfo* info,int frame_count,void* ptr,size_t size)
 {
+    if (!info) { return; }   // AMF null guard
     return ImGui::DebugAllocHook(info,frame_count,ptr,size);
 }
 CIMGUI_API void igErrorCheckEndFrameRecover(ImGuiErrorLogCallback log_callback,void* user_data)
@@ -6261,6 +6706,7 @@ CIMGUI_API void igDebugDrawItemRect(ImU32 col)
 CIMGUI_API void igDebugTextUnformattedWithLocateItem(const char* line_begin,const char* line_end)
 {
     if (!line_begin) { line_begin = ""; }   // AMF null guard
+    if (!line_end) { line_end = line_begin + strlen(line_begin); }   // AMF null guard
     return ImGui::DebugTextUnformattedWithLocateItem(line_begin,line_end);
 }
 CIMGUI_API void igDebugLocateItem(ImGuiID target_id)
@@ -6282,94 +6728,126 @@ CIMGUI_API void igDebugBreakClearData()
 CIMGUI_API bool igDebugBreakButton(const char* label,const char* description_of_location)
 {
     if (!label) { label = ""; }   // AMF null guard
+    if (!description_of_location) { description_of_location = ""; }   // AMF null guard
     return ImGui::DebugBreakButton(label,description_of_location);
 }
 CIMGUI_API void igDebugBreakButtonTooltip(bool keyboard_only,const char* description_of_location)
 {
+    if (!description_of_location) { description_of_location = ""; }   // AMF null guard
     return ImGui::DebugBreakButtonTooltip(keyboard_only,description_of_location);
 }
 CIMGUI_API void igShowFontAtlas(ImFontAtlas* atlas)
 {
+    if (!atlas) { return; }   // AMF null guard
     return ImGui::ShowFontAtlas(atlas);
 }
 CIMGUI_API void igDebugHookIdInfo(ImGuiID id,ImGuiDataType data_type,const void* data_id,const void* data_id_end)
 {
+    if (!data_id) { return; }   // AMF null guard
     return ImGui::DebugHookIdInfo(id,data_type,data_id,data_id_end);
 }
 CIMGUI_API void igDebugNodeColumns(ImGuiOldColumns* columns)
 {
+    if (!columns) { return; }   // AMF null guard
     return ImGui::DebugNodeColumns(columns);
 }
 CIMGUI_API void igDebugNodeDockNode(ImGuiDockNode* node,const char* label)
 {
+    if (!node) { return; }   // AMF null guard
+    if (!label) { label = ""; }   // AMF null guard
     return ImGui::DebugNodeDockNode(node,label);
 }
 CIMGUI_API void igDebugNodeDrawList(ImGuiWindow* window,ImGuiViewportP* viewport,const ImDrawList* draw_list,const char* label)
 {
+    if (!draw_list) { return; }   // AMF null guard
+    if (!label) { label = ""; }   // AMF null guard
     return ImGui::DebugNodeDrawList(window,viewport,draw_list,label);
 }
 CIMGUI_API void igDebugNodeDrawCmdShowMeshAndBoundingBox(ImDrawList* out_draw_list,const ImDrawList* draw_list,const ImDrawCmd* draw_cmd,bool show_mesh,bool show_aabb)
 {
+    if (!out_draw_list) { return; }   // AMF null guard
+    if (!draw_list) { return; }   // AMF null guard
+    if (!draw_cmd) { return; }   // AMF null guard
     return ImGui::DebugNodeDrawCmdShowMeshAndBoundingBox(out_draw_list,draw_list,draw_cmd,show_mesh,show_aabb);
 }
 CIMGUI_API void igDebugNodeFont(ImFont* font)
 {
+    if (!font) { return; }   // AMF null guard
     return ImGui::DebugNodeFont(font);
 }
 CIMGUI_API void igDebugNodeFontGlyph(ImFont* font,const ImFontGlyph* glyph)
 {
+    if (!font) { return; }   // AMF null guard
+    if (!glyph) { return; }   // AMF null guard
     return ImGui::DebugNodeFontGlyph(font,glyph);
 }
 CIMGUI_API void igDebugNodeStorage(ImGuiStorage* storage,const char* label)
 {
+    if (!storage) { return; }   // AMF null guard
+    if (!label) { label = ""; }   // AMF null guard
     return ImGui::DebugNodeStorage(storage,label);
 }
 CIMGUI_API void igDebugNodeTabBar(ImGuiTabBar* tab_bar,const char* label)
 {
+    if (!tab_bar) { return; }   // AMF null guard
+    if (!label) { label = ""; }   // AMF null guard
     return ImGui::DebugNodeTabBar(tab_bar,label);
 }
 CIMGUI_API void igDebugNodeTable(ImGuiTable* table)
 {
+    if (!table) { return; }   // AMF null guard
     return ImGui::DebugNodeTable(table);
 }
 CIMGUI_API void igDebugNodeTableSettings(ImGuiTableSettings* settings)
 {
+    if (!settings) { return; }   // AMF null guard
     return ImGui::DebugNodeTableSettings(settings);
 }
 CIMGUI_API void igDebugNodeInputTextState(ImGuiInputTextState* state)
 {
+    if (!state) { return; }   // AMF null guard
     return ImGui::DebugNodeInputTextState(state);
 }
 CIMGUI_API void igDebugNodeTypingSelectState(ImGuiTypingSelectState* state)
 {
+    if (!state) { return; }   // AMF null guard
     return ImGui::DebugNodeTypingSelectState(state);
 }
 CIMGUI_API void igDebugNodeWindow(ImGuiWindow* window,const char* label)
 {
+    if (!label) { label = ""; }   // AMF null guard
     return ImGui::DebugNodeWindow(window,label);
 }
 CIMGUI_API void igDebugNodeWindowSettings(ImGuiWindowSettings* settings)
 {
+    if (!settings) { return; }   // AMF null guard
     return ImGui::DebugNodeWindowSettings(settings);
 }
 CIMGUI_API void igDebugNodeWindowsList(ImVector_ImGuiWindowPtr* windows,const char* label)
 {
+    if (!windows) { return; }   // AMF null guard
+    if (!label) { label = ""; }   // AMF null guard
     return ImGui::DebugNodeWindowsList(windows,label);
 }
 CIMGUI_API void igDebugNodeWindowsListByBeginStackParent(ImGuiWindow** windows,int windows_size,ImGuiWindow* parent_in_begin_stack)
 {
+    if (!windows) { return; }   // AMF null guard
     return ImGui::DebugNodeWindowsListByBeginStackParent(windows,windows_size,parent_in_begin_stack);
 }
 CIMGUI_API void igDebugNodeViewport(ImGuiViewportP* viewport)
 {
+    if (!viewport) { return; }   // AMF null guard
     return ImGui::DebugNodeViewport(viewport);
 }
 CIMGUI_API void igDebugRenderKeyboardPreview(ImDrawList* draw_list)
 {
+    if (!draw_list) { return; }   // AMF null guard
     return ImGui::DebugRenderKeyboardPreview(draw_list);
 }
 CIMGUI_API void igDebugRenderViewportThumbnail(ImDrawList* draw_list,ImGuiViewportP* viewport,const ImRect bb)
 {
+    if (!draw_list) { return; }   // AMF null guard
+    if (!viewport) { return; }   // AMF null guard
     return ImGui::DebugRenderViewportThumbnail(draw_list,viewport,bb);
 }
 CIMGUI_API const ImFontBuilderIO* igImFontAtlasGetBuilderForStbTruetype()
@@ -6378,38 +6856,53 @@ CIMGUI_API const ImFontBuilderIO* igImFontAtlasGetBuilderForStbTruetype()
 }
 CIMGUI_API void igImFontAtlasUpdateConfigDataPointers(ImFontAtlas* atlas)
 {
+    if (!atlas) { return; }   // AMF null guard
     return ImFontAtlasUpdateConfigDataPointers(atlas);
 }
 CIMGUI_API void igImFontAtlasBuildInit(ImFontAtlas* atlas)
 {
+    if (!atlas) { return; }   // AMF null guard
     return ImFontAtlasBuildInit(atlas);
 }
 CIMGUI_API void igImFontAtlasBuildSetupFont(ImFontAtlas* atlas,ImFont* font,ImFontConfig* font_config,float ascent,float descent)
 {
+    if (!atlas) { return; }   // AMF null guard
+    if (!font) { return; }   // AMF null guard
+    if (!font_config) { return; }   // AMF null guard
     return ImFontAtlasBuildSetupFont(atlas,font,font_config,ascent,descent);
 }
 CIMGUI_API void igImFontAtlasBuildPackCustomRects(ImFontAtlas* atlas,void* stbrp_context_opaque)
 {
+    if (!atlas) { return; }   // AMF null guard
+    if (!stbrp_context_opaque) { return; }   // AMF null guard
     return ImFontAtlasBuildPackCustomRects(atlas,stbrp_context_opaque);
 }
 CIMGUI_API void igImFontAtlasBuildFinish(ImFontAtlas* atlas)
 {
+    if (!atlas) { return; }   // AMF null guard
     return ImFontAtlasBuildFinish(atlas);
 }
 CIMGUI_API void igImFontAtlasBuildRender8bppRectFromString(ImFontAtlas* atlas,int x,int y,int w,int h,const char* in_str,char in_marker_char,unsigned char in_marker_pixel_value)
 {
+    if (!atlas) { return; }   // AMF null guard
+    if (!in_str) { return; }   // AMF null guard
     return ImFontAtlasBuildRender8bppRectFromString(atlas,x,y,w,h,in_str,in_marker_char,in_marker_pixel_value);
 }
 CIMGUI_API void igImFontAtlasBuildRender32bppRectFromString(ImFontAtlas* atlas,int x,int y,int w,int h,const char* in_str,char in_marker_char,unsigned int in_marker_pixel_value)
 {
+    if (!atlas) { return; }   // AMF null guard
+    if (!in_str) { return; }   // AMF null guard
     return ImFontAtlasBuildRender32bppRectFromString(atlas,x,y,w,h,in_str,in_marker_char,in_marker_pixel_value);
 }
 CIMGUI_API void igImFontAtlasBuildMultiplyCalcLookupTable(unsigned char out_table[256],float in_multiply_factor)
 {
+    if (!out_table) { return; }   // AMF null guard
     return ImFontAtlasBuildMultiplyCalcLookupTable(out_table,in_multiply_factor);
 }
 CIMGUI_API void igImFontAtlasBuildMultiplyRectAlpha8(const unsigned char table[256],unsigned char* pixels,int x,int y,int w,int h,int stride)
 {
+    if (!table) { return; }   // AMF null guard
+    if (!pixels) { return; }   // AMF null guard
     return ImFontAtlasBuildMultiplyRectAlpha8(table,pixels,x,y,w,h,stride);
 }
 
@@ -6418,6 +6911,7 @@ CIMGUI_API void igImFontAtlasBuildMultiplyRectAlpha8(const unsigned char table[2
 /////////////////////////////manual written functions
 CIMGUI_API void igLogText(CONST char *fmt, ...)
 {
+    if (!fmt) { return; }   // AMF null guard
     char buffer[256];
     va_list args;
     va_start(args, fmt);
@@ -6428,6 +6922,8 @@ CIMGUI_API void igLogText(CONST char *fmt, ...)
 }
 CIMGUI_API void ImGuiTextBuffer_appendf(struct ImGuiTextBuffer *buffer, const char *fmt, ...)
 {
+    if (!buffer) { return; }   // AMF null guard
+    if (!fmt) { fmt = ""; }   // AMF null guard
     va_list args;
     va_start(args, fmt);
     buffer->appendfv(fmt, args);
@@ -6462,6 +6958,7 @@ CIMGUI_API void ImVector_ImWchar_Init(ImVector_ImWchar* p)
 }
 CIMGUI_API void ImVector_ImWchar_UnInit(ImVector_ImWchar* p)
 {
+    if (!p) { return; }   // AMF null guard
 	p->~ImVector<ImWchar>();
 }
 
@@ -6503,6 +7000,7 @@ ImVec2 Platform_GetWindowPos_hook(ImGuiViewport* vp)
 // Fully C-compatible function pointer setter for ImGuiPlatformIO::Platform_GetWindowPos.
 CIMGUI_API void ImGuiPlatformIO_Set_Platform_GetWindowPos(ImGuiPlatformIO* platform_io, void(*user_callback)(ImGuiViewport* vp, ImVec2* out_pos))
 {
+    if (!platform_io) { return; }   // AMF null guard
     CimguiStorage& storage = GetCimguiStorage();
     storage.Platform_GetWindowPos = user_callback;
     platform_io->Platform_GetWindowPos = &Platform_GetWindowPos_hook;
@@ -6519,6 +7017,7 @@ ImVec2 Platform_GetWindowSize_hook(ImGuiViewport* vp)
 // Fully C-compatible function pointer setter for ImGuiPlatformIO::Platform_GetWindowSize.
 CIMGUI_API void ImGuiPlatformIO_Set_Platform_GetWindowSize(ImGuiPlatformIO* platform_io, void(*user_callback)(ImGuiViewport* vp, ImVec2* out_size))
 {
+    if (!platform_io) { return; }   // AMF null guard
     CimguiStorage& storage = GetCimguiStorage();
     storage.Platform_GetWindowSize = user_callback;
     platform_io->Platform_GetWindowSize = &Platform_GetWindowSize_hook;
