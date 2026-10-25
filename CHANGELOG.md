@@ -213,6 +213,23 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 - **Left on a slider stays on the slider** (combined run 2026-10-25 1515, Dragon's Eye Minimap retest: any keyboard Left on DEM's sliders, and on AMF Example's plain Speed slider, moved the highlight to the mod list's row while the value kept stepping). The menu's "Left with nothing to its left goes back to the list" only checked that no item was ACTIVE, and a slider with the highlight on it is not active until A / Enter / a held click. A Left press inside a page now goes back to the list only when the highlighted item is not a slider or drag (AMF's own, a converted menu's, or a mod's through the slider and drag exports - each notes itself as it is drawn), the highlight is not inside a popup (an open dropdown), and no widget on the page took the press itself (a page that steps its own value on Left, an open tree node closing). Left on a plain row (a switch, a button, a text line) still goes back to the list; the D-pad and the stick go through the same decision as the arrow keys, and so does the driving tool's op=nav. NavSide.h, checked off-game by tools\nav_left_check.bat (26 checks on live ImGui frames, including the cause: the slider is not active during the press).
 - New strings (presets snapshot note, waiting and not-read lines, Remembered settings line) in all eleven languages.
 
+### Fixed (retest batch B-20261025-053652-453d)
+- **Left stays on every slider, drag and text field, whoever draws it** (request 26d2, N1/N2/N5 FAIL: AMF Example's plain
+  Speed slider sent keyboard Left and D-pad left to the mod list). AMF Example draws with its own copy of Dear ImGui on
+  the framework's context, so the "this is a slider" note that AMF's own sliders and the slider exports make was never
+  made for it. The highlighted item's kind is now also read from ImGui's own state, which every copy of ImGui writes: the
+  item flags carried by the nav move, tab or init result that landed on it (sliders, drags and text fields are
+  "inputable"), the last item drawn, and the Left/Right claim an item makes while it is held or activated (which also
+  covers NoInput sliders once used). Dragon's Eye Minimap's own stepping (N4) is unchanged. NavSide.h
+  (LearnNavItemKind), checked by tools\nav_left_check.bat (43 checks; a control build without it fails 9).
+- **Enter activates a slider or drag instead of opening its number box** (26d2 N3). Keyboard Enter on a highlighted
+  slider or drag now does what Space and the pad's A do: Left / Right step it, Enter again lets it go. A number is still
+  typed with Ctrl+click; Enter on a text field still starts typing; the pad's buttons are unchanged.
+- **Deep Snow's band sliders (inside a table)**: no AMF or Deep Snow change needed beyond the above. Before a slider is
+  activated, Right moves to the widget in the next column (ImGui's own navigation) and keys do not change the value -
+  what the retest saw; activated (A, Space, or now Enter), Right and Left step it one unit and the highlight stays in its
+  column. Checked by nav_left_check (the table case).
+
 ## 2.2.3 - 2026-10-21 - untested - dropdowns on SkyUI MCM pages fill when AMF is opened from the Journal's System menu
 
 ### Fixed (dropdowns on converted MCM pages)

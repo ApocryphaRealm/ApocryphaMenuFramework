@@ -5434,6 +5434,9 @@ namespace renderer
 				// Right out of the list, left back into it. Only when nothing is being edited, so
 				// pushing left inside a slider adjusts the value instead of leaving the pane. Both
 				// sticks and the D-pad and the arrow keys all count as the same "move across".
+				// 2.3.0 (retest batch B-20261025-053652-453d, 26d2): every frame, what kind of item holds the highlight, from
+				// ImGui's own state - a mod drawing with its own copy of Dear ImGui (AMF Example) never calls NoteArrowItem.
+				navside::LearnNavItemKind();
 				{
 					const bool wantsRight = ImGui::IsKeyPressed(ImGuiKey_GamepadDpadRight, false) ||
 											ImGui::IsKeyPressed(ImGuiKey_GamepadLStickRight, false) ||
@@ -6014,6 +6017,12 @@ namespace renderer
 				}
 				profMark(frameprofile::kBackend);
 				ImGui::NewFrame();
+				// 2.3.0 (26d2 N3): keyboard Enter on a slider or drag activates it, as Space and A do, instead of opening its
+				// number box - turned before any page draws, so every copy of ImGui drawing on this context sees it (NavSide.h)
+				if (navside::EnterActivatesArrowItem())
+				{
+					logger::debug("nav: Enter activates slider/drag {} (number entry stays on Ctrl+click)", GImGui ? GImGui->NavId : 0u);
+				}
 				profMark(frameprofile::kImGuiNewFrame);
 				mcmloader::Frame();  // MCM loader: OnConfigClose when an MCM entry stops being drawn
 				prisma::Frame();     // 2.1.6: Prisma_OnSettingsApplied when a Prisma page is left

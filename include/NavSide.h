@@ -12,8 +12,9 @@
 // Now a Left press leaves the page only when ALL of these hold:
 //   - the page has the highlight and nothing is being edited (as before);
 //   - the highlight is not inside a popup (an open combo, a context menu);
-//   - the highlighted item is not a widget that Left/Right adjust - any slider or drag, AMF's own, a converted menu's
-//     or a mod's through the exports. Each of those calls NoteArrowItem() right after it is drawn;
+//   - the highlighted item is not a widget that Left/Right adjust - any slider, drag or text field, AMF's own, a converted
+//     menu's, a mod's through the exports, or a mod's drawn by its own copy of Dear ImGui. AMF's own and the exports call
+//     NoteArrowItem() right after drawing one; every other is known from ImGui's own item state (LearnNavItemKind);
 //   - the page did not take the press itself - ImGui made a Left move request this frame and a widget cancelled it
 //     (NavMoveRequestCancel), which is how a page that steps its own value on Left says "mine".
 // Left on a plain row (a switch, a button, a text line, a key binding) still goes back to the list.
@@ -69,11 +70,98 @@ namespace navside
 		}
 	}
 
-	// This frame, after the page is drawn: is the highlight on a slider or drag?
+	// ---------------------------------------------------------------------------------------------------------------------
+	// Items known from ImGui's OWN state (2.3.0, retest batch B-20261025-053652-453d, 26d2 N1-N5: AMF Example's Speed slider
+	// is drawn by AMF Example's own copy of Dear ImGui on the framework's context - precise::SliderFloat from the SDK, which
+	// never calls NoteArrowItem - so Left on it still left the page). Any code drawing on the context leaves the item's kind in
+	// shared state, whichever copy of ImGui drew it:
+	//   - a nav move, tab or init result that landed on the item carries its item flags (ImGuiNavItemData::InFlags), and
+	//     sliders, drags and text fields are added with ImGuiItemFlags_Inputable (a NoInput slider is not);
+	//   - the last item a page drew, when it is the highlighted one (g.LastItemData.InFlags);
+	//   - an item that is being held or edited and has claimed Left and Right for itself (g.ActiveIdUsingNavDirMask - set by
+	//     every slider, drag and text field, NoInput sliders included, when it is clicked or activated).
+	// An ImGui id names one item, so a kind once learnt holds until the context changes; a small ring of ids is plenty (only
+	// the highlighted item is ever asked about).
+	// ---------------------------------------------------------------------------------------------------------------------
+	namespace detail
+	{
+		inline ImGuiContext* g_kindCtx = nullptr;
+		inline ImGuiID       g_arrowIds[64] = {};
+		inline int           g_arrowNext = 0;
+
+		inline bool KnownArrow(ImGuiID a_id)
+		{
+			if (a_id == 0) return false;
+			for (const ImGuiID id : g_arrowIds) { if (id == a_id) return true; }
+			return false;
+		}
+
+		inline void LearnArrow(ImGuiID a_id)
+		{
+			if (a_id == 0 || KnownArrow(a_id)) return;
+			g_arrowIds[g_arrowNext] = a_id;
+			g_arrowNext = (g_arrowNext + 1) % static_cast<int>(sizeof(g_arrowIds) / sizeof(g_arrowIds[0]));
+		}
+	}
+
+	// Every frame, after the pages are drawn (Renderer.cpp, before the Left decision; tools\nav_left_check.cpp per frame).
+	inline void LearnNavItemKind()
+	{
+		ImGuiContext* const g = GImGui;
+		if (!g) return;
+		if (detail::g_kindCtx != g)
+		{
+			detail::g_kindCtx = g;
+			for (ImGuiID& id : detail::g_arrowIds) { id = 0; }
+			detail::g_arrowNext = 0;
+		}
+		const ImGuiID nav = g->NavId;
+		if (nav == 0) return;
+		const ImGuiNavItemData* const results[] = { &g->NavMoveResultLocal, &g->NavMoveResultLocalVisible, &g->NavMoveResultOther,
+													&g->NavTabbingResultFirst, &g->NavInitResult };
+		for (const ImGuiNavItemData* r : results)
+		{
+			if (r && r->ID == nav && (r->InFlags & ImGuiItemFlags_Inputable) != 0) { detail::LearnArrow(nav); }
+		}
+		if (g->LastItemData.ID == nav && (g->LastItemData.InFlags & ImGuiItemFlags_Inputable) != 0) { detail::LearnArrow(nav); }
+		constexpr int kLeftRight = (1 << ImGuiDir_Left) | (1 << ImGuiDir_Right);
+		if (g->ActiveId == nav && (g->ActiveIdUsingNavDirMask & kLeftRight) == kLeftRight) { detail::LearnArrow(nav); }
+	}
+
+	// The highlighted item is a slider, drag or text field by ImGui's own state (LearnNavItemKind has seen it).
+	inline bool NavOnKnownArrowItem()
+	{
+		const ImGuiContext* const g = GImGui;
+		return g && detail::g_kindCtx == g && detail::KnownArrow(g->NavId);
+	}
+
+	// This frame, after the page is drawn: is the highlight on a slider or drag (noted by NoteArrowItem as it was drawn, or
+	// known from ImGui's own state)?
 	inline bool NavOnArrowItem()
 	{
 		const ImGuiContext* const g = GImGui;
-		return g && detail::g_ctx == g && detail::g_frame == g->FrameCount && detail::g_navId != 0 && detail::g_navId == g->NavId;
+		if (!g) return false;
+		const bool noted = detail::g_ctx == g && detail::g_frame == g->FrameCount && detail::g_navId != 0 && detail::g_navId == g->NavId;
+		return noted || NavOnKnownArrowItem();
+	}
+
+	// Right after ImGui::NewFrame, before any page draws: keyboard Enter on a slider or drag ACTIVATES it (Left / Right then
+	// step it, Enter again lets go), the way Space and the pad's A do, instead of opening its number box (26d2 N3: "Enter on
+	// Speed opened the slider's TEXT BOX instead of activating it"). ImGui 1.90.8 turns Enter into "prefer input"
+	// (NavUpdate: ImGuiActivateFlags_PreferInput), which a slider answers with its text box; here that one press is turned
+	// into the tweak Space gives. A number is still typed with Ctrl+click. A text field is unaffected: it starts editing on
+	// a keyboard activation either way (InputTextEx: input_requested_by_nav). The pad's Input button keeps its meaning, and
+	// Tab's activation (ImGuiActivateFlags_FromTabbing) is left alone. True when the press was changed.
+	inline bool EnterActivatesArrowItem()
+	{
+		ImGuiContext* const g = GImGui;
+		if (!g || g->NavActivateId == 0 || g->NavActivateId != g->NavId) return false;
+		if ((g->NavActivateFlags & ImGuiActivateFlags_PreferInput) == 0 || (g->NavActivateFlags & ImGuiActivateFlags_FromTabbing) != 0) return false;
+		const bool enter = ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false);
+		if (!enter || ImGui::IsKeyPressed(ImGuiKey_NavGamepadInput, false)) return false;
+		if (!NavOnKnownArrowItem() && !(detail::g_ctx == g && detail::g_navId == g->NavId && detail::g_frame == g->FrameCount - 1)) return false;
+		g->NavActivateFlags = (g->NavActivateFlags & ~ImGuiActivateFlags_PreferInput) | ImGuiActivateFlags_PreferTweak;
+		return true;
 	}
 
 	// This frame, after the page is drawn: is the highlight inside a popup (an open combo, a context menu, a modal)?
