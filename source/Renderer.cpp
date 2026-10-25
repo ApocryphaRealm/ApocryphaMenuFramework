@@ -54,6 +54,7 @@
 #include <imgui.h>
 #include <imgui_internal.h>
 #include "PreciseSlider.h"
+#include "NavSide.h"   // when a Left press inside a page may go back to the mod list (2.3.0)
 #include <vector>
 // The vcpkg imgui port installs the binding headers FLAT at the include root, not under
 // backends/ as in the upstream repo layout.
@@ -5470,6 +5471,19 @@ namespace renderer
 					// decision is taken one frame late, when ImGui has reported the move (NavJustMovedToId),
 					// so the two never race. A driven op=nav press moves no ImGui cursor and therefore always
 					// steps, which keeps the driving tool's proof of this path intact.
+					// 2.3.0 (combined run 2026-10-25 1515: any Left on Dragon's Eye Minimap's sliders, and on AMF Example's plain
+					// Speed slider, moved the highlight to the mod list while the value kept stepping): a Left press is noted
+					// for leaving only when navside::LeftPressMayLeave agrees - not on a slider or drag (they adjust with
+					// Left/Right; each notes itself as it is drawn), not inside a popup (an open combo), and not when a widget
+					// on the page took the press itself (cancelled ImGui's move). A driven op=nav press goes through the
+					// same decision, so the driving tool proves it. Left on a plain row still goes back to the list.
+					else if (contentHasNav && navLeft && !navRight && !editing && g_pendingTabStep == 0 &&
+							 !navside::LeftPressMayLeave({ contentHasNav, editing, navside::NavInPopup(), navside::NavOnArrowItem(),
+														   wantsLeft && navside::PageTookTheMove(ImGuiDir_Left) }))
+					{
+						logger::debug("nav: left press kept on the page (popup {}, slider/drag {}, taken by the page {})",
+									  navside::NavInPopup(), navside::NavOnArrowItem(), wantsLeft && navside::PageTookTheMove(ImGuiDir_Left));
+					}
 					else if (contentHasNav && (navRight || navLeft) && !editing && g_pendingTabStep == 0)
 					{
 						g_pendingTabStep = navRight ? 1 : -1;

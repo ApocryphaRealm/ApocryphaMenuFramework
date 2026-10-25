@@ -183,6 +183,15 @@ def main() -> int:
         "igVSliderScalar": ("data_type", "p_data", "p_min", "p_max", "format"),
     }
     sliders = 0
+    # 2.3.0 (combined run 2026-10-25 1515: Left on a mod's slider sent the highlight back to the mod list): a widget that
+    # Left/Right adjust tells the side-navigation it holds the highlight (navside::NoteArrowItem, NavSide.h), so Left does
+    # not leave the page. The single-value sliders above already note it through the wheel helper; these are the rest -
+    # every drag and the multi-value sliders - which call amf_NoteArrowItem (ConsumerSurface.cpp) after ImGui's own widget.
+    ARROW_ITEMS = {"igDragFloat", "igDragFloat2", "igDragFloat3", "igDragFloat4", "igDragFloatRange2", "igDragInt",
+                   "igDragInt2", "igDragInt3", "igDragInt4", "igDragIntRange2", "igDragScalar", "igDragScalarN",
+                   "igSliderFloat2", "igSliderFloat3", "igSliderFloat4", "igSliderInt2", "igSliderInt3", "igSliderInt4",
+                   "igSliderScalarN"}
+    arrow_items = 0
     # 2.2.2 (BanMarwein: Skyrim Performance Solution's long description ran off the screen on one line): a mod's tooltips
     # are wrapped to the window it draws in. The seven tooltip exports call consumer_tooltip:: (ConsumerTooltip.h) in
     # place of the same-named ImGui function; Dear ImGui never wraps a tooltip.
@@ -241,6 +250,16 @@ def main() -> int:
                        "    return amf_r || amf_w;")
             pos = body_end
             sliders += 1
+        elif name in ARROW_ITEMS:
+            body_end = src.index("\n}", pos)
+            body = src[pos:body_end]
+            assert body.strip().startswith("return ImGui::"), name
+            call = body.strip()[len("return "):].rstrip(";")
+            out.append("\n    const bool amf_r = " + call + ";\n"
+                       "    amf_NoteArrowItem();   // AMF: Left/Right adjust it, so Left stays on the page (2.3.0)\n"
+                       "    return amf_r;")
+            pos = body_end
+            arrow_items += 1
         elif name in TEXTS:
             body_end = src.index("\n}", pos)
             body = src[pos:body_end]
@@ -320,7 +339,8 @@ def main() -> int:
         "// Checkbox draws AMF's on/off switch, as every boolean in the menu does (rule 32, 2.1.9); and the\n"
         "// single-value slider exports take a mouse-wheel notch as one step of the shown digit (2.2.0); the tooltip\n"
         "// exports wrap a mod's tooltip to the window it draws in (ConsumerTooltip.h, 2.2.2); the plain text exports wrap\n"
-        "// a mod's text inside its AMF page (2.2.4).\n"
+        "// a mod's text inside its AMF page (2.2.4); the drag and multi-value slider exports note the highlight so Left\n"
+        "// adjusts them instead of leaving the page (2.3.0).\n"
         "// The generator's docstring explains exactly what is guarded and what is deliberately not -\n"
         "// in particular that ImGui's optional p_* pointers are left alone, because guarding p_open\n"
         "// would stop every window without a close button from drawing.\n"
@@ -336,6 +356,8 @@ def main() -> int:
     assert checkbox == 1, checkbox
     # 2.2.0: the wheel the seven single-value slider exports call (defined in ConsumerSurface.cpp).
     assert sliders == 7, sliders
+    # 2.3.0: the twelve drags and seven multi-value sliders note the highlight (amf_NoteArrowItem, ConsumerSurface.cpp).
+    assert arrow_items == 19, arrow_items
     # 2.2.2: the seven tooltip exports (ConsumerTooltip.h, included after cimgui.h below).
     assert tooltips == 7, tooltips
     # 2.2.4: the seven text exports (amf_BeginConsumerText / amf_EndConsumerText, ConsumerSurface.cpp).
@@ -346,6 +368,7 @@ def main() -> int:
             "bool amf_ConsumerCheckbox(const char* a_label, bool* a_value);\n"
             "bool amf_ConsumerSliderWheel(int a_type, void* a_data, const void* a_min, const void* a_max, const char* a_format);\n"
             "bool amf_ConsumerSliderAngleWheel(float* a_rad, float a_minDegrees, float a_maxDegrees, const char* a_format);\n"
+            "void amf_NoteArrowItem();\n"
             "bool amf_BeginConsumerText();\nvoid amf_EndConsumerText(bool a_pushed);\n"
             + "".join(out))
     assert text.count('#include "cimgui.h"\n') == 1

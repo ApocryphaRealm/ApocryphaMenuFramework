@@ -732,6 +732,15 @@ bool amf_ConsumerSliderAngleWheel(float* a_rad, float a_minDegrees, float a_maxD
 	return precise::WheelNudgeAngle(a_rad, a_minDegrees, a_maxDegrees, a_format);
 }
 
+// 2.3.0 (combined run 2026-10-25 1515: Left on a mod's slider sent the highlight back to the mod list). Every drag export
+// and the multi-value slider exports (tools/harden-cimgui.py) call this right after ImGui's own widget, so the side
+// navigation knows Left/Right adjust the highlighted item and Left stays on the page (NavSide.h). The single-value
+// slider exports reach the same note through amf_ConsumerSliderWheel.
+void amf_NoteArrowItem()
+{
+	navside::NoteArrowItem();
+}
+
 void amf_BeginConsumerHeader()
 {
 	g_headerWindow = nullptr;

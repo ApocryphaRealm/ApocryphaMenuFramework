@@ -12,6 +12,8 @@
 #include <imgui.h>
 #include <imgui_internal.h>
 
+#include "NavSide.h"   // every slider notes when it holds the highlight, so Left adjusts instead of leaving the page (2.3.0)
+
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -170,6 +172,9 @@ namespace precise
 	// then marked edited, as a drag marks it).
 	inline bool WheelNudge(ImGuiDataType a_type, void* a_data, const void* a_min, const void* a_max, double a_step)
 	{
+		// 2.3.0: every slider passes through here right after it is drawn (AMF's precise sliders, converted menus, the
+		// consumer slider exports), so this is where a slider tells the side-navigation it holds the highlight (NavSide.h)
+		navside::NoteArrowItem();
 		const int dir = WheelDirection();
 		if (dir == 0 || !a_data || !a_min || !a_max) { WheelSettle(false); return false; }
 		bool changed = false;

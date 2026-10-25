@@ -1283,11 +1283,12 @@ namespace flick
 			Note("slider", (std::string(a_label ? a_label : "") + "=" + std::to_string(*a_v)).c_str());
 			return r;
 		}
-		bool DragInt(const char* a_label, int* a_v, float a_speed, int a_min, int a_max, const char* a_fmt) { return a_v && ImGui::DragInt(Tr(a_label), a_v, a_speed, a_min, a_max, a_fmt ? a_fmt : "%d"); }
-		bool DragFloat(const char* a_label, float* a_v, float a_speed, float a_min, float a_max, const char* a_fmt) { return a_v && ImGui::DragFloat(Tr(a_label), a_v, a_speed, a_min, a_max, a_fmt ? a_fmt : "%.3f"); }
-		bool DragFloat2(const char* a_label, float* a_v, float a_speed, float a_min, float a_max, const char* a_fmt) { return a_v && ImGui::DragFloat2(Tr(a_label), a_v, a_speed, a_min, a_max, a_fmt ? a_fmt : "%.3f"); }
-		bool DragFloat3(const char* a_label, float* a_v, float a_speed, float a_min, float a_max, const char* a_fmt) { return a_v && ImGui::DragFloat3(Tr(a_label), a_v, a_speed, a_min, a_max, a_fmt ? a_fmt : "%.3f"); }
-		bool DragFloat4(const char* a_label, float* a_v, float a_speed, float a_min, float a_max, const char* a_fmt) { return a_v && ImGui::DragFloat4(Tr(a_label), a_v, a_speed, a_min, a_max, a_fmt ? a_fmt : "%.3f"); }
+		// 2.3.0: a drag notes when it holds the highlight, so Left adjusts it instead of leaving the page (NavSide.h)
+		bool DragInt(const char* a_label, int* a_v, float a_speed, int a_min, int a_max, const char* a_fmt) { if (!a_v) return false; const bool r = ImGui::DragInt(Tr(a_label), a_v, a_speed, a_min, a_max, a_fmt ? a_fmt : "%d"); navside::NoteArrowItem(); return r; }
+		bool DragFloat(const char* a_label, float* a_v, float a_speed, float a_min, float a_max, const char* a_fmt) { if (!a_v) return false; const bool r = ImGui::DragFloat(Tr(a_label), a_v, a_speed, a_min, a_max, a_fmt ? a_fmt : "%.3f"); navside::NoteArrowItem(); return r; }
+		bool DragFloat2(const char* a_label, float* a_v, float a_speed, float a_min, float a_max, const char* a_fmt) { if (!a_v) return false; const bool r = ImGui::DragFloat2(Tr(a_label), a_v, a_speed, a_min, a_max, a_fmt ? a_fmt : "%.3f"); navside::NoteArrowItem(); return r; }
+		bool DragFloat3(const char* a_label, float* a_v, float a_speed, float a_min, float a_max, const char* a_fmt) { if (!a_v) return false; const bool r = ImGui::DragFloat3(Tr(a_label), a_v, a_speed, a_min, a_max, a_fmt ? a_fmt : "%.3f"); navside::NoteArrowItem(); return r; }
+		bool DragFloat4(const char* a_label, float* a_v, float a_speed, float a_min, float a_max, const char* a_fmt) { if (!a_v) return false; const bool r = ImGui::DragFloat4(Tr(a_label), a_v, a_speed, a_min, a_max, a_fmt ? a_fmt : "%.3f"); navside::NoteArrowItem(); return r; }
 		bool Combo(const char* a_label, int* a_cur, const char* const* a_items, int a_count) { return a_cur && a_items && theme::ComboTight(Tr(a_label), a_cur, a_items, a_count); }
 		bool ComboWithFilter(const char* a_label, int* a_cur, const char* const* a_items, int a_count, int) { return Combo(a_label, a_cur, a_items, a_count); }
 		bool ComboForm(const char* a_label, std::uint32_t*, std::uint8_t) { NoteOnce("ComboForm", "form lists come in a later build"); ImGui::TextUnformatted(Tr(a_label)); return false; }
