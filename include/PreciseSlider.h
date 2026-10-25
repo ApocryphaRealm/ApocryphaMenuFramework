@@ -242,6 +242,18 @@ namespace precise
 		ImGui::RenderTextClipped(frame.Min, frame.Max, buf, end, nullptr, ImVec2(0.5f, 0.5f), &frame);
 	}
 
+	// 2.3.0 (retest batch B-20261025-053652-453d, c0a3 U3: typing into Window opacity re-applied the theme once per KEYSTROKE
+	// before Enter). For a slider whose change is heavy to apply (the theme), call right after it with what it returned: true
+	// for a change to apply now - a drag, a nudge, a wheel notch, and a typed number once it settles (Enter, or the field let
+	// go) - and false for each keystroke of a number still being typed (Ctrl+click), whose value is in the variable already.
+	inline bool ApplyNow(bool a_changed)
+	{
+		if (!GImGui) return a_changed;
+		const ImGuiID id = GImGui->LastItemData.ID;
+		if (ImGui::IsItemDeactivatedAfterEdit()) return true;
+		return a_changed && !(id != 0 && ImGui::TempInputIsActive(id));
+	}
+
 	inline bool SliderFloat(const char* a_label, float* a_v, float a_min, float a_max, const char* a_format)
 	{
 		const float before = *a_v;

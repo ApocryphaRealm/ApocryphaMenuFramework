@@ -40,6 +40,9 @@ namespace
 	ImVec2 g_pointer{ 5, 5 };
 	bool   g_mouseDown = false;
 	int    g_appliedText = 0, g_appliedCount = 0;   // release-applies: IsItemDeactivatedAfterEdit after the slider, as Renderer.cpp's Text size
+	int    g_appliedOpacity = 0, g_changedOpacity = 0;   // Window opacity: precise::ApplyNow (theme::Apply) vs every change it returned
+	ImRect g_rectOpacity;
+	ImGuiID g_opacityId = 0;
 	int    g_outlineVerts = 0, g_outlineEdgeVerts = 0, g_outlineTextVerts = 0;   // precise::OutlineValue on the Text size slider
 
 	void BuildFonts()
@@ -88,7 +91,14 @@ namespace
 			}
 		}
 		ImGui::SetNextItemWidth(600);
-		precise::SliderInt("Window opacity", &g_opacity, 5, 100, "%d%%");
+		{
+			// Renderer.cpp's Window opacity: theme::Apply when precise::ApplyNow says so (retest 453d c0a3 U3)
+			const bool r = precise::SliderInt("Window opacity", &g_opacity, 5, 100, "%d%%");
+			if (r) { ++g_changedOpacity; }
+			if (precise::ApplyNow(r)) { ++g_appliedOpacity; }
+			g_rectOpacity = ImRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
+			g_opacityId = ImGui::GetItemID();
+		}
 		// the generated igSliderInt / igSliderScalar bodies: ImGui's slider, then the wheel with the format's step
 		{
 			int lo = 0, hi = 10;
@@ -253,6 +263,39 @@ int main()
 	Check(g_appliedCount == 1, "consumer igIsItemDeactivatedAfterEdit fires once when the wheel rests: " + std::to_string(g_appliedCount));
 	idle(30);
 	Check(g_appliedCount == 1, "and not again");
+
+	// ---- typing into Window opacity (retest batch B-20261025-053652-453d, c0a3 U3: the theme was re-applied once per
+	// keystroke before Enter). Ctrl+click opens the number box; "25" typed a key a frame; Enter.
+	{
+		ImGuiIO& io = ImGui::GetIO();
+		g_opacity = 50;
+		g_pointer = Mid(g_rectOpacity);
+		idle(2);
+		g_appliedOpacity = g_changedOpacity = 0;
+		io.AddKeyEvent(ImGuiMod_Ctrl, true);
+		g_mouseDown = true;  Frame();
+		g_mouseDown = false; Frame();
+		io.AddKeyEvent(ImGuiMod_Ctrl, false);
+		Frame();
+		const bool box = ImGui::TempInputIsActive(g_opacityId);
+		io.AddInputCharacter('2'); Frame();
+		io.AddInputCharacter('5'); Frame();
+		const int whileTyping = g_appliedOpacity, changesWhileTyping = g_changedOpacity;
+		io.AddKeyEvent(ImGuiKey_Enter, true);  Frame();
+		io.AddKeyEvent(ImGuiKey_Enter, false); Frame();
+		idle(10);
+		Check(box, "Ctrl+click opened Window opacity's number box");
+		Check(changesWhileTyping >= 2, "CAUSE: the slider reports a change at every keystroke while the number is typed (" + std::to_string(changesWhileTyping) + ")");
+		Check(whileTyping == 0, "FIX: nothing is applied while the number is being typed (" + std::to_string(whileTyping) + " applies)");
+		Check(g_opacity == 25 && g_appliedOpacity == 1, "FIX: Enter applies the typed 25 once (value " + std::to_string(g_opacity) + ", " + std::to_string(g_appliedOpacity) + " applies)");
+		// a wheel notch over it still applies live
+		g_appliedOpacity = 0;
+		Frame(+1.0f);
+		Check(g_opacity == 26 && g_appliedOpacity >= 1, "a wheel notch on Window opacity still applies live (26, " + std::to_string(g_appliedOpacity) + ")");
+		idle(30);
+		g_pointer = ImVec2(5, 5);
+		idle(2);
+	}
 
 	ImGui::DestroyContext();
 	std::printf("slider_wheel_check: %d of %d passed\n", g_pass, g_pass + g_fail);

@@ -2724,9 +2724,13 @@ namespace renderer
 						"shows through. Off: the background is solid."));
 					ImGui::BeginDisabled(!values.seeThrough);
 					ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
-					if (precise::SliderInt(TR("AMF_WindowOpacity", "Window opacity"), &values.windowOpacity, 5, 100, "%d%%"))
+					// 2.3.0 (retest batch B-20261025-053652-453d, c0a3 U3: typing a number re-applied the theme once per
+					// KEYSTROKE before Enter): live while dragging, nudging or wheeling; a number being typed (Ctrl+click) is
+					// applied once, when it settles - Enter, or the field let go - not at every key.
+					const bool opacityChanged = precise::SliderInt(TR("AMF_WindowOpacity", "Window opacity"), &values.windowOpacity, 5, 100, "%d%%");
+					if (precise::ApplyNow(opacityChanged))
 					{
-						theme::Apply();   // live while dragging
+						theme::Apply();   // live while dragging; a typed number once it settles
 					}
 					if (ImGui::IsItemDeactivatedAfterEdit())
 					{

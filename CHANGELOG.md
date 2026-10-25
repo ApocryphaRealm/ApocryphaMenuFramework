@@ -241,6 +241,11 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
   shipped preset - in its place. Now any change of the preset in use drops the pick and reads the list again, and a
   preset in use that is not listed yet shows its own name with nothing picked. PresetsCore.h (DropdownPick,
   DropdownRow), checked by tools\presets_check.bat (47 checks, 6 new for this).
+- **Typing into Window opacity applies the theme once, when the number settles** (c0a3 U3 note: the theme was re-applied
+  once per keystroke before Enter). Dragging, nudging and the wheel still apply live; a number typed with Ctrl+click is
+  applied when Enter is pressed or the field is let go. precise::ApplyNow (include\PreciseSlider.h), checked by
+  tools\slider_wheel_check.bat (Ctrl+click, "25", Enter: two changes reported while typing, none applied, one apply on
+  Enter).
 
 ## 2.2.3 - 2026-10-21 - untested - dropdowns on SkyUI MCM pages fill when AMF is opened from the Journal's System menu
 
