@@ -38,6 +38,10 @@ WHAT IS GUARDED, AND WHAT DELIBERATELY IS NOT
     4. A `const char*` FIRST parameter - the label, str_id, fmt or name a widget is keyed on.
        Substituted with "" rather than returning, so the call still happens, which is what the
        hand-written wrappers did.
+       EXCEPT (2.3.0) when it is the BEGIN of a [begin, end) range (str_begin/str_end, text/text_end): "" with the
+       caller's end is not a range - igImStrchrRange(NULL, end) would walk from a literal to an unrelated address - so
+       the function returns its default. A push (igPushID_StrStr) gets an EMPTY range instead ("" to ""), because a
+       push that does not happen makes the consumer's matching Pop take someone else's entry off the stack.
 
     5. (2.3.0) EVERY OTHER POINTER PARAMETER that Dear ImGui reads - so that "every pointer AMF reads is
        null-checked" is true of the consumer surface, as tools/null_check_audit.py measures it. Until 2.3.0 the
@@ -350,7 +354,7 @@ def new_guards(name, ret, params, body, hdr, null_ok_names, null_ok_at, already)
     return out
 
 
-def guards_for(ret: str, args_text: str):
+def guards_for(ret: str, args_text: str, fname: str = ""):
     """The guard lines for one function, in the order they should appear."""
     args = split_args(args_text)
     if not args or args == ["void"]:
@@ -370,7 +374,19 @@ def guards_for(ret: str, args_text: str):
     m = re.match(r"^const\s+char\s*\*\s*([A-Za-z_]\w*)$", first)
     if m:
         name = m.group(1)
-        lines.append(f'if (!{name}) {{ {name} = ""; }}')
+        names = [param_name(a) for a in args]
+        end = next((e for e in (name + "_end", name[:-6] + "_end" if name.endswith("_begin") else None)
+                    if e and e in names[1:]), None)
+        if end is None:
+            lines.append(f'if (!{name}) {{ {name} = ""; }}')
+        elif fname.startswith("igPush"):
+            # 2.3.0: a push must still push, or the consumer's matching Pop takes someone else's entry off the stack -
+            # so a NULL begin becomes an EMPTY range ("" to ""), never "" to the caller's end, which is no range at all
+            lines.append(f'if (!{name}) {{ {name} = ""; {end} = {name}; }}')
+        else:
+            # 2.3.0: the begin of a [begin, end) range. "" with the caller's end is not a range (igImStrchrRange(NULL, end)
+            # would walk from a literal to an unrelated address), so a NULL begin returns the function's default
+            lines.append(f"if (!{name}) {{ {ret_default} }}")
         seen.add(name)
 
     for a in args:
@@ -461,12 +477,15 @@ def main() -> int:
     null_ok_names, null_ok_at = load_null_ok()
     for m in fn.finditer(src):
         ret, name, args = m.group(2).strip(), m.group(3), m.group(4).strip()
-        lines, seen = guards_for(ret, args)
+        lines, seen = guards_for(ret, args, name)
         kinds = []
         for L in lines:
             if L.startswith("if (!self)"): kinds.append("self")
             elif L.startswith("if (!pOut)"): kinds.append("pOut")
             elif '= ""' in L: kinds.append("string")
+            elif re.match(r"^const\s+char\s*\*", split_args(args)[0]) and \
+                    L.startswith("if (!" + param_name(split_args(args)[0]) + ")"):
+                kinds.append("range-begin")
             else: kinds.append("outparam")
         # 2.3.0: every other pointer parameter Dear ImGui reads, decided from the upstream body's own calls
         upstream_body = src[m.end():src.index("\n}", m.end())]
@@ -650,6 +669,7 @@ def main() -> int:
     print(f"     pOut out-struct   {counted['pOut']}")
     print(f"     label/str_id/fmt  {counted['string']}  (substituted with \"\", not returned)")
     print(f"     value out-params  {counted['outparam']}  (p_* names excluded from this shape)")
+    print(f"     range begin first {counted.get('range-begin', 0)}  (returned - a NULL begin with the caller's end is no range)")
     print(f"   2.3.0 - every other pointer Dear ImGui reads (imgui.h defaults + tools/imgui-null-ok.json decide):")
     for k, label in (("pointer", "pointer -> return"), ("fnptr", "function pointer"), ("string-default", "string -> imgui.h default"),
                      ("string-empty", 'string -> ""'), ("string-end", "range end -> begin + strlen")):
