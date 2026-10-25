@@ -136,6 +136,20 @@ class Source:
                 self.cache[path] = ""
         return self.cache[path]
 
+    def raw(self, path):
+        key = ("raw", path)
+        if key not in self.cache:
+            try:
+                with open(path, "rb") as f:
+                    self.cache[key] = f.read()
+            except OSError:
+                self.cache[key] = b""
+        return self.cache[key]
+
+    def between(self, path, start, end):
+        """Text between two libclang BYTE offsets (a decoded-text slice drifts after any multibyte UTF-8)."""
+        return self.raw(path)[start:end].decode("utf-8", errors="replace") if path else ""
+
     def lines(self, path):
         key = ("lines", path)
         if key not in self.cache:
@@ -146,9 +160,8 @@ class Source:
         e = cur.extent
         if not e.start.file or not e.end.file or e.start.file.name != e.end.file.name:
             return ""
-        t = self.text(e.start.file.name)
-        # offsets are byte offsets; files here are ASCII/UTF-8 source - good enough for keys
-        return t[e.start.offset:e.end.offset]
+        # offsets are byte offsets: slice the bytes, then decode (2.3.0: decoded-text slicing misread UTF-8 files)
+        return self.between(e.start.file.name, e.start.offset, e.end.offset)
 
     def annotated(self, path, line):
         ls = self.lines(path)
@@ -267,8 +280,8 @@ def binop(c):
         ch = kids(c)
         if len(ch) != 2:
             return ""
-        t = SRC.text(c.extent.start.file.name) if c.extent.start.file else ""
-        mid = t[ch[0].extent.end.offset:ch[1].extent.start.offset].strip()
+        f = c.extent.start.file.name if c.extent.start.file else ""
+        mid = SRC.between(f, ch[0].extent.end.offset, ch[1].extent.start.offset).strip()
         return mid
 
 
@@ -483,8 +496,8 @@ def if_parts(s):
     conds = []
     if len(ch) >= 2:
         # an else exists when the text between the 2nd-last child's end and the last child's start is 'else'
-        t = SRC.text(s.extent.start.file.name) if s.extent.start.file else ""
-        between = t[ch[-2].extent.end.offset:ch[-1].extent.start.offset] if t else ""
+        f = s.extent.start.file.name if s.extent.start.file else ""
+        between = SRC.between(f, ch[-2].extent.end.offset, ch[-1].extent.start.offset)
         if re.search(r"\belse\b", between) and len(ch) >= 3:
             then_, else_, conds = ch[-2], ch[-1], ch[:-2]
         else:
@@ -588,7 +601,9 @@ def pointer_like(t):
         return "smart"
     if re.search(r"std::(__\d+::)?optional<", s):
         return "optional"
-    if re.search(r"std::(__\d+::)?function<", s):
+    # the type itself, not a template merely holding one: amf::Call's amf::detail::Caller<std::function<...>>
+    # tests the callee before calling it (2.3.0)
+    if re.match(r"(const )?(volatile )?std::(__\d+::)?function<", s):
         return "callable"
     if re.search(r"(_Tree_|_List_|_Hash|_Vector_|_String_)\w*iterator|::iterator\b|::const_iterator\b", s):
         return "iter"

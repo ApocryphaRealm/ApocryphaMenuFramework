@@ -105,6 +105,16 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
   before it goes further. The import-slot patcher refuses a null slot. No behaviour changes for a valid module.
 - The null-check gate's count falls from 565 to 528 (d3d-win32 36 -> 0, and one internal read the same guards cover);
   the baseline is lowered to 528.
+- **The null-check audit reads two shapes correctly** (`tools/null_check_audit.py`, and the plan folder's copy). (1) A
+  call through `amf::Call(fn)(...)` on a `std::function` was counted as an unchecked callback call: the helper's type,
+  `amf::detail::Caller<std::function<...>>`, contains the text `std::function<`, and the audit matched it anywhere in
+  the type. It now matches only a type that IS a `std::function` (the helper tests the callee itself before calling).
+  (2) libclang reports byte offsets, but the audit sliced the decoded text, so after any multibyte UTF-8 character in
+  a file (an em dash in a comment) the `else` of an `if (!p) {...} else {...}` guard was not found and the guard was
+  not credited. It now slices the bytes, then decodes. `tools/null_check_audit_test.py` proves both on a fixture (5
+  cases: an unguarded `std::function` call and a bare `*p` after UTF-8 text are still UNCHECKED; `amf::Call` and the
+  else-guard are not). The test fails 2 of 5 against the previous audit, passes 5 of 5 now. A full run over the source
+  as it stands gave the same result with both versions except the 38 `amf::Call` rows; no read was lost.
 
 ### Fixed
 - **The session's first open spent 30 ms of one frame in AMF before the menu drew** (frame profile, combined run
