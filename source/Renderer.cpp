@@ -14,6 +14,7 @@
 #include "ArtHooks.h"
 #include "FlickHost.h"
 #include "PrismaRedux.h"
+#include "Presets.h"
 #include "HelpBar.h"
 #include "IniPages.h"
 #include "TomlPages.h"
@@ -2211,6 +2212,9 @@ namespace renderer
 			// GENERAL: how the menu starts, opens, pauses and exits, and how it is driven
 			if (tab(icons::Label(icons::kSliders, TR("AMF_TabGeneral", "General")).c_str()))
 			{
+				// 2.3.0 SETTINGS PRESETS (the owner, 2026-10-25: at the top of General, so they are easy to find - picking one,
+				// Save current as..., Load with the comparison, Delete; Presets.h). The one place presets are picked.
+				presets::DrawGeneralSection();
 				// THE SYSTEM ROW IS A SETTING, NOT AN INSTALL-TIME CHOICE (author, 2026-09-04: "we can
 				// just have one version and not a fomod"). It shipped briefly as a FOMOD fork, which
 				// made a reversible preference into something you had to reinstall to change - and
@@ -2934,54 +2938,11 @@ namespace renderer
 						}
 
 						const bool memBusy = rememberedsettings::Busy();
+						// 2.3.0: the profile IS the preset in use - picked, saved, loaded and deleted on Settings > General > Presets
+						// only (the owner, 2026-10-25: this tab is not a second place to pick presets)
+						ImGui::TextWrapped(TR("AMF_McmMemPresetInUse", "Remembered into the preset in use: %s. Pick, save, load and delete presets on Settings > General > Presets."),
+							rememberedsettings::ActiveProfile().c_str());
 						if (memBusy) { ImGui::BeginDisabled(); }
-						// the profile in use, a new one (empty, or a copy of this one), and deleting another
-						const std::string memActive = rememberedsettings::ActiveProfile();
-						const auto memProfiles = rememberedsettings::Profiles();
-						ImGui::SetNextItemWidth(ImGui::GetFontSize() * 12.0f);
-						if (theme::BeginComboTight(TR("AMF_McmMemProfile", "Profile"), memActive.c_str()))
-						{
-							for (const auto& name : memProfiles)
-							{
-								if (ImGui::Selectable(name.c_str(), name == memActive) && name != memActive) { rememberedsettings::SwitchProfile(name); }
-							}
-							ImGui::EndCombo();
-						}
-						ImGui::SameLine();
-						ImGui::SetNextItemWidth(ImGui::GetFontSize() * 9.0f);
-						ImGui::InputTextWithHint("##memprofile", TR("AMF_McmMemNewName", "New profile name"), g_memProfileName, sizeof(g_memProfileName));
-						keyboard::NoteTextField(ImGui::GetItemID());
-						const bool memNamed = g_memProfileName[0] != '\0';
-						if (!memNamed) { ImGui::BeginDisabled(); }
-						ImGui::SameLine();
-						if (ImGui::Button(icons::Label(icons::kPlus, TR("AMF_McmMemNew", "New")).c_str()))
-						{
-							g_memStatus = rememberedsettings::CreateProfile(g_memProfileName, false) ? "" : TR("AMF_McmMemExists", "A profile with that name exists already.");
-							g_memProfileName[0] = '\0';
-						}
-						ImGui::SameLine();
-						if (ImGui::Button(icons::Label(icons::kCopy, TR("AMF_McmMemCopy", "Copy this one")).c_str()))
-						{
-							g_memStatus = rememberedsettings::CreateProfile(g_memProfileName, true) ? "" : TR("AMF_McmMemExists", "A profile with that name exists already.");
-							g_memProfileName[0] = '\0';
-						}
-						if (!memNamed) { ImGui::EndDisabled(); }
-						{
-							const bool others = memProfiles.size() > 1;
-							ImGui::SameLine();
-							ImGui::SetNextItemWidth(ImGui::GetFontSize() * 9.0f);
-							if (!others) { ImGui::BeginDisabled(); }
-							if (theme::BeginComboTight("##memdelete", TR("AMF_McmMemDelete", "Delete a profile...")))
-							{
-								for (const auto& name : memProfiles)
-								{
-									if (name != memActive && ImGui::Selectable(name.c_str())) { rememberedsettings::DeleteProfile(name); }
-								}
-								ImGui::EndCombo();
-							}
-							if (!others) { ImGui::EndDisabled(); }
-						}
-
 						if (ImGui::Button(icons::Label(icons::kArchive, TR("AMF_McmMemBackUp", "Back up all now")).c_str()))
 						{
 							g_memStatus = rememberedsettings::BackUpAll() ? "" : TR("AMF_McmMemWait", "Close the MCM page that is open, or wait for the backup or restore that is running.");

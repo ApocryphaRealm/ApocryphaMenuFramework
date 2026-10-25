@@ -44,6 +44,7 @@ namespace rememberedsettings
 
 		std::mutex g_mutex;
 		std::map<std::string, MenuData> g_menus;  // the active profile: import key -> its settings
+		json g_extra = json::object();            // 2.3.0: the profile file's other keys (a settings preset's "files" ...), kept
 		std::string g_profile;
 		bool g_loaded = false;
 		std::string g_lastResult;
@@ -107,6 +108,7 @@ namespace rememberedsettings
 		void LoadLocked()
 		{
 			g_menus.clear();
+			g_extra = json::object();
 			g_profile = SafeName(settings::Get().rememberedProfile);
 			g_loaded = true;
 			std::ifstream in(PathFor(g_profile), std::ios::binary);
@@ -133,6 +135,10 @@ namespace rememberedsettings
 					}
 					g_menus[key] = std::move(data);
 				}
+				for (const auto& [k, v] : file.items())
+				{
+					if (k != "profile" && k != "menus") { g_extra[k] = v; }   // 2.3.0: a preset's own keys survive this file's rewrites
+				}
 				logger::info("Remembered settings: profile \"{}\" read - {} menu(s)", g_profile, g_menus.size());
 			}
 			catch (const std::exception& e)
@@ -150,7 +156,7 @@ namespace rememberedsettings
 		// Written to a .tmp beside it and moved over, so a crash mid-write never leaves half a profile.
 		void SaveLocked()
 		{
-			json file;
+			json file = g_extra.is_object() ? g_extra : json::object();
 			file["profile"] = g_profile;
 			file["menus"] = json::object();
 			for (const auto& [key, m] : g_menus)
@@ -231,6 +237,14 @@ namespace rememberedsettings
 			int settings = 0;
 			int missing = 0;
 			int skipped = 0;  // menus that could not be driven (one was open on the page, or it went away)
+			// 2.3.0 settings presets: a READ hands what it read to onRead and leaves the profile alone; a restore with
+			// supplied records plays those instead of the profile's and reports to onApplied
+			bool read = false;
+			std::map<std::string, MenuSnapshot> sink;
+			std::function<void(std::map<std::string, MenuSnapshot>)> onRead;
+			bool useSupplied = false;
+			std::map<std::string, std::vector<Record>> supplied;
+			std::function<void(int, int, int)> onApplied;
 		};
 
 		void SetResult(const std::string& a_text)
@@ -241,6 +255,13 @@ namespace rememberedsettings
 
 		void Finish(const std::shared_ptr<Job>& a_job)
 		{
+			if (a_job->read)
+			{
+				logger::info("Remembered settings: read for a preset - {} menu(s), {} setting(s), {} skipped", a_job->menus, a_job->settings, a_job->skipped);
+				g_busy = false;
+				if (a_job->onRead) { a_job->onRead(std::move(a_job->sink)); }
+				return;
+			}
 			char line[256];
 			if (a_job->restore)
 			{
@@ -255,6 +276,7 @@ namespace rememberedsettings
 			logger::info("Remembered settings: {} - {} menu(s), {} setting(s), {} not found, {} skipped", a_job->restore ? "restore" : "backup",
 				a_job->menus, a_job->settings, a_job->missing, a_job->skipped);
 			g_busy = false;
+			if (a_job->onApplied) { a_job->onApplied(a_job->settings, a_job->missing, a_job->menus); }
 		}
 
 		void Step(std::shared_ptr<Job> a_job);
@@ -292,6 +314,8 @@ namespace rememberedsettings
 							r.menuIndex = o.menuIndex;
 							records.push_back(std::move(r));
 						}
+						if (a_job->read) { a_job->sink[key] = { entry, records }; }
+						else
 						{
 							std::scoped_lock lock(g_mutex);
 							EnsureLoadedLocked();
@@ -319,7 +343,12 @@ namespace rememberedsettings
 						r.value = value;
 						records.push_back(std::move(r));
 					}
-					if (!records.empty())
+					if (!records.empty() && a_job->read)
+					{
+						a_job->sink[key] = { entry, records };
+						++a_job->menus;
+					}
+					else if (!records.empty())
 					{
 						std::scoped_lock lock(g_mutex);
 						EnsureLoadedLocked();
@@ -335,6 +364,11 @@ namespace rememberedsettings
 
 			// restore
 			std::vector<Record> records;
+			if (a_job->useSupplied)
+			{
+				if (const auto it = a_job->supplied.find(key); it != a_job->supplied.end()) { records = it->second; }
+			}
+			else
 			{
 				std::scoped_lock lock(g_mutex);
 				EnsureLoadedLocked();
@@ -362,9 +396,13 @@ namespace rememberedsettings
 				}
 				if (!scripts::MemoryRestore(key, std::move(options), done))
 				{
-					std::scoped_lock lock(g_mutex);
-					g_restoredThisGame.erase(key);  // try again on the next automatic pass
+					if (!a_job->useSupplied)
+					{
+						std::scoped_lock lock(g_mutex);
+						g_restoredThisGame.erase(key);  // try again on the next automatic pass
+					}
 					++a_job->skipped;
+					a_job->missing += static_cast<int>(records.size());
 					Continue(a_job);
 				}
 				return;
@@ -374,15 +412,15 @@ namespace rememberedsettings
 			mcmloader::MemoryRestore(key, std::move(values), done);
 		}
 
-		bool Start(bool a_restore, std::vector<std::pair<std::string, std::string>> a_targets)
+		bool Start(bool a_restore, std::vector<std::pair<std::string, std::string>> a_targets, std::shared_ptr<Job> a_job = nullptr)
 		{
 			if (Busy() || !scripts::MemoryIdle()) { return false; }
 			g_busy = true;
 			g_busySinceMs = NowMs();
-			auto job = std::make_shared<Job>();
+			auto job = a_job ? a_job : std::make_shared<Job>();
 			job->restore = a_restore;
 			job->targets = std::move(a_targets);
-			SetResult(a_restore ? TR("AMF_McmMemRestoring", "Restoring...") : TR("AMF_McmMemBackingUp", "Backing up..."));
+			if (!job->read) { SetResult(a_restore ? TR("AMF_McmMemRestoring", "Restoring...") : TR("AMF_McmMemBackingUp", "Backing up...")); }
 			logger::info("Remembered settings: {} started for {} menu(s)", a_restore ? "restore" : "backup", job->targets.size());
 			Continue(job);
 			return true;
@@ -545,10 +583,12 @@ namespace rememberedsettings
 		std::scoped_lock lock(g_mutex);
 		EnsureLoadedLocked();
 		auto copied = a_copyActive ? g_menus : std::map<std::string, MenuData>{};
+		json extra = a_copyActive ? g_extra : json::object();
 		settings::Get().rememberedProfile = name;
 		settings::Save();
 		g_profile = name;
 		g_menus = std::move(copied);
+		g_extra = std::move(extra);
 		SaveLocked();
 		logger::info("Remembered settings: profile \"{}\" made{}", name, a_copyActive ? " as a copy" : "");
 		return true;
@@ -577,6 +617,114 @@ namespace rememberedsettings
 	bool RestoreNow(const std::vector<std::string>& a_keys)
 	{
 		return Start(true, RestoreTargets(a_keys, false));
+	}
+
+	// ------------------------------------------------------------------------------ 2.3.0: settings presets (Presets.h)
+
+	const char* RecordTypeName(Type a_type) { return TypeName(a_type); }
+	Type RecordType(const std::string& a_name) { return ParseType(a_name); }
+	std::string FolderPath() { return kDir; }
+	std::string SafeProfileName(const std::string& a_name) { return SafeName(a_name); }
+	std::vector<std::pair<std::string, std::string>> MenusPresent() { return PresentMenus(); }
+
+	bool ReadMenus(const std::vector<std::string>& a_keys, std::function<void(std::map<std::string, MenuSnapshot>)> a_done)
+	{
+		auto targets = PresentMenus();
+		std::erase_if(targets, [&](const auto& t) { return std::find(a_keys.begin(), a_keys.end(), t.first) == a_keys.end(); });
+		auto job = std::make_shared<Job>();
+		job->read = true;
+		job->onRead = std::move(a_done);
+		return Start(false, std::move(targets), job);
+	}
+
+	bool ApplyMenus(std::map<std::string, MenuSnapshot> a_menus, std::function<void(int, int, int)> a_done)
+	{
+		const auto present = PresentMenus();
+		std::vector<std::pair<std::string, std::string>> targets;
+		auto job = std::make_shared<Job>();
+		for (auto& [key, snap] : a_menus)
+		{
+			if (snap.records.empty()) { continue; }
+			if (!std::any_of(present.begin(), present.end(), [&](const auto& p) { return p.first == key; })) { continue; }
+			targets.emplace_back(key, snap.entry);
+			job->supplied[key] = std::move(snap.records);
+		}
+		job->useSupplied = true;
+		job->onApplied = std::move(a_done);
+		return Start(true, std::move(targets), job);
+	}
+
+	std::map<std::string, MenuSnapshot> MenusInUse()
+	{
+		std::map<std::string, MenuSnapshot> out;
+		std::scoped_lock lock(g_mutex);
+		EnsureLoadedLocked();
+		for (const auto& [key, m] : g_menus) { out[key] = { m.entry, m.records }; }
+		return out;
+	}
+
+	void MergeIntoActive(const std::map<std::string, MenuSnapshot>& a_menus)
+	{
+		std::scoped_lock lock(g_mutex);
+		EnsureLoadedLocked();
+		int changed = 0;
+		for (const auto& [key, snap] : a_menus) { changed += MergeLocked(key, snap.entry, snap.records); }
+		if (changed > 0)
+		{
+			SaveLocked();
+			logger::info("Remembered settings: {} setting(s) of a loaded preset kept in profile \"{}\"", changed, g_profile);
+		}
+	}
+
+	bool WriteProfileFile(const std::string& a_name, const std::string& a_text, bool a_makeActive)
+	{
+		const std::string name = SafeName(a_name);
+		std::scoped_lock lock(g_mutex);
+		std::error_code ec;
+		fs::create_directories(kDir, ec);
+		const fs::path path = PathFor(name);
+		fs::path tmp = path;
+		tmp += ".tmp";
+		{
+			std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+			if (!out)
+			{
+				logger::error("presets: {} could not be written", tmp.string());
+				return false;
+			}
+			out << a_text;
+		}
+		fs::rename(tmp, path, ec);
+		if (ec)
+		{
+			logger::error("presets: {} could not replace {} ({})", tmp.string(), path.string(), ec.message());
+			return false;
+		}
+		if (a_makeActive && SafeName(settings::Get().rememberedProfile) != name)
+		{
+			settings::Get().rememberedProfile = name;
+			settings::Save();
+		}
+		if (name == SafeName(settings::Get().rememberedProfile)) { LoadLocked(); }   // the profile in use reads what was written
+		return true;
+	}
+
+	bool DeletePreset(const std::string& a_name)
+	{
+		const std::string name = SafeName(a_name);
+		std::scoped_lock lock(g_mutex);
+		std::error_code ec;
+		const bool removed = fs::remove(PathFor(name), ec);
+		if (!removed) { return false; }
+		logger::info("presets: \"{}\" deleted", name);
+		if (name == SafeName(settings::Get().rememberedProfile))
+		{
+			settings::Get().rememberedProfile = "Default";
+			settings::Save();
+			LoadLocked();
+			logger::info("presets: the preset in use was deleted - \"{}\" is in use now", g_profile);
+		}
+		return true;
 	}
 
 	bool Busy()

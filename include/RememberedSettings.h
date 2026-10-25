@@ -17,6 +17,8 @@
 // ============================================================================================
 
 #include <functional>
+#include <map>
+#include <utility>
 #include <string>
 #include <vector>
 
@@ -98,6 +100,31 @@ namespace rememberedsettings
 	std::vector<std::string> McmMemoryProfiles();   // the profiles found, its active one first; empty = none saved
 	bool McmMemoryAutoRestoreOn();                  // its DLL is loaded and its own automatic restore is on
 	std::string ImportFromMcmMemory(const std::string& a_profile);   // the result, one line per part, in the active language
+
+	// 2.3.0 SETTINGS PRESETS (Presets.h, plan 4. plans\amf-settings-presets\PLAN.md). A preset IS a profile file here, with
+	// a "files" block beside "menus" - kept through this file's rewrites. The profile in use is the preset in use.
+	struct MenuSnapshot
+	{
+		std::string entry;
+		std::vector<Record> records;
+	};
+	const char* RecordTypeName(Type a_type);
+	Type RecordType(const std::string& a_name);
+	std::string FolderPath();                                      // the profiles' (user presets') folder
+	std::string SafeProfileName(const std::string& a_name);
+	std::vector<std::pair<std::string, std::string>> MenusPresent();   // (key, entry) of every menu found in this game
+	// Read the menus named, live, leaving every profile alone; a_done (on a game thread) gets what was read. False when a
+	// backup / restore runs or a script menu is open on AMF's page (a_done is not called).
+	bool ReadMenus(const std::vector<std::string>& a_keys, std::function<void(std::map<std::string, MenuSnapshot>)> a_done);
+	// Play these records into the menus found in this game, through the restore's own path; a_done(settings set, not found,
+	// menus). False as for ReadMenus.
+	bool ApplyMenus(std::map<std::string, MenuSnapshot> a_menus, std::function<void(int, int, int)> a_done);
+	std::map<std::string, MenuSnapshot> MenusInUse();             // the profile in use's records
+	void MergeIntoActive(const std::map<std::string, MenuSnapshot>& a_menus);
+	// Write a profile file whole (atomically); a_makeActive makes it the profile in use. The profile in use re-reads it.
+	bool WriteProfileFile(const std::string& a_name, const std::string& a_text, bool a_makeActive);
+	// Delete a profile file; deleting the one in use falls back to "Default".
+	bool DeletePreset(const std::string& a_name);
 
 	// DevBench amf.mcm op=remembered: action status | backup {keys} | restore {keys} | records {key} | forget {key} |
 	// auto {key,on} | profile {name} | create {name,copy} | delete {name}. Thread-safe.

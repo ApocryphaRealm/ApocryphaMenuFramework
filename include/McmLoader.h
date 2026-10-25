@@ -119,6 +119,19 @@ namespace mcmloader
 	// OnSettingChange, action), then OnConfigClose. a_done(applied, missing).
 	void MemoryRestore(const std::string& a_key, std::vector<std::pair<std::string, std::string>> a_values, std::function<void(int, int)> a_done);
 
+	// 2.3.0 settings presets (Presets.h): MCM Helper's ModSetting* values (its own INI - never Remembered settings records).
+	struct FileMenu
+	{
+		std::string key;      // "mcmhelper|<mod>"
+		std::string modName;
+		std::string entry;
+	};
+	std::vector<FileMenu> FileMenus();   // every MCM Helper mod with ModSetting controls. Thread-safe.
+	std::vector<std::pair<std::string, std::string>> FileValues(const std::string& a_modName);   // control key -> value. Thread-safe.
+	// Queued to the main thread: OnConfigOpen, each value that differs written through the page's own path, OnConfigClose.
+	// a_done(applied, not found) - all "not found" when no game is loaded (the config script is not there).
+	void ApplyFileValues(const std::string& a_modName, std::vector<std::pair<std::string, std::string>> a_values, std::function<void(int, int)> a_done);
+
 	// Import from MCM Memory (2.1.5, RememberedSettings.cpp): the MCM Helper menu whose display name (MCM's ModName) is
 	// a_modName, and the settings another mod saved for it turned into this menu's live control values. ModSetting* ones are
 	// counted as kept by MCM Helper (its own INI already holds them); a row matching no control of a compatible kind is

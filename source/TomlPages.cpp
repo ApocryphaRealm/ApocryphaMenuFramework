@@ -1090,7 +1090,9 @@ namespace tomlpages
 				const Control control = gso ? gsocore::ControlFor(live.type, e) : tomlcore::ControlForValue(e);
 				out += (out.empty() ? "" : ",") + std::string("{\"name\":") + J(e.id) + ",\"table\":" + J(f.doc.sections[e.section].name) + ",\"value\":" + J(e.raw) +
 					   ",\"toml\":\"" + tomlcore::TypeName(e.value.type) + "\",\"control\":" + J(tomlcore::ControlName(control)) +
-					   ",\"editable\":" + (e.Editable() ? "true" : "false") + ",\"help\":" + J(e.help);
+					   ",\"editable\":" + (e.Editable() ? "true" : "false") + ",\"help\":" + J(e.help) +
+					   // 2.3.0 (settings presets): the value as the page's box takes it back through set - a string unquoted
+					   ",\"input\":" + J(e.value.type == tomlcore::TomlType::kString ? e.value.s : e.raw);
 				if (gso)
 				{
 					const int w = gsocore::Winner(docs, e.key);

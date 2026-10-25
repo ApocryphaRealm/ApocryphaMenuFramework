@@ -2882,6 +2882,124 @@ namespace mcmloader
 		}
 	}
 
+	// ------------------------------------------------------------------------------------- 2.3.0: settings presets (Presets.h)
+	// MCM Helper's ModSetting* values - kept in its own Data\MCM\Settings\<mod>.ini, so they go into a preset's "files" and
+	// never into the Remembered settings records a new game plays back.
+	namespace
+	{
+		bool IsFileValue(Source a_source)
+		{
+			return a_source == Source::kBool || a_source == Source::kInt || a_source == Source::kFloat || a_source == Source::kString;
+		}
+	}
+
+	std::vector<FileMenu> FileMenus()
+	{
+		std::vector<FileMenu> out;
+		std::scoped_lock lock(g_mutex);
+		for (const auto& mod : g_mods)
+		{
+			bool any = false;
+			for (const Page& page : mod->pages)
+			{
+				for (const Control& c : page.controls) { any = any || (IsFileValue(c.source) && c.kind != Kind::kHeader && c.kind != Kind::kEmpty); }
+			}
+			if (any) { out.push_back({ "mcmhelper|" + mod->modName, mod->modName, mod->entryName }); }
+		}
+		return out;
+	}
+
+	std::vector<std::pair<std::string, std::string>> FileValues(const std::string& a_modName)
+	{
+		std::vector<std::pair<std::string, std::string>> out;
+		std::scoped_lock lock(g_mutex);
+		for (const auto& mod : g_mods)
+		{
+			if (mod->modName != a_modName) { continue; }
+			for (const Page& page : mod->pages)
+			{
+				for (const Control& c : page.controls)
+				{
+					if (!IsFileValue(c.source) || c.kind == Kind::kHeader || c.kind == Kind::kEmpty) { continue; }
+					const auto it = mod->values.find(c.key);
+					if (it != mod->values.end()) { out.emplace_back(c.key, it->second); }
+				}
+			}
+			break;
+		}
+		return out;
+	}
+
+	void ApplyFileValues(const std::string& a_modName, std::vector<std::pair<std::string, std::string>> a_values, std::function<void(int, int)> a_done)
+	{
+		const auto index = MemoryModIndex("mcmhelper|" + a_modName);
+		const auto tasks = SKSE::GetTaskInterface();
+		if (!index || !tasks)
+		{
+			a_done(0, static_cast<int>(a_values.size()));
+			return;
+		}
+		tasks->AddTask([mod = *index, values = std::move(a_values), a_done]() {
+			if (!EnsureScript(mod))
+			{
+				logger::warn("presets: MCM Helper {} - its config script is not there (no game loaded?) - nothing written", mod);
+				a_done(0, static_cast<int>(values.size()));
+				return;
+			}
+			// one SkyUI visit for the whole set: OnConfigOpen (finished first), the writes, OnConfigClose
+			DispatchEvent(mod, "OnConfigOpen", nullptr, [mod, values, a_done]() {
+				const auto tasks = SKSE::GetTaskInterface();
+				if (!tasks)
+				{
+					a_done(0, static_cast<int>(values.size()));
+					return;
+				}
+				tasks->AddTask([mod, values, a_done]() {
+					int applied = 0;
+					int missing = 0;
+					g_memoryWriting = true;
+					for (const auto& [key, value] : values)
+					{
+						const Control* control = nullptr;
+						std::optional<std::string> now;
+						{
+							std::scoped_lock lock(g_mutex);
+							for (const Page& page : g_mods[mod]->pages)
+							{
+								for (const Control& c : page.controls)
+								{
+									if (c.key == key && IsFileValue(c.source)) { control = &c; }
+								}
+							}
+							if (control)
+							{
+								const auto it = g_mods[mod]->values.find(control->key);
+								if (it != g_mods[mod]->values.end()) { now = it->second; }
+							}
+						}
+						if (!control)
+						{
+							++missing;
+							continue;
+						}
+						if (now && *now == value) { continue; }
+						Apply(mod, *control, value);
+						++applied;
+					}
+					g_memoryWriting = false;
+					if (const auto later = SKSE::GetTaskInterface())
+					{
+						later->AddTask([mod, applied, missing, a_done]() {
+							DispatchEvent(mod, "OnConfigClose", nullptr);
+							a_done(applied, missing);
+						});
+					}
+					else { a_done(applied, missing); }
+				});
+			});
+		});
+	}
+
 	void MemorySnapshot(const std::string& a_key, std::function<void(std::vector<std::pair<std::string, std::string>>)> a_done)
 	{
 		const auto index = MemoryModIndex(a_key);

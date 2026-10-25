@@ -1,6 +1,7 @@
 #include "DevBenchTool.h"
 #include "FlickHost.h"
 #include "PrismaRedux.h"
+#include "Presets.h"
 #include "IniPages.h"
 #include "TomlPages.h"
 #include "MfmPages.h"
@@ -242,6 +243,12 @@ namespace devbenchtool
 				// 2.2.1: live apply on converted pages (LiveApplyCore.h) - {"op":"liveapply"} reports; {"op":"liveapply","on":0|1}
 				// also sets and saves [MCM] bLiveApply as the settings page's switch does.
 				result = mcmloader::LiveApplyJson(args);
+			}
+			else if (op == "presets")
+			{
+				// 2.3.0: settings presets (Presets.h) - {"op":"presets","do":"list|save|diff|load|delete|status","name":"Hard"}; save takes
+				// skip:[group keys], diff shipped:true for a shipped preset, load keys:[group keys] (default: the mods switched on).
+				result = presets::ToolJson(args);
 			}
 			else if (op == "prisma")
 			{
@@ -917,7 +924,10 @@ namespace devbenchtool
 			"2.3.0 the universal keyboard: keyboard do=state (keyboard + game snapshot) | open [menu=<game menu>: its start gesture] | close | "
 			"press {row, col} | type {text} | key {name: back|space|clear|shift|enter|done|a|b} | layout {name: en|de|fr|es|it|pl|cs|ru|ja|ko|next|prev}; "
 			"gamefield do=probe [menu] (READ-ONLY: open menus, adapter, which member paths answer, the focused field, its type and text, "
-			"158716/B612, per route sent/proven/unchanged) | state | start [menu] | detect | route {n: 1|2|3, 0 = automatic}.\","
+			"158716/B612, per route sent/proven/unchanged) | state | start [menu] | detect | route {n: 1|2|3, 0 = automatic}. "
+			"2.3.0 settings presets: presets do=list | save {name, skip:[group keys]} | diff {name, shipped} | load {keys:[group keys], after diff; "
+			"default the mods switched on} | delete {name} | status (busy, phase, last, inUse, compare {ready, rows, notInstalled, ticked, groups}). "
+			"save / diff / load start the work and return; poll status.\","
 			"\"inputSchema\":{\"type\":\"object\",\"properties\":{"
 			"\"op\":{\"type\":\"string\"},\"node\":{\"type\":\"string\"},"
 			"\"mod\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"position\":{\"type\":\"string\"},"

@@ -64,6 +64,13 @@ Licence: GPL-3.0-or-later (see `LICENSE` and `NOTICE.md`). Not a fork: contains 
   so that mod's own key can be unbound entirely. Every other mod, or a build AMF has not checked, uses its key (AMF's held
   key, else its own); Community Shaders, IED and OptiScaler have no such call, and ENB's licence rules it out. Each row
   says which: "opens directly" or "uses its key: X".
+- **Settings presets** (2.3.0). Settings -> General -> Presets keeps the settings of every mod in this menu - INI and
+  TOML pages, Prisma and MCM Helper menus, and SkyUI menus written in a mod's script - in one named file. Save several,
+  load one any time: AMF first shows what would change (mod, setting, now -> preset, a switch per mod), skips mods that
+  are not installed, and keeps your values from before as a `Backup <date time>` preset. Your presets are
+  `Data\SKSE\Plugins\ApocryphaMenuFramework\RememberedSettings\<name>.json` (the same files Remembered settings uses);
+  a modlist can ship read-only presets in `Data\SKSE\Plugins\ApocryphaMenuFramework\Presets\`. FLICK pages keep their
+  own values and are not in presets.
 - **Nothing while loading.** Until the main menu has opened, and while any loading screen is up, AMF does not open, takes
   no input and queues no SKSE task; if it is open when a load starts, it closes.
 - **Converted menus.** Mod Function Menu entries run in AMF itself (Settings -> Converted menus -> MFM):
