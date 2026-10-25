@@ -6,6 +6,7 @@
 #include "Renderer.h"
 #include "Settings.h"
 #include "utils/Logger.h"
+#include "utils/NullGuard.h"
 
 #include <atomic>
 #include <string>
@@ -50,6 +51,7 @@ namespace systemrow
 		// Finds the System page in whatever movie is actually loaded.
 		bool LocatePage(RE::GFxMovieView* a_movie, std::string& a_out)
 		{
+			AMF_REQUIRE(a_movie, false);  // 2.3.0: no movie, no page to find
 			for (const char* candidate : kPageCandidates)
 			{
 				RE::GFxValue page;
@@ -90,7 +92,7 @@ namespace systemrow
 				// cannot drift. The index stays as a fallback for a list that hands us no entry.
 				int         index = -1;
 				std::string text;
-				if (a_params.argCount > 0 && a_params.args[0].IsObject())
+				if (a_params.argCount > 0 && a_params.args && a_params.args[0].IsObject())  // 2.3.0: args checked too
 				{
 					RE::GFxValue idx;
 					if (a_params.args[0].GetMember("index", &idx) && idx.IsNumber())
@@ -206,7 +208,7 @@ namespace systemrow
 				RE::GFxValue text;
 				if (entryList.GetElement(i, &existing) && existing.IsObject() &&
 					existing.GetMember("text", &text) && text.IsString() &&
-					std::string(text.GetString()) == kRowLabel)
+					std::string(amf::Str(text.GetString())) == kRowLabel)
 				{
 					g_rowIndex = static_cast<int>(i);
 					alreadyThere = true;
@@ -368,6 +370,7 @@ namespace systemrow
 			{
 				return false;
 			}
+			AMF_REQUIRE(a_movie, false);  // 2.3.0: no movie, nothing to measure
 			const float visW = a_visible.right - a_visible.left;
 			const float visH = a_visible.bottom - a_visible.top;
 			RE::GFxValue bounds;

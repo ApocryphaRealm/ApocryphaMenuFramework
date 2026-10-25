@@ -1259,7 +1259,13 @@ def row_for(fn, p, status, use, repo, pl):
 # Now: one TU at a time, caches cleared per file, only cursors in source\ / include\ are visited,
 # the process stops itself above RSS_CAP_MB, and it waits before a file while the machine is short.
 RSS_CAP_MB = int(os.environ.get("AMF_AUDIT_RSS_CAP_MB", "2048"))
+# The free-memory floor and how long the run may wait for it, in total. A manual run waits up to an hour for 6 GB
+# (--free-floor-mb / --max-wait-s, or AMF_AUDIT_FREE_FLOOR_MB). The package gate's wrapper (tools/null_check_gate.py)
+# passes about 2.5 GB and 2 minutes: the audit peaks near 1.15 GB, and a gate that waited an hour stalled a
+# pre-finalize run for 33 minutes (2026-10-25). When the wait runs out the audit exits 4 and the gate FAILS.
 FREE_FLOOR_MB = int(os.environ.get("AMF_AUDIT_FREE_FLOOR_MB", "6144"))
+MAX_WAIT_S = 3600
+_waited_s = 0
 
 
 class _PMC(ctypes.Structure):
@@ -1312,15 +1318,19 @@ def check_rss():
 
 
 def wait_for_memory():
-    waited = 0
+    """Wait while free memory is under FREE_FLOOR_MB; MAX_WAIT_S is the budget for the WHOLE run, not per file."""
+    global _waited_s
     while free_mb() < FREE_FLOOR_MB:
-        if waited % 60 == 0:
-            print("  waiting: %d MB free, floor %d MB" % (free_mb(), FREE_FLOOR_MB), flush=True)
-        time.sleep(10)
-        waited += 10
-        if waited > 3600:
-            print("STOPPED: under %d MB free for an hour" % FREE_FLOOR_MB, flush=True)
+        if _waited_s >= MAX_WAIT_S:
+            print("STOPPED: not enough free memory to run the null-check audit (%d MB free, floor %d MB, waited %d s); "
+                  "rerun when memory frees" % (free_mb(), FREE_FLOOR_MB, _waited_s), flush=True)
             sys.exit(4)
+        if _waited_s % 60 == 0:
+            print("  waiting: %d MB free, floor %d MB (waited %d of %d s)" % (free_mb(), FREE_FLOOR_MB, _waited_s, MAX_WAIT_S),
+                  flush=True)
+        step = min(10, MAX_WAIT_S - _waited_s)
+        time.sleep(step)
+        _waited_s += step
 
 
 CONTAINER_KINDS = {K.NAMESPACE, K.CLASS_DECL, K.STRUCT_DECL, K.CLASS_TEMPLATE, K.LINKAGE_SPEC, K.UNEXPOSED_DECL,
@@ -1356,7 +1366,16 @@ def main():
     ap.add_argument("--gate", action="store_true")
     ap.add_argument("--baseline", default=None)
     ap.add_argument("--only", default=None, help="regex of source files to parse (debugging)")
+    ap.add_argument("--free-floor-mb", type=int, default=None,
+                    help="wait while free RAM is under this (default AMF_AUDIT_FREE_FLOOR_MB, else 6144)")
+    ap.add_argument("--max-wait-s", type=int, default=None,
+                    help="total seconds the run may wait for memory before it stops with exit 4 (default 3600)")
     a = ap.parse_args()
+    global FREE_FLOOR_MB, MAX_WAIT_S
+    if a.free_floor_mb is not None:
+        FREE_FLOOR_MB = a.free_floor_mb
+    if a.max_wait_s is not None:
+        MAX_WAIT_S = max(0, a.max_wait_s)
 
     lib = load_libclang()
     repo = os.path.abspath(a.repo)
@@ -1385,6 +1404,7 @@ def main():
     t0 = time.time()
     pch_src = os.path.join(repo, "include", "PCH.h")
     pch_ast = os.path.join(os.environ.get("TEMP", a.out), "amf-null-audit-pch-%d.ast" % os.getpid())   # ~130 MB, removed below
+    wait_for_memory()   # before the PCH too, so a short machine is caught before the first parse
     tu = idx.parse(pch_src, args=args)
     errs = [d for d in tu.diagnostics if d.severity >= 3]
     if errs:

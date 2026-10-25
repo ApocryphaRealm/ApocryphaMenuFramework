@@ -4434,8 +4434,10 @@ namespace renderer
 
 				// Version always on show - a version-less status line reads as a stale build
 				// (the author, third smoke test).
-				static const std::string version =
-					SKSE::PluginDeclaration::GetSingleton()->GetVersion().string(".");
+				static const std::string version = [] {
+					const auto* decl = SKSE::PluginDeclaration::GetSingleton();  // 2.3.0: null gives "?"
+					return decl ? decl->GetVersion().string(".") : std::string("?");
+				}();
 				ImGui::Text("ApocryphaRealm Menu Framework  v%s", version.c_str());
 				// THE TOP ROW MOVES THE WINDOW (2.1.1). The window has no title bar, and its body must never drag it: a page's
 				// slider drag or row click would move the window instead (ConfigWindowsMoveFromTitleBarOnly, above, only

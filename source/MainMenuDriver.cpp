@@ -78,7 +78,9 @@ namespace mainmenudriver
 		{
 			auto state = std::make_shared<std::tuple<std::mutex, std::condition_variable, std::string, bool>>();
 
-			SKSE::GetTaskInterface()->AddTask([state, fn = std::move(a_fn)]() {
+			auto* tasks = SKSE::GetTaskInterface();  // 2.3.0: null before SKSE::Init has queried it
+			AMF_REQUIRE(tasks, "{\"ok\":false,\"error\":\"SKSE task interface unavailable\"}");
+			tasks->AddTask([state, fn = std::move(a_fn)]() {
 				std::string result = fn();
 				{
 					std::scoped_lock l(std::get<0>(*state));
@@ -98,7 +100,9 @@ namespace mainmenudriver
 
 		void PostUserEvent(std::string a_text)
 		{
-			SKSE::GetTaskInterface()->AddTask([text = std::move(a_text)]() {
+			auto* tasks = SKSE::GetTaskInterface();  // 2.3.0: null before SKSE::Init has queried it
+			AMF_REQUIRE_VOID(tasks);
+			tasks->AddTask([text = std::move(a_text)]() {
 				auto* queue = RE::UIMessageQueue::GetSingleton();
 				auto* strings = RE::InterfaceStrings::GetSingleton();
 				if (!queue || !strings)
@@ -133,7 +137,9 @@ namespace mainmenudriver
 
 		void InvokeMoviePath(std::string a_path, std::string a_arg)
 		{
-			SKSE::GetTaskInterface()->AddTask([path = std::move(a_path), arg = std::move(a_arg)]() {
+			auto* tasks = SKSE::GetTaskInterface();  // 2.3.0: null before SKSE::Init has queried it
+			AMF_REQUIRE_VOID(tasks);
+			tasks->AddTask([path = std::move(a_path), arg = std::move(a_arg)]() {
 				auto* ui = RE::UI::GetSingleton();
 				auto menu = ui ? ui->GetMenu(RE::MainMenu::MENU_NAME) : nullptr;
 				if (!menu || !menu->uiMovie)

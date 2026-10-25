@@ -65,7 +65,11 @@ namespace presets
 
 		std::string AmfVersion()
 		{
-			static const std::string v = SKSE::PluginDeclaration::GetSingleton()->GetVersion().string(".");
+			// 2.3.0: a null declaration (looked up by export name) gives "?" instead of a crash
+			static const std::string v = [] {
+				const auto* decl = SKSE::PluginDeclaration::GetSingleton();
+				return decl ? decl->GetVersion().string(".") : std::string("?");
+			}();
 			return v;
 		}
 

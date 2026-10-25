@@ -632,7 +632,8 @@ namespace mcmloader
 			const std::string want = Lower(a_modName);
 			for (const auto quest : dataHandler->GetFormArray<RE::TESQuest>())
 			{
-				const auto file = quest ? quest->GetFile(0) : nullptr;
+				if (!quest) { continue; }  // 2.3.0: an empty slot in the game's form array
+				const auto file = quest->GetFile(0);
 				if (!file || Lower(fs::path(std::string(file->GetFilename())).stem().string()) != want) { continue; }
 				const auto handle = policy->GetHandleForObject(RE::TESQuest::FORMTYPE, quest);
 				if (!handle) { continue; }
@@ -779,7 +780,8 @@ namespace mcmloader
 				if (!name) { return kCloseUnreadable; }
 				if (_stricmp(name, "MCM_ConfigBase") == 0 || _stricmp(name, "SKI_ConfigBase") == 0) { return kCloseNone; }
 				const auto* funcs = type->GetMemberFuncIter();
-				const std::uint32_t count = funcs ? type->GetNumMemberFuncs() : 0;
+				if (!funcs) { continue; }  // 2.3.0: a type with no member functions of its own - try its parent
+				const std::uint32_t count = type->GetNumMemberFuncs();
 				for (std::uint32_t i = 0; i < count; ++i)
 				{
 					const auto& fn = funcs[i].func;
@@ -1115,7 +1117,8 @@ namespace mcmloader
 			if (!vm || !dataHandler || !policy) { return found; }
 			for (const auto quest : dataHandler->GetFormArray<RE::TESQuest>())
 			{
-				const auto file = quest ? quest->GetFile(0) : nullptr;
+				if (!quest) { continue; }  // 2.3.0: an empty slot in the game's form array
+				const auto file = quest->GetFile(0);
 				if (!file || Lower(std::string(file->GetFilename())) != "skyui_se.esp") { continue; }
 				const auto handle = policy->GetHandleForObject(RE::TESQuest::FORMTYPE, quest);
 				RE::BSTSmartPointer<RE::BSScript::Object> object;
@@ -2590,6 +2593,12 @@ namespace mcmloader
 				{
 					// GetConfigCount, then every GetModIDFromConfigID(i) at once; answered when the last one returns
 					const auto vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
+					// 2.3.0: checked before the callbacks that capture it are made, so they never run without it
+					if (!vm)
+					{
+						promise->set_value(R"({"ok":false,"error":"the Papyrus VM is not available"})");
+						return;
+					}
 					VarArgs none;
 					RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> onCount{ new detail::ResultFn([promise, r, vm](const RE::BSScript::Variable& a_count) mutable {
 						const int count = a_count.IsInt() ? a_count.GetSInt() : 0;

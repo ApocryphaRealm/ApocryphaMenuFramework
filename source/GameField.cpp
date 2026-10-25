@@ -8,6 +8,7 @@
 #include "Settings.h"
 #include "TextInputCore.h"
 #include "utils/Logger.h"
+#include "utils/NullGuard.h"
 
 #include <atomic>
 #include <cctype>
@@ -294,7 +295,7 @@ namespace gamefield
 			RE::GFxValue v;
 			const bool ok = a_mv && a_mv->GetVariable(&v, a_path.c_str()) && v.IsString() && v.GetString();
 			if (a_ok) { *a_ok = ok; }
-			return ok ? std::string(v.GetString()) : std::string();
+			return ok ? std::string(amf::Str(v.GetString())) : std::string();
 		}
 
 		bool GetBool(RE::GFxMovieView* a_mv, const std::string& a_path)
@@ -356,6 +357,7 @@ namespace gamefield
 
 		void GfxKeyTap(RE::GFxMovieView* a_mv, RE::GFxKey::Code a_code, std::uint8_t a_ascii)
 		{
+			AMF_REQUIRE_VOID(a_mv);  // 2.3.0: no movie, no key to send
 			RE::GFxSpecialKeysState keys{};
 			keys.states = static_cast<std::uint8_t>(RE::GFxSpecialKeysState::Key::kInitializedBit);
 			const RE::GFxKeyEvent down(RE::GFxEvent::EventType::kKeyDown, a_code, a_ascii, a_ascii, keys);
@@ -366,6 +368,7 @@ namespace gamefield
 
 		void GfxChars(RE::GFxMovieView* a_mv, const std::string& a_utf8)
 		{
+			AMF_REQUIRE_VOID(a_mv);  // 2.3.0: no movie, no text to send
 			for (const char32_t cp : textcore::DecodeUtf8(a_utf8))
 			{
 				std::uint16_t units[2]{};
@@ -382,6 +385,7 @@ namespace gamefield
 		// onChanged in Flash).
 		void SetTextAndNotify(RE::GFxMovieView* a_mv, const std::string& a_path, const std::string& a_text)
 		{
+			AMF_REQUIRE_VOID(a_mv);  // 2.3.0: no movie, no field to set
 			a_mv->SetVariable((a_path + ".text").c_str(), a_text.c_str());
 			if (Avail(a_mv, a_path + ".onChanged"))
 			{
@@ -557,6 +561,7 @@ namespace gamefield
 				auto menu = FindMenu(menuName, {});
 				if (!menu) { return; }
 				RE::GFxMovieView* mv = menu->uiMovie.get();
+				AMF_REQUIRE_VOID(mv);  // 2.3.0: a menu with no movie has no finder to start
 				if (!GetBool(mv, std::string(kMapFinder) + "._bShown"))
 				{
 					if (a_tries > 1) { StartMapSearch(menuName, a_tries - 1); }
@@ -575,6 +580,7 @@ namespace gamefield
 			auto menu = FindMenu(a_menu, {});
 			if (!menu) { logger::debug("keyboard: start on {} - the menu is not open", a_menu); return; }
 			RE::GFxMovieView* mv = menu->uiMovie.get();
+			AMF_REQUIRE_VOID(mv);  // 2.3.0: a menu with no movie has no field to start
 			MenuCache c;
 			{
 				std::scoped_lock l(g_lock);
@@ -724,7 +730,7 @@ namespace gamefield
 		void DoEnd(Target a_t, std::string a_why)
 		{
 			auto menu = FindMenu(a_t.menu, a_t.url);
-			if (menu)
+			if (menu && menu->uiMovie)  // 2.3.0: a menu with no movie has no field to end
 			{
 				MenuCache c;
 				{
@@ -822,7 +828,7 @@ namespace gamefield
 		const std::uint64_t dispatch = g_dispatch.fetch_add(1, std::memory_order_relaxed) + 1;
 
 		// which device is in use (only deliberate input moves it, as Input.cpp's detector)
-		for (const RE::InputEvent* e = a_head; e; e = e->next)
+		for (const RE::InputEvent* e = a_head; e; e = e->next)  // nonnull: the loop condition tests e before each step
 		{
 			if (const auto* b = e->AsButtonEvent(); b && b->IsDown())
 			{
@@ -1037,6 +1043,7 @@ namespace gamefield
 			auto menu = FindMenu(menuName, {});
 			if (!menu) { return; }
 			RE::GFxMovieView* mv = menu->uiMovie.get();
+			AMF_REQUIRE_VOID(mv);  // 2.3.0: a menu with no movie has no list to move
 			// SkyUI's onSearchInputStart set disableSelection (and disableInput) on the list until the search ends, and
 			// ScrollingList.moveSelectionUp/Down do nothing while it is set: lifted for the one step, then put back, so the
 			// list stays as SkyUI keeps it while its search is active

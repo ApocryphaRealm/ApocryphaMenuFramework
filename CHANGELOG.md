@@ -78,6 +78,24 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
   `amf::Str` and `amf::Or` (they never return null); the macros are early exits the audit already reads.
   `tools/null_guard_check.bat` checks the helpers off-game (21 of 21). No behaviour changes for a valid call.
 - The null-check gate's count falls from 725 to 672 (exports 2 -> 0, other-mod 51 -> 0); the baseline is lowered to 672.
+- **What the game hands AMF is checked where it is read** (the "game" class, 107 reads). SKSE: a null message to the
+  listener is skipped; a missing plugin declaration stops the load (to the debugger output - there is no log name yet)
+  and a missing messaging interface stops it with an error; the version strings in the framework window, the presets
+  file and `AMF_GetVersionString` read "?" instead of crashing. Input: the input hook's event copy, the button key, the
+  driver's button and character splices and the game-key injector each refuse a null event or list (the injector hands
+  the call on to the game untouched). Scaleform: the System row's page finder and clip measure, its press handler's
+  argument list and the row text; the on-screen keyboard's movie helpers (key taps, characters, set-and-notify, the map
+  search, start, end and list moves) return when a menu has no movie. Papyrus: the MCM loader skips an empty quest slot
+  and a type with no member functions, and asks for the VM before it builds callbacks that use it; the MCM recorder is
+  never wrapped around a null `UI.InvokeStringA` and a type with no name matches nothing; the main-menu driver checks
+  SKSE's task interface. Each warns once per place in the code. No behaviour changes for a valid call.
+- **The null-check gate no longer stalls a finalize waiting for memory.** The audit waited up to an hour for 6 GB of
+  free RAM before every file, and held a pre-finalize run for 33 minutes on 2026-10-25 although it peaks near 1.15 GB.
+  The gate now runs it with a 2.5 GB floor and at most 2 minutes of waiting in total; if that is not enough it FAILS
+  with "not enough free memory to run the null-check audit; rerun when memory frees" (it refuses, it never passes
+  unmeasured). A manual audit run keeps the 6 GB floor and the hour (`--free-floor-mb`, `--max-wait-s`, exit 4 when the
+  wait runs out). Proven: a gate run with its floor set above the free RAM failed after 121 s; a normal run passed.
+- The null-check gate's count falls from 672 to 565 (game 107 -> 0); the baseline is lowered to 565.
 
 ### Fixed
 - **The session's first open spent 30 ms of one frame in AMF before the menu drew** (frame profile, combined run

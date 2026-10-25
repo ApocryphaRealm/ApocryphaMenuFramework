@@ -29,6 +29,7 @@ namespace renderer { void RequestFontRebuild(); }
 #include "Theme.h"
 
 #include "utils/Logger.h"
+#include "utils/NullGuard.h"
 #include "utils/AddressLibraryGuard.h"
 #include "utils/ToggleSwitch.h"
 
@@ -69,6 +70,8 @@ namespace
 
 	void SKSEMessageListener(SKSE::MessagingInterface::Message* a_msg)
 	{
+		// 2.3.0: SKSE never sends a null message, but nothing it hands AMF is read unchecked; a null one is skipped.
+		AMF_REQUIRE_VOID(a_msg);
 		switch (a_msg->type)
 		{
 		case SKSE::MessagingInterface::kInputLoaded:
@@ -225,7 +228,11 @@ AMF_API const char* AMF_GetVersionString()
 {
 	// Derived from the one authoritative version (CMake -> plugin declaration), never a
 	// second hand-maintained literal - the literal drifted once already (said 1.0.0 at 1.0.2).
-	static const std::string version = SKSE::PluginDeclaration::GetSingleton()->GetVersion().string(".");
+	// 2.3.0: the declaration is looked up by its export name; a null one gives "?" instead of a crash.
+	static const std::string version = [] {
+		const auto* decl = SKSE::PluginDeclaration::GetSingleton();
+		return decl ? decl->GetVersion().string(".") : std::string("?");
+	}();
 	return version.c_str();
 }
 
@@ -485,6 +492,13 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 	// mod of ours carries since Wheeler 1.2.9).
 
 	const SKSE::PluginDeclaration* plugin = SKSE::PluginDeclaration::GetSingleton();
+	// 2.3.0: the declaration is found by its export name; without it there is no name for the log, so the plugin stops
+	// here (to the debugger output, as above - the log is not up yet).
+	if (!plugin)
+	{
+		OutputDebugStringA("Apocrypha Menu Framework: no SKSE plugin declaration found - not starting\n");
+		return false;
+	}
 
 	if (!logger::init(plugin->GetName()))
 	{
@@ -533,7 +547,14 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 	flick::Configure(settings::Get().flickHost);
 	smf_alias::Install();
 
-	if (!SKSE::GetMessagingInterface()->RegisterListener("SKSE", SKSEMessageListener))
+	// 2.3.0: SKSE::Init queries the messaging interface; a null one means no game events reach AMF, so load stops.
+	const auto* messaging = SKSE::GetMessagingInterface();
+	if (!messaging)
+	{
+		logger::error("SKSE gave no messaging interface; plugin load aborted");
+		return false;
+	}
+	if (!messaging->RegisterListener("SKSE", SKSEMessageListener))
 	{
 		logger::error("Could not register the SKSE message listener; plugin load aborted");
 		return false;

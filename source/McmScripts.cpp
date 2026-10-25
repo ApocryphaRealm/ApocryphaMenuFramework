@@ -231,7 +231,7 @@ namespace mcmloader::scripts
 			constexpr auto kInvalid = static_cast<std::uint32_t>(-1);
 			auto index = kInvalid;
 			std::uint32_t offset = 0;
-			for (auto cls = a_object->type.get(); cls; cls = cls->GetParent())
+			for (auto cls = a_object->type.get(); cls; cls = cls->GetParent())  // nonnull: the loop condition tests cls before each step
 			{
 				if (index == kInvalid)
 				{
@@ -268,9 +268,11 @@ namespace mcmloader::scripts
 
 		bool IsType(const ObjectPtr& a_object, const char* a_name)
 		{
-			for (auto cls = a_object ? a_object->type.get() : nullptr; cls; cls = cls->GetParent())
+			if (!a_name) { return false; }  // 2.3.0: no name asked for matches nothing
+			for (auto cls = a_object ? a_object->type.get() : nullptr; cls; cls = cls->GetParent())  // nonnull: the loop condition tests cls before each step
 			{
-				if (_stricmp(cls->GetName(), a_name) == 0) { return true; }
+				const char* name = cls->GetName();  // 2.3.0: a type with no name matches nothing
+				if (name && _stricmp(name, a_name) == 0) { return true; }
 			}
 			return false;
 		}
@@ -425,7 +427,9 @@ namespace mcmloader::scripts
 			bool CanBeCalledFromTasklets() const override { return _original->CanBeCalledFromTasklets(); }
 			void SetCallableFromTasklets(bool a_callable) override { _original->SetCallableFromTasklets(a_callable); }
 
-			RE::BSTSmartPointer<RE::BSScript::IFunction> _original;
+		private:
+			// nonnull: the one place that makes a forwarder (InstallRecorder) refuses a null slot->func before it, and const means nothing reassigns it
+			const RE::BSTSmartPointer<RE::BSScript::IFunction> _original;
 		};
 
 		RE::BSTSmartPointer<RE::BSScript::ObjectTypeInfo> g_uiType;  // main thread
@@ -464,6 +468,13 @@ namespace mcmloader::scripts
 				return;
 			}
 			if (g_forwarder && slot->func.get() == g_forwarder.get()) { return; }
+			// 2.3.0: the forwarder calls the original for everything, so it is never made around a null one
+			if (!slot->func)
+			{
+				g_captureState = "UI.InvokeStringA has no function";
+				logger::warn("MCM scripts: {} - menu lists and message boxes cannot be shown", g_captureState);
+				return;
+			}
 			g_original = slot->func;
 			g_forwarder.reset(new InvokeStringAForwarder(g_original));
 			slot->func = g_forwarder;

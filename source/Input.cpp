@@ -18,6 +18,7 @@
 #include "TextInput.h"
 #include "TextInputCore.h"
 #include "utils/Logger.h"
+#include "utils/NullGuard.h"
 
 #include <imgui.h>
 #include <imgui_internal.h>   // GImGui: the active item is asked for directly, so a text field can keep the D-pad
@@ -241,6 +242,7 @@ namespace input
 
 		std::uint64_t ButtonKey(const RE::ButtonEvent* a_button)
 		{
+			AMF_REQUIRE(a_button, 0);  // 2.3.0: 0 is no real key (device 0 = keyboard, DIK 0 is unused)
 			return (static_cast<std::uint64_t>(a_button->GetDevice()) << 32) | a_button->GetIDCode();
 		}
 
@@ -530,6 +532,7 @@ namespace input
 
 		void SpliceButton(RE::InputEvent** a_events, RE::INPUT_DEVICE a_device, std::uint32_t a_code, float a_value, float a_held)
 		{
+			AMF_REQUIRE_VOID(a_events);  // 2.3.0: no list slot, nothing to splice into
 			auto* controlMap = RE::ControlMap::GetSingleton();
 			const std::string_view name = controlMap ? controlMap->GetUserEventName(a_code, a_device) : std::string_view{};
 			RE::BSFixedString userEvent(name.empty() ? "" : std::string(name).c_str());
@@ -539,6 +542,7 @@ namespace input
 		}
 		void SpliceChar(RE::InputEvent** a_events, std::uint32_t a_code)
 		{
+			AMF_REQUIRE_VOID(a_events);  // 2.3.0: no list slot, nothing to splice into
 			auto* ev = RE::malloc<RE::CharEvent>(sizeof(RE::CharEvent));
 			if (!ev) { return; }
 			std::memset(reinterpret_cast<void*>(ev), 0, sizeof(RE::CharEvent));
@@ -571,6 +575,7 @@ namespace input
 
 			static void CopyForImGui(const RE::InputEvent* a_event)
 			{
+				AMF_REQUIRE_VOID(a_event);  // 2.3.0: the dispatch list never holds a null node; one would be skipped
 				switch (a_event->GetEventType())
 				{
 				case RE::INPUT_EVENT_TYPE::kMouseMove:
@@ -739,7 +744,7 @@ namespace input
 				// closed by the render thread on the guard's first frame.
 				if (loadguard::Blocked())
 				{
-					for (const RE::InputEvent* e = *a_events; e; e = e->next)
+					for (const RE::InputEvent* e = *a_events; e; e = e->next)  // nonnull: the loop condition tests e before each step
 					{
 						const RE::ButtonEvent* b = e->AsButtonEvent();
 						if (b && b->IsDown())
@@ -759,7 +764,7 @@ namespace input
 				// window as the messages its ImGui reads (ImguiHost.h ForwardMouse) - observe only, every event goes on as before
 				if (imguihost::MouseForwardActive())
 				{
-					for (const RE::InputEvent* e = *a_events; e; e = e->next)
+					for (const RE::InputEvent* e = *a_events; e; e = e->next)  // nonnull: the loop condition tests e before each step
 					{
 						const RE::ButtonEvent* b = e->AsButtonEvent();
 						if (b && b->GetDevice() == RE::INPUT_DEVICE::kMouse) { imguihost::ForwardMouse(b->GetIDCode(), b->IsDown(), b->IsUp()); }
@@ -1115,8 +1120,16 @@ namespace input
 
 			static void thunk(RE::BSTEventSource<RE::InputEvent*>* a_dispatcher, RE::InputEvent** a_events)
 			{
+				// 2.3.0: no list slot - the game gets the call as it came, AMF adds nothing (logged once)
+				if (!a_events)
+				{
+					static std::atomic_bool warned{ false };
+					if (!warned.exchange(true)) { logger::warn("game keys: the input dispatch came with no event list; nothing added"); }
+					func(a_dispatcher, a_events);
+					return;
+				}
 				std::vector<gamekeys::KeyEvent> events;
-				if (a_events && !loadguard::Blocked())
+				if (!loadguard::Blocked())
 				{
 					std::scoped_lock l(g_lock);
 					if (!g_keys.Idle()) { events = g_keys.Poll(Now()); }

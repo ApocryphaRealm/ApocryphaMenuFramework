@@ -15,8 +15,12 @@ FAILS CLOSED. A gate that cannot measure must not pass, so it prints FAIL and ex
   - libclang.dll is missing or will not load (LIBCLANG_PATH, else C:\\Program Files\\LLVM\\bin\\libclang.dll);
   - the build tree it reads defines and include paths from (build\\relwithdebinfo-17\\build.ninja, made by
     configure17.bat) is not configured;
-  - the audit stops itself (memory cap, or an hour without enough free memory), reports parse errors
-    (a file it could not read is a file it did not count), or ends without a GATE PASS line.
+  - there is not enough free memory to run the audit: the gate runs it with a free-RAM floor of 2.5 GB
+    (AMF_NULL_GATE_FREE_FLOOR_MB) and lets it wait at most 2 minutes (AMF_NULL_GATE_MAX_WAIT_S), then FAILS
+    with "not enough free memory to run the null-check audit; rerun when memory frees" - it refuses, it never
+    passes unmeasured, and it no longer stalls a finalize for up to an hour (a manual audit run keeps 6 GB / 1 h);
+  - the audit stops itself (memory cap), reports parse errors (a file it could not read is a file it did not
+    count), or ends without a GATE PASS line.
 
 The build tree is pinned to the 1.7 line's because the baseline was measured with its flags; the two lines
 compile the same sources.
@@ -34,6 +38,12 @@ BASELINE = os.path.join(HERE, "null-check-baseline.json")
 BUILD = os.path.join(REPO, "build", "relwithdebinfo-17")
 OUT = os.path.join(REPO, "build", "null-check-audit")
 CLANG_VERSION = "20.1.5"
+# The audit peaks near 1.15 GB; 2.5 GB free leaves room for it, and 2 minutes is the most a gate should wait
+# (2026-10-25: the audit's own 6 GB / 1 h wait stalled a pre-finalize run for 33 minutes). Overridable, which is
+# also how the low-memory refusal is proven (set the floor above the free RAM).
+FREE_FLOOR_MB = int(os.environ.get("AMF_NULL_GATE_FREE_FLOOR_MB", "2560"))
+MAX_WAIT_S = int(os.environ.get("AMF_NULL_GATE_MAX_WAIT_S", "120"))
+LOW_MEMORY_EXIT = 4   # null_check_audit.py's exit code when the memory wait ran out
 REEXEC = "AMF_NULL_GATE_REEXEC"
 
 
@@ -100,7 +110,8 @@ def main():
     if not os.path.isfile(os.path.join(BUILD, "build.ninja")):
         return fail("no configured build tree at build\\relwithdebinfo-17 (build.ninja missing) - run configure17.bat")
 
-    cmd = [sys.executable, AUDIT, "--repo", REPO, "--build", BUILD, "--out", OUT, "--gate"]
+    cmd = [sys.executable, AUDIT, "--repo", REPO, "--build", BUILD, "--out", OUT, "--gate",
+           "--free-floor-mb", str(FREE_FLOOR_MB), "--max-wait-s", str(MAX_WAIT_S)]
     if os.path.isfile(BASELINE):
         try:
             with open(BASELINE, encoding="utf-8") as f:
@@ -121,6 +132,9 @@ def main():
         print("  " + l)
     gate_line = next((l for l in reversed(out.splitlines()) if l.startswith("GATE ")), "")
     if proc.returncode != 0:
+        if proc.returncode == LOW_MEMORY_EXIT and "not enough free memory" in out:
+            return fail("not enough free memory to run the null-check audit; rerun when memory frees "
+                        "(floor %d MB, waited up to %d s)" % (FREE_FLOOR_MB, MAX_WAIT_S))
         if gate_line.startswith("GATE FAIL"):
             return fail(gate_line[len("GATE FAIL: "):] + " - the new reads are in build\\null-check-audit\\unchecked.txt")
         return fail("the audit exited %d without a verdict: %s" % (proc.returncode, tail[-1] if tail else "(no output)"))
