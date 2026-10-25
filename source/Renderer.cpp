@@ -54,7 +54,8 @@
 #include <imgui.h>
 #include <imgui_internal.h>
 #include "PreciseSlider.h"
-#include "NavSide.h"   // when a Left press inside a page may go back to the mod list (2.3.0)
+#include "NavSide.h"
+#include "TabFit.h"   // rows that fit the pane at big text sizes (2.3.0, retest 453d U1)   // when a Left press inside a page may go back to the mod list (2.3.0)
 #include <vector>
 // The vcpkg imgui port installs the binding headers FLAT at the include root, not under
 // backends/ as in the upstream repo layout.
@@ -3808,7 +3809,31 @@ namespace renderer
 							   "key, mouse button, pad button or stick direction you want."));
 			ImGui::Spacing();
 
-			if (!ImGui::BeginTabBar("##controlstabs", ImGuiTabBarFlags_FittingPolicyScroll)) { return; }
+			// 2.3.0 (retest batch B-20261025-053652-453d, c0a3 U1: text size 2.0, window at its narrowest - the "Controller" tab
+			// showed only "C" between tab arrows and the pane grew a horizontal scroll bar). The two labels are drawn at the
+			// font scale that fits them in the pane; past tabfit::kMinScale the tabs shrink instead of scrolling, so the bar
+			// never reports more width than the pane (TabFit.h).
+			const std::string keyboardTab = icons::Label(icons::kKeyboard, TR("AMF_TabKeyboard", "Keyboard and mouse"));
+			const std::string padTab = icons::Label(icons::kGamepad, TR("AMF_TabController", "Controller"));
+			float tabScale = 1.0f;
+			{
+				const ImGuiStyle& ts = ImGui::GetStyle();
+				const float widths[] = { ImGui::CalcTextSize(keyboardTab.c_str(), nullptr, true).x, ImGui::CalcTextSize(padTab.c_str(), nullptr, true).x };
+				tabScale = tabfit::LabelScale(widths, 2, ImGui::GetContentRegionAvail().x, ts.FramePadding.x, ts.ItemInnerSpacing.x);
+				static float s_loggedScale = -1.0f;
+				if (std::abs(s_loggedScale - tabScale) > 0.01f)
+				{
+					s_loggedScale = tabScale;
+					logger::debug("controls: tab labels at {:.2f}x to fit {:.0f}px (text size {:.2f})", tabScale, ImGui::GetContentRegionAvail().x,
+								  settings::Get().textScale);
+				}
+			}
+			bool barOpen = false;
+			{
+				tabfit::ScopedScale scaled(tabScale);
+				barOpen = ImGui::BeginTabBar("##controlstabs", ImGuiTabBarFlags_FittingPolicyResizeDown);
+			}
+			if (!barOpen) { return; }
 			OwnTabBarWheel("Controls");   // 2.1.9 (AMF-63): the wheel over this bar steps its tabs; over the page it still scrolls
 
 			int index = 0;
@@ -3816,7 +3841,11 @@ namespace renderer
 				const ImGuiTabItemFlags flags =
 					(index == g_tabRequest) ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
 				FocusMainTabIfAsked(index);   // 2.1.5: Y in a page lands here
-				const bool open = ImGui::BeginTabItem(a_label, nullptr, flags);
+				bool open = false;
+				{
+					tabfit::ScopedScale scaled(tabScale);   // the tab itself; its contents are drawn after, at the normal size
+					open = ImGui::BeginTabItem(a_label, nullptr, flags);
+				}
 				if (ImGui::IsItemFocused()) { g_tabBarHasNav = true; }
 				if (open) { g_tabIndex = index; }
 				++index;
@@ -3941,13 +3970,13 @@ namespace renderer
 				}
 			};
 
-			if (tab(icons::Label(icons::kKeyboard, TR("AMF_TabKeyboard", "Keyboard and mouse")).c_str()))
+			if (tab(keyboardTab.c_str()))
 			{
 				ImGui::Spacing();
 				drawRows(false);
 				ImGui::EndTabItem();
 			}
-			if (tab(icons::Label(icons::kGamepad, TR("AMF_TabController", "Controller")).c_str()))
+			if (tab(padTab.c_str()))
 			{
 				ImGui::Spacing();
 				drawRows(true);
@@ -3967,11 +3996,13 @@ namespace renderer
 			}
 			if (g_menuListSavedAt > 0.0 && ImGui::GetTime() - g_menuListSavedAt < 3.0)
 			{
-				ImGui::SameLine();
+				tabfit::SameLineIfFits(ImGui::CalcTextSize(TR("AMF_MenuListSaved", "saved")).x);
 				ImGui::TextDisabled("%s", TR("AMF_MenuListSaved", "saved"));
 			}
-			ImGui::SameLine();
-			if (ImGui::Button(icons::Label(icons::kReset, TR("AMF_BindReset", "Reset every control")).c_str()))
+			// 2.3.0 (U1): on its own line when it would run past the pane's edge (a big text size in a narrow window)
+			const std::string resetLabel = icons::Label(icons::kReset, TR("AMF_BindReset", "Reset every control"));
+			tabfit::SameLineIfFits(tabfit::ButtonWidth(resetLabel.c_str()));
+			if (ImGui::Button(resetLabel.c_str()))
 			{
 				bindings::ResetToDefaults();
 				settings::Save();

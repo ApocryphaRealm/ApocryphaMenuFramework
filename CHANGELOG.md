@@ -246,6 +246,13 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
   applied when Enter is pressed or the field is let go. precise::ApplyNow (include\PreciseSlider.h), checked by
   tools\slider_wheel_check.bat (Ctrl+click, "25", Enter: two changes reported while typing, none applied, one apply on
   Enter).
+- **Controls page at a big text size in a narrow window** (c0a3 U1 FAIL: text size 2.0, window at its 1175 x 1080 floor -
+  the "Controller" tab showed only "C" between tab arrows and the pane grew a horizontal scroll bar). The tab bar kept
+  both tabs at full width and reported that width to the pane, which is what made the pane scroll sideways (a control run
+  with only the buttons fixed still scrolled). The two tab labels are now drawn at the font scale that fits them (down to
+  0.6, then the tabs shrink rather than scroll), and "Reset every control" starts its own line when it would run past the
+  edge. TabFit.h, checked by the new tools\controls_fit_check.bat (12 checks: the cause, the fix, and no change at text
+  size 1.0).
 
 ## 2.2.3 - 2026-10-21 - untested - dropdowns on SkyUI MCM pages fill when AMF is opened from the Journal's System menu
 
