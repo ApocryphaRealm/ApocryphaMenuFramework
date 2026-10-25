@@ -42,6 +42,7 @@
 #include "WindowGeometryCore.h"
 #include "utils/ToggleSwitch.h"
 #include "utils/Logger.h"
+#include "utils/NullGuard.h"
 
 #include <array>
 #include <cmath>
@@ -306,6 +307,13 @@ namespace renderer
 		std::mutex g_renderJobsLock;
 		std::vector<std::function<void()>> g_renderJobs;
 
+		// Calls a render-thread job or a page's draw function only when it is set (an empty one warns once and is skipped).
+		void RunIfSet(const std::function<void()>& a_fn)
+		{
+			AMF_REQUIRE_VOID(a_fn);
+			a_fn();
+		}
+
 		void RunRenderJobs()
 		{
 			std::vector<std::function<void()>> jobs;
@@ -315,7 +323,7 @@ namespace renderer
 			}
 			for (auto& job : jobs)
 			{
-				try { job(); }
+				try { RunIfSet(job); }
 				catch (const std::exception& e) { logger::error("render-thread job threw: {}", e.what()); }
 				catch (...) { logger::error("render-thread job threw a non-standard exception"); }
 			}
@@ -325,6 +333,7 @@ namespace renderer
 		// took it in time (it stays queued and runs at the next frame). On the render thread itself it runs at once.
 		bool RunOnRenderThread(std::function<void()> a_job, unsigned a_timeoutMs)
 		{
+			AMF_REQUIRE(a_job, true);   // an empty job: nothing to run, nothing left queued
 			if (consumer::OnRenderThread())
 			{
 				a_job();
@@ -349,7 +358,7 @@ namespace renderer
 							s->cv.notify_all();
 						}
 					} signal{ state };
-					job();
+					RunIfSet(job);
 				});
 			}
 			std::unique_lock l(state->m);
@@ -581,6 +590,7 @@ namespace renderer
 
 		void DrawHighlightFrame(ImDrawList* dl, ImVec2 p0, ImVec2 p1, float a_alpha)
 		{
+			AMF_REQUIRE_VOID(dl);
 			const float unit = ImGui::GetFontSize() / 16.0f;   // the resolution scale, read from the text size it set
 			// No frame round a rect with no height or width (the owner, 2026-10-07: D-pad up from the top of the list drew
 			// "a single straight horizontal line" under the title - ImGui's nav rect with nothing in it, which the plain-line
@@ -663,6 +673,7 @@ namespace renderer
 		// Before Render: the nav item's frame (ImGui's own nav rect, wherever the highlight is), then every frame noted.
 		void FlushHighlightFrames()
 		{
+			AMF_REQUIRE_VOID(GImGui);
 			ImGuiContext& g = *GImGui;
 			// 2.1.9 (the owner, 2026-10-12: hovering the Mods row's switches with the mouse after a key press framed BOTH - the
 			// nav item, still lit from the keys, and the item under the mouse). ImGui 1.90.8 hides its nav highlight on a mouse
@@ -1139,13 +1150,13 @@ namespace renderer
 			}
 			// the proof the fix rests on: the face a mod may hold is the same object, filled again, after the build
 			logger::info("font: the text face a mod may hold is {} after the build ({} glyphs)",
-						 io.Fonts->Fonts[0] == textFace && textFace->Glyphs.Size > 0 ? "the same object, rebuilt in place" : "NOT the same object",
-						 textFace->Glyphs.Size);
+						 textFace && io.Fonts->Fonts[0] == textFace && textFace->Glyphs.Size > 0 ? "the same object, rebuilt in place" : "NOT the same object",
+						 textFace ? textFace->Glyphs.Size : 0);
 			unsigned char* pixels = nullptr;
 			int w = 0, h = 0;
 			io.Fonts->GetTexDataAsRGBA32(&pixels, &w, &h);
 			std::string faces;
-			static constexpr const char* kFaceNames[consumer::kIconFaceCount] = { "solid", "regular", "brands" };
+			static constexpr const char* kFaceNames[consumer::kIconFaceCount] = { "solid", "regular", "brands" };   // nonnull: constexpr table of three string literals
 			for (int f = 0; f < consumer::kIconFaceCount; ++f)
 			{
 				if (g_iconFaceBuilt[f] && consumer::IconFaceWanted(f)) { faces += (faces.empty() ? "" : ", ") + std::string(kFaceNames[f]); }
@@ -1322,14 +1333,15 @@ namespace renderer
 			// this is not a per-frame line.
 			{
 				std::string faces;
-				static constexpr const char* kFaceNames[consumer::kIconFaceCount] = { "solid", "regular", "brands" };
+				static constexpr const char* kFaceNames[consumer::kIconFaceCount] = { "solid", "regular", "brands" };   // nonnull: constexpr table of three string literals
 				for (int f = 0; f < consumer::kIconFaceCount; ++f)
 				{
 					consumer::SetIconFont(f, iconFonts[f]);
-					if (!iconFonts[f]) { continue; }
-					const int icons = iconFonts[f]->FindGlyphNoFallback(f == consumer::kIconBrands ? 0xF09B : 0xF007) ? 1 : 0;
+					ImFont* const face = iconFonts[f];
+					if (!face) { continue; }
+					const int icons = face->FindGlyphNoFallback(f == consumer::kIconBrands ? 0xF09B : 0xF007) ? 1 : 0;
 					faces += (faces.empty() ? "" : ", ") + std::string(kFaceNames[f]) + " (" +
-							 std::to_string(iconFonts[f]->Glyphs.Size) + " glyphs" + (icons ? "" : ", NO icon glyphs") + ")";
+							 std::to_string(face->Glyphs.Size) + " glyphs" + (icons ? "" : ", NO icon glyphs") + ")";
 				}
 				if (!faces.empty()) { logger::info("font: Font Awesome icon faces in the atlas: {}", faces); }
 			}
@@ -1861,11 +1873,11 @@ namespace renderer
 					// basically be its own built-in") - the window kinds keep their words (none, plain, window frame)
 					const bool windowKind = kind == ArtKind::kFrame || kind == ArtKind::kBackground || kind == ArtKind::kPopup ||
 					                        kind == ArtKind::kHighlight;
-					const std::string ownWord = !own.empty() ? ArtLabel(own) : windowKind ? std::string(noArtWord[k]) : active.name;
+					const std::string ownWord = !own.empty() ? ArtLabel(own) : windowKind ? std::string(amf::Str(noArtWord[k])) : active.name;
 					labels.push_back(std::format("{} ({})", TR("AMF_ArtThemeOwn", "Theme's own"), ownWord));
 					const bool offerNone = kind == ArtKind::kBackground || pick == skin::kArtNone;
 					const int first = offerNone ? 2 : 1;
-					if (offerNone) { labels.push_back(noArtLabel[k]); }
+					if (offerNone) { labels.push_back(amf::Str(noArtLabel[k])); }
 					int current = 0;
 					// the theme's own part is entry 0 already - not listed a second time below it (2.1.6, testing - the owner:
 					// "Theme's own (Skyrim)" and then "Skyrim" just below it is a duplicate)
@@ -1928,7 +1940,7 @@ namespace renderer
 					else
 					{
 						ImGui::AlignTextToFramePadding();
-						ImGui::TextDisabled("%s", windowKind ? noArtWord[k] : active.name.c_str());
+						ImGui::TextDisabled("%s", windowKind ? amf::Str(noArtWord[k]) : active.name.c_str());
 					}
 					ImGui::PopID();
 				}
@@ -2368,7 +2380,7 @@ namespace renderer
 								ImGui::TableNextColumn();
 								if (widgets::Toggle(TR(r.key, r.english), r.value))
 								{
-									logger::info("settings page: keyboard {} -> {}", r.log, *r.value);
+									logger::info("settings page: keyboard {} -> {}", r.log, *r.value);   // nonnull: every rows[] entry's value is &values.<field>, the const table just above
 									settings::Save();
 								}
 							}
@@ -3757,7 +3769,7 @@ namespace renderer
 					}
 
 					ImGui::TableSetColumnIndex(2);
-					auto buffer = aliasBuffers.find(row.modName);
+					auto buffer = aliasBuffers.find(row.modName);   // nonnull: found here, or else set by the emplace(...).first just below - an element either way
 					if (buffer == aliasBuffers.end())
 					{
 						std::array<char, 64> fresh{};
@@ -4284,7 +4296,7 @@ namespace renderer
 			// The centre a Centred window is held at. Kept in step in Edges too, so switching style leaves the window put.
 			static ImVec2 s_hotCentre{ -1.0f, -1.0f };
 			ImGuiWindow* hotWindow = ImGui::FindWindowByName(windowId);
-			const bool movingHot = hotWindow && GImGui->MovingWindow && GImGui->MovingWindow->RootWindow == hotWindow;
+			const bool movingHot = hotWindow && GImGui && GImGui->MovingWindow &&GImGui->MovingWindow->RootWindow == hotWindow;
 			// 0x0 while minimised or driven in the background, and an 8x8 placeholder image at times: not a display to place,
 			// constrain or save the window against (2.3.0, WindowGeometryCore.h).
 			const bool haveDisplay = windowgeometry::UsableDisplay(display.x, display.y);
@@ -4359,7 +4371,10 @@ namespace renderer
 				if (haveDisplay)
 				ImGui::SetNextWindowSizeConstraints(ImVec2(display.x * 0.2f, display.y * 0.2f), display,
 					+[](ImGuiSizeCallbackData* a_data) {
+						AMF_REQUIRE_VOID(a_data);
 						auto* c = static_cast<HotkeyConstraint*>(a_data->UserData);
+						AMF_REQUIRE_VOID(c);
+						AMF_REQUIRE_VOID(GImGui);
 						float maxW = c->display.x;
 						float maxH = c->display.y;
 						ImGuiContext& g = *GImGui;
@@ -4391,7 +4406,7 @@ namespace renderer
 				// position should only change to match the redesign when the redesign is active"). The
 				// art on screen is what GetPanelRect just measured; a position dragged under other art
 				// is ignored, the journal is measured afresh, and the next drag saves for this art.
-				const std::string artNow = systemrow::ArtKey();
+				const std::string artNow = amf::Str(systemrow::ArtKey());
 				if (useProfile && haveDefault && profile.art != artNow)
 				{
 					useProfile = false;
@@ -4558,9 +4573,9 @@ namespace renderer
 					// needs only the pane's own least width (12 characters since R8, or the names if narrower) beside the page's 18 -
 					// about 30 characters plus the gaps. The pane still takes the full width of its names when there is room.
 					const float namesLeast = std::min(needed, ImGui::GetFontSize() * 12.0f + gutter + st.WindowPadding.x * 2.0f + st.ScrollbarSize + st.ItemSpacing.x * 2.0f);
-					if (avail < namesLeast + rightMin + between)
+					ImGuiWindow* const self = ImGui::GetCurrentWindow();
+					if (self && avail < namesLeast + rightMin + between)
 					{
-						ImGuiWindow* self = ImGui::GetCurrentWindow();
 						const float grown = std::min(self->Size.x + (namesLeast + rightMin + between - avail), display.x * 0.98f);
 						if (grown > self->Size.x + 0.5f)
 						{
@@ -4946,7 +4961,7 @@ namespace renderer
 					personalization::DisplayEntry* separator = nullptr;
 					for (auto& r : displayRows)
 					{
-						if (r.separator) { separator = &r; separator->children = 0; continue; }
+						if (r.separator) { r.children = 0; separator = &r; continue; }
 						// a row the Filter hides is not counted either, so a folded "(n)" promises only rows that will show
 						if (separator && r.depth > 0 && !allPagesHidden(r) && (!filterOut || passesFilter(r.displayName))) { ++separator->children; }
 					}
@@ -5366,7 +5381,7 @@ namespace renderer
 					}
 					ImGui::Separator();
 					// Pages a mod hid with AMF_SetPageVisible (1.8.3) are left out; the rest keep their order.
-					std::vector<const registry::Page*> visiblePages;
+					std::vector<const registry::Page*> visiblePages;   // nonnull: filled only by the push_back(&page) just below, never reset
 					for (const registry::Page& page : entry.pages)
 					{
 						if (!page.hidden) { visiblePages.push_back(&page); }
@@ -5375,7 +5390,7 @@ namespace renderer
 					{
 						// 2.2.2: a mod's plain-text tooltips go to the help bar (HelpBar.h) while its page draws
 						helpbar::EnterModPage();
-						visiblePages[0]->render();
+						RunIfSet(visiblePages[0]->render);
 						helpbar::LeaveModPage(entry.modName + "|" + visiblePages[0]->pageName);
 					}
 					else if (visiblePages.size() > 1 && ImGui::BeginTabBar("##pages",ImGuiTabBarFlags_FittingPolicyScroll | ImGuiTabBarFlags_TabListPopupButton))   // a mod with many sections keeps whole labels: the bar scrolls, and the list button on the left opens every section by name (Character Progression Control reached twelve tabs and the default policy squeezed them to "Level... Expe... Skills")
@@ -5419,7 +5434,7 @@ namespace renderer
 								g_tabIndex = index;
 								curTabName = page.pageName;
 								helpbar::EnterModPage();
-								page.render();
+								RunIfSet(page.render);
 								helpbar::LeaveModPage(entry.modName + "|" + page.pageName);
 								ImGui::EndTabItem();
 							}
@@ -5990,8 +6005,8 @@ namespace renderer
 							for (int k = ImGuiKey_NamedKey_BEGIN; k < ImGuiKey_NamedKey_END; ++k)
 							{
 								const auto key = static_cast<ImGuiKey>(k);
-								if (ImGui::IsKeyPressed(key, false)) { keys += std::string(ImGui::GetKeyName(key)) + "(p) "; }
-								else if (ImGui::IsKeyDown(key)) { keys += std::string(ImGui::GetKeyName(key)) + "(d) "; }
+								if (ImGui::IsKeyPressed(key, false)) { keys += std::string(amf::Str(ImGui::GetKeyName(key))) + "(p) "; }
+								else if (ImGui::IsKeyDown(key)) { keys += std::string(amf::Str(ImGui::GetKeyName(key))) + "(d) "; }
 							}
 							if (keys.empty()) { keys = "(none)"; }
 							logger::info("input:   keys this frame: {} | navActive={} navActivateId={} navJustMovedTo={} wantCaptureKeyboard={}",
@@ -6370,6 +6385,7 @@ namespace renderer
 
 	void NoteHoveredItem()
 	{
+		AMF_REQUIRE_VOID(GImGui);
 		if (!ImGui::IsItemHovered()) { return; }
 		// 2.1.9: the item's FRAME, not its whole rect - for a labelled control (a dropdown, slider, text box) ImGui's item
 		// rect runs on over the label, and the hover frame went round the Font dropdown AND the word "Font" (the owner's
@@ -6478,7 +6494,7 @@ namespace renderer
 				for (char& c : a_s) { c = static_cast<char>(std::tolower(static_cast<unsigned char>(c))); }
 				return a_s;
 			};
-			while (k < skin::kArtKindCount && lower(a_kind) != lower(skin::kArtKeys[k] + 1)) { ++k; }   // Frame, Box, TickBox, ...
+			while (k < skin::kArtKindCount && lower(a_kind) != lower(skin::kArtKeys[k] + 1)) { ++k; }   // Frame, Box, TickBox, ... // nonnull: kArtKeys is a constexpr table of non-empty literals (ArtKinds.h)
 			if (k == skin::kArtKindCount)
 			{
 				std::string names;

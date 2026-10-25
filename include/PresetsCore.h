@@ -372,6 +372,7 @@ namespace presetscore
 				continue;
 			}
 			const auto cur = curFiles.find(key);
+			const FilePart* curPart = cur == curFiles.end() ? nullptr : cur->second;
 			std::set<std::string> seen;
 			int settings = 0;
 			for (const Value& v : f.values)
@@ -379,10 +380,10 @@ namespace presetscore
 				const std::string id = ValueIdentity(v);
 				if (!seen.insert(id).second) { continue; }
 				++settings;
-				if (cur == curFiles.end()) { continue; }
+				if (!curPart) { continue; }
 				DiffRow row{ key, entry, ValueLabel(v), {}, v.value, 0 };
-				const auto it = std::find_if(cur->second->values.begin(), cur->second->values.end(), [&](const Value& x) { return ValueIdentity(x) == id; });
-				if (it == cur->second->values.end()) { row.state = 1; }
+				const auto it = std::find_if(curPart->values.begin(), curPart->values.end(), [&](const Value& x) { return ValueIdentity(x) == id; });
+				if (it == curPart->values.end()) { row.state = 1; }
 				else if (it->value == v.value) { ++d.same; continue; }
 				else { row.current = it->value; }
 				if (row.state == 0) { ++d.changes[key]; }

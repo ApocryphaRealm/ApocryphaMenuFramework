@@ -13,6 +13,7 @@
 #include "Theme.h"
 #include "TomlPages.h"
 #include "utils/Logger.h"
+#include "utils/NullGuard.h"
 #include "utils/ToggleSwitch.h"
 
 #include <imgui.h>
@@ -296,6 +297,7 @@ namespace presets
 		std::vector<pc::FilePart> ReadSources(const std::vector<Source>& a_sources, const std::function<bool(const Source&)>& a_want)
 		{
 			std::vector<pc::FilePart> out;
+			AMF_REQUIRE(a_want, out);
 			for (const auto& s : a_sources)
 			{
 				if (!a_want(s)) { continue; }
@@ -444,6 +446,12 @@ namespace presets
 		constexpr int kReadWaitSeconds = 60;
 		void ReadMenusThenFinish(std::shared_ptr<Comparison> a_c, std::vector<std::string> a_keys, int a_attempt)
 		{
+			if (!a_c)   // never null (make_shared in StartCompare); if it were, end the job so the page is not left busy
+			{
+				logger::warn("presets: the comparison was null - the compare was ended");
+				End({});
+				return;
+			}
 			if (a_keys.empty())
 			{
 				FinishCompare(std::move(*a_c));
@@ -572,6 +580,12 @@ namespace presets
 
 		void FinishLoad(const std::shared_ptr<LoadRun>& a_run)
 		{
+			if (!a_run)   // never null (make_shared in StartLoad); if it were, end the job so the page is not left busy
+			{
+				logger::warn("presets: the load run was null - the load was ended");
+				End({});
+				return;
+			}
 			std::string skipped;
 			for (std::size_t i = 0; i < a_run->skipped.size() && i < 20; ++i) { skipped += (i ? ", " : "") + a_run->skipped[i]; }
 			std::string line = Fmt(TR("AMF_SetPresetLoaded", "Loaded \"%s\": %d settings set, %d already the same, %d not found, %d not written."),
@@ -594,6 +608,12 @@ namespace presets
 
 		void ApplyMenusStep(const std::shared_ptr<LoadRun>& a_run)
 		{
+			if (!a_run)   // never null (make_shared in StartLoad); if it were, end the job so the page is not left busy
+			{
+				logger::warn("presets: the load run was null - the load was ended");
+				End({});
+				return;
+			}
 			if (a_run->selected.menus.empty())
 			{
 				FinishLoad(a_run);
@@ -615,6 +635,12 @@ namespace presets
 
 		void ApplyHelperStep(std::shared_ptr<LoadRun> a_run)
 		{
+			if (!a_run)   // never null (make_shared in StartLoad); if it were, end the job so the page is not left busy
+			{
+				logger::warn("presets: the load run was null - the load was ended");
+				End({});
+				return;
+			}
 			if (a_run->nextHelper >= a_run->helperParts.size())
 			{
 				ApplyMenusStep(a_run);

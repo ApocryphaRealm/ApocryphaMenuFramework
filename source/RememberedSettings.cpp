@@ -5,6 +5,7 @@
 #include "Settings.h"
 #include "Strings.h"
 #include "utils/Logger.h"
+#include "utils/NullGuard.h"
 
 #include <nlohmann/json.hpp>
 
@@ -281,6 +282,12 @@ namespace rememberedsettings
 
 		void Finish(const std::shared_ptr<Job>& a_job)
 		{
+			if (!a_job)
+			{
+				logger::warn("Remembered settings: finished a job that was null - cleared the busy flag");
+				g_busy = false;
+				return;
+			}
 			if (a_job->read)
 			{
 				logger::info("Remembered settings: read for a preset - {} menu(s), {} setting(s), {} skipped", a_job->menus, a_job->settings, a_job->skipped);
@@ -316,6 +323,11 @@ namespace rememberedsettings
 
 		void Step(std::shared_ptr<Job> a_job)
 		{
+			if (!a_job)
+			{
+				Finish(a_job);  // logs the null and clears the busy flag
+				return;
+			}
 			if (a_job->next >= a_job->targets.size())
 			{
 				Finish(a_job);
@@ -441,9 +453,10 @@ namespace rememberedsettings
 		bool Start(bool a_restore, std::vector<std::pair<std::string, std::string>> a_targets, std::shared_ptr<Job> a_job = nullptr)
 		{
 			if (Busy() || !scripts::MemoryIdle()) { return false; }
+			const auto job = a_job ? a_job : std::make_shared<Job>();
+			AMF_REQUIRE(job, false);
 			g_busy = true;
 			g_busySinceMs = NowMs();
-			auto job = a_job ? a_job : std::make_shared<Job>();
 			job->restore = a_restore;
 			job->targets = std::move(a_targets);
 			if (!job->read) { SetResult(a_restore ? TR("AMF_McmMemRestoring", "Restoring...") : TR("AMF_McmMemBackingUp", "Backing up...")); }
@@ -985,9 +998,9 @@ namespace rememberedsettings
 					entry = it->second.second;
 					// a script option: page + raw label + type + nth - the n-th row with that label and type on its page, counted
 					// in SLOT order; the same slot seen twice (an activation and its setting) keeps one number
-					std::vector<const ForeignSetting*> bySlot;
+					std::vector<const ForeignSetting*> bySlot;   // nonnull: filled only by the push_back(&s) on the next line (address of an element), never assigned elsewhere
 					for (const auto& s : menu.settings) { bySlot.push_back(&s); }
-					std::stable_sort(bySlot.begin(), bySlot.end(), [](const auto* a, const auto* b) { return a->optionIndex < b->optionIndex; });
+					std::stable_sort(bySlot.begin(), bySlot.end(), [](const auto* a, const auto* b) { return a->optionIndex < b->optionIndex; });   // nonnull: a and b are elements of bySlot, which holds only &s addresses
 					std::map<const ForeignSetting*, int> nthOf;
 					std::map<std::string, std::map<int, int>> slotsSeen;   // page+label+kind -> slot -> nth
 					for (const auto* s : bySlot)

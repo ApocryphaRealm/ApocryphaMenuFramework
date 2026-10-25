@@ -124,6 +124,15 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
   lock and checks the mod after it. The two mod lists (`g_mods` in both files) carry a `// nonnull:` reason: their only
   insertion is a `make_unique` result and nothing resets or erases an element. No behaviour changes for valid input.
 - The null-check gate's count falls from 528 to 339; the baseline is lowered to 339.
+- **The renderer, Remembered settings and Presets check what they read** (internal class, 70, 58 and 39 reads). The
+  renderer runs render-thread jobs and every page's draw function only when they are set (a page registered with an
+  empty draw function shows a blank tab and warns once, instead of crashing), and checks the draw list, ImGui's context
+  and a window-constraint callback's data before reading them; text from tables and key names goes through `amf::Str`.
+  Remembered settings and Presets guard their job pointers at the top of each step; a null job warns, ends the job and
+  clears the busy flag at once (a bare return would have left the page busy until its timeout). The presets comparison
+  takes a checked pointer from its file lookup instead of reading through the iterator. No behaviour changes for valid
+  input.
+- The null-check gate's count falls from 339 to 172; the baseline is lowered to 172.
 
 ### Fixed
 - **The session's first open spent 30 ms of one frame in AMF before the menu drew** (frame profile, combined run
