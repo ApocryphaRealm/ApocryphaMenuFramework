@@ -13,6 +13,7 @@
 #include "Strings.h"
 #include "Theme.h"
 #include "utils/Logger.h"
+#include "utils/NullGuard.h"
 #include "utils/ToggleSwitch.h"
 
 #include <imgui.h>
@@ -112,6 +113,7 @@ namespace mcmloader::scripts
 		};
 
 		std::mutex g_mutex;
+		// nonnull: only insertion is DiscoverNow's push_back(std::make_unique<SMod>()); no assign/reset/erase/clear anywhere
 		std::vector<std::unique_ptr<SMod>> g_mods;  // never shrinks: page closures hold indices
 		Session g_session;
 		std::atomic<int> g_open{ -1 };              // the config OpenConfig was sent to
@@ -571,7 +573,7 @@ namespace mcmloader::scripts
 			}
 			tasks->AddTask([op = std::move(op), done]() {
 				logger::debug("MCM scripts: {}", op.name);
-				op.run(done);
+				amf::Call(op.run)(done);
 			});
 		}
 
@@ -707,9 +709,9 @@ namespace mcmloader::scripts
 					}
 				}
 				PrefetchSliders(a_mod);
-				a_done();
+				amf::Call(a_done)();
 			});
-			if (!sent) { a_done(); }
+			if (!sent) { amf::Call(a_done)(); }
 		}
 
 		// The page currently open, rebuilt (after every change: the script's own Set*OptionValue calls reach only the Flash
@@ -725,7 +727,7 @@ namespace mcmloader::scripts
 			}
 			if (page == -2)
 			{
-				a_done();
+				amf::Call(a_done)();
 				return;
 			}
 			Build(a_mod, a_config, page, name, std::move(a_done));
@@ -735,7 +737,7 @@ namespace mcmloader::scripts
 		{
 			Enqueue({ "", "OpenConfig" + LabelOf(a_mod), [a_mod](std::function<void()> a_done) {
 				const auto config = ScriptOf(a_mod);
-				if (!config || !Call(config, "OpenConfig", Args(), [a_done](const RE::BSScript::Variable&) { a_done(); })) { a_done(); }
+				if (!config || !Call(config, "OpenConfig", Args(), [a_done](const RE::BSScript::Variable&) { amf::Call(a_done)(); })) { amf::Call(a_done)(); }
 			} });
 		}
 
@@ -743,7 +745,7 @@ namespace mcmloader::scripts
 		{
 			Enqueue({ "page", "SetPage " + a_name, [a_mod, a_page, a_name](std::function<void()> a_done) {
 				const auto config = ScriptOf(a_mod);
-				if (!config || g_open.load() != a_mod) { a_done(); return; }
+				if (!config || g_open.load() != a_mod) { amf::Call(a_done)(); return; }
 				Build(a_mod, config, a_page, a_name, a_done);
 			} });
 		}
@@ -753,7 +755,7 @@ namespace mcmloader::scripts
 			ClearQueue();  // whatever was waiting belonged to the config being closed
 			Enqueue({ "", "CloseConfig" + LabelOf(a_mod), [a_mod](std::function<void()> a_done) {
 				const auto config = ScriptOf(a_mod);
-				if (!config || !Call(config, "CloseConfig", Args(), [a_done](const RE::BSScript::Variable&) { a_done(); })) { a_done(); }
+				if (!config || !Call(config, "CloseConfig", Args(), [a_done](const RE::BSScript::Variable&) { amf::Call(a_done)(); })) { amf::Call(a_done)(); }
 			} });
 		}
 
@@ -772,9 +774,10 @@ namespace mcmloader::scripts
 			{
 				Enqueue({ "range:" + std::to_string(slot), "RequestSliderDialogData " + std::to_string(slot), [a_mod, slot](std::function<void()> a_done) {
 					const auto config = ScriptOf(a_mod);
-					if (!config || g_open.load() != a_mod) { a_done(); return; }
+					if (!config || g_open.load() != a_mod) { amf::Call(a_done)(); return; }
 					if (!Call(config, "RequestSliderDialogData", Args(slot), [a_mod, slot, config, a_done](const RE::BSScript::Variable&) {
 							SliderParams p;
+							// nonnull: a local array of the addresses of p's five members, never reassigned
 							float* fields[] = { &p.start, &p.def, &p.min, &p.max, &p.interval };
 							ForArray(config, "_sliderParams", [&](std::uint32_t i, RE::BSScript::Variable& v) { if (i < 5 && v.IsFloat()) { *fields[i] = v.GetFloat(); } });
 							if (p.interval <= 0.0f) { p.interval = 1.0f; }
@@ -783,10 +786,10 @@ namespace mcmloader::scripts
 								std::scoped_lock lock(g_mutex);
 								if (g_open.load() == a_mod) { g_session.sliders[slot] = p; }
 							}
-							a_done();
+							amf::Call(a_done)();
 						}))
 					{
-						a_done();
+						amf::Call(a_done)();
 					}
 				} });
 			}
@@ -857,24 +860,26 @@ namespace mcmloader::scripts
 		// was set to, kept as the fallback when its text is not found again).
 		void QueueChange(int a_mod, int a_slot, const char* a_request, const char* a_accept, std::function<VarArgs()> a_acceptArgs, const std::string& a_key = {}, int a_menuIndex = -1)
 		{
+			AMF_REQUIRE_VOID(a_accept);
+			AMF_REQUIRE_VOID(a_acceptArgs);
 			std::string name = std::string(a_accept) + " " + std::to_string(a_slot);
 			Enqueue({ a_key, name, [a_mod, a_slot, a_request, a_accept, a_acceptArgs, a_menuIndex](std::function<void()> a_done) {
 				const auto config = ScriptOf(a_mod);
-				if (!config || g_open.load() != a_mod) { a_done(); return; }
+				if (!config || g_open.load() != a_mod) { amf::Call(a_done)(); return; }
 				auto accept = [a_mod, a_slot, a_menuIndex, config, a_accept, a_acceptArgs, a_done]() {
-					if (!Call(config, a_accept, a_acceptArgs(), [a_mod, a_slot, a_menuIndex, config, a_done](const RE::BSScript::Variable&) {
+					if (!Call(config, a_accept, amf::Call(a_acceptArgs)(), [a_mod, a_slot, a_menuIndex, config, a_done](const RE::BSScript::Variable&) {
 							Rebuild(a_mod, config, [a_mod, a_slot, a_menuIndex, a_done]() {
 								RememberSlot(a_mod, a_slot, a_menuIndex);
-								a_done();
+								amf::Call(a_done)();
 							});
 						}))
 					{
-						a_done();
+						amf::Call(a_done)();
 					}
 				};
 				if (!a_request) { accept(); return; }
 				// the accept runs on a VM thread here; dispatching from it is what the manager's own events do
-				if (!Call(config, a_request, Args(a_slot), [accept](const RE::BSScript::Variable&) { accept(); })) { a_done(); }
+				if (!Call(config, a_request, Args(a_slot), [accept](const RE::BSScript::Variable&) { accept(); })) { amf::Call(a_done)(); }
 			} });
 		}
 
@@ -921,7 +926,7 @@ namespace mcmloader::scripts
 			}
 			Enqueue({ "menulist", "RequestMenuDialogData " + std::to_string(a_slot), [a_mod, a_slot](std::function<void()> a_done) {
 				const auto config = ScriptOf(a_mod);
-				if (!config || g_open.load() != a_mod) { a_done(); return; }
+				if (!config || g_open.load() != a_mod) { amf::Call(a_done)(); return; }
 				{
 					std::scoped_lock lock(g_captureMutex);
 					g_capturedMenu.clear();
@@ -947,10 +952,10 @@ namespace mcmloader::scripts
 								g_session.menuReady = true;
 							}
 						}
-						a_done();
+						amf::Call(a_done)();
 					}))
 				{
-					a_done();
+					amf::Call(a_done)();
 				}
 			} });
 		}
@@ -960,7 +965,7 @@ namespace mcmloader::scripts
 		{
 			Enqueue({ "info", "HighlightOption " + std::to_string(a_slot), [a_mod, a_slot](std::function<void()> a_done) {
 				const auto config = ScriptOf(a_mod);
-				if (!config || g_open.load() != a_mod) { a_done(); return; }
+				if (!config || g_open.load() != a_mod) { amf::Call(a_done)(); return; }
 				if (!Call(config, "HighlightOption", Args(a_slot), [a_mod, a_slot, config, a_done](const RE::BSScript::Variable&) {
 						const auto var = Var(config, "_infoText");
 						std::string text = var && var->IsString() ? std::string(var->GetString()) : std::string();
@@ -968,10 +973,10 @@ namespace mcmloader::scripts
 							std::scoped_lock lock(g_mutex);
 							if (g_open.load() == a_mod) { g_session.info[a_slot] = std::move(text); }
 						}
-						a_done();
+						amf::Call(a_done)();
 					}))
 				{
-					a_done();
+					amf::Call(a_done)();
 				}
 			} });
 		}
@@ -1835,12 +1840,18 @@ namespace mcmloader::scripts
 		// VM or main thread, the record's page built: set the option when it differs, through the calls the page makes.
 		void MemoryApply(int a_mod, const ObjectPtr& a_config, std::shared_ptr<RestoreState> a_st, const MemoryOption& a_r, std::function<void()> a_done)
 		{
+			if (!a_st)
+			{
+				logger::warn("MCM scripts: remembered setting \"{}\" - no restore state - skipped", a_r.text);
+				amf::Call(a_done)();
+				return;
+			}
 			const int slot = FindSlot(a_r);
 			if (slot < 0)
 			{
 				logger::debug("Remembered settings: \"{}\" on page \"{}\" not found - left as it is", a_r.text, a_r.page);
 				++a_st->missing;
-				a_done();
+				amf::Call(a_done)();
 				return;
 			}
 			Option current;
@@ -1851,7 +1862,7 @@ namespace mcmloader::scripts
 			if (SameValue(current, a_r))
 			{
 				++a_st->same;
-				a_done();
+				amf::Call(a_done)();
 				return;
 			}
 			auto finish = [a_mod, a_config, a_st, a_done]() {
@@ -1860,12 +1871,18 @@ namespace mcmloader::scripts
 			};
 			auto fail = [a_st, a_done]() {
 				++a_st->missing;
-				a_done();
+				amf::Call(a_done)();
 			};
 			// Request (sets _activeOption), then the accept - as QueueChange does
 			auto twoStep = [a_config, slot, finish, fail](const char* a_request, const char* a_accept, std::function<VarArgs()> a_args) {
+				if (!a_args)
+				{
+					logger::warn("MCM scripts: remembered setting - no argument maker for {} - not set", a_accept ? a_accept : "?");
+					fail();
+					return;
+				}
 				if (!Call(a_config, a_request, Args(slot), [a_config, a_accept, a_args, finish](const RE::BSScript::Variable&) {
-						if (!Call(a_config, a_accept, a_args(), [finish](const RE::BSScript::Variable&) { finish(); })) { finish(); }
+						if (!Call(a_config, a_accept, amf::Call(a_args)(), [finish](const RE::BSScript::Variable&) { finish(); })) { finish(); }
 					}))
 				{
 					fail();
@@ -1953,11 +1970,17 @@ namespace mcmloader::scripts
 		// One record: its page built first when the page open now is another.
 		void MemoryRestoreOne(int a_mod, std::shared_ptr<RestoreState> a_st, std::size_t a_r, std::function<void()> a_done)
 		{
+			if (!a_st || a_r >= a_st->records.size())
+			{
+				logger::warn("MCM scripts: remembered setting {} - no restore state for it - skipped", a_r);
+				amf::Call(a_done)();
+				return;
+			}
 			const auto config = ScriptOf(a_mod);
 			if (!config || g_open.load() != a_mod)
 			{
 				++a_st->missing;
-				a_done();
+				amf::Call(a_done)();
 				return;
 			}
 			const MemoryOption r = a_st->records[a_r];
@@ -1990,7 +2013,7 @@ namespace mcmloader::scripts
 			{
 				logger::debug("Remembered settings: page \"{}\" is not in the menu now - \"{}\" left as it is", r.page, r.text);
 				++a_st->missing;
-				a_done();
+				amf::Call(a_done)();
 				return;
 			}
 			Build(a_mod, config, pageIndex, r.page, apply);
@@ -2003,10 +2026,10 @@ namespace mcmloader::scripts
 				Close();  // queues CloseConfig
 				Enqueue({ "", "memory: done", [a_report](std::function<void()> a_done2) {
 					g_memoryDriving = false;
-					a_report();
-					a_done2();
+					amf::Call(a_report)();
+					amf::Call(a_done2)();
 				} });
-				a_done();
+				amf::Call(a_done)();
 			} });
 		}
 	}
@@ -2057,7 +2080,7 @@ namespace mcmloader::scripts
 		{
 			Enqueue({ "", "memory: read page " + name, [mod, index, name, read](std::function<void()> a_done) {
 				const auto config = ScriptOf(mod);
-				if (!config || g_open.load() != mod) { a_done(); return; }
+				if (!config || g_open.load() != mod) { amf::Call(a_done)(); return; }
 				Build(mod, config, index, name, [name, read, a_done]() {
 					{
 						std::scoped_lock lock(g_mutex);
@@ -2074,11 +2097,11 @@ namespace mcmloader::scripts
 							read->push_back(std::move(r));
 						}
 					}
-					a_done();
+					amf::Call(a_done)();
 				});
 			} });
 		}
-		EndDrive([read, a_done]() { a_done(*read); });
+		EndDrive([read, a_done]() { amf::Call(a_done)(*read); });
 		return true;
 	}
 
@@ -2107,7 +2130,7 @@ namespace mcmloader::scripts
 		EndDrive([state, a_done, entry]() {
 			logger::info("Remembered settings: {} restored - {} set, {} already right, {} not found{}", entry, state->applied, state->same, state->missing,
 				state->missing > 0 ? " (options or pages not in the menu now - details at log level debug)" : "");
-			a_done(state->applied, state->missing);
+			amf::Call(a_done)(state->applied, state->missing);
 		});
 		return true;
 	}

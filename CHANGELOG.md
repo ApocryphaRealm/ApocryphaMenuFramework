@@ -115,6 +115,15 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
   cases: an unguarded `std::function` call and a bare `*p` after UTF-8 text are still UNCHECKED; `amf::Call` and the
   else-guard are not). The test fails 2 of 5 against the previous audit, passes 5 of 5 now. A full run over the source
   as it stands gave the same result with both versions except the 38 `amf::Call` rows; no read was lost.
+- **AMF's own MCM code checks what it reads** (the "internal" class, McmLoader 107 and McmScripts 82 reads). An empty
+  "done" callback no longer throws `bad_function_call`: the loader's file-value apply, memory snapshot and restore
+  replace an empty one with a no-op and warn, and the script layer calls every callback through `amf::Call` (an empty
+  one warns once and is skipped). A queued change with no accept function, a memory apply with no state or no argument
+  builder, and a memory restore with no state or a record index past the end warn and still call "done", so the
+  operation queue moves on instead of waiting for its watchdog. The page drawer reads the mod's values while holding the
+  lock and checks the mod after it. The two mod lists (`g_mods` in both files) carry a `// nonnull:` reason: their only
+  insertion is a `make_unique` result and nothing resets or erases an element. No behaviour changes for valid input.
+- The null-check gate's count falls from 528 to 339; the baseline is lowered to 339.
 
 ### Fixed
 - **The session's first open spent 30 ms of one frame in AMF before the menu drew** (frame profile, combined run

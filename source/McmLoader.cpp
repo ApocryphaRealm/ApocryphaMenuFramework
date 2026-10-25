@@ -16,6 +16,7 @@
 #include "Strings.h"
 #include "Theme.h"
 #include "utils/Logger.h"
+#include "utils/NullGuard.h"
 #include "utils/ToggleSwitch.h"
 
 #include <imgui.h>
@@ -140,7 +141,7 @@ namespace mcmloader
 		// vector never grows while another thread walks it (Main Agent's review, 2026-10-05: Load() from the settings page
 		// used to push_back here while a SkyUI-list pass walked it on the main thread). Never shrinks, so indices captured
 		// by pages stay valid. Code that walks it off the loading thread takes ModsView().
-		std::vector<std::unique_ptr<Mod>> g_mods;
+		std::vector<std::unique_ptr<Mod>> g_mods;   // nonnull: only ever assigned from Load()'s list (g_mods = std::move(loaded)), which LoadOne fills solely with a_into.push_back(std::move(mod)) of a std::make_unique<Mod>(); no element is ever reset, erased or reassigned
 
 		// What the walkers need of each MCM Helper mod, copied under g_mutex.
 		struct ModView
@@ -1377,6 +1378,7 @@ namespace mcmloader
 		ListLayout DetectLayout(const RE::BSTSmartPointer<RE::BSScript::Object>& a_manager)
 		{
 			const auto isArray = [&](const char* a_name) {
+				AMF_REQUIRE(a_name, false);
 				const auto v = detail::ScriptVar(a_manager, a_name);
 				return v && v->IsArray();
 			};
@@ -1503,7 +1505,7 @@ namespace mcmloader
 				std::string regName;   // the name the config registers itself with (its ModName property)
 				std::string key;       // its ledger line
 				bool hide;
-				std::function<void(bool)> setHidden;
+				std::function<void(bool)> setHidden;   // nonnull: targets is filled only by the three targets.push_back({...}) below, each passing a lambda literal; Targets are copied, never reassigned
 			};
 			std::vector<Target> targets;
 			const std::vector<ModView> mods = ModsView();
@@ -2037,8 +2039,9 @@ namespace mcmloader
 					owned.translations = LoadTranslations(owned.modName);
 					owned.translationsLanguage = TextLanguage();
 				}
-				values = mod->values;  // a copy: the page draws from a stable view while a set lands from another thread
+				values = g_mods[a_mod]->values;  // a copy: the page draws from a stable view while a set lands from another thread
 			}
+			AMF_REQUIRE_VOID(mod);
 			const Page& page = mod->pages[a_page];
 			g_table = &mod->translations;
 
@@ -2832,8 +2835,9 @@ namespace mcmloader
 		};
 		// the n-th row with the same label and kind on its page, in slot order: n-th control with that label and kind
 		std::map<std::string, int> seen;
-		std::vector<const rememberedsettings::ForeignSetting*> ordered;
+		std::vector<const rememberedsettings::ForeignSetting*> ordered;   // nonnull: filled only by the push_back(&s) on the next line - addresses of a_settings' elements
 		for (const auto& s : a_settings) { ordered.push_back(&s); }
+		// nonnull: a and b are elements of ordered, every one an &s of a_settings (push_back above)
 		std::stable_sort(ordered.begin(), ordered.end(), [](const auto* a, const auto* b) { return a->optionIndex < b->optionIndex; });
 		for (const auto* s : ordered)
 		{
@@ -2940,8 +2944,13 @@ namespace mcmloader
 		return out;
 	}
 
-	void ApplyFileValues(const std::string& a_modName, std::vector<std::pair<std::string, std::string>> a_values, std::function<void(int, int)> a_done)
+	void ApplyFileValues(const std::string& a_modName, std::vector<std::pair<std::string, std::string>> a_values, std::function<void(int, int)> a_done)   // nonnull: a_done - an empty one is replaced with a no-op by the function's first statement, before any call; the lambdas capture that copy
 	{
+		if (!a_done)
+		{
+			logger::warn("null check: '{}' was null at McmLoader.cpp ({}) - its result is dropped", "a_done", "ApplyFileValues");
+			a_done = [](int, int) {};
+		}
 		const auto index = MemoryModIndex("mcmhelper|" + a_modName);
 		const auto tasks = SKSE::GetTaskInterface();
 		if (!index || !tasks)
@@ -3010,8 +3019,13 @@ namespace mcmloader
 		});
 	}
 
-	void MemorySnapshot(const std::string& a_key, std::function<void(std::vector<std::pair<std::string, std::string>>)> a_done)
+	void MemorySnapshot(const std::string& a_key, std::function<void(std::vector<std::pair<std::string, std::string>>)> a_done)   // nonnull: a_done - an empty one is replaced with a no-op by the function's first statement, before any call; the lambdas capture that copy
 	{
+		if (!a_done)
+		{
+			logger::warn("null check: '{}' was null at McmLoader.cpp ({}) - its result is dropped", "a_done", "MemorySnapshot");
+			a_done = [](std::vector<std::pair<std::string, std::string>>) {};
+		}
 		const auto index = MemoryModIndex(a_key);
 		const auto tasks = SKSE::GetTaskInterface();
 		if (!index || !tasks)
@@ -3036,8 +3050,13 @@ namespace mcmloader
 		});
 	}
 
-	void MemoryRestore(const std::string& a_key, std::vector<std::pair<std::string, std::string>> a_values, std::function<void(int, int)> a_done)
+	void MemoryRestore(const std::string& a_key, std::vector<std::pair<std::string, std::string>> a_values, std::function<void(int, int)> a_done)   // nonnull: a_done - an empty one is replaced with a no-op by the function's first statement, before any call; the lambdas capture that copy
 	{
+		if (!a_done)
+		{
+			logger::warn("null check: '{}' was null at McmLoader.cpp ({}) - its result is dropped", "a_done", "MemoryRestore");
+			a_done = [](int, int) {};
+		}
 		const auto index = MemoryModIndex(a_key);
 		const auto tasks = SKSE::GetTaskInterface();
 		if (!index || !tasks)
