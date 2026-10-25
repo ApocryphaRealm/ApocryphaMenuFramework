@@ -1,0 +1,39 @@
+{
+  "_doc": "Callees whose return value is non-null by their own documented contract. Each entry needs a reason; a use of their result counts as non-null. Keep this list short - it is a claim the page rests on.",
+  "nonnull": [
+    {
+      "callee": "ImGui::GetWindowDrawList$|GetWindowDrawList$",
+      "reason": "Dear ImGui returns the current window's draw list; asserts a current window, never returns NULL inside a frame"
+    },
+    {
+      "callee": "ImGui::GetForegroundDrawList$|GetForegroundDrawList$",
+      "reason": "Dear ImGui returns a viewport-owned list, never NULL while a context exists"
+    },
+    {
+      "callee": "ImGui::GetBackgroundDrawList$|GetBackgroundDrawList$",
+      "reason": "as GetForegroundDrawList"
+    },
+    {
+      "callee": "ImGui::GetMainViewport$|GetMainViewport$",
+      "reason": "Dear ImGui: Viewports[0] always exists while a context exists"
+    },
+    {
+      "callee": "ImGui::GetFont$|GetFont$",
+      "reason": "Dear ImGui: the current font is always set inside a frame"
+    },
+    {
+      "callee": "spdlog::default_logger$|spdlog::default_logger_raw$",
+      "reason": "spdlog creates the default logger during static initialisation and AMF only ever replaces it with a constructed logger (never set_default_logger(nullptr)); the logger:: macros go through it"
+    },
+    {
+      "callee": "strings::TR$",
+      "reason": "Strings.cpp: returns the translation's c_str() or the caller's English text; every call site passes a string literal as the English text"
+    }
+  ],
+  "nonnull_fields": [
+    {
+      "field": "ImGuiIO::Fonts$",
+      "reason": "Dear ImGui: CreateContext() always creates the font atlas (or takes the shared one passed in); io.Fonts is never NULL while a context exists"
+    }
+  ]
+}
