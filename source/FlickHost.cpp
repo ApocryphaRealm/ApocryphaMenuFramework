@@ -240,13 +240,14 @@ namespace flick
 		// true when one of the module's readable, non-code sections holds a_text (with its terminating NUL)
 		bool ModuleHasString(HMODULE a_mod, std::string_view a_text)
 		{
+			if (!a_mod) { return false; }  // 2.3.0: no module, no string in it
 			const auto* base = reinterpret_cast<const std::uint8_t*>(a_mod);
 			const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
 			if (dos->e_magic != IMAGE_DOS_SIGNATURE) { return false; }
-			const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(base + dos->e_lfanew);
+			const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(base + dos->e_lfanew);  // nonnull: the checked module base plus its own header offset
 			if (nt->Signature != IMAGE_NT_SIGNATURE) { return false; }
 			const std::string needle(a_text.data(), a_text.size() + 1);   // include the NUL: the whole literal, not a prefix
-			const auto* sec = IMAGE_FIRST_SECTION(nt);
+			const auto* sec = IMAGE_FIRST_SECTION(nt);  // nonnull: the headers above plus their own size; stepped only within NumberOfSections
 			for (WORD i = 0; i < nt->FileHeader.NumberOfSections; ++i, ++sec)
 			{
 				const auto ch = sec->Characteristics;

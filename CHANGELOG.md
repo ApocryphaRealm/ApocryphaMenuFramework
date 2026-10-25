@@ -96,6 +96,15 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
   unmeasured). A manual audit run keeps the 6 GB floor and the hour (`--free-floor-mb`, `--max-wait-s`, exit 4 when the
   wait runs out). Proven: a gate run with its floor set above the free RAM failed after 121 s; a normal run passed.
 - The null-check gate's count falls from 672 to 565 (game 107 -> 0); the baseline is lowered to 565.
+- **What Windows and Direct3D hand AMF is checked where it is read** (the "d3d-win32" class, 36 reads). The SVG icon
+  loader checks the D3D device itself before it rasterises, instead of relying on its caller's check. The module-header
+  walks - the SMF alias's consumer scan (`NamesFramework`) and import patcher (`PatchModuleImports`), and FLICK's
+  string search (`ModuleHasString`) - refuse a null module handle before the first header read; in the two SMF alias
+  walks that check comes before the `__try` that catches an unreadable module, not instead of it. Each header pointer
+  computed from the checked base carries a `// nonnull:` reason, and every walk still checks the DOS and NT signatures
+  before it goes further. The import-slot patcher refuses a null slot. No behaviour changes for a valid module.
+- The null-check gate's count falls from 565 to 528 (d3d-win32 36 -> 0, and one internal read the same guards cover);
+  the baseline is lowered to 528.
 
 ### Fixed
 - **The session's first open spent 30 ms of one frame in AMF before the menu drew** (frame profile, combined run

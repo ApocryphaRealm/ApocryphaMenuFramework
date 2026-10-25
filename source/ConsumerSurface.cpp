@@ -5,6 +5,7 @@
 #include "Renderer.h"
 #include "Theme.h"
 #include "utils/Logger.h"
+#include "utils/NullGuard.h"
 #include "PreciseSlider.h"   // the wheel on a consumer's slider (2.2.0)
 #include "utils/ToggleSwitch.h"   // widgets::Toggle: a consumer's Checkbox drawn as AMF's switch (2.1.9)
 
@@ -393,6 +394,8 @@ namespace consumer
 	// width/height, or viewBox), so a consumer that draws "at the texture's size" draws it as its author sized it.
 	ID3D11ShaderResourceView* LoadSvgTexture(const std::string& a_path, float& a_width, float& a_height)
 	{
+		// 2.3.0: the caller checks the device too, but this reads it, so it checks it itself (before any rasterising)
+		AMF_REQUIRE(g_device, nullptr);
 		constexpr float kSvgMinPx = 256.0f;
 		NSVGimage* image = nsvgParseFromFile(a_path.c_str(), "px", 96.0f);
 		if (!image || image->width <= 0.0f || image->height <= 0.0f) {

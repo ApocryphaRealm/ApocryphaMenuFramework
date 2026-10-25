@@ -3,6 +3,7 @@
 #include "FlickHost.h"
 
 #include "utils/Logger.h"
+#include "utils/NullGuard.h"
 
 #include <intrin.h>
 #include <psapi.h>
@@ -677,17 +678,22 @@ namespace
 		static const char kFlickDllA[] = "fuck.dll";
 		static const char kFlickReqA[] = "requestfuck";
 		const bool flickOn = flick::Enabled();
+		// 2.3.0: the null check comes before the guarded reads, not instead of them - SEH below only catches a module
+		// whose headers are unreadable (no logging here: this function may hold no C++ objects, for __try)
+		if (!a_module) {
+			return false;
+		}
 		__try {
 			auto* const base = reinterpret_cast<const unsigned char*>(a_module);
 			const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
 			if (dos->e_magic != IMAGE_DOS_SIGNATURE) {
 				return false;
 			}
-			const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(base + dos->e_lfanew);
+			const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(base + dos->e_lfanew);  // nonnull: the checked module base plus its own header offset (an unreadable one faults into the __except)
 			if (nt->Signature != IMAGE_NT_SIGNATURE) {
 				return false;
 			}
-			const auto* sec = IMAGE_FIRST_SECTION(nt);
+			const auto* sec = IMAGE_FIRST_SECTION(nt);  // nonnull: the signed headers above plus their own size; stepped only within NumberOfSections
 			for (WORD s = 0; s < nt->FileHeader.NumberOfSections; ++s, ++sec) {
 				if (!(sec->Characteristics & IMAGE_SCN_CNT_INITIALIZED_DATA) || (sec->Characteristics & IMAGE_SCN_MEM_EXECUTE)) {
 					continue;
@@ -873,6 +879,7 @@ namespace
 
 	void PatchThunk(IMAGE_THUNK_DATA* a_thunk, void* a_replacement)
 	{
+		AMF_REQUIRE_VOID(a_thunk);  // 2.3.0: no import slot, nothing to patch
 		if (reinterpret_cast<void*>(a_thunk->u1.Function) == a_replacement) {
 			return;   // already ours - Install() is meant to be re-run
 		}
@@ -895,6 +902,10 @@ namespace
 	std::size_t PatchModuleImports(HMODULE a_module)
 	{
 		std::size_t patched = 0;
+		// 2.3.0: the null check comes before the guarded reads, not instead of them (no logging: no C++ objects here)
+		if (!a_module) {
+			return 0;
+		}
 
 		__try {
 			auto* const base = reinterpret_cast<std::byte*>(a_module);
@@ -903,7 +914,7 @@ namespace
 				return 0;
 			}
 
-			auto* const nt = reinterpret_cast<IMAGE_NT_HEADERS*>(base + dos->e_lfanew);
+			auto* const nt = reinterpret_cast<IMAGE_NT_HEADERS*>(base + dos->e_lfanew);  // nonnull: the checked module base plus its own header offset (an unreadable one faults into the __except)
 			if (nt->Signature != IMAGE_NT_SIGNATURE) {
 				return 0;
 			}
@@ -913,14 +924,14 @@ namespace
 				return 0;
 			}
 
-			for (auto* desc = reinterpret_cast<IMAGE_IMPORT_DESCRIPTOR*>(base + dir.VirtualAddress);
+			for (auto* desc = reinterpret_cast<IMAGE_IMPORT_DESCRIPTOR*>(base + dir.VirtualAddress);  // nonnull: the checked module base plus a non-zero directory offset
 				 desc->Name != 0;
 				 ++desc) {
 				if (desc->OriginalFirstThunk == 0) {
 					continue;
 				}
 
-				auto* names = reinterpret_cast<IMAGE_THUNK_DATA*>(base + desc->OriginalFirstThunk);
+				auto* names = reinterpret_cast<IMAGE_THUNK_DATA*>(base + desc->OriginalFirstThunk);  // nonnull: the checked module base plus a non-zero thunk offset
 				auto* addrs = reinterpret_cast<IMAGE_THUNK_DATA*>(base + desc->FirstThunk);
 
 				for (; names->u1.AddressOfData != 0; ++names, ++addrs) {
@@ -928,7 +939,7 @@ namespace
 						continue;
 					}
 
-					auto* const byName = reinterpret_cast<IMAGE_IMPORT_BY_NAME*>(base + names->u1.AddressOfData);
+					auto* const byName = reinterpret_cast<IMAGE_IMPORT_BY_NAME*>(base + names->u1.AddressOfData);  // nonnull: the checked module base plus a non-zero name offset
 
 					for (const auto& r : kRedirects) {
 						if (std::strcmp(byName->Name, r.name) == 0) {
