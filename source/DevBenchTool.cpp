@@ -209,7 +209,9 @@ namespace devbenchtool
 					if (consumers.size() > 1) { consumers += ","; }
 					consumers += "{\"dll\":\"" + c.dll + "\",\"name\":\"" + c.name + "\",\"toAmf\":" + (c.toAmf ? "true" : "false") +
 								 ",\"leftToFlick\":" + (c.leftToFlick ? "true" : "false") + ",\"chosen\":" + (c.chosen ? "true" : "false") +
-								 ",\"windows\":" + (c.windows ? "true" : "false") + ",\"clashFlick\":\"" + c.clashFlick + "\",\"era\":\"" + c.era + "\"}";
+								 ",\"windows\":" + (c.windows ? "true" : "false") + ",\"clashFlick\":\"" + c.clashFlick + "\",\"era\":\"" + c.era +
+								 "\",\"api\":" + std::to_string(c.apiVersion) + ",\"camera\":" + (c.camera ? "true" : "false") +   // 2.3.0
+								 ",\"tooOldFlick\":\"" + c.tooOldFlick + "\"}";
 				}
 				consumers += "]";
 				const std::string status = flick::StatusJson();

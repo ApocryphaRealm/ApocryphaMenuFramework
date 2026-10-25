@@ -1,4 +1,4 @@
-"""Generate include/FlickSlots.inc - the order and C types of FLICK's 259 API slots, in AMF's own type names.
+"""Generate include/FlickSlots.inc - the order and C types of FLICK's API slots (303 in version 7), in AMF's own type names.
 
 FLICK host plan section 3 / 13 (4. plans\\amf-flick\\PLAN.md): AMF answers FLICK's C table, so it must declare the slots in
 exactly FLICK's order with exactly their parameter types - x64 passes a float in an XMM register and an int in a general
@@ -15,8 +15,14 @@ The header is not vendored into AMF: point this at the plans folder's copy when 
 differently while still saying version 1 - 4. plans\\amf-flick\\ABI-HISTORY.md). --out names the file and --macro the
 X-macro and count names, so the old list sits beside the current one:
 
+2.3.0: the current list is FLICK API version 7 (FLICK 1.7.3, API commit ddd727c - 303 slots, of which v6's 273 and v5's
+259 are a prefix, slot 255 VSliderButton aside: 4. plans\\amf-flick-v6\\PLAN.md). tools/flick_slots_v5.inc is version 5's
+list, kept for tools/flick_slots_check.cpp to prove the prefix.
+
 Run from the repo root:
-    python tools/gen-flick-slots.py "..\\..\\4. plans\\amf-flick\\api\\FUCK_API.h"
+    python tools/gen-flick-slots.py "..\\..\\4. plans\\amf-flick-v6\\headers\\FUCK_API-v7-2026-10-22-ddd727c.h"
+    python tools/gen-flick-slots.py "..\\..\\4. plans\\amf-flick-v6\\headers\\FUCK_API-v5-2026-09-27-a9ce5d1.h" ^
+        --out tools\\flick_slots_v5.inc --macro FLICK_V5_SLOT
     python tools/gen-flick-slots.py "..\\..\\4. plans\\amf-flick\\api-history\\FUCK_API-2026-06-05-53665d6.h" ^
         --out include\\FlickSlotsOld.inc --macro FLICK_OLD_SLOT
 """
@@ -42,6 +48,11 @@ TYPE_MAP = [
     (r"(?<![\w:])IWindow\s*\*", "flick::Window*"),
     (r"(?<![\w:])ManagedHotkey\s*\*", "flick::Hotkey*"),
     (r"(?<![\w:])(FUCK_Font|FUCK_Overlay|Modifier|ItemFlags|InputDevice|BindResult)\b", "int"),
+    # version 7 (FLICK 1.7.x, 2026-10-17): the camera API's structs and client, the image request and the game's actor -
+    # AMF never reads through these (its answers are "no camera here", "no image"), so they are untyped pointers
+    (r"\bconst\s+FUCK::(CameraSessionOptions|CameraMove|CameraScreenRect|CameraOffsets|CameraPose|ImageRequest)\s*\*", "const void*"),
+    (r"\bFUCK::(CameraOffsets|CameraPose|ICameraClient)\s*\*", "void*"),
+    (r"\bRE::Actor\s*\*", "void*"),
     (r"\bImGuiCol\b", "int"),
     (r"\bImGuiStyleVar\b", "int"),
     (r"\bImGuiKey\b", "int"),

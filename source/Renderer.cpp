@@ -3118,7 +3118,29 @@ namespace renderer
 								}
 								// 2.2.1: a mod with FLICK windows (widgets this menu does not draw) goes to FLICK's own window by
 								// default when FLICK is installed (FlickRouteCore.h); say so, and say when FLICK is missing
-								if (c.windows)
+								// 2.3.0: a mod that drives the game camera through FLICK's camera API (FLICK API 7) - only FLICK does that
+								if (c.camera)
+								{
+									ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
+									ImGui::TextWrapped("%s", flick::RealFlickInstalled() ?
+										TR("AMF_FlickCamera", "It moves the game camera through FLICK, which only FLICK itself does, so it goes to FLICK's "
+											"own window unless you choose this menu.") :
+										TR("AMF_FlickCameraNoFlick", "It moves the game camera through FLICK, which only FLICK itself does. FLICK is not "
+											"installed, so its camera controls do nothing."));
+									ImGui::PopStyleColor();
+								}
+								// 2.3.0 THE OLD-FLICK TRAP (FlickRouteCore.h): kept here because the installed FLICK is older than the mod needs
+								if (!c.tooOldFlick.empty() && !c.chosen)
+								{
+									std::string text = TR("AMF_FlickTooOld", "Kept in this menu: it needs FLICK API %s, and the installed FLICK %s is older. "
+										"Its windows need a newer FLICK.");
+									if (const auto at = text.find("%s"); at != std::string::npos) { text.replace(at, 2, std::to_string(c.apiVersion)); }
+									if (const auto at = text.find("%s"); at != std::string::npos) { text.replace(at, 2, c.tooOldFlick); }
+									ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
+									ImGui::TextWrapped("%s", text.c_str());
+									ImGui::PopStyleColor();
+								}
+								if (c.windows && (c.tooOldFlick.empty() || c.chosen))   // 2.3.0: the old-FLICK line above says where it is instead
 								{
 									ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
 									if (c.clashFlick.empty() || c.chosen)   // a known clash says where it is instead (below)

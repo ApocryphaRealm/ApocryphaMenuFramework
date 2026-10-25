@@ -6,7 +6,7 @@
 // their own play-time keys off by default, pure overlays may draw during play, one entry per mod).
 //
 // FLICK (Nexus 181603, the file FUCK.dll) is a menu framework: a mod finds it with GetModuleHandleW(L"FUCK.dll") and
-// GetProcAddress("RequestFUCK"), gets back one C table of 259 functions, and hands it ITool objects (pages in FLICK's
+// GetProcAddress("RequestFUCK"), gets back one C table of functions (259 in FLICK API 5, 303 in API 7 - 2.3.0), and hands it ITool objects (pages in FLICK's
 // sidebar) and IWindow objects (free windows). AMF answers in its place - the SMF alias (SmfAlias.cpp) answers the name
 // FUCK.dll with AMF's own module, and AMF exports RequestFUCK - so a FLICK mod draws its page inside AMF's window as
 // "<name> (FLICK)", reached only through AMF: no FLICK window, no FLICK key, no FLICK pause-menu row (those are FLICK's
@@ -132,6 +132,10 @@ namespace flick
 		bool chosen = false;        // 2.2.1: the player picked its place (else the default applies)
 		bool windows = false;       // 2.2.1: it has FLICK windows (its DLL carries the IWindow class, or it registered one here)
 		std::string clashFlick;     // 2.2.1: a known clash (FlickRouteCore.h): the FLICK version this build crashes; empty if none
+		int apiVersion = 0;         // 2.3.0: the FLICK API version its code asks for (FlickRouteCore.h RequiredApiFromImage); 0 = not readable
+		bool camera = false;        // 2.3.0: it drives the game camera through FLICK's camera API (routed like a mod with windows)
+		std::string tooOldFlick;    // 2.3.0: the installed FLICK version, when it answers an older API than this mod needs; else empty
+		int flickApi = 0;           // 2.3.0: that FLICK's API version (with tooOldFlick)
 		// 2.1.8: the FLICK header the DLL was built with (FlickHost.cpp, AbiOfModule) - "current", "old-2026-02-27" /
 		// "old-2026-04-13" / "old-2026-05-30" (2.1.9: a known old build, answered with its own header's table order),
 		// "old-unknown" (an old header this menu cannot place: not
@@ -142,6 +146,7 @@ namespace flick
 	std::vector<Consumer> Consumers();
 }
 
-// The export a FLICK mod asks for. Returns AMF's table (version 5) - or, by the CALLING module's header era (2.1.8), the
+// The export a FLICK mod asks for. Returns AMF's table (2.3.0: version 7, 303 slots - a v1-v6 mod accepts any version at or
+// above its own, and v7's table carries every earlier slot in the same place; FlickSlots.inc) - or, by the CALLING module's header era (2.1.8), the
 // table in a known old build's own order, or nothing for an old header this menu cannot place (FlickHost.cpp).
 extern "C" __declspec(dllexport) void* RequestFUCK();

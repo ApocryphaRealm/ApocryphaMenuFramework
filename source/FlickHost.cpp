@@ -5,6 +5,7 @@
 #include "FlickCrashCore.h"
 #include "FlickImGuiMap.h"
 #include "FlickRouteCore.h"
+#include "FlickToolPath.h"
 #include "HelpBar.h"
 #include "PreciseSlider.h"
 #include "Registry.h"
@@ -54,7 +55,7 @@
 #undef FLICK_SLOT_0530
 
 // See FlickHost.h. Plan: 4. plans\amf-flick\PLAN.md (sections 3-6). This file is the first cut (the plan's phases 1-2):
-// every one of the 259 slots answers - none is ever null (logic library 49: a null slot is a jump to address zero) -
+// every one of the slots answers (FLICK_SLOT_COUNT: 259 in API 5; 2.3.0: 303 in API 7 - 4. plans\amf-flick-v6\PLAN.md) - none is ever null (logic library 49: a null slot is a jump to address zero) -
 // the registration, display, IO, styling, layout, text, ID, interaction and widget slots do what FLICK's do on AMF's
 // ImGui in AMF's look, and the rest (images, input feed, bindings, free windows, game control, INI helpers) answer a
 // safe default and are logged once each, so "why does this FLICK mod's X do nothing" is answered by the log.
@@ -74,7 +75,10 @@ namespace flick
 			Tool*       tool = nullptr;       // what AMF calls: the mod's object, or the old-layout adapter around it
 			const void* original = nullptr;   // the mod's own object (the duplicate check)
 			std::string plugin, name, group, entry;
+			std::string page;                   // 2.3.0: the page path in the entry (FlickToolPath.h - a nested group's rest + the name)
 			bool        listed = true;
+			bool        registered = false;     // 2.3.0: its page is in the registry (a tool hidden at registration is not, until shown)
+			bool        ruleHidden = false;     // 2.3.0: hidden by the one-entry rule (HideFlickCopies) - RefreshTools leaves it hidden
 			bool        shownForTest = false;   // DevBench op=flick show: listed despite the one-entry rule (ShowCopy)
 			std::string dll;
 		};
@@ -398,6 +402,9 @@ namespace flick
 		std::set<std::string> g_windowsNow;
 		std::map<std::string, bool> g_windowClass;   // 2.2.1: dll -> its DLL carries FLICK's IWindow class (read when it asks)
 		std::map<std::string, bool> g_answer;        // 2.2.1: dll -> answered here (decided once per session, AnswerHere)
+		std::map<std::string, bool> g_cameraClass;   // 2.3.0: dll -> its DLL carries FLICK's camera client class (API 7)
+		std::map<std::string, int>  g_modApi;        // 2.3.0: dll -> the FLICK API version its code asks for (0 = not readable)
+		std::map<std::string, bool> g_tooOld;        // 2.3.0: dll -> the installed FLICK answers an older API than it needs
 		std::map<std::string, bool> g_consumers;   // dll -> answered with AMF's table
 		std::map<std::string, std::string> g_names;   // dll -> shown name, kept with the choice
 
@@ -504,6 +511,15 @@ namespace flick
 		// 2.2.1 KNOWN CLASHES (FlickRouteCore.h kKnownClashes, the owner approved 2026-10-16)
 		std::string g_flickVersion;                                // FUCK.dll's file version, "a.b.c.d"; empty when not installed
 		std::map<std::string, const route::KnownClash*> g_clash;   // dll -> its known clash with the installed FLICK (or null)
+
+		// 2.3.0: the API version a mod's code asks for (FlickRouteCore.h), read from its MAPPED image - the section flags say
+		// readable, but a protected or packed DLL can hold a page that is not; a fault reads as -1 ("could not read"), never a crash.
+		// No C++ objects in this frame (SEH).
+		int RequiredApiGuarded(const std::uint8_t* a_base, std::size_t a_size)
+		{
+			__try { return route::RequiredApiFromImage(a_base, a_size); }
+			__except (EXCEPTION_EXECUTE_HANDLER) { return -1; }
+		}
 
 		std::string FileVersionOf(const std::wstring& a_path)
 		{
@@ -772,6 +788,28 @@ namespace flick
 
 		ImU32 U32(const ImVec4& a_c) { return ImGui::ColorConvertFloat4ToU32(a_c); }
 
+		// A FLICK page as this menu draws it - keyed by the mod's Tool object, never by the entry's name, so a rename by
+		// RefreshTools (2.3.0) never leaves a page drawing a stale object.
+		std::function<void()> PageFn(Tool* a_tool, std::string a_helpPage)
+		{
+			return [tool = a_tool, helpPage = std::move(a_helpPage)]() {
+				// FLICK's "tool selected": the page that becomes the shown one gets OnOpen, the one it replaces OnClose
+				g_drawnThisFrame = tool;
+				if (g_active != tool)
+				{
+					if (g_active) { g_active->OnClose(); }
+					g_active = tool;
+					tool->OnOpen();
+				}
+				helpbar::Want(helpPage);   // a HelpMarker's text goes to the bar under the pane, as on converted MCM pages
+				ImGui::PushID(tool);
+				++g_inDraw;
+				tool->Draw();
+				--g_inDraw;
+				ImGui::PopID();
+			};
+		}
+
 		// ==== the slots ================================================================================================
 		// Registration
 		void RegisterTool(Tool* a_tool)
@@ -815,37 +853,25 @@ namespace flick
 			rec.group = IsCString(group) ? group : "";
 			rec.listed = a_tool->ShowInSidebar();
 			// entry = the group when the mod gave one, else the tool's name; " (FLICK)" on the end, as converted MCM menus
-			// carry " (MCM)" - the source shown in the list (the owner, 2026-10-08: "(FLICK)")
-			rec.entry = (rec.group.empty() ? rec.name : rec.group) + " (FLICK)";
-			logger::info("flick: RegisterTool plugin={} ({}) name=\"{}\" group=\"{}\" sidebar={} -> entry \"{}\"", rec.plugin, rec.dll, rec.name,
-						 rec.group, rec.listed, rec.entry);
+			// carry " (MCM)" - the source shown in the list (the owner, 2026-10-08: "(FLICK)"). 2.3.0: a nested group
+			// ("Camera::Presets", API 6) is split - its first segment is the entry, the rest the page's path (FlickToolPath.h);
+			// a group without "::" keeps exactly the 2.2.x entry and page.
+			const auto place = toolpath::Of(rec.group, rec.name);
+			rec.entry = place.entry;
+			rec.page = place.page;
+			logger::info("flick: RegisterTool plugin={} ({}) name=\"{}\" group=\"{}\" sidebar={} -> entry \"{}\" page \"{}\"", rec.plugin, rec.dll,
+						 rec.name, rec.group, rec.listed, rec.entry, rec.page);
 			{
 				std::lock_guard lock(g_lock);
 				for (const auto& t : g_tools)
 				{
 					if (t.original == original) { logger::warn("flick: the same tool registered twice - ignored"); return; }
 				}
+				rec.registered = rec.listed;
 				g_tools.push_back(rec);
 			}
 			if (!rec.listed) { return; }
-			Tool* tool = a_tool;
-			const std::string helpPage = "FLICK|" + rec.plugin + "|" + rec.name;
-			registry::RegisterFn(rec.entry.c_str(), rec.name.empty() ? "Settings" : rec.name.c_str(), [tool, helpPage]() {
-				// FLICK's "tool selected": the page that becomes the shown one gets OnOpen, the one it replaces OnClose
-				g_drawnThisFrame = tool;
-				if (g_active != tool)
-				{
-					if (g_active) { g_active->OnClose(); }
-					g_active = tool;
-					tool->OnOpen();
-				}
-				helpbar::Want(helpPage);   // a HelpMarker's text goes to the bar under the pane, as on converted MCM pages
-				ImGui::PushID(tool);
-				++g_inDraw;
-				tool->Draw();
-				--g_inDraw;
-				ImGui::PopID();
-			});
+			registry::RegisterFn(rec.entry.c_str(), rec.page.c_str(), PageFn(a_tool, "FLICK|" + rec.plugin + "|" + rec.name));
 		}
 		void RegisterWindow(Window* a_window)
 		{
@@ -1335,7 +1361,19 @@ namespace flick
 		}
 
 		// v3
-		void SetHotkeyEnabled(bool) { NoteOnce("SetHotkeyEnabled", "there is no FLICK key under AMF; AMF's own key is untouched"); }
+		// 2.3.0: stored per calling module, so the v6 pair IsHotkeyEnabled echoes the mod's own setting back (there is no FLICK
+		// key under AMF; AMF's own key is untouched). The header's inline wrapper calls the slot from inside the mod, so the
+		// return address is in the mod's module.
+		std::mutex g_hotkeyLock;
+		std::map<HMODULE, bool> g_hotkeyEnabled;
+		void SetHotkeyEnabled(bool a_on)
+		{
+			NoteOnce("SetHotkeyEnabled", "there is no FLICK key under AMF; AMF's own key is untouched - the value is kept for IsHotkeyEnabled");
+			const HMODULE mod = ModuleAt(_ReturnAddress());
+			std::lock_guard lock(g_hotkeyLock);
+			g_hotkeyEnabled.insert_or_assign(mod, a_on);
+			logger::debug("flick: SetHotkeyEnabled({}) from {} - kept", a_on, DllName(mod).empty() ? std::string("?") : DllName(mod));
+		}
 		void SetWindowFocus() { ImGui::SetWindowFocus(); }
 		void CloseCurrentPopup() { ImGui::CloseCurrentPopup(); }
 		void OpenPopup(const char* a_id, int a_flags) { ImGui::OpenPopup(a_id, Fl(a_flags, map::kPopupFlags)); }
@@ -1393,6 +1431,222 @@ namespace flick
 		void PopGamepadTweakFastDisabled() {}
 		void PushGamepadTweakSlowDisabled() {}
 		void PopGamepadTweakSlowDisabled() {}
+
+		// v6 (FLICK 1.6.x, 4. plans\amf-flick-v6\PLAN.md 3.2). The 255th slot (index 254), VSliderButton, stays the logged stub: v6 made its
+		// parameters 7 and 8 label strings where v5 passed bools, and one table answers both - a stub that reads no argument
+		// is the only answer correct for both (PLAN.md 3.1 step 3; tools\flick_slots_check.cpp proves it is not bound).
+		int ColorFlags(int a_flags) { return Fl(a_flags, map::kColorEditFlags); }
+		bool ColorButton(const char* a_id, const ImVec4& a_col, int a_flags, const ImVec2& a_size, bool a_selected)
+		{
+			const bool r = ImGui::ColorButton(Tr(a_id ? a_id : "##flickcolor"), a_col, ColorFlags(a_flags), a_size);
+			if (a_selected)
+			{
+				// 1.90.8 has no "selected" swatch: the active border drawn round it in the theme's active colour
+				const ImVec2 a = ImGui::GetItemRectMin(), b = ImGui::GetItemRectMax();
+				ImGui::GetWindowDrawList()->AddRect(ImVec2(a.x - 2.0f, a.y - 2.0f), ImVec2(b.x + 2.0f, b.y + 2.0f),
+													ImGui::GetColorU32(ImGuiCol_ButtonActive), ImGui::GetStyle().FrameRounding, 0, 2.0f);
+			}
+			Note("color", a_id, a_selected);
+			return r;
+		}
+		bool ColorPicker3(const char* a_label, float* a_c, int a_flags) { return a_c && ImGui::ColorPicker3(Tr(a_label), a_c, ColorFlags(a_flags)); }
+		bool ColorPicker4(const char* a_label, float* a_c, int a_flags, const float* a_ref)
+		{
+			if (!a_c) { return false; }
+			// FLICK's picker always shows the alpha bar unless kNoAlpha is passed; plain ImGui shows it only when asked
+			int flags = ColorFlags(a_flags);
+			if (!(flags & ImGuiColorEditFlags_NoAlpha)) { flags |= ImGuiColorEditFlags_AlphaBar; }
+			return ImGui::ColorPicker4(Tr(a_label), a_c, flags, a_ref);
+		}
+		bool IsItemActivated() { return ImGui::IsItemActivated(); }
+		bool IsHotkeyEnabled()
+		{
+			const HMODULE mod = ModuleAt(_ReturnAddress());
+			std::lock_guard lock(g_hotkeyLock);
+			const auto it = g_hotkeyEnabled.find(mod);
+			return it == g_hotkeyEnabled.end() ? true : it->second;   // FLICK's own default: the key is enabled
+		}
+		float GetWindowScale() { return 1.0f; }      // a page is never "the current kScalable window" - AMF draws no FLICK windows
+		float GetWindowRotation() { return 0.0f; }
+		// The sticky list: a scrolling child with collapsible section headers. 1.90.8 has no sticky headers, so the headers
+		// scroll with the rows - the same rows, sections and counts.
+		std::vector<bool> g_sticky;   // render thread: each BeginStickyList, whether its child was begun
+		void BeginStickyList(const char* a_id, float a_w, float a_h, bool a_border)
+		{
+			ImGui::BeginChild(a_id && *a_id ? a_id : "##flicksticky", ImVec2(a_w, a_h), a_border ? ImGuiChildFlags_Border : ImGuiChildFlags_None);
+			g_sticky.push_back(true);
+		}
+		void EndStickyList()
+		{
+			if (g_sticky.empty()) { NoteOnce("EndStickyList without BeginStickyList", "ignored"); return; }
+			const bool begun = g_sticky.back();
+			g_sticky.pop_back();
+			if (begun) { ImGui::EndChild(); }
+		}
+		bool StickyHeader(const char* a_label, bool* a_open, int a_count, int a_flags)
+		{
+			if (a_flags != 0) { NoteOnce("StickyHeader flags", "FLICK does not document them yet - drawn as a plain section header"); }
+			const char* label = Tr(a_label ? a_label : "##flickheader");
+			if (a_open) { ImGui::SetNextItemOpen(*a_open, ImGuiCond_Always); }
+			const bool open = ImGui::CollapsingHeader(label, a_open ? ImGuiTreeNodeFlags_None : ImGuiTreeNodeFlags_DefaultOpen);
+			if (a_open) { *a_open = open; }
+			if (a_count >= 0)
+			{
+				// the count at the header's right-hand end, as FLICK shows it
+				const std::string n = std::to_string(a_count);
+				const ImVec2 min = ImGui::GetItemRectMin(), max = ImGui::GetItemRectMax();
+				const ImVec2 size = ImGui::CalcTextSize(n.c_str());
+				ImGui::GetWindowDrawList()->AddText(ImVec2(max.x - size.x - ImGui::GetStyle().FramePadding.x, min.y + (max.y - min.y - size.y) * 0.5f),
+													ImGui::GetColorU32(ImGuiCol_TextDisabled), n.c_str());
+			}
+			Note("header", a_label, open);
+			return open;
+		}
+		// RefreshTools: any thread - the work is done on the render thread at the end of the next frame (ApplyRefresh)
+		std::atomic<bool> g_refreshPending{ false };
+		void RefreshTools()
+		{
+			g_refreshPending.store(true, std::memory_order_release);
+			logger::debug("flick: RefreshTools - the tools' names, groups and sidebar state are read again after this frame");
+		}
+		// The game's own HUD hidden: answered for dialogue (the Dialogue Menu open), once per frame. The intro and cutscenes are
+		// not read yet - AMF draws no FLICK HUD widgets, so nothing here follows it.
+		bool IsGameHUDHidden()
+		{
+			static std::atomic<int> s_frame{ -1 };
+			static std::atomic<bool> s_hidden{ false };
+			const ImGuiContext* c = ImGui::GetCurrentContext();
+			const int frame = c ? c->FrameCount : -1;
+			if (frame != s_frame.load(std::memory_order_relaxed) || frame < 0)
+			{
+				const auto ui = RE::UI::GetSingleton();
+				const bool hidden = ui && ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME);
+				if (hidden != s_hidden.exchange(hidden)) { logger::debug("flick: IsGameHUDHidden -> {} (dialogue)", hidden); }
+				s_frame.store(frame, std::memory_order_relaxed);
+			}
+			return s_hidden.load();
+		}
+		void EnumerateHUDWidgets(void* a_user, void (*a_cb)(const char*, const char*, const char*, void*))
+		{
+			if (!a_cb) { return; }
+			NoteOnce("EnumerateHUDWidgets", "lists the kHideWithHUD windows held here (this menu does not draw them)");
+			std::vector<Window*> windows;
+			{
+				std::lock_guard lock(g_lock);
+				windows = g_windows;
+			}
+			for (Window* w : windows)
+			{
+				if (!w || !(w->GetFlags() & (1 << 22))) { continue; }   // FLICK's WindowFlags::kHideWithHUD
+				const char* plugin = w->PluginName();
+				const char* id = w->Id();
+				const char* title = w->Title();
+				if (!IsCString(plugin) || !IsCString(id)) { continue; }
+				a_cb(plugin, id, IsCString(title) ? title : "", a_user);
+			}
+		}
+		std::mutex g_alphaLock;
+		std::map<std::string, float> g_alphaOverride;   // "plugin|id" -> alpha; kept for FLICK windows, which AMF does not draw
+		void SetWindowAlphaOverride(const char* a_plugin, const char* a_id, float a_alpha)
+		{
+			NoteOnce("SetWindowAlphaOverride", "kept - this menu draws no FLICK windows to fade");
+			if (!IsCString(a_plugin) || !IsCString(a_id)) { return; }
+			const std::string key = std::string(a_plugin) + "|" + a_id;
+			std::lock_guard lock(g_alphaLock);
+			if (a_alpha < 0.0f) { g_alphaOverride.erase(key); }
+			else { g_alphaOverride[key] = std::clamp(a_alpha, 0.0f, 1.0f); }
+		}
+
+		// v7 (FLICK 1.7.x, 4. plans\amf-flick-v6\PLAN.md section 8). The camera API, actor freezing and image loading are
+		// FLICK's own systems: this menu does not take the game camera, hold actors or load images, so each answers
+		// "nothing here" - false, 0, nullptr, nothing written - and reads no argument beyond what it needs to say so. A mod
+		// that drives the camera is routed to the real FLICK when it is installed (FlickRouteCore.h, kCameraClassMarker).
+		bool ComboWithKeyBadges(const char* a_label, int* a_cur, const char* const* a_items, int a_count, int a_maxHeight,
+								const std::uint32_t* a_keys, int* a_hovered)
+		{
+			if (a_hovered) { *a_hovered = -1; }
+			if (!a_cur || !a_items || a_count <= 0) { return false; }
+			if (a_keys) { NoteOnce("ComboWithKeyBadges key icons", "the rows are listed without their key icons in this menu"); }
+			const char* preview = *a_cur >= 0 && *a_cur < a_count && a_items[*a_cur] ? Tr(a_items[*a_cur]) : "";
+			if (a_maxHeight > 0)
+			{
+				ImGui::SetNextWindowSizeConstraints(ImVec2(0.0f, 0.0f),
+													ImVec2(FLT_MAX, ImGui::GetTextLineHeightWithSpacing() * static_cast<float>(a_maxHeight) +
+																		ImGui::GetStyle().WindowPadding.y * 2.0f));
+			}
+			bool picked = false;
+			if (theme::BeginComboTight(Tr(a_label ? a_label : "##flickcombo"), preview))
+			{
+				for (int i = 0; i < a_count; ++i)
+				{
+					if (!a_items[i]) { continue; }
+					ImGui::PushID(i);
+					const bool selected = i == *a_cur;
+					if (ImGui::Selectable(Tr(a_items[i]), selected)) { *a_cur = i; picked = true; }
+					if (selected) { ImGui::SetItemDefaultFocus(); }
+					if (a_hovered && (ImGui::IsItemHovered() || ImGui::IsItemFocused())) { *a_hovered = i; }
+					ImGui::PopID();
+				}
+				ImGui::EndCombo();
+			}
+			Note("combo", a_label, picked);
+			return picked;
+		}
+		void NoCamera(const char* a_what) { NoteOnce(a_what, "the game camera is FLICK's own system and is not taken by this menu - nothing done"); }
+		bool BeginCameraSession(const void*) { NoCamera("BeginCameraSession"); return false; }   // "false if the options are invalid": no session
+		void EndCameraSession(void*) { NoCamera("EndCameraSession"); }
+		bool IsCameraSessionActive(void*) { return false; }
+		bool IsCameraSessionPaused(void*) { return false; }
+		void RevertCamera(void*) { NoCamera("RevertCamera"); }
+		void UpdateCamera(void*, float) { NoCamera("UpdateCamera"); }
+		void MoveCamera(const void*, int, float) { NoCamera("MoveCamera"); }
+		void ResetCamera(void*) { NoCamera("ResetCamera"); }
+		bool IsCameraModified(void*) { return false; }
+		void SetCameraBodyFraming(void*, bool, const void*, float) { NoCamera("SetCameraBodyFraming"); }
+		bool IsCameraBodyFramed(void*) { return false; }
+		bool GetCameraOffsets(void*, void*) { NoCamera("GetCameraOffsets"); return false; }   // the caller's struct is left as it was
+		bool SetCameraOffsets(void*, const void*) { NoCamera("SetCameraOffsets"); return false; }
+		bool GetCameraPose(void*, void*) { NoCamera("GetCameraPose"); return false; }
+		bool SetCameraPose(void*, const void*) { NoCamera("SetCameraPose"); return false; }
+		bool GetCameraFov(float*, float*) { NoCamera("GetCameraFov"); return false; }
+		bool SaveCameraPreset(void*, const char*, bool) { NoCamera("SaveCameraPreset"); return false; }
+		bool LoadCameraPreset(void*, const char*) { NoCamera("LoadCameraPreset"); return false; }
+		bool DeleteCameraPreset(void*, const char*) { NoCamera("DeleteCameraPreset"); return false; }
+		int GetCameraPresetCount(void*) { return 0; }
+		const char* GetCameraPresetName(void*, int) { return nullptr; }   // "nullptr past the end" - with no presets, every index is
+		// The camera applets draw one line on the mod's page saying the camera needs FLICK itself (rule 66: all eleven languages)
+		void CameraNeedsFlickLine()
+		{
+			ImGui::PushTextWrapPos(0.0f);
+			ImGui::TextDisabled("%s", strings::TR("AMF_FlickCameraNeedsFlick", "The camera controls on this page need FLICK itself; this menu does not move the game camera."));
+			ImGui::PopTextWrapPos();
+		}
+		bool DrawCameraPresets(void*, float) { NoCamera("DrawCameraPresets"); CameraNeedsFlickLine(); return false; }
+		bool DrawCameraSettings(int) { NoCamera("DrawCameraSettings"); CameraNeedsFlickLine(); return false; }
+		void DrawCameraHelpMarker(int, const char* a_kbm, const char* a_gp)
+		{
+			// the camera controls' own list is FLICK's; the mod's extra shortcuts (its own text) still reach the help bar
+			std::string help;
+			if (IsCString(a_kbm) && *a_kbm) { help = Tr(a_kbm); }
+			if (IsCString(a_gp) && *a_gp) { help += (help.empty() ? "" : "\n") + std::string(Tr(a_gp)); }
+			if (!help.empty()) { helpbar::OfferForLastItem(help); }
+		}
+		void SetActorFrozen(const char*, void*, bool) { NoteOnce("SetActorFrozen", "holding actors still is FLICK's own system - the actor is not touched"); }
+		bool IsActorFrozen(void*) { return false; }
+		void* RequestImage(const void*) { NoteOnce("RequestImage", "images are not hosted in this build (as LoadImage) - no image, nothing loaded"); return nullptr; }
+		int GetImageState(void*) { return 0; }   // ImageState::kNone - no handle this menu hands out is ever an image
+		// What FLICK is taking input for, answered for this menu: its window open = the menu and the game's input (AMF keeps
+		// input from the game while open), and ImGui's own wants for the keyboard, mouse and text entry. Closed: nothing.
+		int GetInputCaptureState()
+		{
+			if (!ImGui::GetCurrentContext() || !renderer::IsMainWindowVisible()) { return 0; }
+			const ImGuiIO& io = ImGui::GetIO();
+			int s = (1 << 0) | (1 << 1);   // kMenu | kGameInput
+			if (io.WantCaptureKeyboard) { s |= 1 << 2; }
+			if (io.WantCaptureMouse) { s |= 1 << 3; }
+			if (io.WantTextInput) { s |= 1 << 4; }
+			return s;
+		}
 
 		// ---- every other slot: a safe default, logged once (generated from the slot list) ----------------------------
 #define FLICK_SLOT(ret, name, params) \
@@ -1479,6 +1733,18 @@ namespace flick
 			FLICK_DO(SetScrollX) FLICK_DO(SetScrollY) FLICK_DO(SliderAngle) FLICK_DO(VSliderFloat) FLICK_DO(IsPluginWindowOpen)
 			FLICK_DO(PushGamepadTweakFastDisabled) FLICK_DO(PopGamepadTweakFastDisabled) FLICK_DO(PushGamepadTweakSlowDisabled)
 			FLICK_DO(PopGamepadTweakSlowDisabled)
+			// 2.3.0: version 6 (VSliderButton stays the stub - see the v6 block above)
+			FLICK_DO(ColorButton) FLICK_DO(ColorPicker3) FLICK_DO(ColorPicker4) FLICK_DO(IsItemActivated) FLICK_DO(IsHotkeyEnabled)
+			FLICK_DO(GetWindowScale) FLICK_DO(GetWindowRotation) FLICK_DO(BeginStickyList) FLICK_DO(EndStickyList) FLICK_DO(StickyHeader)
+			FLICK_DO(RefreshTools) FLICK_DO(IsGameHUDHidden) FLICK_DO(EnumerateHUDWidgets) FLICK_DO(SetWindowAlphaOverride)
+			// 2.3.0: version 7
+			FLICK_DO(ComboWithKeyBadges) FLICK_DO(BeginCameraSession) FLICK_DO(EndCameraSession) FLICK_DO(IsCameraSessionActive)
+			FLICK_DO(IsCameraSessionPaused) FLICK_DO(RevertCamera) FLICK_DO(UpdateCamera) FLICK_DO(MoveCamera) FLICK_DO(ResetCamera)
+			FLICK_DO(IsCameraModified) FLICK_DO(SetCameraBodyFraming) FLICK_DO(IsCameraBodyFramed) FLICK_DO(GetCameraOffsets)
+			FLICK_DO(SetCameraOffsets) FLICK_DO(GetCameraPose) FLICK_DO(SetCameraPose) FLICK_DO(GetCameraFov) FLICK_DO(SaveCameraPreset)
+			FLICK_DO(LoadCameraPreset) FLICK_DO(DeleteCameraPreset) FLICK_DO(GetCameraPresetCount) FLICK_DO(GetCameraPresetName)
+			FLICK_DO(DrawCameraPresets) FLICK_DO(DrawCameraSettings) FLICK_DO(DrawCameraHelpMarker) FLICK_DO(SetActorFrozen)
+			FLICK_DO(IsActorFrozen) FLICK_DO(RequestImage) FLICK_DO(GetImageState) FLICK_DO(GetInputCaptureState)
 #undef FLICK_DO
 			// ...and the drawing ones re-bound through Guard (above): outside a frame they answer a default, never crash.
 			// The list: every answered slot in FLICK's Layout, Interaction, Drawing Primitives, Windows and Widgets groups.
@@ -1514,6 +1780,10 @@ namespace flick
 			FLICK_GUARD(SameLine) FLICK_GUARD(CollapsingHeader) FLICK_GUARD(BeginGroup) FLICK_GUARD(EndGroup)
 			FLICK_GUARD(BeginDisabled) FLICK_GUARD(EndDisabled) FLICK_GUARD(IsWidgetFocused) FLICK_GUARD(SetTooltip)
 			FLICK_GUARD(Indent) FLICK_GUARD(Unindent) FLICK_GUARD(Text) FLICK_GUARD(TextWrapped) FLICK_GUARD(TextUnformatted)
+			// 2.3.0: the drawing slots of versions 6 and 7
+			FLICK_GUARD(ColorButton) FLICK_GUARD(ColorPicker3) FLICK_GUARD(ColorPicker4) FLICK_GUARD(IsItemActivated)
+			FLICK_GUARD(BeginStickyList) FLICK_GUARD(EndStickyList) FLICK_GUARD(StickyHeader)
+			FLICK_GUARD(ComboWithKeyBadges) FLICK_GUARD(DrawCameraPresets) FLICK_GUARD(DrawCameraSettings) FLICK_GUARD(DrawCameraHelpMarker)
 #undef FLICK_GUARD
 			// the null-slot check (logic library 49): walked once at load; a null would be logged loudly
 			const auto* slots = reinterpret_cast<const unsigned char*>(&t) + 4;
@@ -1696,8 +1966,34 @@ namespace flick
 		// the DLL's own bytes, read once: does it carry FLICK's IWindow class (FlickRouteCore.h)?
 		const auto mod = static_cast<HMODULE>(const_cast<void*>(a_module));
 		const bool windowClass = mod && ModuleHasString(mod, route::kWindowClassMarker);
+		// 2.3.0: a camera client (FLICK API 7's camera API) needs FLICK itself as much as a window does
+		const bool cameraClass = mod && ModuleHasString(mod, route::kCameraClassMarker);
+		g_cameraClass[a_dllLower] = cameraClass;
 		g_windowClass[a_dllLower] = windowClass;
-		const bool windows = windowClass || g_windowsAtStart.contains(a_dllLower);
+		const bool windows = windowClass || cameraClass || g_windowsAtStart.contains(a_dllLower);
+		// 2.3.0 THE OLD-FLICK TRAP (4. plans\amf-flick-v6\PLAN.md 3.4): the API version the mod's code asks for, and the one the
+		// installed FLICK answers - both from positive evidence, or unknown (no claim)
+		int modApi = route::kApiUnknown;
+		if (mod)
+		{
+			const auto* base = reinterpret_cast<const std::uint8_t*>(mod);
+			const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
+			const auto* nt = dos->e_magic == IMAGE_DOS_SIGNATURE ? reinterpret_cast<const IMAGE_NT_HEADERS*>(base + dos->e_lfanew) : nullptr;
+			if (nt && nt->Signature == IMAGE_NT_SIGNATURE) { modApi = RequiredApiGuarded(base, nt->OptionalHeader.SizeOfImage); }
+			if (modApi < 0)
+			{
+				logger::warn("flick: {} - its code could not be read for the FLICK API version it asks for (a protected page) - treated as unknown", a_dllLower);
+				modApi = route::kApiUnknown;
+			}
+		}
+		const int flickApi = g_realFlick ? route::FlickApiOfFileVersion(g_flickVersion) : route::kApiUnknown;
+		const bool tooOld = g_realFlick && route::FlickTooOld(flickApi, modApi);
+		g_modApi[a_dllLower] = modApi;
+		g_tooOld[a_dllLower] = tooOld;
+		logger::info("flick: {} asks for FLICK API {} (read from its code){}", a_dllLower, modApi ? std::to_string(modApi) : std::string("(not readable)"),
+					 !g_realFlick ? "" : std::format(" - the installed FLICK {} answers API {}{}", g_flickVersion.empty() ? std::string("(unknown)") : g_flickVersion,
+													 flickApi == route::kApiNewer ? std::string("newer than 7") : flickApi ? std::to_string(flickApi) : std::string("(unknown)"),
+													 tooOld ? " - TOO OLD for it" : ""));
 		const auto choice = g_leftAtStart.contains(a_dllLower) ? route::Choice::kFlick :
 							g_amfAtStart.contains(a_dllLower) ? route::Choice::kAmf : route::Choice::kNone;
 		// 2.2.1 KNOWN CLASHES: this exact DLL build against this FLICK version (the file is hashed only for a listed name)
@@ -1713,7 +2009,7 @@ namespace flick
 						"not the listed build or FLICK version, so the normal default applies");
 		}
 		g_clash[a_dllLower] = clash;
-		const bool here = route::Decide(choice, g_realFlick, windows, clash != nullptr) == route::Place::kAmf;
+		const bool here = route::Decide(choice, g_realFlick, windows, clash != nullptr, tooOld) == route::Place::kAmf;
 		g_answer[a_dllLower] = here;
 		if (!here && windows && g_realFlick)
 		{
@@ -1724,12 +2020,16 @@ namespace flick
 				SaveSessionLocked();
 			}
 		}
+		const std::string tooOldWhy = tooOld ? std::format("FLICK {} is API {}; it needs API {} - kept in this menu (its pages; its windows need FLICK {} or later)",
+														   g_flickVersion, flickApi, modApi, modApi) : std::string{};
 		const char* why = choice != route::Choice::kNone ? "the player's choice" :
 						  clash ? "a known clash: this build crashes the installed FLICK version - kept in this menu, as 'This menu' would" :
+						  tooOld ? tooOldWhy.c_str() :
 						  !windows ? "no FLICK windows" :
 						  g_realFlick ? (windowClass ? "it has FLICK windows (its DLL carries FLICK's IWindow class), which only FLICK draws" :
+										 cameraClass ? "it drives the game camera through FLICK's camera API (its DLL carries FLICK's ICameraClient class), which only FLICK does" :
 													   "it registered a FLICK window in an earlier session, which only FLICK draws") :
-									    "it has FLICK windows, but FLICK itself is not installed";
+									    "it has FLICK windows or uses FLICK's camera, but FLICK itself is not installed";
 		logger::info("flick: {} -> {} ({})", a_dllLower, here ? "this menu" : (g_realFlick ? "the real FLICK" : "the real FLICK, which is not installed"), why);
 		if (here && windows)
 		{
@@ -1742,6 +2042,10 @@ namespace flick
 			{
 				logger::warn("flick: {} is kept in this menu: {} (FLICK {}). Its windows are not shown. Choosing FLICK's own window for "
 							 "it on Settings > Converted menus > FLICK overrides this.", a_dllLower, clash->what, g_flickVersion);
+			}
+			else if (tooOld && choice == route::Choice::kNone)
+			{
+				logger::warn("flick: {} - {}. Its windows are not shown until FLICK is updated.", a_dllLower, tooOldWhy);
 			}
 			else
 			{
@@ -1813,7 +2117,7 @@ namespace flick
 			{
 				if (t.dll.empty()) { continue; }
 				dlls.insert(t.dll);
-				if (!shown.contains(t.dll)) { shown[t.dll] = t.group.empty() ? t.name : t.group; }
+				if (!shown.contains(t.dll)) { shown[t.dll] = toolpath::Of(t.group, t.name).base; }   // 2.3.0: a nested group's first segment
 			}
 		}
 		std::scoped_lock lock(g_choiceLock);
@@ -1836,7 +2140,11 @@ namespace flick
 			const bool windows = WindowsKnownNowLocked(dll);
 			const auto cl = g_clash.find(dll);
 			const bool clash = cl != g_clash.end() && cl->second != nullptr;
-			const bool toFlickNext = route::Decide(choice, g_realFlick, windows, clash) == route::Place::kFlick;
+			const auto old = g_tooOld.find(dll);
+			const bool tooOld = old != g_tooOld.end() && old->second;
+			const auto camIt = g_cameraClass.find(dll);
+			const bool camera = camIt != g_cameraClass.end() && camIt->second;   // 2.3.0: routed like windows
+			const bool toFlickNext = route::Decide(choice, g_realFlick, windows || camera, clash, tooOld) == route::Place::kFlick;
 			bool toAmf = true;
 			if (it != g_consumers.end()) { toAmf = it->second; }
 			else if (const auto a = g_answer.find(dll); a != g_answer.end()) { toAmf = a->second; }
@@ -1845,6 +2153,14 @@ namespace flick
 			c.chosen = choice != route::Choice::kNone;
 			c.windows = windows;
 			if (clash) { c.clashFlick = route::ShortVersion(g_flickVersion); }
+			// 2.3.0: the API version it asks for, a camera client, and the old-FLICK trap
+			if (const auto a = g_modApi.find(dll); a != g_modApi.end()) { c.apiVersion = a->second; }
+			c.camera = camera;
+			if (tooOld)
+			{
+				c.tooOldFlick = route::ShortVersion(g_flickVersion);
+				c.flickApi = route::FlickApiOfFileVersion(g_flickVersion);
+			}
 			if (const auto e = eras.find(dll); e != eras.end()) { c.era = e->second; }
 			out.push_back(std::move(c));
 		}
@@ -1852,6 +2168,82 @@ namespace flick
 	}
 	bool Enabled() { return g_host.load(std::memory_order_acquire); }
 	bool RealFlickInstalled() { return g_realFlick; }
+
+	// 2.3.0 RefreshTools (FLICK API 6): a mod said its tools changed what Name(), Group() or ShowInSidebar() return. Render
+	// thread, at the end of the frame after the call: each tool is asked again (text checked as at registration) and its
+	// page renamed, moved, shown or hidden to match - remove before add; the page stays keyed by the Tool object (PageFn).
+	void ApplyRefresh()
+	{
+		if (!g_refreshPending.exchange(false, std::memory_order_acq_rel)) { return; }
+		std::vector<std::pair<std::size_t, Tool*>> tools;
+		{
+			std::lock_guard lock(g_lock);
+			for (std::size_t i = 0; i < g_tools.size(); ++i) { tools.emplace_back(i, g_tools[i].tool); }
+		}
+		int changes = 0;
+		for (const auto& [index, tool] : tools)
+		{
+			if (!tool) { continue; }
+			// the mod's virtuals are called outside the lock (they are the mod's code)
+			const char* name = tool->Name();
+			const char* group = tool->Group();
+			const bool shown = tool->ShowInSidebar();
+			if (!IsCString(name))
+			{
+				logger::warn("flick: RefreshTools - a tool's Name() is no longer readable text; it keeps its page as it was");
+				continue;
+			}
+			const std::string newName = name;
+			const std::string newGroup = IsCString(group) ? group : "";
+			const auto place = toolpath::Of(newGroup, newName);
+			std::string oldEntry, oldPage, plugin;
+			bool wasRegistered = false, wasListed = false, ruleHidden = false, forTest = false;
+			{
+				std::lock_guard lock(g_lock);
+				auto& t = g_tools[index];
+				if (t.name == newName && t.group == newGroup && t.listed == (shown && (!t.ruleHidden || t.shownForTest))) { continue; }
+				oldEntry = t.entry;
+				oldPage = t.page;
+				plugin = t.plugin;
+				wasRegistered = t.registered;
+				wasListed = t.listed;
+				ruleHidden = t.ruleHidden;
+				forTest = t.shownForTest;
+				t.name = newName;
+				t.group = newGroup;
+				t.entry = place.entry;
+				t.page = place.page;
+				t.listed = shown && (!ruleHidden || forTest);
+			}
+			const bool moved = oldEntry != place.entry || oldPage != place.page;
+			const bool wantShown = shown && (!ruleHidden || forTest);
+			if (wasRegistered && moved)
+			{
+				registry::Remove(oldEntry, oldPage);
+				wasRegistered = false;
+			}
+			if (!wasRegistered && (wantShown || !shown))
+			{
+				if (wantShown)
+				{
+					registry::RegisterFn(place.entry.c_str(), place.page.c_str(), PageFn(tool, "FLICK|" + plugin + "|" + newName));
+					wasRegistered = true;
+				}
+			}
+			else if (wasRegistered && wasListed != wantShown)
+			{
+				registry::SetPageVisible(place.entry.c_str(), place.page.c_str(), wantShown);
+			}
+			{
+				std::lock_guard lock(g_lock);
+				g_tools[index].registered = wasRegistered;
+			}
+			++changes;
+			logger::info("flick: RefreshTools - \"{}\" / \"{}\" -> \"{}\" / \"{}\"{}", oldEntry, oldPage, place.entry, place.page,
+						 wantShown ? "" : " (not listed)");
+		}
+		logger::info("flick: RefreshTools applied - {} tool(s) changed", changes);
+	}
 
 	// THE ONE-ENTRY RULE (plan section 8; the owner's Q6 answer, 2026-10-08): a mod that registers its own page here (SKSE Menu
 	// Framework's API) AND a FLICK page has one entry - its own. The FLICK copy is hidden, matched by name: "<entry> (FLICK)"
@@ -1875,7 +2267,9 @@ namespace flick
 				if (own.contains(base))
 				{
 					t.listed = false;
-					hide.emplace_back(t.entry, t.name.empty() ? "Settings" : t.name);
+					t.ruleHidden = true;   // 2.3.0: RefreshTools leaves it hidden
+					if (!t.registered) { continue; }
+					hide.emplace_back(t.entry, t.page);
 					logger::info("flick: \"{}\" also has its own page here - its FLICK copy \"{}\" is not listed (one entry per mod)", base, t.entry);
 				}
 			}
@@ -1892,10 +2286,10 @@ namespace flick
 			std::lock_guard lock(g_lock);
 			for (auto& t : g_tools)
 			{
-				if (t.entry != a_entry) { continue; }
+				if (t.entry != a_entry || !t.registered) { continue; }
 				t.listed = true;
 				t.shownForTest = true;
-				pages.push_back(t.name.empty() ? "Settings" : t.name);
+				pages.push_back(t.page);
 			}
 		}
 		for (const auto& p : pages) { registry::SetPageVisible(a_entry.c_str(), p.c_str(), true); }
@@ -1905,6 +2299,7 @@ namespace flick
 
 	void EndFrame()
 	{
+		ApplyRefresh();
 		HideFlickCopies();
 		// FLICK's "tool deselected": the page open last frame and not drawn this one - the player left it or closed the menu
 		if (g_active && g_drawnThisFrame != g_active)
@@ -1921,6 +2316,7 @@ namespace flick
 		g_items.clear();
 		// a mod's Draw that left a BeginWindow without its EndWindow: forget it rather than carry it into the next frame
 		g_begun.clear();
+		g_sticky.clear();   // 2.3.0: the same for a sticky list
 	}
 
 	std::size_t ToolCount()
