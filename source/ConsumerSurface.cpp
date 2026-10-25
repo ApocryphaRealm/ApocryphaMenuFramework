@@ -44,7 +44,7 @@ namespace
 {
 	struct WindowEntry
 	{
-		std::unique_ptr<consumer::WindowInterface> iface;
+		std::unique_ptr<consumer::WindowInterface> iface;   // nonnull: the one insertion into g_windows (AddWindow push_back) sets it from make_unique first; g_windows is never erased, reset or moved out of
 		consumer::RenderFunction render{ nullptr };
 		std::string view;   // AddWindowWithView's name; empty for a plain AddWindow
 

@@ -76,6 +76,6 @@ namespace icons
 	inline std::string Label(const char* a_icon, const char* a_text)
 	{
 		const char* text = a_text ? a_text : "";
-		return Ready() ? std::string(a_icon) + "  " + text : std::string(text);
+		return (Ready() && a_icon) ? std::string(a_icon) + "  " + text : std::string(text);
 	}
 }

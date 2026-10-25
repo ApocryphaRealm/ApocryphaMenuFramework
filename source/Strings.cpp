@@ -2,6 +2,7 @@
 
 #include "Settings.h"
 #include "utils/Logger.h"
+#include "utils/NullGuard.h"
 
 #include <algorithm>
 #include <cctype>
@@ -163,9 +164,10 @@ namespace strings
 
 	const char* TR(const char* a_key, const char* a_english)
 	{
+		AMF_REQUIRE(a_key, amf::Str(a_english));
 		std::scoped_lock l(g_lock);
 		const auto it = g_texts.find(a_key);
-		return it == g_texts.end() ? a_english : it->second.c_str();
+		return it == g_texts.end() ? amf::Str(a_english) : it->second.c_str();
 	}
 
 	const char* PluralForm(long long a_count)
@@ -191,7 +193,8 @@ namespace strings
 
 	const char* TRN(const char* a_key, long long a_count, const char* a_englishOne, const char* a_englishOther)
 	{
-		const std::string form = PluralForm(a_count);
+		AMF_REQUIRE(a_key, amf::Str(a_count == 1 ? a_englishOne : a_englishOther));
+		const std::string form = amf::Str(PluralForm(a_count));
 		const std::string base = std::string(a_key) + "_";
 		std::scoped_lock l(g_lock);
 		auto find = [&](const std::string& a_form) -> const char* {
@@ -200,7 +203,7 @@ namespace strings
 		};
 		if (const char* t = find(form)) { return t; }
 		if (form == "Few") { if (const char* t = find("Other")) { return t; } }
-		return form == "One" ? a_englishOne : a_englishOther;
+		return amf::Str(form == "One" ? a_englishOne : a_englishOther);
 	}
 
 	const std::string& Language()

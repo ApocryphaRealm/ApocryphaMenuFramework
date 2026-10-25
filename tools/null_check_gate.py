@@ -4,10 +4,10 @@ null_check_gate.py - the package gate's null-check row: every pointer AMF reads 
 
     python tools/null_check_gate.py            (no arguments; exit 0 = PASS, 1 = FAIL)
 
-Runs tools/null_check_audit.py on the repo this file is in, with --gate, and with
---baseline tools/null-check-baseline.json while that file exists: the count of unchecked pointer reads
-and unchecked exported pointer parameters may only fall. Once the count reaches zero the baseline file is
-removed and any unchecked read fails.
+Runs tools/null_check_audit.py on the repo this file is in, with --gate and NO baseline: any unchecked
+pointer read or unchecked exported pointer parameter fails. (While the count came down, 1,289 -> 0 during
+2.3.0, it passed --baseline tools/null-check-baseline.json so the count could only fall. The ramp ended at 0;
+that file and null-check-baseline-2026-10-25.json are kept as its record, and the gate no longer reads them.)
 
 FAILS CLOSED. A gate that cannot measure must not pass, so it prints FAIL and exits 1 when:
   - the clang Python bindings (clang==20.1.5) cannot be imported - after first re-running itself under
@@ -112,18 +112,10 @@ def main():
 
     cmd = [sys.executable, AUDIT, "--repo", REPO, "--build", BUILD, "--out", OUT, "--gate",
            "--free-floor-mb", str(FREE_FLOOR_MB), "--max-wait-s", str(MAX_WAIT_S)]
-    if os.path.isfile(BASELINE):
-        try:
-            with open(BASELINE, encoding="utf-8") as f:
-                base = int(json.load(f)["total_unchecked"])
-        except Exception as e:
-            return fail("tools/null-check-baseline.json does not hold a total_unchecked number (%s)" % e)
-        cmd += ["--baseline", BASELINE]
-        print("null-check gate: baseline %d unchecked (tools/null-check-baseline.json); the count may only fall" % base,
-              flush=True)
-    else:
-        base = None
-        print("null-check gate: no baseline file - any unchecked pointer read fails", flush=True)
+    # 2.3.0: the count reached 0, so the ramp is over. The gate never passes --baseline again, whether or not the old
+    # baseline files are still on disk (they are kept as the record of the ramp): any unchecked read fails.
+    base = None
+    print("null-check gate: no baseline (the ramp ended at 0) - any unchecked pointer read fails", flush=True)
 
     proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace")
     out = proc.stdout or ""
@@ -149,9 +141,8 @@ def main():
     if not gate_line.startswith("GATE PASS"):
         return fail("the audit ended without a GATE PASS line")
     total = summary.get("total_unchecked")
-    if base is not None and isinstance(total, int) and total < base:
-        print("null-check gate: the count fell from %d to %d - lower total_unchecked in tools/null-check-baseline.json"
-              % (base, total), flush=True)
+    if total != 0:
+        return fail("%s unchecked pointer reads (must be 0) - they are in build\\null-check-audit\\unchecked.txt" % total)
     print("PASS: null-check gate: %s unchecked pointer reads%s" % (total, "" if base is None else " (baseline %d)" % base),
           flush=True)
     return 0

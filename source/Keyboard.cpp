@@ -13,6 +13,7 @@
 #include "Strings.h"
 #include "TextInputCore.h"
 #include "utils/Logger.h"
+#include "utils/NullGuard.h"
 
 #include <imgui.h>
 #include <imgui_internal.h>
@@ -113,7 +114,7 @@ namespace keyboard
 			if (g_layout < 0 || want != g_layoutSetting)
 			{
 				g_layoutSetting = want;
-				const std::string id = (want.empty() || want == "auto") ? kblayout::LayoutForLanguage(strings::GameLanguageSetting()) : want;
+				const std::string id = (want.empty() || want == "auto") ? amf::Str(kblayout::LayoutForLanguage(strings::GameLanguageSetting())) : want;
 				g_layout = kblayout::FindLayout(id);
 				if (g_layout < 0)
 				{
@@ -243,6 +244,7 @@ namespace keyboard
 		// The current text of the ImGui target, from ImGui's own edit state (only while it is active).
 		std::string TargetText()
 		{
+			AMF_REQUIRE(GImGui, std::string());
 			ImGuiContext& g = *GImGui;
 			if (g_target == 0 || g.ActiveId != g_target) { return {}; }
 			ImGuiInputTextState* st = ImGui::GetInputTextState(g_target);
@@ -403,6 +405,7 @@ namespace keyboard
 		// search box is what a player expects A to open.
 		void ActivateTarget()
 		{
+			AMF_REQUIRE_VOID(GImGui);
 			ImGuiContext& g = *GImGui;
 			g.NavNextActivateId = g_target;
 			g.NavNextActivateFlags = ImGuiActivateFlags_PreferInput;
@@ -696,6 +699,7 @@ namespace keyboard
 
 		if (!g_open) { return; }
 
+		AMF_REQUIRE_VOID(GImGui);
 		ImGuiContext& g = *GImGui;
 		if (g_kind == TargetKind::kImGui)
 		{
@@ -724,12 +728,20 @@ namespace keyboard
 		if (!ImGui::Begin("###amf-keyboard", nullptr, flags)) { ImGui::End(); return; }
 		// In front of the framework window: the keyboard is what the player is using, and a tall
 		// window otherwise covers its top rows (seen in the first proof, 2026-09-18).
-		ImGui::BringWindowToDisplayFront(ImGui::GetCurrentWindow());
+		// (no if/else here: the audit finds an else by slicing the file text at byte offsets, which this file's UTF-8
+		// key labels shift - two plain ifs read the same and are measured right)
+		ImGuiWindow* const kbWindow = ImGui::GetCurrentWindow();
+		if (kbWindow)
 		{
-			const ImRect wr = ImGui::GetCurrentWindow()->Rect();
+			ImGui::BringWindowToDisplayFront(kbWindow);
+			const ImRect wr = kbWindow->Rect();
 			g_windowRect = KeyRect{ wr.Min, wr.Max };
 			g_windowValid = true;
 			if (g_kind == TargetKind::kGame) { gamefield::PublishRect(true, wr.Min.x, wr.Min.y, wr.Max.x, wr.Max.y); }
+		}
+		if (!kbWindow)
+		{
+			if (const auto at = std::source_location::current(); amf::detail::FirstMissAt(at)) { amf::detail::WarnNull("ImGui::GetCurrentWindow()", at); }
 		}
 
 		// The hint lines WRAP at the keyboard's width (batch 12: cut off at the right in en, de and ko - "X s..."): the window

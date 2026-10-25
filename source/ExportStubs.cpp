@@ -70,24 +70,31 @@ namespace
 			}
 		}
 
-		std::uint8_t* p = g_page + g_pageUsed;
-		std::uint8_t* w = p;
+		std::uint8_t* const p = g_page + g_pageUsed;
+		if (!p) {
+			return nullptr;   // never: g_page is non-null here (allocated above, or kept from an earlier call)
+		}
 		const auto handler = reinterpret_cast<std::uint64_t>(&StubHandler);
 
+		// 2.3.0: the thunk is assembled in a local array, then copied to the page in one go - no write goes through a
+		// moving pointer. The unused tail byte stays 0, as the freshly committed page's was.
+		std::uint8_t code[kThunkSize]{};
+		std::size_t n = 0;
 		// sub rsp, 0x28          - shadow space + keep the call 16-byte aligned
-		*w++ = 0x48; *w++ = 0x83; *w++ = 0xEC; *w++ = 0x28;
+		code[n++] = 0x48; code[n++] = 0x83; code[n++] = 0xEC; code[n++] = 0x28;
 		// mov ecx, imm32          - the name index
-		*w++ = 0xB9; std::memcpy(w, &a_index, 4); w += 4;
+		code[n++] = 0xB9; std::memcpy(code + n, &a_index, 4); n += 4;
 		// mov rax, imm64          - StubHandler
-		*w++ = 0x48; *w++ = 0xB8; std::memcpy(w, &handler, 8); w += 8;
+		code[n++] = 0x48; code[n++] = 0xB8; std::memcpy(code + n, &handler, 8); n += 8;
 		// call rax                - XMM0 = 0.0 on return
-		*w++ = 0xFF; *w++ = 0xD0;
+		code[n++] = 0xFF; code[n++] = 0xD0;
 		// add rsp, 0x28
-		*w++ = 0x48; *w++ = 0x83; *w++ = 0xC4; *w++ = 0x28;
+		code[n++] = 0x48; code[n++] = 0x83; code[n++] = 0xC4; code[n++] = 0x28;
 		// xor eax, eax            - RAX = 0 (bool/int/pointer callers)
-		*w++ = 0x31; *w++ = 0xC0;
+		code[n++] = 0x31; code[n++] = 0xC0;
 		// ret
-		*w++ = 0xC3;
+		code[n++] = 0xC3;
+		std::memcpy(p, code, kThunkSize);
 
 		g_pageUsed += kThunkSize;
 		::FlushInstructionCache(::GetCurrentProcess(), p, kThunkSize);

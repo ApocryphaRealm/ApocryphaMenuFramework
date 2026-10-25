@@ -113,7 +113,8 @@ namespace widgets
 				// 2.2.4 (the menu render matrix: converted MCM pages' switch labels were cut at the column's edge from text size
 				// 2.00 - "Force camera to thirdpers"): a label wider than the room left on its line wraps inside the column
 				// instead. One that fits draws exactly as before. A wrap position the caller set is kept.
-				const bool wrap = ImGui::GetCurrentWindow()->DC.TextWrapPos < 0.0f;
+				const ImGuiWindow* labelWindow = ImGui::GetCurrentWindow();
+				const bool wrap = labelWindow && labelWindow->DC.TextWrapPos < 0.0f;
 				if (wrap) { ImGui::PushTextWrapPos(0.0f); }
 				ImGui::TextUnformatted(visible.data(), visible.data() + visible.size());
 				if (wrap) { ImGui::PopTextWrapPos(); }

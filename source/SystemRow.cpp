@@ -35,7 +35,7 @@ namespace systemrow
 		// instance names; the rest are cheap guesses for replacers that wrap the hierarchy. Probed
 		// in order, and whichever resolves is logged - guessing silently is how a scan ends up
 		// excluding the place the answer lives.
-		const char* const kPageCandidates[] = {
+		const char* const kPageCandidates[] = {   // nonnull: const table of string literals only
 			"_root.QuestJournalFader.Menu_mc.SystemFader.Page_mc",
 			"_root.Menu_mc.SystemFader.Page_mc",
 			"_root.QuestJournalFader.Menu_mc.SystemPage_mc",
@@ -499,7 +499,7 @@ namespace systemrow
 		g_paneLeft = -1.0f;
 		{
 			float dx = 0.0f, dy = 0.0f, dw = 0.0f, dh = 0.0f;
-			const char* const dividers[] = {
+			const char* const dividers[] = {   // nonnull: local const array of string literals only
 				"_root.QuestJournalFader.Menu_mc.QJUI_PanelShadows_mc.RightDivider_mc",
 				"_root.Menu_mc.QJUI_PanelShadows_mc.RightDivider_mc",
 			};

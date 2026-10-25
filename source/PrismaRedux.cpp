@@ -90,7 +90,7 @@ namespace prisma
 		};
 
 		std::mutex g_lock;
-		std::vector<std::unique_ptr<Config>> g_configs;
+		std::vector<std::unique_ptr<Config>> g_configs;   // nonnull: assigned only in Load() from `loaded`, whose one push_back takes a LoadOne result tested non-null (if (auto c = ...)); never reset or element-assigned
 		// 2.2.1 live apply (LiveApplyCore.h, [MCM] bLiveApply), under g_lock: once a change has settled - no further change for
 		// 0.35 s, no control held, the INI written - the open page's mod gets Prisma_OnSettingsApplied (Redux's Apply) while
 		// the page stays open, instead of only when it is left.
@@ -164,7 +164,7 @@ namespace prisma
 			char* endB = nullptr;
 			const double na = std::strtod(a.c_str(), &endA);
 			const double nb = std::strtod(b.c_str(), &endB);
-			return !a.empty() && !b.empty() && *endA == '\0' && *endB == '\0' && std::fabs(na - nb) < 1e-6;
+			return !a.empty() && !b.empty() && endA && endB && *endA == '\0' && *endB == '\0' && std::fabs(na - nb) < 1e-6;
 		}
 
 		// ------------------------------------------------------------------------------------------ INI files

@@ -13,6 +13,8 @@
 #include <cstdio>
 #include <cstdlib>
 
+#include "utils/NullGuard.h"
+
 // The framework's own reserved-key list, exported for consumers; asked here rather than kept in a
 // second place that could disagree with it (standing rule: respect AMF's reserved keys).
 extern "C" std::uint32_t SMF_GetReservedKeyCodes(std::int32_t* a_buffer, std::uint32_t a_capacity);
@@ -306,8 +308,8 @@ namespace bindings
 	std::string PadText(Action a_action)
 	{
 		const Binding b = Get(a_action);
-		if (b.padKind == PadKind::kButton) { return PadButtonName(b.padCode); }
-		if (b.padKind == PadKind::kStickDir) { return StickDirName(b.padCode); }
+		if (b.padKind == PadKind::kButton) { return amf::Str(PadButtonName(b.padCode)); }
+		if (b.padKind == PadKind::kStickDir) { return amf::Str(StickDirName(b.padCode)); }
 		return TR("AMF_BindUnbound", "unbound");
 	}
 
@@ -372,7 +374,7 @@ namespace bindings
 			logger::info("bindings: \"{}\" bound on the {} side ({})", Label(a_action),
 						 a_gamepadSide ? "controller" : "keyboard",
 						 a_gamepadSide
-							 ? (a_pk == PadKind::kStickDir ? StickDirName(a_pc) : PadButtonName(a_pc))
+							 ? amf::Str(a_pk == PadKind::kStickDir ? StickDirName(a_pc) : PadButtonName(a_pc))
 							 : (a_kk == KeyKind::kMouse
 									? (std::string("mouse ") + std::to_string(a_kc + 1))
 									: ScanCodeName(static_cast<std::uint32_t>(a_kc))));

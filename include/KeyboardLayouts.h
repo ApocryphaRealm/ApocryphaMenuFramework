@@ -35,7 +35,7 @@ namespace kblayout
 	};
 
 	// clang-format off
-	inline constexpr Layout kLayouts[] = {
+	inline constexpr Layout kLayouts[] = {   // nonnull: constexpr table, every id/label/row is a string literal
 		{ "en", "English", Kind::kPlain,
 		  { "1 2 3 4 5 6 7 8 9 0", "q w e r t y u i o p", "a s d f g h j k l", "z x c v b n m - '" },
 		  { "1 2 3 4 5 6 7 8 9 0", "Q W E R T Y U I O P", "A S D F G H J K L", "Z X C V B N M - '" } },
@@ -91,6 +91,7 @@ namespace kblayout
 	{
 		for (int i = 0; i < kLayoutCount; ++i)
 		{
+			// nonnull: kLayouts is a constexpr table; every id is a string literal
 			if (a_id == kLayouts[i].id) { return i; }
 		}
 		return -1;
@@ -104,6 +105,7 @@ namespace kblayout
 			{ "polish", "pl" }, { "czech", "cs" }, { "russian", "ru" }, { "japanese", "ja" }, { "korean", "ko" } };
 		for (const auto& m : kMap)
 		{
+			// nonnull: m is an element of the constexpr kMap above, whose lang fields are string literals
 			if (a_language == m.lang) { return m.id; }
 		}
 		return "en";

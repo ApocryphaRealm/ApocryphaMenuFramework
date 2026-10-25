@@ -122,7 +122,7 @@ namespace theme
 			auto* prefs = RE::INIPrefSettingCollection::GetSingleton();
 			auto* ini = RE::INISettingCollection::GetSingleton();
 
-			constexpr const char* kCandidates[] = {
+			constexpr const char* kCandidates[] = {   // nonnull: constexpr table of string literals
 				"fHUDOpacity",
 				"fHUDOpacity:MAIN",
 				"fHUDOpacity:Interface",
@@ -262,7 +262,7 @@ namespace theme
 				{
 					for (std::size_t k = 0; k < skin::kArtKindCount; ++k)
 					{
-						if (key.substr(0, key.size() - 3) == skin::kArtKeys[k]) { palette.art[k] = std::string(value); }
+						if (key.substr(0, key.size() - 3) == skin::kArtKeys[k]) { palette.art[k] = std::string(value); }   // nonnull: kArtKeys (ArtKinds.h) is a constexpr table of string literals
 					}
 				}
 				else if (key == "uSkinFrameCorner")

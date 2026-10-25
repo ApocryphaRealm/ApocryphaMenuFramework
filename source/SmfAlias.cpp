@@ -259,6 +259,7 @@ namespace
 	void NoteFileHit(const wchar_t* a_api, const std::wstring& a_path, void* a_caller = nullptr)
 	{
 		g_fileHits.fetch_add(1, std::memory_order_relaxed);
+		AMF_REQUIRE_VOID(a_api);   // the hit is counted; only its log line needs the API name
 
 		std::scoped_lock lock(g_logLock);
 		const std::string who = CallerName(a_caller);
@@ -652,6 +653,9 @@ namespace
 	// exactly as it loaded. Plain C, no C++ objects: it runs under the loader lock and inside __try.
 	bool MatchCaseless(const unsigned char* a_p, std::size_t a_left, const char* a_needle, std::size_t a_n, std::size_t a_step)
 	{
+		if (!a_p || !a_needle) {   // plain test, no logging: this runs under the loader lock
+			return false;
+		}
 		if (a_left < a_n * a_step) {
 			return false;
 		}

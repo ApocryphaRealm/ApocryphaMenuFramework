@@ -1,6 +1,6 @@
 {
-  "_about": "The ratchet for tools/null_check_gate.py: the gate fails when total_unchecked rises above this number. Lower it (never raise it) when a fix lands; remove the file when the count reaches zero, and the gate then fails on any unchecked read.",
-  "total_unchecked": 172,
+  "_about": "RETIRED 2026-10-25 (AMF 2.3.0): the ratchet tools/null_check_gate.py used while the count came down. The count reached 0, and the gate no longer reads this file - it fails on any unchecked read. Kept as the record of the ramp.",
+  "total_unchecked": 0,
   "from": "null-check-baseline-2026-10-25.json",
-  "updated": "2026-10-25 (internal class: Renderer 70, RememberedSettings 58, Presets 39; was 339, before that 528, 565, 725, 1,289)"
+  "updated": "2026-10-25 (the rest of the internal class: 172 reads in 34 files; was 172, before that 339, 528, 565, 725, 1,289)"
 }

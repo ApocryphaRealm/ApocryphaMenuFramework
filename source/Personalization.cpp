@@ -599,6 +599,7 @@ namespace personalization
 			}
 		}
 		const auto readList = [&](const char* a_key, std::vector<std::string>& a_out) {
+			if (!a_key) { logger::warn("personalization: a list was read with no key - skipped"); return; }
 			const auto it = a_iniEntries.find(a_key);
 			if (it == a_iniEntries.end() || it->second.empty()) { return; }
 			std::stringstream stream(it->second);

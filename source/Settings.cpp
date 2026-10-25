@@ -5,6 +5,7 @@
 #include "Skin.h"
 #include "Theme.h"
 #include "utils/Logger.h"
+#include "utils/NullGuard.h"
 
 #include <algorithm>
 #include <atomic>
@@ -135,6 +136,7 @@ namespace settings
 		template <class T>
 		void ReadNumber(const std::unordered_map<std::string, std::string>& a_entries, const char* a_key, T& a_out)
 		{
+			AMF_REQUIRE_VOID(a_key);
 			const auto it = a_entries.find(a_key);
 			if (it == a_entries.end())
 			{

@@ -427,10 +427,10 @@ namespace hostcore
 			{
 				if (it.key() == "toggle_keys" && it.value().is_object())
 				{
-					const nlohmann::json* o = &it.value();
-					if (o->contains("data") && (*o)["data"].is_object()) { o = &(*o)["data"]; }
+					const nlohmann::json& t = it.value();
+					const nlohmann::json& o = t.contains("data") && t["data"].is_object() ? t["data"] : t;
 					const auto num = [&](const char* a_k) -> std::uint32_t {
-						return o->contains(a_k) && (*o)[a_k].is_number_integer() ? static_cast<std::uint32_t>((*o)[a_k].get<long long>() & 0xFF) : 0u;
+						return o.contains(a_k) && o[a_k].is_number_integer() ? static_cast<std::uint32_t>(o[a_k].get<long long>() & 0xFF) : 0u;
 					};
 					KeyCombo c;
 					const std::uint32_t combo = num("combo_key"), key = num("key");
@@ -1207,7 +1207,7 @@ namespace hostcore
 	struct DirectRow
 	{
 		const char* id;
-		const char* call;                   // what AMF calls ("" = none)
+		const char* call;                   // what AMF calls ("" = none); nonnull: DirectRow values exist only in DirectTable's static rows, each giving a string literal here
 		FileVer minVersion;                 // the first file version that has it
 		std::vector<const char*> hashes;    // the builds checked offline (SHA-256 of the DLL file)
 		const char* noneWhy;                // why there is no direct open (when call is "")

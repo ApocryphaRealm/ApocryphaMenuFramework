@@ -16,7 +16,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstring>
+#include <iterator>
 #include <type_traits>
 
 namespace precise
@@ -79,6 +81,9 @@ namespace precise
 	// either way, so the window under it does not scroll from the next frame on.
 	inline int WheelDirection()
 	{
+		// 2.3.0 null checks: this header also builds off-game (tools\slider_*_check.bat) without AMF's logger, so plain
+		// tests rather than NullGuard.h's macros. No ImGui context means no slider was drawn: nothing to do.
+		if (!GImGui) return 0;
 		ImGuiContext& g = *GImGui;
 		const ImGuiID id = g.LastItemData.ID;
 		if (id == 0) return 0;
@@ -96,6 +101,7 @@ namespace precise
 		template <class T>
 		inline bool Nudge(void* a_data, const void* a_min, const void* a_max, double a_step, int a_dir)
 		{
+			if (!a_data || !a_min || !a_max) return false;
 			T& v = *static_cast<T*>(a_data);
 			const double next = WheelStepped(static_cast<double>(v), a_step, a_dir,
 				static_cast<double>(*static_cast<const T*>(a_min)), static_cast<double>(*static_cast<const T*>(a_max)));
@@ -136,6 +142,7 @@ namespace precise
 	// - Another item held meanwhile: the report waits for it to be let go (nothing else's deactivation is touched).
 	inline void WheelSettle(bool a_ticked)
 	{
+		if (!GImGui) return;
 		ImGuiContext& g = *GImGui;
 		const ImGuiID id = g.LastItemData.ID;
 		if (id == 0) return;
@@ -151,8 +158,9 @@ namespace precise
 			if (!mine) {
 				mine = open;
 				if (!mine) {   // every slot settling: reuse the oldest
-					mine = &slots[0];
-					for (auto& s : slots) if (s.last < mine->last) mine = &s;
+					std::size_t oldest = 0;
+					for (std::size_t i = 1; i < std::size(slots); ++i) if (slots[i].last < slots[oldest].last) oldest = i;
+					mine = &slots[oldest];
 				}
 			}
 			*mine = { &g, id, g.Time };
@@ -175,6 +183,7 @@ namespace precise
 		// 2.3.0: every slider passes through here right after it is drawn (AMF's precise sliders, converted menus, the
 		// consumer slider exports), so this is where a slider tells the side-navigation it holds the highlight (NavSide.h)
 		navside::NoteArrowItem();
+		if (!GImGui) return false;
 		const int dir = WheelDirection();
 		if (dir == 0 || !a_data || !a_min || !a_max) { WheelSettle(false); return false; }
 		bool changed = false;
@@ -214,6 +223,7 @@ namespace precise
 	// the frame - the frame is the item's nav rect). Not while a number is being typed into the slider.
 	inline void OutlineValue(ImGuiDataType a_type, const void* a_data, const char* a_format)
 	{
+		if (!GImGui) return;
 		ImGuiContext& g = *GImGui;
 		ImGuiWindow* const window = g.CurrentWindow;
 		if (!window || window->SkipItems || !a_data || !ImGui::IsItemVisible()) return;
@@ -226,7 +236,9 @@ namespace precise
 		if (GImGuiSliderValueId == id && GImGuiSliderValueRect.GetWidth() > 0.0f) { frame = GImGuiSliderValueRect; }
 #endif
 		char buf[64];
-		const char* const fmt = a_format ? a_format : ImGui::DataTypeGetInfo(a_type)->PrintFmt;
+		const ImGuiDataTypeInfo* const info = a_format ? nullptr : ImGui::DataTypeGetInfo(a_type);
+		const char* const fmt = a_format ? a_format : (info ? info->PrintFmt : nullptr);
+		if (!fmt) return;
 		const char* const end = buf + ImGui::DataTypeFormatString(buf, IM_ARRAYSIZE(buf), a_type, a_data, fmt);
 		ImVec4 edge = g.Style.Colors[ImGuiCol_WindowBg];
 		edge.w = g.Style.Colors[ImGuiCol_Text].w;
@@ -256,6 +268,7 @@ namespace precise
 
 	inline bool SliderFloat(const char* a_label, float* a_v, float a_min, float a_max, const char* a_format)
 	{
+		if (!a_v || !GImGui) return false;   // no value to edit (ImGui's own slider would dereference it), or no context
 		const float before = *a_v;
 		// 2.3.0 (gate row precise-sliders-always-clamp; Dragon's Eye Minimap 7c3ce18, test d844): AlwaysClamp, so a number typed
 		// in (Ctrl+click) is clamped INSIDE ImGui - 1.90.8 otherwise leaves it unclamped and, while the text field is open,
@@ -282,6 +295,7 @@ namespace precise
 
 	inline bool SliderInt(const char* a_label, int* a_v, int a_min, int a_max, const char* a_format = "%d")
 	{
+		if (!a_v || !GImGui) return false;   // as SliderFloat
 		const int  before = *a_v;
 		bool changed = ImGui::SliderInt(a_label, a_v, a_min, a_max, a_format, ImGuiSliderFlags_AlwaysClamp);   // as SliderFloat
 		if (changed && a_min <= a_max) { *a_v = std::clamp(*a_v, a_min, a_max); }

@@ -236,6 +236,7 @@ namespace glyphcore
 	inline std::vector<ImWchar> MissingIn(const ImFont* a_font, const std::string& a_text, const std::vector<ImWchar>& a_extra)
 	{
 		std::vector<ImWchar> out;
+		if (!a_font) { return out; }   // no font to test against: nothing reported missing
 		std::vector<bool> seen(0x10000, false);
 		auto test = [&](ImWchar c) {
 			if (c < 0x20 || c == 0x2028 || c == 0x2029 || c == 0x7F || seen[c]) { return; }

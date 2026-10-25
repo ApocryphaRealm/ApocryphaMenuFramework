@@ -9,6 +9,7 @@
 #include "Strings.h"
 #include "Theme.h"
 #include "utils/Logger.h"
+#include "utils/NullGuard.h"
 #include "utils/ToggleSwitch.h"
 
 #include "OAR/OpenAnimationReplacerAPI-UI.h"
@@ -46,9 +47,10 @@ namespace imguihost
 			kCount
 		};
 
+		// nonnull: constexpr table of string literals only
 		constexpr std::array<const char*, kCount> kIds = { "oar", "cs", "ied", "optiscaler", "enb" };
 		// the mods' own names - proper names, the same in every language
-		constexpr std::array<const char*, kCount> kNames = { "Open Animation Replacer", "Community Shaders", "Immersive Equipment Displays",
+		constexpr std::array<const char*, kCount> kNames = {   // nonnull: constexpr table of string literals only "Open Animation Replacer", "Community Shaders", "Immersive Equipment Displays",
 															 "OptiScaler", "ENB" };
 
 		struct Target
@@ -262,6 +264,7 @@ namespace imguihost
 		// One string of a module's version resource ("ProductName", "FileDescription" ...; "" when it has none)
 		std::wstring VersionString(const std::wstring& a_path, const wchar_t* a_name)
 		{
+			AMF_REQUIRE(a_name, std::wstring());
 			DWORD handle = 0;
 			const DWORD size = ::GetFileVersionInfoSizeW(a_path.c_str(), &handle);
 			if (size == 0) { return std::wstring(); }
@@ -269,7 +272,7 @@ namespace imguihost
 			if (!::GetFileVersionInfoW(a_path.c_str(), 0, size, data.data())) { return std::wstring(); }
 			struct Lang { WORD lang, cp; } *langs = nullptr;
 			UINT len = 0;
-			if (!::VerQueryValueW(data.data(), L"\\VarFileInfo\\Translation", reinterpret_cast<void**>(&langs), &len) || len < sizeof(Lang))
+			if (!::VerQueryValueW(data.data(), L"\\VarFileInfo\\Translation", reinterpret_cast<void**>(&langs), &len) || !langs || len < sizeof(Lang))
 			{
 				return std::wstring();
 			}
@@ -308,7 +311,7 @@ namespace imguihost
 			std::error_code ec;
 			const std::filesystem::path ini = game / L"enblocal.ini";
 			if (!std::filesystem::exists(ini, ec)) { return std::wstring(); }
-			for (const wchar_t* name : { L"d3d11.dll", L"dxgi.dll" })
+			for (const wchar_t* name : { L"d3d11.dll", L"dxgi.dll" })   // nonnull: a list of two string literals
 			{
 				HMODULE m = ::GetModuleHandleW(name);
 				if (!m) { continue; }

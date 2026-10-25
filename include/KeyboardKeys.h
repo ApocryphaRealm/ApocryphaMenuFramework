@@ -30,7 +30,7 @@ namespace keyboardkeys
 {
 	// Four character rows and one row of actions. The action row is index 4; its columns are fixed so the D-pad lands on
 	// them predictably.
-	inline constexpr const char* kRows[4] = { "1234567890", "qwertyuiop", "asdfghjkl", "zxcvbnm-'" };
+	inline constexpr const char* kRows[4] = { "1234567890", "qwertyuiop", "asdfghjkl", "zxcvbnm-'" };   // nonnull: constexpr table of string literals
 	inline constexpr int kActionRow = 4;
 	enum Action : int { kShift = 0, kSpace, kBack, kClear, kDone, kActionCount };
 	inline constexpr int kRowCount = 5;
@@ -70,7 +70,7 @@ namespace keyboardkeys
 		KeyGrid g;
 		for (int r = 0; r < 4; ++r)
 		{
-			for (const char* p = kRows[r]; *p; ++p)
+			for (const char* p = kRows[r]; *p; ++p)   // nonnull: p starts at a kRows string literal and only steps up to its terminator
 			{
 				char c = *p;
 				if (a_shift && c >= 'a' && c <= 'z') { c = static_cast<char>(c - 'a' + 'A'); }
@@ -158,7 +158,7 @@ namespace keyboardkeys
 				const KeyRect rect{ at, ImVec2(at.x + KeyWidth(r, c, a_k), at.y + a_k) };
 				if (a_rects && c < kMaxCols) { a_rects[r][c] = rect; }
 				const bool over = a_mouse && a_mouse->hover && rect.Contains(a_mouse->pos);
-				const bool held = over && r == a_mouse->heldRow && c == a_mouse->heldCol;
+				const bool held = over && a_mouse && r == a_mouse->heldRow && c == a_mouse->heldCol;
 				int pushed = 0;
 				if (cursor)
 				{

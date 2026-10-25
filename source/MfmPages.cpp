@@ -305,7 +305,7 @@ namespace mfmpages
 				RetryUnresolved();
 				mcmstyle::PageScope scope;
 				ImGui::PushID(g_treeGeneration);
-				for (const mfm::Node* g : { &g_mod, &g_config })
+				for (const mfm::Node* g : { &g_mod, &g_config })   // nonnull: the list is the addresses of two globals
 				{
 					if (mfm::CountFiles(*g) == 0) { continue; }
 					mcmstyle::Heading(g == &g_mod ? strings::TR("AMF_MfmGroupMod", "Mod") : strings::TR("AMF_MfmGroupConfig", "Config"));

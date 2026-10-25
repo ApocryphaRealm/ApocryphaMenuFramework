@@ -24,7 +24,7 @@ namespace mcmstyle
 	{
 		ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
 		ImGui::PushTextWrapPos(0.0f);
-		ImGui::TextUnformatted((std::string(a_icon) + "  " + a_text).c_str());
+		ImGui::TextUnformatted(((a_icon ? std::string(a_icon) + "  " : std::string()) + a_text).c_str());
 		ImGui::PopTextWrapPos();
 		ImGui::PopStyleColor();
 	}

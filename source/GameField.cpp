@@ -45,6 +45,7 @@ namespace gamefield
 								   kJournal = "Journal Menu", kConsole = "Console";
 
 		// Names a menu in the UI's stack can be matched against (the generic adapter names any other one by its movie).
+		// nonnull: constexpr table of string literals only
 		constexpr const char* kKnownMenus[] = { "InventoryMenu", "ContainerMenu", "BarterMenu", "GiftMenu", "MagicMenu", "MapMenu",
 			"Crafting Menu", "Journal Menu", "CustomMenu", "RaceSex Menu", "Console", "HUD Menu", "Cursor Menu", "MessageBoxMenu",
 			"Book Menu", "Sleep/Wait Menu", "Tween Menu", "Lockpicking Menu", "Training Menu", "Dialogue Menu", "FavoritesMenu",
@@ -60,8 +61,10 @@ namespace gamefield
 		// ---- candidate member paths: asked of the running movie, never assumed (rule 30) -------------------
 		// SkyUI's InventoryLists (item menus and the magic menu) and its SearchWidget (startInput / endInput /
 		// textField), the map menu's showLocationFinder, as mapped from Virtual Keyboard (158716).
+		// nonnull: constexpr table of string literals only
 		constexpr const char* kSearchCandidates[] = { "_root.Menu_mc.inventoryLists.searchWidget",
 			"_root.Menu_mc.InventoryLists_mc.searchWidget", "_root.Menu_mc.inventoryLists.panelContainer.searchWidget" };
+		// nonnull: constexpr table of string literals only
 		constexpr const char* kListCandidates[] = { "_root.Menu_mc.inventoryLists.itemList", "_root.Menu_mc.InventoryLists_mc.itemList",
 			"_root.Menu_mc.inventoryLists.panelContainer.itemList" };
 		// SkyUI's map (map.swf, Map.MapMenu): the menu object is _root.WorldMap; its LocalMapMenu.showLocationFinder() opens the
@@ -71,7 +74,7 @@ namespace gamefield
 		// batch 12 probe found _root.WorldMap._locationFinder; the old candidates _root.Menu_mc / MapMenu_mc / Map_mc never existed).
 		constexpr const char* kMapOwner = "_root.WorldMap";
 		constexpr const char* kMapFinder = "_root.WorldMap._locationFinder";
-		constexpr const char* kVkClips[] = { "_root.items_vk", "_root.map_vk", "_root.enchanting_vk" };   // 158716's injected clips
+		constexpr const char* kVkClips[] = { "_root.items_vk", "_root.map_vk", "_root.enchanting_vk" };   // 158716's injected clips; nonnull: constexpr table of string literals only
 
 		enum class Kind { kItem, kMagic, kMap, kEnchant, kMcm, kGeneric };
 

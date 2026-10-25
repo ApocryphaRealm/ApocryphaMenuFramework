@@ -939,6 +939,7 @@ namespace inipages
 					}
 				}
 				mod.gameSettings = !plugin.empty();
+				// nonnull: known points into the constexpr kKnown table (only assigned &k from it above), whose names are literals
 				mod.name = known ? std::string(known->name) : (!plugin.empty() ? plugin : (!dll.empty() ? Label(dll, false) : Label(base, false)));
 				mod.entry = mod.name + (mod.gameSettings ? " (INI, game settings)" : " (INI)");
 				for (const std::string& n : { base, dll, mod.name, plugin.empty() ? std::string() : base })
@@ -1086,9 +1087,10 @@ namespace inipages
 		const std::set<std::string> onSet = OnSet();
 		bool anyShown = false;
 		// 2.2.0: alphabetical by the name shown, within each folder, so the one INI wanted is easy to find
-		std::vector<Mod*> sorted;
+		std::vector<Mod*> sorted;   // nonnull: filled only by the push_back(&m) over g_mods on the next lines
 		sorted.reserve(g_mods.size());
 		for (Mod& m : g_mods) { sorted.push_back(&m); }
+		// nonnull: a and b are elements of sorted, which holds only &m from g_mods
 		std::stable_sort(sorted.begin(), sorted.end(), [](const Mod* a, const Mod* b) { return Lower(a->entry) < Lower(b->entry); });
 		for (const bool data : { false, true })
 		{

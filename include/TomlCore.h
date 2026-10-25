@@ -335,10 +335,15 @@ namespace tomlcore
 			const std::vector<std::string>* lines = nullptr;
 			std::size_t ln = 0;
 			std::size_t col = 0;
-			bool Eof() const { return ln >= lines->size(); }
-			bool Eol() const { return Eof() || col >= (*lines)[ln].size(); }
-			char Peek() const { return Eol() ? '\0' : (*lines)[ln][col]; }
-			const std::string& L() const { return (*lines)[ln]; }
+			// a Cur with no document (lines unset) reads as an empty one: at its end, every line empty
+			bool Eof() const { return !lines || ln >= lines->size(); }
+			bool Eol() const { return !lines || ln >= lines->size() || col >= (*lines)[ln].size(); }
+			char Peek() const { return (!lines || Eol()) ? '\0' : (*lines)[ln][col]; }
+			const std::string& L() const
+			{
+				static const std::string kNoLine;
+				return lines ? (*lines)[ln] : kNoLine;
+			}
 		};
 
 		inline void SkipSpace(Cur& a_c) { while (!a_c.Eol() && (a_c.Peek() == ' ' || a_c.Peek() == '\t')) { ++a_c.col; } }

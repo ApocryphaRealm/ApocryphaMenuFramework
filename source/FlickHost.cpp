@@ -654,10 +654,11 @@ namespace flick
 		std::set<std::string> g_notes;
 		void NoteOnce(const char* a_what, const char* a_why)
 		{
+			AMF_REQUIRE_VOID(a_what);
 			std::lock_guard lock(g_noteLock);
 			if (g_notes.insert(a_what).second)
 			{
-				logger::info("flick: a FLICK mod called {} - {}", a_what, a_why);
+				logger::info("flick: a FLICK mod called {} - {}", a_what, AMF_OR(a_why, "?"));
 			}
 		}
 
@@ -1399,7 +1400,11 @@ namespace flick
 		bool IsWindowAppearing() { return ImGui::IsWindowAppearing(); }
 		void PushTextWrapPos(float a_x) { ImGui::PushTextWrapPos(a_x); }
 		void PopTextWrapPos() { ImGui::PopTextWrapPos(); }
-		void SetNavCursorVisible(bool a_v) { GImGui->NavDisableHighlight = !a_v; }
+		void SetNavCursorVisible(bool a_v)
+		{
+			AMF_REQUIRE_VOID(GImGui);
+			GImGui->NavDisableHighlight = !a_v;
+		}
 		void DrawCircle(const ImVec2& c, float r, const ImVec4& col, int seg, float t) { ImGui::GetWindowDrawList()->AddCircle(c, r, U32(col), seg, t); }
 		void DrawCircleFilled(const ImVec2& c, float r, const ImVec4& col, int seg) { ImGui::GetWindowDrawList()->AddCircleFilled(c, r, U32(col), seg); }
 		void DrawScreenCircle(const ImVec2& c, float r, ImU32 col, int seg, float t) { ImGui::GetForegroundDrawList()->AddCircle(c, r, col, seg, t); }

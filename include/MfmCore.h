@@ -134,7 +134,7 @@ namespace mfm
 
 			bool End() const { return i >= s.size(); }
 			char Peek(std::size_t a_off = 0) const { return i + a_off < s.size() ? s[i + a_off] : '\0'; }
-			bool StartsWith(const char* a_p) const { return s.compare(i, std::strlen(a_p), a_p) == 0; }
+			bool StartsWith(const char* a_p) const { return a_p && s.compare(i, std::strlen(a_p), a_p) == 0; }
 			void SkipSpaces() { while (!End() && (s[i] == ' ' || s[i] == '\t')) { ++i; } }
 			// spaces, then an optional comment, then the end of the line (or the file); false if anything else is there
 			bool EndOfLine()
@@ -354,7 +354,7 @@ namespace mfm
 		ss << in.rdbuf();
 		std::map<std::string, std::string> keys;
 		if (!ParseTopLevelStrings(ss.str(), keys, a_err)) { return false; }
-		auto get = [&](const char* a_k) { const auto it = keys.find(a_k); return it == keys.end() ? std::string() : it->second; };
+		auto get = [&](const char* a_k) { if (!a_k) { return std::string(); } const auto it = keys.find(a_k); return it == keys.end() ? std::string() : it->second; };
 		Function f;
 		f.dll = get("dll");
 		f.api = get("api");
@@ -395,7 +395,7 @@ namespace mfm
 		inline int SehFilter(unsigned long a_code, unsigned long* a_out)
 		{
 			if (a_code == 0xE06D7363ul) { return EXCEPTION_CONTINUE_SEARCH; }   // MSVC's C++ exception
-			*a_out = a_code;
+			if (a_out) { *a_out = a_code; }
 			return EXCEPTION_EXECUTE_HANDLER;
 		}
 

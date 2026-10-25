@@ -43,7 +43,7 @@ namespace artplate
 	inline void NineSlice(ImDrawList* a_dl, const skin::ArtImage& a_img, float a_cs, float a_dcs, const ImRect& a_bb, ImU32 a_col,
 				   bool a_centre = true, bool a_tile = false)
 	{
-		if (!a_img.srv || a_img.w <= 0.0f || a_img.h <= 0.0f || a_cs <= 0.0f || a_dcs <= 0.0f) { return; }
+		if (!a_dl || !a_img.srv || a_img.w <= 0.0f || a_img.h <= 0.0f || a_cs <= 0.0f || a_dcs <= 0.0f) { return; }
 		const float W = a_img.w, H = a_img.h, cs = a_cs, dcs = a_dcs;
 		const float u1 = cs / W, u2 = (W - cs) / W, v1 = cs / H, v2 = (H - cs) / H;
 		const float x0 = a_bb.Min.x, x1 = x0 + dcs, x3 = a_bb.Max.x, x2 = x3 - dcs;
@@ -96,7 +96,7 @@ namespace artplate
 	// circles art at either end of it"): a cap the art's width tall at each end of the long side, the middle between them.
 	inline void ThreeSlice(ImDrawList* a_dl, const skin::ArtImage& a_img, const ImRect& a_bb, ImU32 a_col, bool a_tile)
 	{
-		if (!a_img.srv || a_img.w <= 0.0f || a_img.h <= a_img.w) { return; }
+		if (!a_dl || !a_img.srv || a_img.w <= 0.0f || a_img.h <= a_img.w) { return; }
 		const auto tex = reinterpret_cast<ImTextureID>(a_img.srv);
 		const bool vertical = a_bb.GetHeight() >= a_bb.GetWidth();
 		const float across = vertical ? a_bb.GetWidth() : a_bb.GetHeight();
@@ -137,7 +137,7 @@ namespace artplate
 	inline bool DrawPlatePart(ImDrawList* a_dl, const skin::ArtPart& a_part, const ImRect& a_bb, ImU32 a_col, bool a_outline,
 							  bool a_shaped, ImU32 a_lineCol, float a_lineWidth, float a_rounding, ImU32 a_panel, ImU32 a_edgeCol)
 	{
-		if (a_bb.GetWidth() < 2.0f || a_bb.GetHeight() < 2.0f) { return false; }
+		if (!a_dl || a_bb.GetWidth() < 2.0f || a_bb.GetHeight() < 2.0f) { return false; }
 		const float dcs = ScreenCorner(a_part, a_bb);
 		auto shape = [&](const ImRect& r, float c, ImU32 col) {
 			if (!a_part.threeSlice) { NineSlice(a_dl, a_part.main, a_part.corner, c, r, col); }

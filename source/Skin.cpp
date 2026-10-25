@@ -175,21 +175,18 @@ namespace skin
 		ArtImage CachedTexture(const std::string& a_resolved)
 		{
 			static std::map<std::string, ArtImage> cache;
-			auto it = cache.find(a_resolved);
-			if (it == cache.end())
+			if (const auto it = cache.find(a_resolved); it != cache.end()) { return it->second; }
+			ArtImage img;
+			std::error_code ec;
+			if (std::filesystem::exists(a_resolved, ec))
 			{
-				ArtImage img;
-				std::error_code ec;
-				if (std::filesystem::exists(a_resolved, ec))
-				{
-					ImVec2 size{ 0.0f, 0.0f };
-					img.srv = consumer::LoadTexture(a_resolved.c_str(), &size, true);
-					if (img.srv) { img.w = size.x; img.h = size.y; }
-					else { logger::warn("skin: \"{}\" could not be decoded - is it a real 32-bit RGBA PNG?", a_resolved); }
-				}
-				it = cache.emplace(a_resolved, img).first;
+				ImVec2 size{ 0.0f, 0.0f };
+				img.srv = consumer::LoadTexture(a_resolved.c_str(), &size, true);
+				if (img.srv) { img.w = size.x; img.h = size.y; }
+				else { logger::warn("skin: \"{}\" could not be decoded - is it a real 32-bit RGBA PNG?", a_resolved); }
 			}
-			return it->second;
+			cache.emplace(a_resolved, img);
+			return img;
 		}
 
 		// A control kind's part (Box .. Cursor) and its extra layers. Missing extras are not errors.

@@ -76,12 +76,13 @@ namespace mainmenudriver
 		// DevBench itself uses so read ops answer synchronously from the listener thread.
 		std::string RunOnMainThreadBlocking(std::function<std::string()> a_fn)
 		{
+			AMF_REQUIRE(a_fn, "{\"ok\":false,\"error\":\"no job to run\"}");
 			auto state = std::make_shared<std::tuple<std::mutex, std::condition_variable, std::string, bool>>();
 
 			auto* tasks = SKSE::GetTaskInterface();  // 2.3.0: null before SKSE::Init has queried it
 			AMF_REQUIRE(tasks, "{\"ok\":false,\"error\":\"SKSE task interface unavailable\"}");
 			tasks->AddTask([state, fn = std::move(a_fn)]() {
-				std::string result = fn();
+				std::string result = fn ? fn() : std::string();   // 2.3.0: an empty job answers "" instead of throwing on the main thread
 				{
 					std::scoped_lock l(std::get<0>(*state));
 					std::get<2>(*state) = std::move(result);

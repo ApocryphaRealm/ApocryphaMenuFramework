@@ -79,6 +79,7 @@ namespace slotguard
 	// The slot's value word. A Papyrus Variable is { type word (8), value (8) } - sizeof 0x10, asserted by CommonLib.
 	[[nodiscard]] inline std::uintptr_t RawValue(const void* a_variable) noexcept
 	{
+		if (!a_variable) { return 0; }   // no slot: reads as "none" (Classify's a_value == 0)
 		return reinterpret_cast<const std::uintptr_t*>(a_variable)[1];
 	}
 }

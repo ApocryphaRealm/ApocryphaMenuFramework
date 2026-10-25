@@ -34,24 +34,24 @@ namespace mcmloader
 
 		struct RawRule
 		{
-			const char* pattern;
-			const char* group;
+			const char* pattern;   // nonnull: RawRule values exist only in the constexpr kRawRules, whose generated rows all give string literals
+			const char* group;     // nonnull: as pattern - kRawRules rows only, each a string literal
 			float weight;
 		};
 
 		// Credit: MO2 Modlist Manager's TEXT_SIGNALS (GPL-3.0, as AMF) - see the file's header for the commit.
-		constexpr RawRule kRawRules[] = {
+		constexpr RawRule kRawRules[] = {   // nonnull: constexpr table; every row of McmCategoryRules.inc gives string literals for pattern and group
 #include "McmCategoryRules.inc"
 		};
 
 		// The separators, in the order a sort makes them. key = the rules' group; the TR key is "AMF_McmCat_" + key.
 		struct Group
 		{
-			const char* key;
+			const char* key;       // nonnull: Group values exist only in the constexpr kGroups, every field a string literal
 			const char* trKey;
-			const char* english;
+			const char* english;   // nonnull: as key - kGroups rows only, each a string literal
 		};
-		constexpr Group kGroups[] = {
+		constexpr Group kGroups[] = {   // nonnull: constexpr table of string literals only
 			{ "Interface", "AMF_McmCat_Interface", "Interface" },
 			{ "Controls", "AMF_McmCat_Controls", "Controls" },
 			{ "Camera", "AMF_McmCat_Camera", "Camera" },
@@ -432,6 +432,7 @@ namespace mcmloader
 				}
 				sep = separatorOf.emplace(m.group, id).first;
 			}
+			// nonnull: sep is the find result tested != end() above, or emplace(...).first - never end()
 			if (personalization::SendTo(entries, m.entry, sep->second)) { result.placed.emplace_back(m.entry, GroupName(m.group)); }
 		}
 
@@ -519,7 +520,7 @@ namespace mcmloader
 				layout.push_back({ { "separator", row.displayName }, { "id", row.modName }, { "menus", json::array() } });
 				current = &layout.back()["menus"];
 			}
-			else { (row.depth > 0 ? *current : loose).push_back(row.displayName); }
+			else { (row.depth > 0 && current ? *current : loose).push_back(row.displayName); }
 		}
 		out["separators"] = layout;
 		out["loose"] = loose;

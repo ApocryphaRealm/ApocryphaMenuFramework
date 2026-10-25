@@ -8,6 +8,7 @@
 #include "Theme.h"
 
 #include "utils/Logger.h"
+#include "utils/NullGuard.h"
 
 #include <imgui.h>
 #include <imgui_internal.h>
@@ -81,6 +82,7 @@ namespace arthooks
 			{
 				if (ImGui::GetColorU32(c) == a_col) { return -1; }   // rows and headers keep ImGui's own look
 			}
+			AMF_REQUIRE(GImGui, -1);   // no context: leave ImGui's own look
 			const ImGuiContext& g = *GImGui;
 			if (g.LastItemData.InFlags & ImGuiItemFlags_Inputable) { return static_cast<int>(ArtKind::kBox); }
 			for (const ImGuiCol c : { ImGuiCol_Button, ImGuiCol_ButtonHovered, ImGuiCol_ButtonActive })
@@ -98,6 +100,7 @@ namespace arthooks
 		// height the part's own at 1080p. Tinted with the separator colour.
 		bool DrawSection(ImDrawList* a_dl, const ImRect& a_bb, ImU32 a_col)
 		{
+			AMF_REQUIRE(a_dl, false);
 			const skin::ArtPart* part = skin::Part(ArtKind::kSection);
 			if (!part || a_bb.GetWidth() < 4.0f) { return false; }
 			float k = (part->drawCorner > 0.0f ? part->drawCorner / std::max(1.0f, part->corner) : 0.5f) * Unit();
@@ -128,6 +131,7 @@ namespace arthooks
 		// An arrow: the part points right and is turned to the direction asked, filling the square ImGui would fill.
 		bool DrawArrow(ImDrawList* a_dl, const ImRect& a_bb, ImU32 a_col, int a_dir)
 		{
+			AMF_REQUIRE(a_dl, false);
 			const skin::ArtPart* part = skin::Part(ArtKind::kArrow);
 			// 2.1.6: the Arrows colour (Text until picked). Only the text-coloured arrows take it - a disabled row's dim one stays.
 			const bool picked = theme::RolePicked(theme::kRoleArrows) && a_col == ImGui::GetColorU32(ImGuiCol_Text);

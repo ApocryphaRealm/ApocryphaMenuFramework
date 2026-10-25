@@ -4,6 +4,7 @@
 #include "Renderer.h"
 #include "TextInputCore.h"
 #include "utils/Logger.h"
+#include "utils/NullGuard.h"
 
 #include <imgui.h>
 
@@ -105,6 +106,7 @@ namespace textinput
 		// ANSI bytes (1, or 2 for a DBCS character) -> UTF-16 units appended to a_out. Returns how many.
 		int AnsiToUnits(const char* a_bytes, int a_len, std::uint16_t a_out[4])
 		{
+			AMF_REQUIRE(a_bytes, 0);
 			wchar_t w[4]{};
 			int n = MultiByteToWideChar(InputCodePage(), 0, a_bytes, a_len, w, 4);
 			if (n <= 0) { n = MultiByteToWideChar(CP_ACP, 0, a_bytes, a_len, w, 4); }

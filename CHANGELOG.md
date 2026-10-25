@@ -133,6 +133,24 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
   takes a checked pointer from its file lookup instead of reading through the iterator. No behaviour changes for valid
   input.
 - The null-check gate's count falls from 339 to 172; the baseline is lowered to 172.
+- **The rest of AMF's own code checks what it reads** (internal class, 172 reads in 34 files). The precise slider
+  checks ImGui's context and its value, min and max pointers (a null value pointer returns before ImGui's own slider
+  would read it); Prisma's value compare checks both end pointers; the export stub builder assembles each thunk in a
+  local array and copies it to the page in one go (the same 28 bytes). Draw helpers (art plates, art hooks, toggles,
+  icons, the on-screen keyboard grid, glyph coverage) return on a null draw list, window, font or mouse; the
+  translation lookups, the INI number reader and the ANSI text converter refuse a null key or buffer; the MCM sort,
+  TOML and MFM readers, the slot guard and the main-menu driver refuse a null pointer or job. Text that reaches a string
+  goes through `amf::Str`. Where a pointer cannot be null its declaration says why: constexpr tables of literals (known
+  menus, keyboard rows and layouts, sort rules and groups, theme candidates, System row pages), the consumer window list
+  (each interface made with `make_unique`), Prisma's config list (only tested `LoadOne` results), the direct-open table
+  (literal rows). No behaviour changes for valid input.
+- **The null-check count is 0, and the gate now fails on any unchecked read.** `tools/null_check_gate.py` no longer
+  passes a baseline (the ramp went 1,289 -> 725 -> 672 -> 565 -> 528 -> 339 -> 172 -> 0 during 2.3.0);
+  `tools/null-check-baseline.json` and `null-check-baseline-2026-10-25.json` are kept as the record and marked retired.
+  The audit's summary reads `total_unchecked: 0`: 2,458 pointer reads (1,572 guarded, 873 non-null by construction or
+  by a written `// nonnull:` reason, 13 annotated on the read), and every exported pointer parameter CHECKED (1,170) or
+  NULLABLE-BY-API (204). Every `// nonnull:` reason and contract is listed for review in the plan folder
+  (`4. plans\amf-null-checks\NONNULL-REVIEW.md`).
 
 ### Fixed
 - **The session's first open spent 30 ms of one frame in AMF before the menu drew** (frame profile, combined run

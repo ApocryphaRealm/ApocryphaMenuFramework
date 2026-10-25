@@ -11,6 +11,7 @@
 #include "Strings.h"
 #include "Theme.h"
 #include "utils/Logger.h"
+#include "utils/NullGuard.h"
 #include "utils/ToggleSwitch.h"
 
 #include <imgui.h>
@@ -458,6 +459,7 @@ namespace tomlpages
 		// pointer is on it, so the page does not scroll under it (ImGui's key ownership, as AMF's sliders do).
 		int WheelOnGroup()
 		{
+			AMF_REQUIRE(GImGui, 0);
 			ImGuiContext& g = *GImGui;
 			if (!ImGui::IsItemHovered() || g.WheelingWindow != nullptr) { return 0; }
 			ImGui::SetKeyOwner(ImGuiKey_MouseWheelY, ImGui::GetID("##toml-wheel"));
@@ -825,10 +827,10 @@ namespace tomlpages
 				np.folder = folder;
 				np.gso = Lower(folder) == Lower(kGsoFolder);
 				np.base = folder.empty() ? g_files[fi].base : folder;
+				np.files.push_back(fi);
 				g_pages.push_back(std::move(np));
-				pg = g_pages.end() - 1;
 			}
-			pg->files.push_back(fi);
+			else { pg->files.push_back(fi); }
 		}
 
 		// names, entries and tabs
@@ -1089,14 +1091,14 @@ namespace tomlpages
 				const Live live = gso ? LiveOf(e.key) : Live{};
 				const Control control = gso ? gsocore::ControlFor(live.type, e) : tomlcore::ControlForValue(e);
 				out += (out.empty() ? "" : ",") + std::string("{\"name\":") + J(e.id) + ",\"table\":" + J(f.doc.sections[e.section].name) + ",\"value\":" + J(e.raw) +
-					   ",\"toml\":\"" + tomlcore::TypeName(e.value.type) + "\",\"control\":" + J(tomlcore::ControlName(control)) +
+					   ",\"toml\":\"" + tomlcore::TypeName(e.value.type) + "\",\"control\":" + J(amf::Str(tomlcore::ControlName(control))) +
 					   ",\"editable\":" + (e.Editable() ? "true" : "false") + ",\"help\":" + J(e.help) +
 					   // 2.3.0 (settings presets): the value as the page's box takes it back through set - a string unquoted
 					   ",\"input\":" + J(e.value.type == tomlcore::TomlType::kString ? e.value.s : e.raw);
 				if (gso)
 				{
 					const int w = gsocore::Winner(docs, e.key);
-					out += ",\"game\":\"" + std::string(gsocore::GameTypeName(live.type)) + "\",\"known\":" + (live.setting ? "true" : "false") + ",\"live\":" +
+					out += ",\"game\":\"" + std::string(amf::Str(gsocore::GameTypeName(live.type))) + "\",\"known\":" + (live.setting ? "true" : "false") + ",\"live\":" +
 						   J(LiveText(live, ShownDecimals(e.value))) + ",\"matches\":" + (gsocore::Matches(live.type, e.value.type) ? "true" : "false") +
 						   ",\"winner\":" + J(w >= 0 ? g_files[p.files[static_cast<std::size_t>(w)]].name : std::string());
 				}
