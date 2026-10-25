@@ -14,6 +14,7 @@
 #include "Strings.h"
 #include "Theme.h"
 #include "utils/Logger.h"
+#include "utils/NullGuard.h"
 #include "utils/ToggleSwitch.h"
 
 #include <imgui.h>
@@ -375,7 +376,7 @@ namespace flick
 			const void* Original() const { return _old; }
 
 		private:
-			OldTool0225* _old;
+			OldTool0225* _old;   // nonnull: the one construction (RegisterTool, `new OldToolAdapter(...)`) passes a_tool after its `if (!a_tool) { return; }`
 			std::string  _plugin;
 		};
 
@@ -806,6 +807,7 @@ namespace flick
 		std::function<void()> PageFn(Tool* a_tool, std::string a_helpPage)
 		{
 			return [tool = a_tool, helpPage = std::move(a_helpPage)]() {
+				AMF_REQUIRE_VOID(tool);   // both callers pass a registered tool; a null page draws nothing
 				// FLICK's "tool selected": the page that becomes the shown one gets OnOpen, the one it replaces OnClose
 				g_drawnThisFrame = tool;
 				if (g_active != tool)
@@ -1130,7 +1132,7 @@ namespace flick
 		void HelpMarker(const char* a_desc)
 		{
 			// AMF's look: the help of the item before it goes to the help bar (or its popup), as on converted MCM pages
-			if (a_desc && *a_desc) { helpbar::OfferForLastItem(Tr(a_desc)); }
+			if (a_desc && *a_desc) { helpbar::OfferForLastItem(amf::Str(Tr(a_desc))); }
 		}
 		void PushID_Str(const char* a_id) { ImGui::PushID(a_id); }
 		void PushID_Int(int a_id) { ImGui::PushID(a_id); }
@@ -1354,7 +1356,7 @@ namespace flick
 		// stood over the page all the time ("Reset Default Settings" over the switches, 2026-10-11 test).
 		void SetTooltip(const char* a_t)
 		{
-			if (a_t && *a_t) { helpbar::OfferForLastItem(Tr(a_t)); }
+			if (a_t && *a_t) { helpbar::OfferForLastItem(amf::Str(Tr(a_t))); }
 		}
 		void Indent(float a_w) { ImGui::Indent(a_w); }
 		void Unindent(float a_w) { ImGui::Unindent(a_w); }
@@ -1641,8 +1643,8 @@ namespace flick
 		{
 			// the camera controls' own list is FLICK's; the mod's extra shortcuts (its own text) still reach the help bar
 			std::string help;
-			if (IsCString(a_kbm) && *a_kbm) { help = Tr(a_kbm); }
-			if (IsCString(a_gp) && *a_gp) { help += (help.empty() ? "" : "\n") + std::string(Tr(a_gp)); }
+			if (IsCString(a_kbm) && *a_kbm) { help = amf::Str(Tr(a_kbm)); }
+			if (IsCString(a_gp) && *a_gp) { help += (help.empty() ? "" : "\n") + std::string(amf::Str(Tr(a_gp))); }
 			if (!help.empty()) { helpbar::OfferForLastItem(help); }
 		}
 		void SetActorFrozen(const char*, void*, bool) { NoteOnce("SetActorFrozen", "holding actors still is FLICK's own system - the actor is not touched"); }

@@ -147,6 +147,7 @@ namespace tomlcore
 		inline bool Digits(const std::string& a_t, bool (*a_ok)(char), std::string& a_out)
 		{
 			a_out.clear();
+			if (!a_ok) { return false; }   // no digit test: nothing can be read as digits (every caller passes one)
 			if (a_t.empty() || a_t.front() == '_' || a_t.back() == '_') { return false; }
 			for (std::size_t i = 0; i < a_t.size(); ++i)
 			{

@@ -2,6 +2,7 @@
 
 #include "DevBench/DevBenchAPI.h"
 #include "utils/Logger.h"
+#include "utils/NullGuard.h"
 
 #include <chrono>
 #include <condition_variable>
@@ -159,6 +160,7 @@ namespace mainmenudriver
 
 		void MainMenuTool(void*, const char* a_argsJson, void* a_sink, DevBenchAPI::WriteFn a_write)
 		{
+			AMF_REQUIRE_VOID(a_write);   // DevBench always passes its writer; without one there is no one to answer
 			const std::string args = a_argsJson ? a_argsJson : "{}";
 			const std::string op = JsonStr(args, "op");
 

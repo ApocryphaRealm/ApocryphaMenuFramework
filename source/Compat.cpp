@@ -4,6 +4,7 @@
 #include "Registry.h"
 #include "Renderer.h"
 #include "utils/Logger.h"
+#include "utils/NullGuard.h"
 
 #include <imgui.h>
 
@@ -61,7 +62,7 @@ namespace compat
 
 		for (const EventEntry& entry : snapshot)
 		{
-			entry.callback(static_cast<int>(a_event));
+			amf::Call(entry.callback)(static_cast<int>(a_event));   // a consumer's callback: skipped (warned once) if null
 		}
 	}
 
@@ -76,7 +77,7 @@ namespace compat
 		bool consumed = false;
 		for (const InputEntry& entry : snapshot)
 		{
-			if (entry.callback(a_event))
+			if (amf::Call(entry.callback)(a_event))   // a consumer's callback: a null one consumes nothing (warned once)
 			{
 				consumed = true;
 			}

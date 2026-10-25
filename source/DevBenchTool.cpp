@@ -30,6 +30,7 @@
 #include "Persistence.h"
 #include <cstdio>
 #include "utils/Logger.h"
+#include "utils/NullGuard.h"
 
 namespace renderer { void RequestFontRebuild(); }   // Renderer.cpp - at the next frame's start (2.2.4: setting textScale)
 
@@ -126,6 +127,7 @@ namespace devbenchtool
 		// thread, registry::Snapshot is thread-safe), so no extra marshalling is needed.
 		void MenuTool(void*, const char* a_argsJson, void* a_sink, DevBenchAPI::WriteFn a_write)
 		{
+			AMF_REQUIRE_VOID(a_write);   // DevBench always passes its writer; without one there is no one to answer
 			const std::string args = a_argsJson ? a_argsJson : "{}";
 			const std::string op = JsonStr(args, "op");
 
@@ -696,6 +698,7 @@ namespace devbenchtool
 		// hung game where taskkill/Task Manager do not (see Watchdog.h).
 		void ProcessTool(void*, const char* a_argsJson, void* a_sink, DevBenchAPI::WriteFn a_write)
 		{
+			AMF_REQUIRE_VOID(a_write);   // DevBench always passes its writer; without one there is no one to answer
 			const std::string args = a_argsJson ? a_argsJson : "{}";
 			const std::string op = JsonStr(args, "op");
 
@@ -800,12 +803,14 @@ namespace devbenchtool
 		// main thread through SKSE's task interface.
 		void McmTool(void*, const char* a_argsJson, void* a_sink, DevBenchAPI::WriteFn a_write)
 		{
+			AMF_REQUIRE_VOID(a_write);   // DevBench always passes its writer; without one there is no one to answer
 			const std::string result = mcmloader::ToolJson(a_argsJson ? a_argsJson : "{}");
 			a_write(a_sink, result.c_str());
 		}
 
 		void KeybindTool(void*, const char* a_argsJson, void* a_sink, DevBenchAPI::WriteFn a_write)
 		{
+			AMF_REQUIRE_VOID(a_write);   // DevBench always passes its writer; without one there is no one to answer
 			const std::string args = a_argsJson ? a_argsJson : "{}";
 			const std::string op = JsonStr(args, "op");
 

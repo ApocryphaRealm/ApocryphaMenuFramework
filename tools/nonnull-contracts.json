@@ -26,6 +26,14 @@
       "reason": "spdlog creates the default logger during static initialisation and AMF only ever replaces it with a constructed logger (never set_default_logger(nullptr)); the logger:: macros go through it"
     },
     {
+      "callee": "^amf::Str$",
+      "reason": "include/utils/NullGuard.h: returns its argument when it is non-null, else the literal \"\" - never null"
+    },
+    {
+      "callee": "^amf::Or$",
+      "reason": "include/utils/NullGuard.h (AMF_OR): returns its argument when it is non-null, else the fallback, which is a string literal by type (const char (&)[N]) - never null"
+    },
+    {
       "callee": "strings::TR$",
       "reason": "Strings.cpp: returns the translation's c_str() or the caller's English text; every call site passes a string literal as the English text"
     }

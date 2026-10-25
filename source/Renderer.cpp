@@ -3083,7 +3083,7 @@ namespace renderer
 							const char* places[] = { TR("AMF_FlickInAmf", "This menu"), TR("AMF_FlickInFlick", "FLICK's own window") };
 							for (const auto& c : consumers)
 							{
-								std::vector<const flick::ToolInfo*> pages;
+								std::vector<const flick::ToolInfo*> pages;   // nonnull: only &t of the loop on the next line is pushed
 								for (const auto& t : tools) { if (t.dll == c.dll) { pages.push_back(&t); } }
 								const std::string shown = !c.name.empty() ? c.name : c.dll;
 								ImGui::PushID(c.dll.c_str());

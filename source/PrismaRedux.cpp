@@ -12,6 +12,7 @@
 #include "Strings.h"
 #include "Theme.h"
 #include "utils/Logger.h"
+#include "utils/NullGuard.h"
 #include "utils/ToggleSwitch.h"
 
 #include <imgui.h>
@@ -624,8 +625,9 @@ namespace prisma
 				std::scoped_lock lock(g_lock);
 				if (a_index >= g_configs.size()) { return; }
 				config = g_configs[a_index].get();
-				values = config->values;
+				if (config) { values = config->values; }
 			}
+			AMF_REQUIRE_VOID(config);   // Load pushes only configs LoadOne returned, so this is a guard, not a branch
 			helpbar::Want("prisma|" + config->modId + "|" + a_page);
 			mcmstyle::PageNote(icons::kInfo, mcmstyle::Fmt(strings::TR("AMF_PrismaNote",
 				"Read from %s's Prisma MCM Redux file. Changes are saved where Prisma MCM Redux keeps them, and the mod is told when you leave the page."),
@@ -660,6 +662,7 @@ namespace prisma
 				if (a_index >= g_configs.size()) { return; }
 				config = g_configs[a_index].get();
 			}
+			AMF_REQUIRE_VOID(config);   // Load pushes only configs LoadOne returned, so this is a guard, not a branch
 			mcmstyle::Heading(EventName(*config));
 			if (!config->aboutVersion.empty()) { ImGui::TextDisabled("%s", config->aboutVersion.c_str()); }
 			if (!config->author.empty())

@@ -252,7 +252,7 @@ namespace consumer
 
 	void DrawHudElements()
 	{
-		std::vector<HudCallback> due;
+		std::vector<HudCallback> due;   // nonnull: only callbacks tested non-null in the loop just below (`if (h.callback)`) are pushed
 		{
 			std::scoped_lock lock(g_lock);
 			due.reserve(g_hud.size());

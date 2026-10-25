@@ -576,7 +576,7 @@ namespace
 	// api-ms-win-core-* apiset by others, and a DLL-name filter silently misses the second kind.
 	struct Redirect
 	{
-		const char* name;
+		const char* name;   // nonnull: the one table of Redirects is kRedirects below, a const array whose every name is a string literal
 		void* replacement;
 	};
 
@@ -1013,7 +1013,7 @@ namespace smf_alias
 			}
 			// the images an unhooked import resolves into - kernel32, and kernelbase for forwarded exports
 			ImageRange(k32, g_k32Lo, g_k32Hi);
-			ImageRange(g_realW(L"kernelbase.dll"), g_kbLo, g_kbHi);
+			ImageRange(g_realW(L"kernelbase.dll"), g_kbLo, g_kbHi);   // nonnull: ok is true only when Resolve stored a non-null GetProcAddress result in g_realW (Resolve returns false on null)
 			logger::debug("SMF alias: kernel32 [{:#x}, {:#x}), kernelbase [{:#x}, {:#x}) - an import pointing elsewhere is another plugin's hook and is left alone",
 						  g_k32Lo, g_k32Hi, g_kbLo, g_kbHi);
 		}
