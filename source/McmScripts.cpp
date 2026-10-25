@@ -1500,6 +1500,96 @@ namespace mcmloader::scripts
 		// Quests already reported as holding an unsettled variable (one log line per quest, not one per pass).
 		std::set<RE::FormID> g_warnedUnstable;
 
+		// ------------------------------------------------------------------- the guarded attached-script lookup (2.3.0)
+		//
+		// WHY (a Nolvus user's crash on 2.2.3, Skyrim 1.5.97, 2026-10-25): discovery called vm->FindBoundObject(handle,
+		// "SKI_ConfigBase") for every quest. Inside that call the engine walked the scripts attached to QuickLootIE's MCM quest
+		// (handle 0xFFFFFE0EA001), met a script object whose type word read 0x72 and copied it as a smart pointer: "lock inc
+		// [rax]" with rax = 0x72 (SkyrimSE+12705B7), a write to address 0x72. The engine judges nothing before that write, and no
+		// check of ours can reach inside its call. So the list is read here instead, under the VM's own attachedScriptsLock (the
+		// lock that guards the table), every word judged by slotguard::JudgeScript before anything is copied; the smart-pointer
+		// copy (the only write) is made under the lock, on an object whose words all looked live. An unstable quest is left for
+		// a later pass (rule 17).
+		//
+		// Asked, not assumed (rule 30): until the table read has agreed once with the VM's own FindBoundObject, each config it
+		// finds is also looked up the engine's way and the two compared; a disagreement turns the table read off for the session
+		// (back to the engine call, as 2.2.3 did, with an error in the log), so a CommonLib layout that did not match this
+		// runtime could cost a guard, never a menu.
+		static_assert(sizeof(RE::BSScript::Internal::AttachedScript) == 8);
+		static_assert(sizeof(RE::BSFixedString) == 8);
+		static_assert(sizeof(RE::BSScript::ObjectTypeInfo) == slotguard::kTypeSpan);
+
+		enum class Bound
+		{
+			kNone,      // no script of that class on the handle
+			kFound,     // found; the out-parameter holds it
+			kUnstable,  // a word on the way could not be live: look again on a later pass
+		};
+
+		// 0 not yet compared with the engine's lookup, 1 agreed, -1 disagreed (the engine's lookup is used for the session)
+		std::atomic<int> g_tableRead{ 0 };
+
+		Bound FindBoundGuarded(RE::BSScript::Internal::VirtualMachine& a_vm, RE::VMHandle a_handle, const char* a_class,
+			std::uintptr_t a_pooled, ObjectPtr& a_out)
+		{
+			RE::BSSpinLockGuard locker(a_vm.attachedScriptsLock);
+			const auto it = a_vm.attachedScripts.find(a_handle);
+			if (it == a_vm.attachedScripts.end()) { return Bound::kNone; }
+			const auto& scripts = it->second;
+			const auto count = scripts.size();
+			if (count == 0) { return Bound::kNone; }
+			const auto data = scripts.data();
+			// a quest carries a few scripts; a count in the thousands, or a list that is not mapped, is a table being rewritten
+			if (count > 1024 || !data || !slotguard::Readable(data, count * sizeof(RE::BSScript::Internal::AttachedScript))) { return Bound::kUnstable; }
+			for (std::uint32_t i = 0; i < count; ++i)
+			{
+				const auto object = slotguard::AttachedPointer(slotguard::WordAt(reinterpret_cast<std::uintptr_t>(std::addressof(data[i]))));
+				if (object == 0) { continue; }  // an emptied slot
+				switch (slotguard::JudgeScript(object, a_class, a_pooled))
+				{
+				case slotguard::Script::kUnstable:
+					return Bound::kUnstable;
+				case slotguard::Script::kMatch:
+					a_out = ObjectPtr(reinterpret_cast<RE::BSScript::Object*>(object));  // the one write: its reference count, judged live, under the lock
+					return Bound::kFound;
+				case slotguard::Script::kNoMatch:
+					break;
+				}
+			}
+			return Bound::kNone;
+		}
+
+		// FindBoundGuarded, compared with the engine's own lookup until the two have agreed once.
+		Bound FindBound(RE::BSScript::Internal::VirtualMachine& a_vm, RE::VMHandle a_handle, const char* a_class, std::uintptr_t a_pooled,
+			ObjectPtr& a_out)
+		{
+			if (g_tableRead.load() < 0)
+			{
+				return a_vm.FindBoundObject(a_handle, a_class, a_out) && a_out ? Bound::kFound : Bound::kNone;
+			}
+			const Bound guarded = FindBoundGuarded(a_vm, a_handle, a_class, a_pooled, a_out);
+			if (guarded == Bound::kUnstable || g_tableRead.load() > 0) { return guarded; }
+			// not compared yet: every word on this handle looked live, so the engine's walk reads the same sane memory
+			ObjectPtr engine;
+			const bool engineFound = a_vm.FindBoundObject(a_handle, a_class, engine) && engine;
+			if (engineFound == (guarded == Bound::kFound) && (!engineFound || engine.get() == a_out.get()))
+			{
+				if (engineFound && g_tableRead.exchange(1) == 0)
+				{
+					logger::info("MCM scripts: the attached-script table read agrees with the VM's own lookup (handle {:#x}) - discovery now reads it guarded, without the VM call",
+						a_handle);
+				}
+				return guarded;
+			}
+			if (g_tableRead.exchange(-1) >= 0)
+			{
+				logger::error("MCM scripts: the attached-script table read disagrees with the VM's own lookup on handle {:#x} (table {}, VM {}) - using the VM's lookup for this session",
+					a_handle, guarded == Bound::kFound ? "found" : "nothing", engineFound ? "found" : "nothing");
+			}
+			a_out = engine;
+			return engineFound ? Bound::kFound : Bound::kNone;
+		}
+
 		void DiscoverNow()
 		{
 			const auto vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
@@ -1517,13 +1607,28 @@ namespace mcmloader::scripts
 			int added = 0;
 			int unregistered = 0;
 			int deferred = 0;
+			const RE::BSFixedString configBase("SKI_ConfigBase");  // its pooled pointer: the fast compare in the guarded lookup
+			const auto configBasePooled = *reinterpret_cast<const std::uintptr_t*>(std::addressof(configBase));
 			for (const auto quest : dataHandler->GetFormArray<RE::TESQuest>())
 			{
 				if (!quest) { continue; }
 				const auto handle = policy->GetHandleForObject(RE::TESQuest::FORMTYPE, quest);
 				if (!handle) { continue; }
 				ObjectPtr config;
-				if (!vm->FindBoundObject(handle, "SKI_ConfigBase", config) || !config) { continue; }
+				// 2.3.0: not vm->FindBoundObject - the engine's walk wrote through a script object's type word (0x72) on a Nolvus
+				// list (2026-10-25); the guarded lookup judges every word first and leaves an unsettled quest for a later pass
+				const Bound bound = FindBound(*vm, handle, "SKI_ConfigBase", configBasePooled, config);
+				if (bound == Bound::kUnstable)
+				{
+					++deferred;
+					if (g_warnedUnstable.insert(quest->GetFormID()).second)
+					{
+						logger::warn("MCM scripts: quest {:08X} ({}) - a script attached to it does not look like a live object yet (handle {:#x}); left for a later pass",
+							quest->GetFormID(), quest->GetFormEditorID() ? quest->GetFormEditorID() : "", handle);
+					}
+					continue;
+				}
+				if (bound != Bound::kFound || !config) { continue; }
 				if (IsType(config, "MCM_ConfigBase")) { continue; }  // MCM Helper's - phases 1-2 draw those from config.json
 				// SkyUI registered it (_configManager set) - OR its script has run its own set-up (_initialized: OnGameReload ran
 				// OnConfigInit, so ModName and Pages are filled) and SkyUI simply has not, or will not, take it in: a big list

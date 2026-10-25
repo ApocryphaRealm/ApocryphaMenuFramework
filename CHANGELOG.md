@@ -336,6 +336,32 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
   NullSelfTest.h / NullSelfTestCore.h; the cimgui half checked off-game by the new tools\null_selftest_check.bat (22
   checks against the generated cimgui.cpp, including the control: the same null handed to Dear ImGui with no guard faults).
 
+### Fixed (crash while AMF looks for SkyUI script menus, a Nolvus user's report, 2026-10-25)
+- **A crash about ten minutes into a game on 2.2.3** (Skyrim 1.5.97, Nolvus Awakening, 455 plugins, QuickLoot IE 4.1.2):
+  EXCEPTION_ACCESS_VIOLATION writing 0x72 at SkyrimSE+12705B7 (`lock inc [rax]`), under the script-menu discovery pass.
+  The 2.2.3 PDB puts the return address at McmScripts.cpp:1426, the `vm->FindBoundObject(handle, "SKI_ConfigBase")` call
+  (CrashLogger's `~ModCallbackEvent` label was a folded symbol). Inside that call the GAME walked the scripts attached to
+  QuickLoot IE's MCM quest (MCMQuickLootIE, handle 0xFFFFFE0EA001), met a script object whose type word read 0x72, and
+  raised that type's reference count - a write to address 0x72. 2.3.0's null checks did not reach this: the bad value is
+  not null, and it is read inside the game's own function.
+- Discovery no longer calls FindBoundObject. It reads the quest's attached-script list itself, holding the VM's own
+  attachedScriptsLock, and judges every word before anything is copied (SlotGuard.h `JudgeScript`: the script object, its
+  type, each parent type and each type name must be user-mode, past 64 KB, 8-aligned where the allocator aligns, and
+  mapped per VirtualQuery). A quest with a word that cannot be live is left for a later pass (rule 17) and logged once at
+  warn. The only write - the found script's reference count - is made under the lock, on an object whose words all
+  looked live.
+- Asked, not assumed (rule 30): until the table read has agreed once with the VM's own lookup on a real config, each
+  config it finds is also looked up the engine's way and the two compared (logged at info when they agree). If they ever
+  disagree, the table read is turned off for the session with an error in the log, and discovery uses the engine's
+  lookup as 2.2.3 did - a layout mismatch costs the guard, never a menu.
+- Not changed: McmLoader's three FindBoundObject calls (an MCM Helper mod's config script when its page opens, a
+  config.json form's script, SkyUI's manager quest) - each looks at one mod's quests on demand, not every quest every
+  pass.
+- Checked off-game by tools\slot_guard_check.bat (21 checks, 12 new): a derived config matches through its parent, the
+  pooled-pointer and case-insensitive name compares, another class does not match, and the crash itself - a type word of
+  0x72 - is refused, as are 0x72 in a parent or name word, a missing type, a looping parent chain, and an attached-script
+  pointer of 0x72 or into unmapped memory. Not yet seen in game.
+
 ## 2.2.3 - 2026-10-21 - untested - dropdowns on SkyUI MCM pages fill when AMF is opened from the Journal's System menu
 
 ### Fixed (dropdowns on converted MCM pages)
