@@ -4,6 +4,7 @@
 #include "IniPages.h"
 #include "Keyboard.h"
 #include "McmLoader.h"
+#include "McmScripts.h"
 #include "PresetsCore.h"
 #include "PrismaRedux.h"
 #include "RememberedSettings.h"
@@ -32,6 +33,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 // See Presets.h and PresetsCore.h. Plan: 4. plans\amf-settings-presets\PLAN.md.
@@ -402,21 +404,73 @@ namespace presets
 
 		// ------------------------------------------------------------------------------------------- compare
 
+		// A script menu's record in words, as its page shows it (2.3.0: the first comparison showed raw "$AC_..." keys).
+		std::string RowLabel(const std::string& a_group, const pc::MenuRecord& a_r)
+		{
+			if (a_r.type == "helper" || !a_group.starts_with("script|")) { return pc::RecordLabel(a_r); }
+			pc::MenuRecord shown = a_r;
+			shown.page = mcmloader::scripts::MemoryLabel(a_group, a_r.page);
+			shown.text = mcmloader::scripts::MemoryLabel(a_group, a_r.text);
+			return pc::RecordLabel(shown);
+		}
+
 		void FinishCompare(Comparison a_c)
 		{
-			a_c.diff = pc::Compare(a_c.preset, a_c.current, a_c.installed);
+			a_c.diff = pc::Compare(a_c.preset, a_c.current, a_c.installed, RowLabel);
 			for (const auto& g : pc::Groups(a_c.preset))
 			{
 				if (a_c.installed.contains(g.key)) { a_c.ticked.insert(g.key); }
 			}
 			a_c.ready = true;
-			logger::info("presets: compared \"{}\"{} - {} row(s), {} already the same, {} mod(s) not installed", a_c.name, a_c.shipped ? " (shipped)" : "",
-				a_c.diff.rows.size(), a_c.diff.same, a_c.diff.notInstalled.size());
+			logger::info("presets: compared \"{}\"{} - {} setting(s) differ, {} not in this game, {} already the same, {} mod(s) not installed, {} mod(s) "
+				"not read now ({} setting(s), not counted)", a_c.name, a_c.shipped ? " (shipped)" : "", a_c.diff.Differing(),
+				a_c.diff.rows.size() - static_cast<std::size_t>(a_c.diff.Differing()), a_c.diff.same, a_c.diff.notInstalled.size(), a_c.diff.notRead.size(),
+				a_c.diff.notReadSettings);
 			{
 				std::scoped_lock l(g_lock);
 				g_cmp = std::move(a_c);
 			}
 			End({});
+		}
+
+		// The script menus are read BEFORE comparing (2.3.0, the 2026-10-25 run). The first comparison of that run came while a
+		// script menu was still open on AMF's page (it had just been changed there), so the read was refused, nothing was
+		// logged, and 1,730 settings were shown "(not read)" and counted as changes. A refused read now waits - once a second,
+		// up to a minute - and only then compares, listing what still could not be read apart and counting none of it.
+		constexpr int kReadWaitSeconds = 60;
+		void ReadMenusThenFinish(std::shared_ptr<Comparison> a_c, std::vector<std::string> a_keys, int a_attempt)
+		{
+			if (a_keys.empty())
+			{
+				FinishCompare(std::move(*a_c));
+				return;
+			}
+			const bool started = rs::ReadMenus(a_keys, [a_c](std::map<std::string, rs::MenuSnapshot> a_read) {
+				a_c->current.menus = ToCore(a_read);
+				FinishCompare(std::move(*a_c));
+			});
+			if (started)
+			{
+				if (a_attempt > 0) { logger::info("presets: the script menus could be read after {} s of waiting", a_attempt); }
+				return;
+			}
+			if (a_attempt == 0)
+			{
+				logger::info("presets: the script menus cannot be read yet (an MCM page is open on this menu's page, or a backup / restore "
+					"runs) - waiting up to {} s before comparing \"{}\"", kReadWaitSeconds, a_c->name);
+				std::scoped_lock l(g_lock);
+				g_phase = TR("AMF_SetPresetWaitRead", "Waiting until the script menus can be read - close the MCM page that is open...");
+			}
+			if (a_attempt >= kReadWaitSeconds)
+			{
+				logger::info("presets: the script menus still cannot be read after {} s - compared without them (listed apart, not counted)", kReadWaitSeconds);
+				FinishCompare(std::move(*a_c));
+				return;
+			}
+			std::thread([a_c, keys = std::move(a_keys), a_attempt]() mutable {
+				std::this_thread::sleep_for(std::chrono::seconds(1));
+				ReadMenusThenFinish(std::move(a_c), std::move(keys), a_attempt + 1);
+			}).detach();
 		}
 
 		bool StartCompare(const std::string& a_name, bool a_shipped, std::string& a_error)
@@ -452,11 +506,7 @@ namespace presets
 			{
 				if (c.installed.contains(key) && !m.settings.empty()) { keys.push_back(key); }
 			}
-			const bool started = rs::ReadMenus(keys, [c](std::map<std::string, rs::MenuSnapshot> a_read) mutable {
-				c.current.menus = ToCore(a_read);
-				FinishCompare(std::move(c));
-			});
-			if (!started) { FinishCompare(std::move(c)); }   // script menus not read now: their rows say so and still load
+			ReadMenusThenFinish(std::make_shared<Comparison>(std::move(c)), std::move(keys), 0);
 			return true;
 		}
 
@@ -549,7 +599,7 @@ namespace presets
 			const bool started = rs::ApplyMenus(menus, [a_run, menus](int a_set, int a_missing, int) {
 				a_run->set += a_set;
 				a_run->notFound += a_missing;
-				if (a_run->shipped) { rs::MergeIntoActive(menus); }   // the game's values now: remembered for the next new game
+				rs::MergeIntoActive(menus);   // the game's values now: into the new-game record (never into a preset)
 				FinishLoad(a_run);
 			});
 			if (!started)
@@ -618,12 +668,9 @@ namespace presets
 			}
 			logger::info("presets: backup \"{}\" written before loading \"{}\"", backup.profile, c.name);
 
-			// 2. a user preset becomes the preset in use (what a new game sets again)
-			if (!c.shipped && rs::ActiveProfile() != c.name && !rs::SwitchProfile(c.name))
-			{
-				End(TR("AMF_SetPresetMenusWait", "Script menus were not set: close the MCM page that is open, or wait for the backup or restore that is running, then load again."));
-				return true;
-			}
+			// 2. a user preset becomes the preset in use - a name only: the preset file is not written by anything but Save, and
+			//    what a new game sets again is the separate record its menus are merged into below
+			if (!c.shipped && rs::ActiveProfile() != c.name) { rs::SwitchProfile(c.name); }
 
 			// 3. the files, through each page's own set; MCM Helper's values in one visit per mod; then the script menus
 			for (const auto& want : run->selected.files)
@@ -657,7 +704,11 @@ namespace presets
 
 		// ------------------------------------------------------------------------------------------- the page
 
-		int g_pick = -1;              // index into the list shown
+		// The pick is held by NAME (2.3.0, the 2026-10-25 run): an index into the list pointed at another preset as soon as a
+		// load's backup or a delete changed the list ("Backup ..." showed where the preset in use had been). Empty = the preset
+		// in use; set to it again after every save, load and delete.
+		std::string g_pickName;
+		bool g_pickShipped = false;
 		char g_newName[64] = {};
 		bool g_confirmDelete = false;
 		std::set<std::string> g_skip;    // groups left out of Save
@@ -665,7 +716,6 @@ namespace presets
 		const char* ValueShown(const pc::DiffRow& a_r)
 		{
 			if (a_r.state == 1) { return TR("AMF_SetPresetNotHere", "(not in this game)"); }
-			if (a_r.state == 2) { return TR("AMF_SetPresetNotRead", "(not read)"); }
 			return a_r.current.c_str();
 		}
 	}
@@ -678,6 +728,8 @@ namespace presets
 		ImGui::TextWrapped("%s", TR("AMF_SetPresetHelp", "A preset keeps the settings of every mod in this menu - INI and TOML pages, Prisma and MCM "
 			"Helper menus and menus written in a mod's script - in one file. Keep several (easy, hard, ...) and load one any time: "
 			"you see what changes first, and your values from before are kept as a backup preset."));
+		ImGui::TextWrapped("%s", TR("AMF_SetPresetSnapshot", "A preset changes only when you save it. Changes you make in the menus are remembered for a new "
+			"game (Converted menus > MCM > Remembered settings), never written into a preset - so loading a preset puts back what it held."));
 
 		const bool busy = Busy();
 		std::string phase, last;
@@ -696,10 +748,19 @@ namespace presets
 			s_list = List();
 			s_listedAt = ImGui::GetTime();
 		}
-		if (g_pick < 0 || g_pick >= static_cast<int>(s_list.size()))
+		auto indexOf = [&](const std::string& a_name, bool a_shipped) {
+			for (int i = 0; i < static_cast<int>(s_list.size()); ++i)
+			{
+				if (s_list[static_cast<std::size_t>(i)].shipped == a_shipped && s_list[static_cast<std::size_t>(i)].name == a_name) { return i; }
+			}
+			return -1;
+		};
+		int pick = g_pickName.empty() ? -1 : indexOf(g_pickName, g_pickShipped);
+		if (pick < 0)
 		{
-			g_pick = 0;
-			for (int i = 0; i < static_cast<int>(s_list.size()); ++i) { if (!s_list[i].shipped && s_list[i].name == inUse) { g_pick = i; } }
+			g_pickName.clear();
+			pick = indexOf(inUse, false);
+			if (pick < 0 && !s_list.empty()) { pick = 0; }
 		}
 		auto shownName = [&](const pc::Listed& a_l) {
 			std::string s = a_l.name;
@@ -710,21 +771,34 @@ namespace presets
 
 		ImGui::Text(TR("AMF_SetPresetInUse", "Preset in use: %s"), inUse.c_str());
 		if (busy) { ImGui::BeginDisabled(); }
-		const pc::Listed* picked = s_list.empty() ? nullptr : &s_list[static_cast<std::size_t>(g_pick)];
+		const pc::Listed* picked = pick < 0 ? nullptr : &s_list[static_cast<std::size_t>(pick)];
 		ImGui::SetNextItemWidth(ImGui::GetFontSize() * 14.0f);
-		if (theme::BeginComboTight(TR("AMF_SetPresetPick", "Preset"), picked ? shownName(*picked).c_str() : ""))
+		// 2.3.0 (the 2026-10-25 run): the open list could not be scrolled to a preset below its eighth row - the list now opens
+		// tall enough for every preset (up to the screen's height), so each one is a click away without scrolling
+		{
+			const float rows = static_cast<float>(s_list.size() < 1 ? 1 : s_list.size());
+			const float itemH = ImGui::GetTextLineHeightWithSpacing();
+			const float maxH = ImGui::GetIO().DisplaySize.y * 0.8f;
+			const float wantH = rows * itemH + ImGui::GetStyle().WindowPadding.y * 2.0f + 2.0f;
+			ImGui::SetNextWindowSizeConstraints(ImVec2(0.0f, 0.0f), ImVec2(FLT_MAX, wantH < maxH ? wantH : maxH));
+		}
+		if (theme::BeginComboTight(TR("AMF_SetPresetPick", "Preset"), picked ? shownName(*picked).c_str() : "", ImGuiComboFlags_HeightLargest))
 		{
 			for (int i = 0; i < static_cast<int>(s_list.size()); ++i)
 			{
-				if (ImGui::Selectable(shownName(s_list[static_cast<std::size_t>(i)]).c_str(), i == g_pick))
+				const auto& item = s_list[static_cast<std::size_t>(i)];
+				if (ImGui::Selectable(shownName(item).c_str(), i == pick))
 				{
-					g_pick = i;
+					pick = i;
+					g_pickName = item.name;
+					g_pickShipped = item.shipped;
 					g_confirmDelete = false;
 				}
+				if (i == pick && ImGui::IsWindowAppearing()) { ImGui::SetItemDefaultFocus(); }
 			}
 			ImGui::EndCombo();
 		}
-		picked = s_list.empty() ? nullptr : &s_list[static_cast<std::size_t>(g_pick)];
+		picked = pick < 0 ? nullptr : &s_list[static_cast<std::size_t>(pick)];
 		ImGui::SameLine();
 		if (ImGui::Button(icons::Label(icons::kFolderOpen, TR("AMF_SetPresetLoad", "Load...")).c_str()) && picked)
 		{
@@ -755,7 +829,7 @@ namespace presets
 				}
 				g_confirmDelete = false;
 				s_listedAt = -10.0;
-				g_pick = -1;
+				g_pickName.clear();   // back to the preset in use
 			}
 			ImGui::SameLine();
 			if (ImGui::Button((icons::Label(icons::kClear, TR("AMF_SetPresetDeleteNo", "Keep it")) + "###presetkeep").c_str())) { g_confirmDelete = false; }
@@ -773,6 +847,7 @@ namespace presets
 		{
 			if (StartSave(g_newName, g_skip)) { g_newName[0] = '\0'; }
 			s_listedAt = -10.0;
+			g_pickName.clear();   // the saved preset is the one in use
 		}
 		if (!named) { ImGui::EndDisabled(); }
 
@@ -836,9 +911,19 @@ namespace presets
 		if (cmp.ready && !busy)
 		{
 			ImGui::Spacing();
+			// only settings READ and found to differ are changes (2.3.0): "not in this game" rows and mods not read now count as none
 			ImGui::TextWrapped(TR("AMF_SetPresetDiffHeader", "Loading \"%s\" changes %d settings in %d mods; %d are already the same."), cmp.name.c_str(),
-				static_cast<int>(std::count_if(cmp.diff.rows.begin(), cmp.diff.rows.end(), [](const pc::DiffRow& r) { return r.state != 1; })),
-				static_cast<int>(cmp.diff.changes.size()), cmp.diff.same);
+				cmp.diff.Differing(), static_cast<int>(cmp.diff.changes.size()), cmp.diff.same);
+			if (!cmp.diff.notRead.empty())
+			{
+				std::string names;
+				for (std::size_t i = 0; i < cmp.diff.notRead.size() && i < 20; ++i) { names += (i ? ", " : "") + cmp.diff.notRead[i].second; }
+				if (cmp.diff.notRead.size() > 20) { names += ", ..."; }
+				ImGui::PushTextWrapPos(0.0f);
+				ImGui::TextDisabled(TR("AMF_SetPresetNotReadList", "Not read now, so not compared or counted (%d mods): %s. Close the MCM page that is open and press Load... again; loading still sets them."),
+					static_cast<int>(cmp.diff.notRead.size()), names.c_str());
+				ImGui::PopTextWrapPos();
+			}
 			std::vector<std::pair<std::string, std::string>> groups;   // in the rows' order
 			for (const auto& r : cmp.diff.rows)
 			{
@@ -868,12 +953,12 @@ namespace presets
 						++shown;
 						ImGui::TableNextRow();
 						ImGui::TableSetColumnIndex(0);
-						ImGui::TextUnformatted(r.setting.c_str());
+						ImGui::TextWrapped("%s", r.setting.c_str());   // wrapped in its cell: a long label never widens the page
 						ImGui::TableSetColumnIndex(1);
 						if (r.state != 0) { ImGui::TextDisabled("%s", ValueShown(r)); }
-						else { ImGui::TextUnformatted(r.current.c_str()); }
+						else { ImGui::TextWrapped("%s", r.current.c_str()); }
 						ImGui::TableSetColumnIndex(2);
-						ImGui::TextUnformatted(r.preset.c_str());
+						ImGui::TextWrapped("%s", r.preset.c_str());
 					}
 					ImGui::EndTable();
 					if (more > 0) { ImGui::TextDisabled(TR("AMF_SetPresetMoreRows", "... and %d more"), more); }
@@ -979,12 +1064,16 @@ namespace presets
 		}
 		out["busy"] = Busy();
 		out["inUse"] = rs::ActiveProfile();
-		json c{ { "ready", cmp.ready }, { "name", cmp.name }, { "shipped", cmp.shipped }, { "same", cmp.diff.same } };
+		json c{ { "ready", cmp.ready }, { "name", cmp.name }, { "shipped", cmp.shipped }, { "same", cmp.diff.same }, { "differs", cmp.diff.Differing() } };
+		json notRead = json::array();
+		for (const auto& [g, e] : cmp.diff.notRead) { notRead.push_back({ { "group", g }, { "entry", e } }); }
+		c["notRead"] = notRead;
+		c["notReadSettings"] = cmp.diff.notReadSettings;
 		json rows = json::array();
 		for (const auto& r : cmp.diff.rows)
 		{
 			rows.push_back({ { "group", r.group }, { "entry", r.entry }, { "setting", r.setting }, { "current", r.current }, { "preset", r.preset },
-				{ "state", r.state == 0 ? "differs" : r.state == 1 ? "not found" : "not read" } });
+				{ "state", r.state == 0 ? "differs" : "not found" } });
 		}
 		c["rows"] = rows;
 		json missing = json::array();

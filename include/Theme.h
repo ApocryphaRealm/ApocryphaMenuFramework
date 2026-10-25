@@ -117,7 +117,7 @@ namespace theme
 	// sets to the knotwork corner - an empty band above and below every list (seen in the 2026-10-05 banner
 	// reshoot). These open a dropdown with the same small padding the right-click menus use; everything else is
 	// ImGui::BeginCombo / ImGui::Combo unchanged.
-	bool BeginComboTight(const char* a_label, const char* a_preview);
+	bool BeginComboTight(const char* a_label, const char* a_preview, int a_flags = 0);   // a_flags: ImGuiComboFlags
 
 	// THE COLOUR ROLES a player can set on Appearance > Colours (2.1.5), [Colors] keys in this order. Each falls back to
 	// the active theme's own colour when the player has not set it.

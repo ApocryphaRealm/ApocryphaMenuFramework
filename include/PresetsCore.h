@@ -17,6 +17,7 @@
 #include <cctype>
 #include <cstdio>
 #include <ctime>
+#include <functional>
 #include <map>
 #include <set>
 #include <string>
@@ -326,21 +327,37 @@ namespace presetscore
 		std::string setting;
 		std::string current;
 		std::string preset;
-		int state = 0;   // 0 differs, 1 not found in this game (the mod is there, the setting is not), 2 current not read
+		int state = 0;   // 0 differs, 1 not found in this game (the mod is there, the setting is not)
 	};
 
 	struct Diff
 	{
 		std::vector<DiffRow> rows;                                   // only what a load would change (or cannot)
 		std::vector<std::pair<std::string, std::string>> notInstalled;   // (group, entry): skipped, never written
+		// 2.3.0 (the 2026-10-25 run): a mod that is installed but could not be read now (a script menu while an MCM page is
+		// open or a backup runs). It has NO rows and counts as nothing - its settings are not "changes" and not "the same";
+		// the 1,730 "(not read)" rows of the first comparison were counted as changes. Listed apart; a load still sets it.
+		std::vector<std::pair<std::string, std::string>> notRead;    // (group, entry)
+		int notReadSettings = 0;                                     // the preset's settings in those mods
 		std::map<std::string, int> changes;                          // group -> rows that differ
 		int same = 0;                                                // settings already at the preset's value
+		int Differing() const
+		{
+			int n = 0;
+			for (const auto& [g, c] : changes) { n += c; }
+			return n;
+		}
 	};
 
+	// How a menu record is named in a row. The default is RecordLabel (raw text); the game passes one that shows a script
+	// menu's "$KEY" labels in words, through that mod's own translation file, as its page does.
+	using RecordLabeler = std::function<std::string(const std::string& a_group, const MenuRecord& a_record)>;
+
 	// a_preset against a_current - the same groups read from the game now. a_installed: the groups found in this game (a
-	// group installed but missing from a_current was not read - a script menu before a game is loaded: each setting shows
-	// as "not read" and still loads).
-	inline Diff Compare(const Preset& a_preset, const Preset& a_current, const std::set<std::string>& a_installed)
+	// group installed but missing from a_current was not read: it goes to notRead, never into the rows or the counts).
+	// A setting the preset holds twice (an MCM Helper menu with a visible and a hidden control of one key - TrueHUD) is
+	// compared once.
+	inline Diff Compare(const Preset& a_preset, const Preset& a_current, const std::set<std::string>& a_installed, const RecordLabeler& a_label = {})
 	{
 		Diff d;
 		std::map<std::string, const FilePart*> curFiles;
@@ -355,20 +372,26 @@ namespace presetscore
 				continue;
 			}
 			const auto cur = curFiles.find(key);
+			std::set<std::string> seen;
+			int settings = 0;
 			for (const Value& v : f.values)
 			{
+				const std::string id = ValueIdentity(v);
+				if (!seen.insert(id).second) { continue; }
+				++settings;
+				if (cur == curFiles.end()) { continue; }
 				DiffRow row{ key, entry, ValueLabel(v), {}, v.value, 0 };
-				if (cur == curFiles.end()) { row.state = 2; }
-				else
-				{
-					const std::string id = ValueIdentity(v);
-					const auto it = std::find_if(cur->second->values.begin(), cur->second->values.end(), [&](const Value& x) { return ValueIdentity(x) == id; });
-					if (it == cur->second->values.end()) { row.state = 1; }
-					else if (it->value == v.value) { ++d.same; continue; }
-					else { row.current = it->value; }
-				}
+				const auto it = std::find_if(cur->second->values.begin(), cur->second->values.end(), [&](const Value& x) { return ValueIdentity(x) == id; });
+				if (it == cur->second->values.end()) { row.state = 1; }
+				else if (it->value == v.value) { ++d.same; continue; }
+				else { row.current = it->value; }
 				if (row.state == 0) { ++d.changes[key]; }
 				d.rows.push_back(std::move(row));
+			}
+			if (cur == curFiles.end() && settings > 0)
+			{
+				d.notRead.emplace_back(key, entry);
+				d.notReadSettings += settings;
 			}
 		}
 		for (const auto& [key, m] : a_preset.menus)
@@ -381,24 +404,31 @@ namespace presetscore
 				continue;
 			}
 			const auto cur = a_current.menus.find(key);
+			std::set<std::string> seen;
+			int settings = 0;
 			for (const MenuRecord& r : m.settings)
 			{
-				DiffRow row{ key, entry, RecordLabel(r), {}, r.value, 0 };
-				if (cur == a_current.menus.end()) { row.state = 2; }
-				else
-				{
-					const std::string id = RecordIdentity(r);
-					const auto it = std::find_if(cur->second.settings.begin(), cur->second.settings.end(), [&](const MenuRecord& x) { return RecordIdentity(x) == id; });
-					if (it == cur->second.settings.end()) { row.state = 1; }
-					else if (it->value == r.value) { ++d.same; continue; }
-					else { row.current = it->value; }
-				}
+				const std::string id = RecordIdentity(r);
+				if (!seen.insert(id).second) { continue; }
+				++settings;
+				if (cur == a_current.menus.end()) { continue; }
+				DiffRow row{ key, entry, a_label ? a_label(key, r) : RecordLabel(r), {}, r.value, 0 };
+				const auto it = std::find_if(cur->second.settings.begin(), cur->second.settings.end(), [&](const MenuRecord& x) { return RecordIdentity(x) == id; });
+				if (it == cur->second.settings.end()) { row.state = 1; }
+				else if (it->value == r.value) { ++d.same; continue; }
+				else { row.current = it->value; }
 				if (row.state == 0) { ++d.changes[key]; }
 				d.rows.push_back(std::move(row));
+			}
+			if (cur == a_current.menus.end() && settings > 0)
+			{
+				d.notRead.emplace_back(key, entry);
+				d.notReadSettings += settings;
 			}
 		}
 		std::stable_sort(d.rows.begin(), d.rows.end(), [](const DiffRow& a, const DiffRow& b) { return detail::Lower(a.entry) < detail::Lower(b.entry); });
 		std::stable_sort(d.notInstalled.begin(), d.notInstalled.end(), [](const auto& a, const auto& b) { return detail::Lower(a.second) < detail::Lower(b.second); });
+		std::stable_sort(d.notRead.begin(), d.notRead.end(), [](const auto& a, const auto& b) { return detail::Lower(a.second) < detail::Lower(b.second); });
 		return d;
 	}
 

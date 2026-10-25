@@ -2912,6 +2912,7 @@ namespace mcmloader
 	std::vector<std::pair<std::string, std::string>> FileValues(const std::string& a_modName)
 	{
 		std::vector<std::pair<std::string, std::string>> out;
+		std::set<std::string> seen;   // 2.3.0: one value per key - TrueHUD's MCM has a visible and a hidden control of one key
 		std::scoped_lock lock(g_mutex);
 		for (const auto& mod : g_mods)
 		{
@@ -2922,7 +2923,7 @@ namespace mcmloader
 				{
 					if (!IsFileValue(c.source) || c.kind == Kind::kHeader || c.kind == Kind::kEmpty) { continue; }
 					const auto it = mod->values.find(c.key);
-					if (it != mod->values.end()) { out.emplace_back(c.key, it->second); }
+					if (it != mod->values.end() && seen.insert(c.key).second) { out.emplace_back(c.key, it->second); }
 				}
 			}
 			break;

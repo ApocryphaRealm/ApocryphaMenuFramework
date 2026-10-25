@@ -361,10 +361,10 @@ namespace theme
 		}
 	}
 
-	bool BeginComboTight(const char* a_label, const char* a_preview)
+	bool BeginComboTight(const char* a_label, const char* a_preview, int a_flags)
 	{
 		PushListPadding();
-		const bool open = ImGui::BeginCombo(a_label, a_preview);
+		const bool open = ImGui::BeginCombo(a_label, a_preview, a_flags);
 		ImGui::PopStyleVar();
 		return open;
 	}

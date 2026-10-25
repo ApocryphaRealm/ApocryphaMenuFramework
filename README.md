@@ -68,7 +68,7 @@ Licence: GPL-3.0-or-later (see `LICENSE` and `NOTICE.md`). Not a fork: contains 
   TOML pages, Prisma and MCM Helper menus, and SkyUI menus written in a mod's script - in one named file. Save several,
   load one any time: AMF first shows what would change (mod, setting, now -> preset, a switch per mod), skips mods that
   are not installed, and keeps your values from before as a `Backup <date time>` preset. Your presets are
-  `Data\SKSE\Plugins\ApocryphaMenuFramework\RememberedSettings\<name>.json` (the same files Remembered settings uses);
+  `Data\SKSE\Plugins\ApocryphaMenuFramework\RememberedSettings\<name>.json` - a preset changes only when you save it (what a new game sets again is kept apart, in `RememberedSettings.json`);
   a modlist can ship read-only presets in `Data\SKSE\Plugins\ApocryphaMenuFramework\Presets\`. FLICK pages keep their
   own values and are not in presets.
 - **Nothing while loading.** Until the main menu has opened, and while any loading screen is up, AMF does not open, takes

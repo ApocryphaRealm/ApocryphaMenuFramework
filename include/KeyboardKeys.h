@@ -20,6 +20,7 @@
 // ============================================================================================
 
 #include <imgui.h>
+#include <imgui_internal.h>   // FitButton: the window's own font scale, put back after the one key
 
 #include <cstring>
 #include <string>
@@ -116,6 +117,23 @@ namespace keyboardkeys
 		return cols * a_k + (cols - 1.0f) * st.ItemSpacing.x + st.WindowPadding.x * 2.0f;
 	}
 
+	// A key whose word is wider than the key (2.3.0, the 2026-10-25 run: German's Shift key read "Umscha" for "Umschalt") is
+	// drawn with the window's font scaled down for that one button, to fit inside the frame padding - every language, every
+	// key size, whole word. Never below 55% of the text size; a narrower fit than that is clipped as before.
+	inline bool FitButton(const char* a_label, const ImVec2& a_size)
+	{
+		const float avail = a_size.x - ImGui::GetStyle().FramePadding.x * 2.0F;
+		const float width = ImGui::CalcTextSize(a_label, nullptr, true).x;
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if (width <= avail || avail <= 0.0F || !window) { return ImGui::Button(a_label, a_size); }
+		const float before = window->FontWindowScale;
+		const float fit = avail / width;
+		ImGui::SetWindowFontScale(before * (fit < 0.55F ? 0.55F : fit));
+		const bool pressed = ImGui::Button(a_label, a_size);
+		ImGui::SetWindowFontScale(before);
+		return pressed;
+	}
+
 	// Draws the five rows inside the current window. a_row / a_col: the cursor. Returns true when a key was clicked and
 	// gives its row and column. a_mouse: the hover / held state the caller tracks (see above); a_rects: filled with every
 	// key's screen rectangle when given.
@@ -174,11 +192,11 @@ namespace keyboardkeys
 				{
 					switch (c)
 					{
-					case kShift: pressed = ImGui::Button(a_labels.shift, ImVec2(a_k * 1.6F, a_k)); break;
-					case kSpace: pressed = ImGui::Button(a_labels.space, ImVec2(a_k * 4.0F, a_k)); break;
-					case kBack:  pressed = ImGui::Button(a_labels.back, ImVec2(a_k * 1.8F, a_k)); break;
-					case kClear: pressed = ImGui::Button(a_labels.clear, ImVec2(a_k * 1.8F, a_k)); break;
-					case kDone:  pressed = ImGui::Button(a_labels.done, ImVec2(a_k * 1.6F, a_k)); break;
+					case kShift: pressed = FitButton(a_labels.shift, ImVec2(a_k * 1.6F, a_k)); break;
+					case kSpace: pressed = FitButton(a_labels.space, ImVec2(a_k * 4.0F, a_k)); break;
+					case kBack:  pressed = FitButton(a_labels.back, ImVec2(a_k * 1.8F, a_k)); break;
+					case kClear: pressed = FitButton(a_labels.clear, ImVec2(a_k * 1.8F, a_k)); break;
+					case kDone:  pressed = FitButton(a_labels.done, ImVec2(a_k * 1.6F, a_k)); break;
 					default: break;
 					}
 				}

@@ -240,7 +240,11 @@ namespace precise
 	inline bool SliderFloat(const char* a_label, float* a_v, float a_min, float a_max, const char* a_format)
 	{
 		const float before = *a_v;
-		bool changed = ImGui::SliderFloat(a_label, a_v, a_min, a_max, a_format);
+		// 2.3.0 (gate row precise-sliders-always-clamp; Dragon's Eye Minimap 7c3ce18, test d844): AlwaysClamp, so a number typed
+		// in (Ctrl+click) is clamped INSIDE ImGui - 1.90.8 otherwise leaves it unclamped and, while the text field is open,
+		// copies the typed text back over the value every frame the two differ ('changed' every frame); clamped again below
+		bool changed = ImGui::SliderFloat(a_label, a_v, a_min, a_max, a_format, ImGuiSliderFlags_AlwaysClamp);
+		if (changed && a_min <= a_max) { *a_v = std::clamp(*a_v, a_min, a_max); }
 		if (changed) {
 			ImGuiContext& g = *GImGui;
 			const ImGuiID id = ImGui::GetItemID();
@@ -262,7 +266,8 @@ namespace precise
 	inline bool SliderInt(const char* a_label, int* a_v, int a_min, int a_max, const char* a_format = "%d")
 	{
 		const int  before = *a_v;
-		bool changed = ImGui::SliderInt(a_label, a_v, a_min, a_max, a_format);
+		bool changed = ImGui::SliderInt(a_label, a_v, a_min, a_max, a_format, ImGuiSliderFlags_AlwaysClamp);   // as SliderFloat
+		if (changed && a_min <= a_max) { *a_v = std::clamp(*a_v, a_min, a_max); }
 		if (changed) {
 			ImGuiContext& g = *GImGui;
 			const ImGuiID id = ImGui::GetItemID();

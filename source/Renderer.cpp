@@ -2938,9 +2938,10 @@ namespace renderer
 						}
 
 						const bool memBusy = rememberedsettings::Busy();
-						// 2.3.0: the profile IS the preset in use - picked, saved, loaded and deleted on Settings > General > Presets
-						// only (the owner, 2026-10-25: this tab is not a second place to pick presets)
-						ImGui::TextWrapped(TR("AMF_McmMemPresetInUse", "Remembered into the preset in use: %s. Pick, save, load and delete presets on Settings > General > Presets."),
+						// 2.3.0: what is remembered here is the new-game record, kept apart from the presets (a preset changes only
+						// when it is saved - the 2026-10-25 run); presets are picked, saved, loaded and deleted on Settings > General >
+						// Presets only (the owner, 2026-10-25: this tab is not a second place to pick presets)
+						ImGui::TextWrapped(TR("AMF_McmMemKeptApart", "Remembered here for a new game, apart from your presets: a preset changes only when you save it. Preset in use: %s - pick, save, load and delete presets on Settings > General > Presets."),
 							rememberedsettings::ActiveProfile().c_str());
 						if (memBusy) { ImGui::BeginDisabled(); }
 						if (ImGui::Button(icons::Label(icons::kArchive, TR("AMF_McmMemBackUp", "Back up all now")).c_str()))
@@ -5286,6 +5287,17 @@ namespace renderer
 				// 2.3.0 (R8): a horizontal scroll bar, so a page row wider than a narrow window scrolls instead of being cut off.
 				ImGui::BeginChild("##content", ImVec2(0.0f, helpBarOn ? -(helpbar::Height() + helpBarGap) : 0.0f), ImGuiChildFlags_Border, ImGuiWindowFlags_HorizontalScrollbar);
 				GImGuiScrollbarInset = 0.0f;
+				// 2.3.0 (the 2026-10-25 run: text ran off the right edge after a presets comparison, and the Controls intro and its
+				// "Controller" tab were cut at text sizes 1.5 and 2.0). With a horizontal scroll bar ImGui makes the pane's WORK
+				// rect as wide as its content (imgui.cpp: work_rect_size_x = max(ContentSize.x, visible width)), and wrapped text,
+				// tab bars and full-width rows all size to the work rect - so one frame with anything wide made the wrapped text
+				// wide, which kept the content wide, for good. The work rect is held to the visible width: wrapping and tab bars
+				// follow the window, and only a row that really is wider (fixed-width buttons) still scrolls.
+				if (ImGuiWindow* pane = ImGui::GetCurrentWindow())
+				{
+					pane->WorkRect.Max.x = (std::min)(pane->WorkRect.Max.x, pane->ContentRegionRect.Max.x);
+					pane->ParentWorkRect = pane->WorkRect;
+				}
 				// 2.1.6 (the owner: the background art "only changes the top row when it should apply to all of the background"):
 				// the panes paint their own colour over the window's, so the art is drawn in each pane too, over that colour
 				if (skin::HasBackground())
@@ -6226,6 +6238,11 @@ namespace renderer
 		// 2.1.9: any tab bar the menu drew (a mod's pages, Settings / Controls / Help, a settings sub-tab row) - the innermost
 		// one under the pointer, which is the last one drawn.
 		if (!g_windowVisible.load(std::memory_order_acquire) || ImGui::GetFrameCount() - g_wheelBarsFrame > 1)
+		{
+			return false;
+		}
+		// 2.3.0: an open dropdown or popup takes the wheel itself - a list that opened over a tab bar scrolls, never the tabs
+		if (GImGui && GImGui->OpenPopupStack.Size > 0)
 		{
 			return false;
 		}

@@ -610,6 +610,15 @@ namespace flick
 							 "menu because of a known clash: {} (FLICK {}). Choosing FLICK's own window for it on Settings > Converted "
 							 "menus > FLICK overrides this.", a_dll, a_plugin, a_id, cl->second->what, g_flickVersion);
 			}
+			else if (const auto old = g_tooOld.find(a_dll); old != g_tooOld.end() && old->second)
+			{
+				// 2.3.0 (the 2026-10-25 run): the installed FLICK answers an older API than this mod needs, so it stays in this
+				// menu (route::Decide keeps it here at every start while that holds) - the message below said it would go to
+				// FLICK from the next start, the old-FLICK trap the TOO-OLD rule exists to avoid
+				logger::warn("flick: {} ({}) registered the FLICK window \"{}\", which this menu does not draw. It stays in this menu: the "
+							 "installed FLICK {} is older than the FLICK API it needs, so FLICK could not host it. Its windows show once "
+							 "FLICK is updated.", a_dll, a_plugin, a_id, g_flickVersion);
+			}
 			else
 			{
 				logger::warn("flick: {} ({}) registered the FLICK window \"{}\", which this menu does not draw. FLICK itself is installed, "
@@ -715,9 +724,13 @@ namespace flick
 				std::string line = text.substr(pos, end - pos);
 				pos = end + 1;
 				if (!line.empty() && line.back() == '\r') { line.pop_back(); }
-				const auto tab = line.find('\t');
-				if (line.empty() || line[0] != '$' || tab == std::string::npos) { continue; }
-				g_tr[line.substr(0, tab)] = line.substr(tab + 1);
+				// 2.3.0 (the 2026-10-25 run): FUCK-DEMO's file lines up its columns - "$DEMO_TabBasicWidgets \t\tBasic" - so the
+				// key kept a trailing space (every lookup of it missed: its page showed raw $DEMO_ keys though 367 lines were
+				// read) and the text kept the extra tabs (its tools registered as "\tGeneral Demo", a second list entry).
+				// toolpath::TranslationLine trims both (checked offline by tools\flick_slots_check).
+				std::string key, value;
+				if (!toolpath::TranslationLine(line, key, value)) { continue; }
+				g_tr[key] = std::move(value);
 				++count;
 			}
 			logger::info("flick: {} lines of text from {}", count, a_path.string());
@@ -2334,9 +2347,20 @@ namespace flick
 
 	std::string StatusJson()
 	{
+		// 2.3.0 (the 2026-10-25 run): control characters are escaped too - FUCK-DEMO's names held raw tabs, which made the whole
+		// reply invalid JSON (TestBench passed it back as "raw"; a strict parser refused it)
 		auto esc = [](const std::string& a_s) {
 			std::string o;
-			for (const char c : a_s) { if (c == '"' || c == '\\') { o += '\\'; } o += c; }
+			for (const char c : a_s)
+			{
+				const auto u = static_cast<unsigned char>(c);
+				if (c == '"' || c == '\\') { o += '\\'; o += c; }
+				else if (c == '\t') { o += "\\t"; }
+				else if (c == '\n') { o += "\\n"; }
+				else if (c == '\r') { o += "\\r"; }
+				else if (u < 0x20) { o += std::format("\\u{:04x}", u); }
+				else { o += c; }
+			}
 			return o;
 		};
 		std::string tools, notes;

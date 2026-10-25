@@ -34,6 +34,11 @@ namespace rememberedsettings
 		namespace scripts = mcmloader::scripts;
 
 		constexpr const char* kDir = "Data/SKSE/Plugins/ApocryphaMenuFramework/RememberedSettings";
+		// 2.3.0 (the 2026-10-25 run, presets plan "One system"): what a new game sets again is ONE record of its own, beside the
+		// presets' folder - never a preset. Until then the record WAS the profile (preset) in use, so "Remember each change made
+		// here" wrote every script-menu change straight into that preset: it could never differ from the menus and Load could
+		// not undo a change. A preset is now a snapshot that changes only when it is saved (MCM Recorder's model, the owner).
+		constexpr const char* kRecordPath = "Data/SKSE/Plugins/ApocryphaMenuFramework/RememberedSettings.json";
 
 		struct MenuData
 		{
@@ -43,9 +48,9 @@ namespace rememberedsettings
 		};
 
 		std::mutex g_mutex;
-		std::map<std::string, MenuData> g_menus;  // the active profile: import key -> its settings
-		json g_extra = json::object();            // 2.3.0: the profile file's other keys (a settings preset's "files" ...), kept
-		std::string g_profile;
+		std::map<std::string, MenuData> g_menus;  // the new-game record (kRecordPath): import key -> its settings
+		json g_extra = json::object();            // the record file's other keys, kept
+		std::string g_profile;                    // 2.3.0: the preset in use - a NAME only ([RememberedSettings] sProfile)
 		bool g_loaded = false;
 		std::string g_lastResult;
 		std::set<std::string> g_restoredThisGame;  // automatic restore: menus already done after this new game
@@ -105,14 +110,11 @@ namespace rememberedsettings
 
 		fs::path PathFor(const std::string& a_name) { return fs::path(kDir) / (SafeName(a_name) + ".json"); }
 
-		void LoadLocked()
+		// The menus block of a record or preset file into g_menus / g_extra. False when the file is not there.
+		bool ReadMenusFileLocked(const fs::path& a_path)
 		{
-			g_menus.clear();
-			g_extra = json::object();
-			g_profile = SafeName(settings::Get().rememberedProfile);
-			g_loaded = true;
-			std::ifstream in(PathFor(g_profile), std::ios::binary);
-			if (!in) { return; }
+			std::ifstream in(a_path, std::ios::binary);
+			if (!in) { return false; }
 			try
 			{
 				const json file = json::parse(in);
@@ -137,27 +139,51 @@ namespace rememberedsettings
 				}
 				for (const auto& [k, v] : file.items())
 				{
-					if (k != "profile" && k != "menus") { g_extra[k] = v; }   // 2.3.0: a preset's own keys survive this file's rewrites
+					if (k != "profile" && k != "menus" && k != "files" && k != "presetVersion") { g_extra[k] = v; }
 				}
-				logger::info("Remembered settings: profile \"{}\" read - {} menu(s)", g_profile, g_menus.size());
 			}
 			catch (const std::exception& e)
 			{
-				logger::error("Remembered settings: profile \"{}\" could not be read ({}) - it starts empty; the file is left as it is", g_profile, e.what());
+				logger::error("Remembered settings: {} could not be read ({}) - the record starts empty; the file is left as it is", a_path.string(), e.what());
 				g_menus.clear();
+			}
+			return true;
+		}
+
+		void SaveLocked();
+
+		void LoadLocked()
+		{
+			g_menus.clear();
+			g_extra = json::object();
+			g_profile = SafeName(settings::Get().rememberedProfile);
+			g_loaded = true;
+			if (ReadMenusFileLocked(kRecordPath))
+			{
+				logger::info("Remembered settings: the new-game record read - {} menu(s); the preset in use is \"{}\"", g_menus.size(), g_profile);
+				return;
+			}
+			// first start of a build with the separate record: it starts as the profile that WAS in use (what a new game set
+			// again until now); that file stays where it is, as an ordinary preset
+			if (ReadMenusFileLocked(PathFor(g_profile)))
+			{
+				g_extra = json::object();
+				logger::info("Remembered settings: the new-game record made from the profile \"{}\" ({} menu(s)) - that file stays as the preset of that name "
+					"and changes only when it is saved", g_profile, g_menus.size());
+				SaveLocked();
 			}
 		}
 
 		void EnsureLoadedLocked()
 		{
-			if (!g_loaded || g_profile != SafeName(settings::Get().rememberedProfile)) { LoadLocked(); }
+			if (!g_loaded) { LoadLocked(); }
+			g_profile = SafeName(settings::Get().rememberedProfile);   // the preset in use is only a name: the record stays
 		}
 
 		// Written to a .tmp beside it and moved over, so a crash mid-write never leaves half a profile.
 		void SaveLocked()
 		{
 			json file = g_extra.is_object() ? g_extra : json::object();
-			file["profile"] = g_profile;
 			file["menus"] = json::object();
 			for (const auto& [key, m] : g_menus)
 			{
@@ -178,8 +204,8 @@ namespace rememberedsettings
 				file["menus"][key] = { { "entry", m.entry }, { "autoRestore", m.autoRestore }, { "settings", std::move(list) } };
 			}
 			std::error_code ec;
-			fs::create_directories(kDir, ec);
-			const fs::path path = PathFor(g_profile);
+			fs::create_directories(fs::path(kRecordPath).parent_path(), ec);
+			const fs::path path = kRecordPath;
 			fs::path tmp = path;
 			tmp += ".tmp";
 			{
@@ -538,7 +564,7 @@ namespace rememberedsettings
 		if (g_menus.erase(a_key) > 0)
 		{
 			SaveLocked();
-			logger::info("Remembered settings: {} forgotten in profile \"{}\"", a_key, g_profile);
+			logger::info("Remembered settings: {} forgotten in the new-game record", a_key);
 		}
 	}
 
@@ -563,14 +589,15 @@ namespace rememberedsettings
 		return g_profile;
 	}
 
+	// 2.3.0: the preset in use is a NAME - the last preset loaded or saved; the new-game record is not touched
 	bool SwitchProfile(const std::string& a_name)
 	{
-		if (Busy()) { return false; }
 		std::scoped_lock lock(g_mutex);
+		EnsureLoadedLocked();
 		settings::Get().rememberedProfile = SafeName(a_name);
 		settings::Save();
-		LoadLocked();
-		logger::info("Remembered settings: profile \"{}\" in use", g_profile);
+		g_profile = SafeName(a_name);
+		logger::info("Remembered settings: \"{}\" is the preset in use (the new-game record is unchanged)", g_profile);
 		return true;
 	}
 
@@ -582,15 +609,39 @@ namespace rememberedsettings
 		if (fs::exists(PathFor(name), ec)) { return false; }
 		std::scoped_lock lock(g_mutex);
 		EnsureLoadedLocked();
-		auto copied = a_copyActive ? g_menus : std::map<std::string, MenuData>{};
-		json extra = a_copyActive ? g_extra : json::object();
+		// 2.3.0: a new preset file holding the new-game record's menus (a copy) or nothing; it becomes the preset in use
+		json file{ { "profile", name }, { "menus", json::object() } };
+		if (a_copyActive)
+		{
+			for (const auto& [key, m] : g_menus)
+			{
+				json list = json::array();
+				for (const Record& r : m.records)
+				{
+					json j{ { "type", TypeName(r.type) }, { "value", r.value } };
+					if (r.type == Type::kHelper) { j["id"] = r.id; }
+					else
+					{
+						j["page"] = r.page;
+						j["text"] = r.text;
+						j["nth"] = r.nth;
+						if (r.type == Type::kMenu) { j["menuIndex"] = r.menuIndex; }
+					}
+					list.push_back(std::move(j));
+				}
+				file["menus"][key] = { { "entry", m.entry }, { "autoRestore", m.autoRestore }, { "settings", std::move(list) } };
+			}
+		}
+		fs::create_directories(kDir, ec);
+		{
+			std::ofstream out(PathFor(name), std::ios::binary | std::ios::trunc);
+			if (!out) { return false; }
+			out << file.dump(1, '\t');
+		}
 		settings::Get().rememberedProfile = name;
 		settings::Save();
 		g_profile = name;
-		g_menus = std::move(copied);
-		g_extra = std::move(extra);
-		SaveLocked();
-		logger::info("Remembered settings: profile \"{}\" made{}", name, a_copyActive ? " as a copy" : "");
+		logger::info("Remembered settings: preset \"{}\" made{}", name, a_copyActive ? " from the new-game record" : "");
 		return true;
 	}
 
@@ -672,7 +723,7 @@ namespace rememberedsettings
 		if (changed > 0)
 		{
 			SaveLocked();
-			logger::info("Remembered settings: {} setting(s) of a loaded preset kept in profile \"{}\"", changed, g_profile);
+			logger::info("Remembered settings: {} setting(s) of a loaded preset kept in the new-game record", changed);
 		}
 	}
 
@@ -704,9 +755,9 @@ namespace rememberedsettings
 		{
 			settings::Get().rememberedProfile = name;
 			settings::Save();
+			g_profile = name;
 		}
-		if (name == SafeName(settings::Get().rememberedProfile)) { LoadLocked(); }   // the profile in use reads what was written
-		return true;
+		return true;   // 2.3.0: a preset is a file only - the new-game record is not re-read from it
 	}
 
 	bool DeletePreset(const std::string& a_name)
@@ -721,8 +772,8 @@ namespace rememberedsettings
 		{
 			settings::Get().rememberedProfile = "Default";
 			settings::Save();
-			LoadLocked();
-			logger::info("presets: the preset in use was deleted - \"{}\" is in use now", g_profile);
+			g_profile = "Default";
+			logger::info("presets: the preset in use was deleted - \"{}\" is in use now (the new-game record is unchanged)", g_profile);
 		}
 		return true;
 	}

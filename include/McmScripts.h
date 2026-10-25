@@ -90,6 +90,9 @@ namespace mcmloader::scripts
 	bool MemoryIdle();
 	// Every script menu found in this game: (key, entry).
 	std::vector<std::pair<std::string, std::string>> MemoryMenus();
+	// 2.3.0: a remembered record's raw page name or option label ("$AC_Toggle") in words, through that menu's own
+	// translation file (and SkyUI's), as its page shows it - for the presets comparison. Any thread.
+	std::string MemoryLabel(const std::string& a_key, const std::string& a_raw);
 
 	// DevBench amf.mcm op=skyui (rules 31 and 64): action list | open | page | options | select | slider | menu |
 	// menuoptions | color | key | input | default | info | answer | close. Thread-safe.

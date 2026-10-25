@@ -166,9 +166,11 @@ int main(int argc, char** argv)
 		Check(count && count->state == 0 && name && name->state == 1, "an MCM Helper file value: one differs, one is not in this game");
 		const DiffRow* gone = find("gGoneControl");
 		Check(gone && gone->state == 1 && !find("gBarGlobal"), "a save-kept value: one not found, one already the same");
-		const DiffRow* enable = find("General > Enable");
-		const DiffRow* range = find("General > Range (2)");
-		Check(enable && enable->state == 2 && range && range->state == 2, "a script menu not read now: every row says 'not read' (the 2nd same-named row numbered)");
+		// 2.3.0 (the 2026-10-25 run: 1,730 "(not read)" rows counted as changes): a mod not read is listed apart, with no rows
+		Check(!find("General > Enable") && !find("General > Range (2)"), "a script menu not read now has NO rows");
+		Check(d.notRead.size() == 1 && d.notRead[0].first == "script|Foo.esp|Foo" && d.notRead[0].second == "Foo" && d.notReadSettings == 2,
+			"... it is listed apart as not read, with its 2 settings");
+		Check(d.Differing() == 2, "only settings read and found to differ are counted as changes (2), never unread ones");
 		Check(d.same == 3, "three settings are already the same");
 		Check(d.changes.size() == 2 && d.changes.at("ini|skse/plugins/foo.ini") == 1 && d.changes.at("mcmhelper-ini|bar") == 1,
 			"changes counted per mod (rows that cannot be read or found are not counted as changes)");
@@ -178,6 +180,26 @@ int main(int argc, char** argv)
 		Check(sorted, "rows sorted by mod name");
 		const Diff none = Compare(preset, current, {});
 		Check(none.rows.empty() && none.notInstalled.size() == 6, "with nothing installed, every mod is skipped and nothing would be written");
+
+		// read, with a labeler: the script menu's rows are named through it (2.3.0: raw $KEY labels shown in words)
+		Preset read = current;
+		MenuPart fooNow;
+		fooNow.settings = { { "toggle", "General", "Enable", 0, "", "1", -1 }, { "slider", "General", "Range", 1, "", "40", -1 } };
+		read.menus["script|Foo.esp|Foo"] = fooNow;
+		const Diff labelled = Compare(preset, read, installed, [](const std::string& a_group, const MenuRecord& a_r) {
+			return a_group + ":" + (a_r.text == "Enable" ? std::string("Turn it on") : a_r.text);
+		});
+		bool named = false;
+		for (const auto& r : labelled.rows) { named = named || (r.setting == "script|Foo.esp|Foo:Turn it on" && r.current == "1" && r.preset == "0"); }
+		Check(named && labelled.notRead.empty() && labelled.Differing() == 3, "a script menu read now: its differing row is named by the labeler; nothing unread");
+
+		// one setting held twice (TrueHUD's MCM: a visible and a hidden control of one key) is compared once
+		Preset twice;
+		twice.files.push_back({ "mcmhelper", "TrueHUD", "TrueHUD", { { "", "bEnableRecentLoot:General", "1" }, { "", "bEnableRecentLoot:General", "1" } } });
+		Preset twiceNow;
+		twiceNow.files.push_back({ "mcmhelper", "TrueHUD", "TrueHUD", { { "", "bEnableRecentLoot:General", "0" } } });
+		const Diff once = Compare(twice, twiceNow, { "mcmhelper-ini|truehud" });
+		Check(once.rows.size() == 1 && once.Differing() == 1, "a setting the preset holds twice is one row");
 	}
 
 	// ---- names and the list

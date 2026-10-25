@@ -2005,6 +2005,17 @@ namespace mcmloader::scripts
 		return g_open.load() < 0 && !g_memoryDriving.load();
 	}
 
+	std::string MemoryLabel(const std::string& a_key, const std::string& a_raw)
+	{
+		if (a_raw.empty()) { return a_raw; }
+		std::scoped_lock lock(g_mutex);
+		for (const auto& m : g_mods)
+		{
+			if ("script|" + m->plugin + "|" + m->modName == a_key) { return Tr(&m->translations, a_raw); }
+		}
+		return Tr(nullptr, a_raw);   // SkyUI's own keys, or the key made readable
+	}
+
 	std::vector<std::pair<std::string, std::string>> MemoryMenus()
 	{
 		std::vector<std::pair<std::string, std::string>> out;

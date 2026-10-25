@@ -115,7 +115,26 @@ int main(int argc, char** argv)
 	}
 	{
 		const auto p = Of(" General ", "");
-		Check(p.entry == " General  (FLICK)" && p.page == "Settings", "a group without :: is not trimmed (a saved name stays the same); no name -> page Settings");
+		Check(p.entry == "General (FLICK)" && p.page == "Settings", "a group without :: is trimmed too (2.3.0); no name -> page Settings");
+	}
+	{
+		// the 2026-10-25 run: FUCK-DEMO's top-level pages and its nested groups were two list entries
+		const auto top = Of("\tDEMO - API General", "\tGeneral Demo");
+		const auto nested = Of("\tDEMO - API General::\tAPI Updates::\tVersion 2/3", "\tVersion 2");
+		Check(top.entry == "DEMO - API General (FLICK)" && nested.entry == top.entry && top.page == "General Demo" &&
+				  nested.page == "API Updates/Version 2/3/Version 2",
+			  "a leading tab is trimmed alike for a top-level page and a nested group - one entry, no tab in a page name");
+	}
+	{
+		using flick::toolpath::TranslationLine;
+		std::string k, t;
+		Check(TranslationLine("$DEMO_TabBasicWidgets \t\tBasic", k, t) && k == "$DEMO_TabBasicWidgets" && t == "Basic",
+			  "a translation line padded with a space and tabs: key and text without the padding (FUCK-DEMO's file)");
+		Check(TranslationLine("$DEMO_Tool_General\t\tGeneral Demo", k, t) && k == "$DEMO_Tool_General" && t == "General Demo",
+			  "two tabs between key and text: the text has no leading tab");
+		Check(TranslationLine("$KEY\tText with\ta tab", k, t) && k == "$KEY" && t == "Text with\ta tab", "one tab: as before, inner tabs kept");
+		Check(!TranslationLine("not a key\tx", k, t) && !TranslationLine("$KEYONLY", k, t) && !TranslationLine(" \tx", k, t),
+			  "a line without $KEY<tab> is not a translation");
 	}
 	{
 		const auto p = Of("A:: ::B::", "T");

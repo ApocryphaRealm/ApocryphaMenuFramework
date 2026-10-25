@@ -8,12 +8,14 @@
 // What a new game forgets is what lives in the save: SkyUI script menus' values (phase 3) and MCM
 // Helper's GlobalValue / PropertyValue* controls (phase 2). MCM Helper's ModSetting* values are in
 // its own Data\MCM\Settings\<mod>.ini and need nothing. Each change AMF makes for those menus is
-// recorded into the active profile; "Back up all now" reads every menu AMF can read; after a NEW
-// game the profile is played back through the same calls the pages make.
+// recorded into the new-game record; "Back up all now" reads every menu AMF can read; after a NEW
+// game the record is played back through the same calls the pages make.
 //
-// A profile is SKSE\Plugins\ApocryphaMenuFramework\RememberedSettings\<name>.json - outside the save and
-// the download. One record per setting, in the order each was first changed: an "enable" switch
-// usually reveals the rest, so it has to come back first.
+// 2.3.0: the new-game record is ONE file, SKSE\Plugins\ApocryphaMenuFramework\RememberedSettings.json - outside
+// the save and the download, and never a preset. The files in RememberedSettings\<name>.json are the settings
+// presets (Presets.h): snapshots that change only when saved; "the preset in use" ([RememberedSettings] sProfile) is
+// only the name of the last one loaded or saved. One record per setting, in the order each was first changed: an
+// "enable" switch usually reveals the rest, so it has to come back first.
 // ============================================================================================
 
 #include <functional>
@@ -70,8 +72,8 @@ namespace rememberedsettings
 
 	std::vector<std::string> Profiles();
 	std::string ActiveProfile();
-	bool SwitchProfile(const std::string& a_name);                    // loads it (made empty when new); saves the INI
-	bool CreateProfile(const std::string& a_name, bool a_copyActive);  // and switches to it
+	bool SwitchProfile(const std::string& a_name);                    // 2.3.0: names it the preset in use (the record stays)
+	bool CreateProfile(const std::string& a_name, bool a_copyActive);  // a preset file (the record's menus, or empty), in use
 	bool DeleteProfile(const std::string& a_name);                    // never the active one
 
 	// Back up every menu AMF can read now, or restore the profile now (a_keys empty: all; else those menus). False when
@@ -101,8 +103,8 @@ namespace rememberedsettings
 	bool McmMemoryAutoRestoreOn();                  // its DLL is loaded and its own automatic restore is on
 	std::string ImportFromMcmMemory(const std::string& a_profile);   // the result, one line per part, in the active language
 
-	// 2.3.0 SETTINGS PRESETS (Presets.h, plan 4. plans\amf-settings-presets\PLAN.md). A preset IS a profile file here, with
-	// a "files" block beside "menus" - kept through this file's rewrites. The profile in use is the preset in use.
+	// 2.3.0 SETTINGS PRESETS (Presets.h, plan 4. plans\amf-settings-presets\PLAN.md). A preset is a file in the profiles'
+	// folder ("menus" + "files"); the new-game record is kept apart and a load only MERGES the preset's menus into it.
 	struct MenuSnapshot
 	{
 		std::string entry;
@@ -119,9 +121,9 @@ namespace rememberedsettings
 	// Play these records into the menus found in this game, through the restore's own path; a_done(settings set, not found,
 	// menus). False as for ReadMenus.
 	bool ApplyMenus(std::map<std::string, MenuSnapshot> a_menus, std::function<void(int, int, int)> a_done);
-	std::map<std::string, MenuSnapshot> MenusInUse();             // the profile in use's records
-	void MergeIntoActive(const std::map<std::string, MenuSnapshot>& a_menus);
-	// Write a profile file whole (atomically); a_makeActive makes it the profile in use. The profile in use re-reads it.
+	std::map<std::string, MenuSnapshot> MenusInUse();             // the new-game record's menus
+	void MergeIntoActive(const std::map<std::string, MenuSnapshot>& a_menus);   // into the new-game record
+	// Write a preset file whole (atomically); a_makeActive names it the preset in use. The new-game record is not touched.
 	bool WriteProfileFile(const std::string& a_name, const std::string& a_text, bool a_makeActive);
 	// Delete a profile file; deleting the one in use falls back to "Default".
 	bool DeletePreset(const std::string& a_name);
