@@ -207,6 +207,83 @@ namespace precise
 
 	inline bool IsIntegerType(ImGuiDataType a_type) { return a_type != ImGuiDataType_Float && a_type != ImGuiDataType_Double; }
 
+	// ---------------------------------------------------------------------------------------------------------
+	// 2.3.0 ONE WAY for sliders (ONE-WAY-SLIDERS.md): a slider a mod draws through the exports (igSliderFloat / Int / Scalar)
+	// steps one unit of its shown digit on a keyboard / D-pad nudge, as AMF's own precise sliders do - Dear ImGui alone moves
+	// it 1% of its range for a decimal format. The export knows the format and range; the generated wrapper reads the value
+	// before ImGui's slider (SliderValue) and hands it here after (NavNudge). The new value is ASSIGNED from the one before
+	// the call - before + one unit, on the format's grid, clamped - never added to what ImGui wrote, so a mod's own precise
+	// wrapper around the export, which does the same from the same value, still lands on the same one step.
+	// ---------------------------------------------------------------------------------------------------------
+	namespace detail
+	{
+		template <class T>
+		inline double Read(const void* a_data) { return a_data ? static_cast<double>(*static_cast<const T*>(a_data)) : 0.0; }
+
+		template <class T>
+		inline bool WriteStepped(void* a_data, double a_before, const void* a_min, const void* a_max, double a_step, int a_dir)
+		{
+			if (!a_data || !a_min || !a_max) return false;
+			T& v = *static_cast<T*>(a_data);
+			const double next = WheelStepped(a_before, a_step, a_dir, static_cast<double>(*static_cast<const T*>(a_min)),
+				static_cast<double>(*static_cast<const T*>(a_max)));
+			const T out = static_cast<T>(std::is_floating_point_v<T> ? next : std::round(next));
+			if (out == v) return false;
+			v = out;
+			return true;
+		}
+	}
+
+	// The slider's value as a double (0 for no value or an unknown type).
+	inline double SliderValue(ImGuiDataType a_type, const void* a_data)
+	{
+		if (!a_data) return 0.0;
+		switch (a_type) {
+		case ImGuiDataType_S8:     return detail::Read<ImS8>(a_data);
+		case ImGuiDataType_U8:     return detail::Read<ImU8>(a_data);
+		case ImGuiDataType_S16:    return detail::Read<ImS16>(a_data);
+		case ImGuiDataType_U16:    return detail::Read<ImU16>(a_data);
+		case ImGuiDataType_S32:    return detail::Read<ImS32>(a_data);
+		case ImGuiDataType_U32:    return detail::Read<ImU32>(a_data);
+		case ImGuiDataType_S64:    return detail::Read<ImS64>(a_data);
+		case ImGuiDataType_U64:    return detail::Read<ImU64>(a_data);
+		case ImGuiDataType_Float:  return detail::Read<float>(a_data);
+		case ImGuiDataType_Double: return detail::Read<double>(a_data);
+		default:                   return 0.0;
+		}
+	}
+
+	// For the (horizontal) slider item just drawn: when it is active from the keyboard or pad (not dragged, no number being
+	// typed, not read-only) and a Left / Right tweak ticked this frame, its value becomes a_before one step that way. True
+	// when the value changed here.
+	inline bool NavNudge(ImGuiDataType a_type, void* a_data, double a_before, const void* a_min, const void* a_max, double a_step,
+		ImGuiSliderFlags a_flags)
+	{
+		if (!GImGui || !a_data || !a_min || !a_max) return false;
+		ImGuiContext& g = *GImGui;
+		const ImGuiID id = g.LastItemData.ID;
+		if (id == 0 || g.ActiveId != id) return false;
+		if (g.ActiveIdSource != ImGuiInputSource_Keyboard && g.ActiveIdSource != ImGuiInputSource_Gamepad) return false;
+		if (ImGui::TempInputIsActive(id)) return false;
+		if ((a_flags & ImGuiSliderFlags_ReadOnly) != 0 || (g.LastItemData.InFlags & ImGuiItemFlags_ReadOnly) != 0) return false;
+		const float amount = ImGui::GetNavTweakPressedAmount(ImGuiAxis_X);
+		if (amount == 0.0f) return false;
+		const int dir = amount > 0.0f ? 1 : -1;
+		switch (a_type) {
+		case ImGuiDataType_S8:     return detail::WriteStepped<ImS8>(a_data, a_before, a_min, a_max, a_step, dir);
+		case ImGuiDataType_U8:     return detail::WriteStepped<ImU8>(a_data, a_before, a_min, a_max, a_step, dir);
+		case ImGuiDataType_S16:    return detail::WriteStepped<ImS16>(a_data, a_before, a_min, a_max, a_step, dir);
+		case ImGuiDataType_U16:    return detail::WriteStepped<ImU16>(a_data, a_before, a_min, a_max, a_step, dir);
+		case ImGuiDataType_S32:    return detail::WriteStepped<ImS32>(a_data, a_before, a_min, a_max, a_step, dir);
+		case ImGuiDataType_U32:    return detail::WriteStepped<ImU32>(a_data, a_before, a_min, a_max, a_step, dir);
+		case ImGuiDataType_S64:    return detail::WriteStepped<ImS64>(a_data, a_before, a_min, a_max, a_step, dir);
+		case ImGuiDataType_U64:    return detail::WriteStepped<ImU64>(a_data, a_before, a_min, a_max, a_step, dir);
+		case ImGuiDataType_Float:  return detail::WriteStepped<float>(a_data, a_before, a_min, a_max, a_step, dir);
+		case ImGuiDataType_Double: return detail::WriteStepped<double>(a_data, a_before, a_min, a_max, a_step, dir);
+		default:                   return false;
+		}
+	}
+
 	// SliderAngle: the value is radians, the range and format are degrees ("%.0f deg" when none is given).
 	inline bool WheelNudgeAngle(float* a_rad, float a_minDeg, float a_maxDeg, const char* a_format)
 	{

@@ -450,6 +450,12 @@ def main() -> int:
         "igVSliderScalar": ("data_type", "p_data", "p_min", "p_max", "format"),
     }
     sliders = 0
+    # 2.3.0 ONE WAY for sliders (4. plans\amf-null-checks\ONE-WAY-SLIDERS.md): the three horizontal single-value slider
+    # exports read the value before ImGui's slider and, after it, hold a keyboard / D-pad nudge to one unit of the shown
+    # digit (amf_ConsumerSliderNav, ConsumerSurface.cpp) - set from the value before the call, so a mod's own precise
+    # wrapper around the export still makes one step. The vertical sliders (Up / Down) and igSliderAngle keep ImGui's step.
+    NAV_SLIDERS = {"igSliderFloat", "igSliderInt", "igSliderScalar"}
+    nav_sliders = 0
     # 2.3.0 (combined run 2026-10-25 1515: Left on a mod's slider sent the highlight back to the mod list): a widget that
     # Left/Right adjust tells the side-navigation it holds the highlight (navside::NoteArrowItem, NavSide.h), so Left does
     # not leave the page. The single-value sliders above already note it through the wheel helper; these are the rest -
@@ -527,9 +533,20 @@ def main() -> int:
                 wheel = "amf_ConsumerSliderAngleWheel(v_rad, v_degrees_min, v_degrees_max, format)"
             else:
                 wheel = "amf_ConsumerSliderWheel(" + ", ".join(SLIDERS[name]) + ")"
-            out.append("\n    const bool amf_r = " + call + ";\n"
-                       "    const bool amf_w = " + wheel + ";   // AMF: the wheel nudges a slider (2.2.0)\n"
-                       "    return amf_r || amf_w;")
+            if name in NAV_SLIDERS:
+                # 2.3.0 ONE WAY for sliders: a keyboard / D-pad nudge is one unit of the shown digit (amf_ConsumerSliderNav)
+                t, v, lo, hi, fmt = SLIDERS[name]
+                out.append("\n    const double amf_b = amf_ConsumerSliderValue(" + t + ", " + v + ");   // AMF: the value before (2.3.0)\n"
+                           "    const bool amf_r = " + call + ";\n"
+                           "    const bool amf_n = amf_ConsumerSliderNav(" + ", ".join((t, v, "amf_b", lo, hi, fmt, "flags")) +
+                           ");   // AMF: one unit per nudge (2.3.0)\n"
+                           "    const bool amf_w = " + wheel + ";   // AMF: the wheel nudges a slider (2.2.0)\n"
+                           "    return amf_r || amf_n || amf_w;")
+                nav_sliders += 1
+            else:
+                out.append("\n    const bool amf_r = " + call + ";\n"
+                           "    const bool amf_w = " + wheel + ";   // AMF: the wheel nudges a slider (2.2.0)\n"
+                           "    return amf_r || amf_w;")
             pos = body_end
             sliders += 1
         elif name in ARROW_ITEMS:
@@ -622,7 +639,8 @@ def main() -> int:
         "// single-value slider exports take a mouse-wheel notch as one step of the shown digit (2.2.0); the tooltip\n"
         "// exports wrap a mod's tooltip to the window it draws in (ConsumerTooltip.h, 2.2.2); the plain text exports wrap\n"
         "// a mod's text inside its AMF page (2.2.4); the drag and multi-value slider exports note the highlight so Left\n"
-        "// adjusts them instead of leaving the page (2.3.0).\n"
+        "// adjusts them instead of leaving the page (2.3.0); the horizontal single-value slider exports hold a keyboard /\n"
+        "// D-pad nudge to one unit of the shown digit (2.3.0).\n"
         "// The generator's docstring explains exactly what is guarded and what is deliberately not. Since 2.3.0 every\n"
         "// pointer parameter Dear ImGui reads is guarded; one that ImGui takes as NULL (a NULL default in imgui.h, or\n"
         "// tools/imgui-null-ok.json - p_open, FocusWindow's window, PushFont's font) is left alone, because guarding\n"
@@ -639,6 +657,8 @@ def main() -> int:
     assert checkbox == 1, checkbox
     # 2.2.0: the wheel the seven single-value slider exports call (defined in ConsumerSurface.cpp).
     assert sliders == 7, sliders
+    # 2.3.0: three of them also hold a keyboard / D-pad nudge to one unit (amf_ConsumerSliderNav, ConsumerSurface.cpp).
+    assert nav_sliders == 3, nav_sliders
     # 2.3.0: the twelve drags and seven multi-value sliders note the highlight (amf_NoteArrowItem, ConsumerSurface.cpp).
     assert arrow_items == 19, arrow_items
     # 2.2.2: the seven tooltip exports (ConsumerTooltip.h, included after cimgui.h below).
@@ -651,6 +671,8 @@ def main() -> int:
             "bool amf_ConsumerCheckbox(const char* a_label, bool* a_value);\n"
             "bool amf_ConsumerSliderWheel(int a_type, void* a_data, const void* a_min, const void* a_max, const char* a_format);\n"
             "bool amf_ConsumerSliderAngleWheel(float* a_rad, float a_minDegrees, float a_maxDegrees, const char* a_format);\n"
+            "double amf_ConsumerSliderValue(int a_type, const void* a_data);\n"
+            "bool amf_ConsumerSliderNav(int a_type, void* a_data, double a_before, const void* a_min, const void* a_max, const char* a_format, int a_flags);\n"
             "void amf_NoteArrowItem();\n"
             "bool amf_BeginConsumerText();\nvoid amf_EndConsumerText(bool a_pushed);\n"
             + "".join(out))

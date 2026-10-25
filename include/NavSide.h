@@ -164,6 +164,128 @@ namespace navside
 		return true;
 	}
 
+	// ---------------------------------------------------------------------------------------------------------------------
+	// ONE WAY for sliders (2.3.0; the owner, via Main Agent, 2026-10-25: a highlighted slider steps on Left/Right and the
+	// D-pad without activation, in every mod - design and double-step proof in 4. plans\amf-null-checks\ONE-WAY-SLIDERS.md).
+	// Dear ImGui changes a slider from the keyboard or pad only while it is the ACTIVE item; a slider that merely holds the
+	// highlight hands Left / Right to navigation, which walks the highlight to the next table column. AMF cannot step a
+	// mod's slider itself - a slider drawn by the mod's own copy of ImGui leaves no value, type, range or format in the
+	// shared context - so instead, right after ImGui::NewFrame and before any page draws, a Left / Right (or D-pad left /
+	// right) press on a highlighted slider or drag makes THAT item the active one, from the keyboard or the pad as ImGui
+	// itself would, for as long as the key is held, and lets go on the first frame none of those keys is down. Every copy of
+	// ImGui drawing on the context then sees an active slider and runs its own keyboard / pad tweak with its own format and
+	// range (a precise slider holds that to one unit of the shown digit), exactly as A then Right does. A mod's own helper
+	// that steps a highlighted, NOT active slider (Deep Snow's HighlightNudge) sees IsItemActive() and stands down; DEM's
+	// NudgeableSlider adds nothing on a frame where the slider already moved. Text fields carry the same Inputable flag, so
+	// they are excluded: one AMF knows (a_navIsTextField), one learnt while it was being typed in (it owned Home), and one
+	// that dropped the activation within the frame it got it (InputTextEx does that for a field with no edit state) or
+	// started typing on it (the field holding the context's edit state) - released at once and learnt.
+	// ---------------------------------------------------------------------------------------------------------------------
+	namespace detail
+	{
+		inline ImGuiContext* g_stepCtx = nullptr;
+		inline ImGuiID       g_stepId = 0;          // the item AMF activated for a held Left / Right, 0 = none
+		inline int           g_stepFrame = -1;      // the frame it was activated on
+		inline ImGuiID       g_textIds[64] = {};    // items that are not steppers (text fields)
+		inline int           g_textNext = 0;
+
+		inline bool KnownText(ImGuiID a_id)
+		{
+			if (a_id == 0) return false;
+			for (const ImGuiID id : g_textIds) { if (id == a_id) return true; }
+			return false;
+		}
+
+		inline void LearnText(ImGuiID a_id)
+		{
+			if (a_id == 0 || KnownText(a_id)) return;
+			g_textIds[g_textNext] = a_id;
+			g_textNext = (g_textNext + 1) % static_cast<int>(sizeof(g_textIds) / sizeof(g_textIds[0]));
+		}
+
+		inline bool HorizontalKeyDown()
+		{
+			return ImGui::IsKeyDown(ImGuiKey_LeftArrow) || ImGui::IsKeyDown(ImGuiKey_RightArrow) ||
+			       ImGui::IsKeyDown(ImGuiKey_GamepadDpadLeft) || ImGui::IsKeyDown(ImGuiKey_GamepadDpadRight);
+		}
+	}
+
+	enum class HighlightStep { kNone, kStarted, kReleased, kNotAStepper };
+
+	// Right after ImGui::NewFrame, before any page draws, every frame (Renderer.cpp, after EnterActivatesArrowItem;
+	// tools\nav_left_check.cpp section 8). a_enabled: the menu is up and taking input. a_navIsTextField: AMF knows the
+	// highlighted item as a text field (keyboard::IsTextField). Returns what it did this frame (for the log).
+	inline HighlightStep StepHighlightedArrowItem(bool a_enabled, bool a_navIsTextField)
+	{
+		ImGuiContext* const g = GImGui;
+		if (!g) return HighlightStep::kNone;
+		if (detail::g_stepCtx != g)
+		{
+			detail::g_stepCtx = g;
+			detail::g_stepId = 0;
+			detail::g_stepFrame = -1;
+			for (ImGuiID& id : detail::g_textIds) { id = 0; }
+			detail::g_textNext = 0;
+		}
+		// a text field being typed in (any copy of ImGui): while active it owns Home / End (InputTextEx's SetKeyOwner, which a
+		// slider or drag never does), and it is not a slider's number box (Ctrl+click: TempInputId)
+		if (g->ActiveId != 0 && g->TempInputId != g->ActiveId && ImGui::GetKeyOwner(ImGuiKey_Home) == g->ActiveId) { detail::LearnText(g->ActiveId); }
+
+		if (detail::g_stepId != 0)
+		{
+			const ImGuiID id = detail::g_stepId;
+			if (g->ActiveId != id)
+			{
+				detail::g_stepId = 0;
+				// it let go within the frame it was given the activation: not a slider or drag (a text field with no state)
+				if (detail::g_stepFrame == g->FrameCount - 1 && g->ActiveIdPreviousFrame != id)
+				{
+					detail::LearnText(id);
+					return HighlightStep::kNotAStepper;
+				}
+				return HighlightStep::kNone;   // A / Enter / Escape / a click took it over, or it stopped being drawn
+			}
+			if (detail::KnownText(id))   // it started typing (a text field holding the context's edit state): let it go at once
+			{
+				detail::g_stepId = 0;
+				ImGui::ClearActiveID();
+				return HighlightStep::kNotAStepper;
+			}
+			if (!a_enabled || !detail::HorizontalKeyDown())
+			{
+				detail::g_stepId = 0;
+				ImGui::ClearActiveID();   // a normal let-go: IsItemDeactivated(AfterEdit) report it to the mod this frame
+				return HighlightStep::kReleased;
+			}
+			return HighlightStep::kNone;   // held: the slider steps itself on ImGui's tweak repeat
+		}
+
+		if (!a_enabled || g->ActiveId != 0 || g->NavId == 0 || !g->NavWindow) return HighlightStep::kNone;
+		if (g->IO.MouseDown[ImGuiMouseButton_Left]) return HighlightStep::kNone;   // a drag is the mouse's
+		const ImGuiID nav = g->NavId;
+		const bool noted = detail::g_ctx == g && detail::g_navId == nav && detail::g_frame == g->FrameCount - 1;
+		if (!noted && !NavOnKnownArrowItem()) return HighlightStep::kNone;
+		if (a_navIsTextField || detail::KnownText(nav)) return HighlightStep::kNone;
+
+		const bool keyboardNav = (g->IO.ConfigFlags & ImGuiConfigFlags_NavEnableKeyboard) != 0;
+		const bool padNav = (g->IO.ConfigFlags & ImGuiConfigFlags_NavEnableGamepad) != 0;
+		const bool keys = keyboardNav && (ImGui::IsKeyPressed(ImGuiKey_LeftArrow, true) || ImGui::IsKeyPressed(ImGuiKey_RightArrow, true));
+		const bool pad = padNav && (ImGui::IsKeyPressed(ImGuiKey_GamepadDpadLeft, true) || ImGui::IsKeyPressed(ImGuiKey_GamepadDpadRight, true));
+		if (!keys && !pad) return HighlightStep::kNone;
+
+		ImGui::SetActiveID(nav, g->NavWindow);
+		const ImGuiInputSource source = pad && !keys ? ImGuiInputSource_Gamepad : ImGuiInputSource_Keyboard;
+		g->ActiveIdSource = source;   // what a precise slider tests to tell a nudge from a drag
+		g->NavInputSource = source;   // which keys ImGui's tweak reads (GetNavTweakPressedAmount)
+		g->ActiveIdUsingNavDirMask |= (1 << ImGuiDir_Left) | (1 << ImGuiDir_Right);   // held: no navigation move either way
+		ImGui::NavMoveRequestCancel();   // this press's move (made in NewFrame): the highlight stays
+		g->NavDisableHighlight = false;  // and shows, as a keyboard / pad move would show it (so A / Enter work on it next)
+		g->NavDisableMouseHover = true;
+		detail::g_stepId = nav;
+		detail::g_stepFrame = g->FrameCount;
+		return HighlightStep::kStarted;
+	}
+
 	// This frame, after the page is drawn: is the highlight inside a popup (an open combo, a context menu, a modal)?
 	inline bool NavInPopup()
 	{

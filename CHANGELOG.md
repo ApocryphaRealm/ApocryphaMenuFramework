@@ -300,6 +300,30 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
   edge. TabFit.h, checked by the new tools\controls_fit_check.bat (12 checks: the cause, the fix, and no change at text
   size 1.0).
 
+### Changed (one way for sliders, 2026-10-25)
+- **A highlighted slider steps on Left / Right and the D-pad, on every mod's page, without activating it first** (the
+  owner, via Main Agent: one consistent way everywhere). Until now a slider changed from the keyboard or pad only after A /
+  Space / Enter; merely highlighted, Left / Right moved the highlight instead - in Deep Snow's depth-band table to the next
+  column. Now, with the menu open, a Left / Right (keyboard) or D-pad left / right press on a highlighted slider or drag
+  makes it the active item for as long as the key is held and lets it go on release, so whichever copy of Dear ImGui draws
+  it - AMF's own pages, converted menus, mods through the exports, or a mod's own ImGui (AMF Example) - steps it exactly as
+  A then Right would: the highlight stays, Left never sends it back to the mod list, Up / Down still move between rows,
+  and A / Space / Enter still activate it. A mod that saves on release saves once per tap. Text fields are left alone. A
+  mod's own helper for the same thing (Deep Snow 1.1.0's HighlightNudge, Dragon's Eye Minimap's and Local Map Upgrade's
+  NudgeableSlider - they keep it for plain SKSE Menu Framework) adds no second step: one stands down while the slider is
+  active, the other when the slider already moved. NavSide.h (StepHighlightedArrowItem), called right after ImGui's
+  NewFrame in Renderer.cpp; design and the double-step proof in 4. plans\amf-null-checks\ONE-WAY-SLIDERS.md.
+- **A mod's slider through the exports steps one unit of the digit it shows** (rule 68 for every page): igSliderFloat,
+  igSliderInt and igSliderScalar read the value before ImGui's slider and hold a keyboard / D-pad nudge to one unit of the
+  shown digit ("%.1f" 0.1, "%d" 1) instead of ImGui's 1% of the range - the step the mouse wheel already used. Set from the
+  value before the call, so a mod's own precise wrapper around the export lands on the same single step. Vertical sliders
+  and igSliderAngle keep ImGui's step; a drag steps by its own speed; a slider drawn by a mod's own copy of ImGui that is
+  not a precise slider keeps ImGui's step (AMF cannot see its format). tools\harden-cimgui.py (amf_ConsumerSliderNav,
+  precise::NavNudge), identity proof unchanged.
+- Checked off-game by tools\nav_left_check.bat, new section 8 (72 checks, 26 new): a plain slider in a table, AMF's precise
+  slider, an export slider, Deep Snow's band slider with its HighlightNudge and DEM's NudgeableSlider (one step a tap,
+  never two in one frame while held at 60 and 144 fps), the D-pad, Up / Down, Enter and Space, text fields, a plain row.
+
 ## 2.2.3 - 2026-10-21 - untested - dropdowns on SkyUI MCM pages fill when AMF is opened from the Journal's System menu
 
 ### Fixed (dropdowns on converted MCM pages)

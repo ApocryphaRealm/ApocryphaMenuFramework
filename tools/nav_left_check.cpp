@@ -21,6 +21,14 @@
 //      activated with Enter, Right / Left step the value and the highlight stays;
 //   7. Escape in an open dropdown: ImGui's NewFrame closes the popup before the menu reads Escape (the cause of "Esc closes
 //      the whole menu"); navside::EscapeClosesAPopup read before NewFrame sees it.
+//   8. ONE WAY for sliders (navside::StepHighlightedArrowItem, 4. plans\amf-null-checks\ONE-WAY-SLIDERS.md), with AMF's step
+//      on as Renderer.cpp runs it while the menu is up (sections 1-7 run with it off, so they still show ImGui's own
+//      behaviour): a HIGHLIGHTED plain slider in a table steps on Right and keeps its column; AMF's precise slider and an
+//      export-shaped slider step one unit of the shown digit; Deep Snow 1.1.0's band slider (its precise wrapper + its own
+//      HighlightNudge) and DEM 1.7.5's NudgeableSlider step ONCE a press and never twice in one frame while held (60 and
+//      144 fps) - and without AMF's step Deep Snow's helper still steps it; the D-pad does the same from the pad; Up / Down
+//      still move rows; Enter and Space still activate (DEM's N4 included); text fields are left alone (one typed in
+//      before, and one never typed in, found on the first press); Left on a plain row still goes back to the list.
 // What it cannot: Renderer.cpp's own branch order and the game's input path (Input.cpp turns key and pad records into
 // ImGui key events) - the in-game retest covers those.
 #include "../include/PreciseSlider.h"
@@ -41,7 +49,8 @@ namespace
 		std::cout << (a_ok ? "PASS " : "FAIL ") << a_what << "\n";
 	}
 
-	enum Item { kRow, kPrecise, kConsumer, kDrag, kTriple, kCustom, kTree, kCombo, kPlain, kPlainDrag, kText, kNoInput, kBandA, kBandB, kCount };
+	enum Item { kRow, kPrecise, kConsumer, kDrag, kTriple, kCustom, kTree, kCombo, kPlain, kPlainDrag, kText, kNoInput, kBandA, kBandB,
+				kExport, kText2, kDsA, kDsB, kDem, kCount };
 	ImGuiID g_ids[kCount] = {};
 	ImVec2  g_mid[kCount] = {};     // each item's centre on screen (for a mouse click)
 	int     g_focusRequest = -1;   // focus this item (SetFocusID) the next frame it is drawn
@@ -58,6 +67,15 @@ namespace
 	float  g_noInput = 50.0f;       // a NoInput slider from a mod's own ImGui (no Inputable flag)
 	float  g_bandA = 10.0f;         // Deep Snow's band table: "Starts at depth" ...
 	float  g_bandB = 60.0f;         // ... and the "Speed" column beside it (04f6 step 8 / 26d2 notes)
+	// 8. ONE WAY for sliders (ONE-WAY-SLIDERS.md)
+	float  g_export = 50.0f;        // a mod's slider through igSliderFloat's generated body: 0..100 "%.1f" (ImGui alone: 1.0 a nudge)
+	char   g_text2[32] = "Lydia";   // a text field nobody has typed in yet (no edit state of its own)
+	float  g_dsA = 10.0f;           // Deep Snow 1.1.0's band table, as it really runs: its precise wrapper around the export ...
+	float  g_dsB = 60.0f;           // ... plus precise::HighlightNudge (include\SliderNudge.h), in neighbouring columns
+	float  g_dem = 0.50f;           // Dragon's Eye Minimap 1.7.5's NudgeableSlider (UI.cpp) around its precise wrapper, 0..1 "%.2f"
+	const char* g_demSelected = nullptr;   // DEM's selectedSlider
+	bool   g_amfStep = false;       // Renderer.cpp's a_enabled: the menu is up and taking input (off for sections 1-7)
+	navside::HighlightStep g_step = navside::HighlightStep::kNone;
 	bool   g_enterTweaked = false;  // EnterActivatesArrowItem turned this frame's Enter into an activation
 	bool   g_escBefore = false;     // EscapeClosesAPopup() read just before NewFrame (Renderer.cpp's escClosesPopup)
 	int    g_popupsAfterNewFrame = 0;
@@ -89,6 +107,81 @@ namespace
 		}
 	}
 
+	// igSliderFloat's generated body (tools\harden-cimgui.py): the value before, ImGui's slider, the one-unit nudge, the wheel
+	bool ExportSliderFloat(const char* a_label, float* a_v, float a_min, float a_max, const char* a_format, ImGuiSliderFlags a_flags = 0)
+	{
+		const double before = precise::SliderValue(ImGuiDataType_Float, a_v);
+		const bool r = ImGui::SliderFloat(a_label, a_v, a_min, a_max, a_format, a_flags);
+		const bool n = precise::NavNudge(ImGuiDataType_Float, a_v, before, &a_min, &a_max, precise::FormatStep(a_format, false), a_flags);
+		const bool w = precise::WheelNudge(ImGuiDataType_Float, a_v, &a_min, &a_max, precise::FormatStep(a_format, false));
+		return r || n || w;
+	}
+
+	bool ArrowOrPadSideDown()
+	{
+		return ImGui::IsKeyDown(ImGuiKey_LeftArrow) || ImGui::IsKeyDown(ImGuiKey_RightArrow) || ImGui::IsKeyDown(ImGuiKey_GamepadDpadLeft) ||
+			   ImGui::IsKeyDown(ImGuiKey_GamepadDpadRight);
+	}
+
+	// Deep Snow 1.1.0 / DEM 1.7.5's precise::SliderFloat (their include\PreciseSlider.h), written against ImGui instead of
+	// ImGuiMCP: the export, then a nudge (a side key down, the mouse up) held to one unit from the value before the call
+	bool ModPrecise(const char* a_label, float* a_v, float a_min, float a_max, const char* a_format)
+	{
+		const float before = *a_v;
+		if (!ExportSliderFloat(a_label, a_v, a_min, a_max, a_format, ImGuiSliderFlags_AlwaysClamp)) return false;
+		*a_v = std::clamp(*a_v, a_min, a_max);
+		const bool nudging = !ImGui::IsMouseDown(ImGuiMouseButton_Left) &&
+							 (ArrowOrPadSideDown() || ImGui::IsKeyDown(ImGuiKey_GamepadLStickLeft) || ImGui::IsKeyDown(ImGuiKey_GamepadLStickRight));
+		if (*a_v != before && nudging)
+		{
+			const double step = precise::Step(a_format);
+			double v = static_cast<double>(before) + (*a_v > before ? step : -step);
+			v = std::round(v / step) * step;
+			*a_v = static_cast<float>(std::clamp(v, static_cast<double>(a_min), static_cast<double>(a_max)));
+		}
+		return true;
+	}
+
+	// Deep Snow 1.1.0's precise::HighlightNudge (include\SliderNudge.h), against ImGui instead of ImGuiMCP
+	bool HighlightNudge(float* a_v, float a_min, float a_max, const char* a_format)
+	{
+		if (!a_v || !ImGui::IsItemFocused() || ImGui::IsItemActive() || ImGui::IsMouseDown(ImGuiMouseButton_Left)) return false;
+		const bool left = ImGui::IsKeyPressed(ImGuiKey_LeftArrow, true) || ImGui::IsKeyPressed(ImGuiKey_GamepadDpadLeft, true);
+		const bool right = ImGui::IsKeyPressed(ImGuiKey_RightArrow, true) || ImGui::IsKeyPressed(ImGuiKey_GamepadDpadRight, true);
+		if (left || right || ArrowOrPadSideDown()) ImGui::NavMoveRequestCancel();
+		if (left == right) return false;
+		const float before = *a_v;
+		const double step = precise::Step(a_format);
+		double v = static_cast<double>(before) + (right ? step : -step);
+		v = std::round(v / step) * step;
+		*a_v = static_cast<float>(std::clamp(v, static_cast<double>((std::min)(a_min, a_max)), static_cast<double>((std::max)(a_min, a_max))));
+		return *a_v != before;
+	}
+
+	// Dragon's Eye Minimap 1.7.5's NudgeableSlider (source\UI.cpp), against ImGui instead of ImGuiMCP
+	bool NudgeableSlider(const char* a_label, float* a_value, float a_min, float a_max, const char* a_format)
+	{
+		bool changed = ModPrecise(a_label, a_value, a_min, a_max, a_format);
+		g_ids[kDem] = ImGui::GetItemID();
+		g_mid[kDem] = ImVec2((ImGui::GetItemRectMin().x + ImGui::GetItemRectMax().x) * 0.5f, (ImGui::GetItemRectMin().y + ImGui::GetItemRectMax().y) * 0.5f);
+		if (g_focusRequest == kDem) { ImGui::SetFocusID(ImGui::GetItemID(), ImGui::GetCurrentWindow()); GImGui->NavDisableHighlight = false; g_focusRequest = -1; }
+		if (ImGui::IsItemClicked() || ImGui::IsItemActive()) g_demSelected = a_label;
+		if (g_demSelected == a_label)
+		{
+			const float step = static_cast<float>(precise::Step(a_format));
+			float nudge = 0.0f;
+			if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow) || ImGui::IsKeyPressed(ImGuiKey_DownArrow)) nudge -= step;
+			if (ImGui::IsKeyPressed(ImGuiKey_RightArrow) || ImGui::IsKeyPressed(ImGuiKey_UpArrow)) nudge += step;
+			if (nudge != 0.0f && !changed) { *a_value = std::clamp(*a_value + nudge, a_min, a_max); changed = true; }
+			const bool arrowHeld = ImGui::IsKeyDown(ImGuiKey_LeftArrow) || ImGui::IsKeyDown(ImGuiKey_RightArrow) ||
+								   ImGui::IsKeyDown(ImGuiKey_UpArrow) || ImGui::IsKeyDown(ImGuiKey_DownArrow);
+			if (nudge != 0.0f || arrowHeld) ImGui::NavMoveRequestCancel();
+			ImGui::SameLine();
+			ImGui::TextDisabled("<-->");
+		}
+		return changed;
+	}
+
 	void Frame(bool a_left = false, bool a_enter = false, float a_dt = 1.0f / 60.0f, bool a_right = false)
 	{
 		ImGuiIO& io = ImGui::GetIO();
@@ -100,8 +193,9 @@ namespace
 		ImGui::NewFrame();
 		g_popupsAfterNewFrame = GImGui->OpenPopupStack.Size;
 		g_enterTweaked = navside::EnterActivatesArrowItem();   // Renderer.cpp: right after NewFrame
-		ImGui::SetNextWindowPos(ImVec2(100, 100));
-		ImGui::SetNextWindowSize(ImVec2(1200, 900));
+		g_step = navside::StepHighlightedArrowItem(g_amfStep, false);   // Renderer.cpp: next, every frame (8. ONE WAY)
+		ImGui::SetNextWindowPos(ImVec2(20, 20));
+		ImGui::SetNextWindowSize(ImVec2(1200, 1040));
 		ImGui::Begin("###amf-page", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
 		ImGui::Button("A plain row");
 		Mark(kRow);
@@ -168,6 +262,30 @@ namespace
 			Mark(kBandB);
 			ImGui::EndTable();
 		}
+		// 8. ONE WAY for sliders: a mod's slider through the export, a fresh text field, Deep Snow 1.1.0's band table and DEM's slider
+		ImGui::SetNextItemWidth(500);
+		ExportSliderFloat("Export slider", &g_export, 0.0f, 100.0f, "%.1f");
+		Mark(kExport);
+		ImGui::SetNextItemWidth(500);
+		ImGui::InputText("Fresh name", g_text2, sizeof(g_text2));
+		Mark(kText2);
+		if (ImGui::BeginTable("##dsbands", 2, ImGuiTableFlags_SizingStretchProp))
+		{
+			ImGui::TableNextRow();
+			ImGui::TableNextColumn();
+			ImGui::SetNextItemWidth(-1.0f);
+			ModPrecise("##dsdepth0", &g_dsA, 0.0f, 150.0f, "%.0f %%");
+			HighlightNudge(&g_dsA, 0.0f, 150.0f, "%.0f %%");   // Deep Snow UI.cpp: right after the slider
+			Mark(kDsA);
+			ImGui::TableNextColumn();
+			ImGui::SetNextItemWidth(-1.0f);
+			ModPrecise("##dsspeed0", &g_dsB, 10.0f, 100.0f, "%.0f %%");
+			HighlightNudge(&g_dsB, 10.0f, 100.0f, "%.0f %%");
+			Mark(kDsB);
+			ImGui::EndTable();
+		}
+		ImGui::SetNextItemWidth(500);
+		NudgeableSlider("DEM Offset", &g_dem, 0.0f, 1.0f, "%.2f");
 		navside::LearnNavItemKind();   // Renderer.cpp: after the page, before the Left decision
 		g_seen = { navside::NavOnArrowItem(), navside::NavInPopup(), navside::PageTookTheMove(ImGuiDir_Left), ImGui::IsAnyItemActive(),
 				   GImGui->NavId, GImGui->ActiveId };
@@ -431,6 +549,217 @@ int main()
 		Check(afterLeft < afterRight && GImGui->NavId == g_ids[kBandA], "... Left steps it back down, still on the slider");
 		Frame(false, true); Frame(false, false); Settle(2);
 		Check(GImGui->ActiveId == 0, "... Enter lets it go");
+	}
+
+	// 8. ONE WAY for sliders (4. plans\amf-null-checks\ONE-WAY-SLIDERS.md): with AMF's step on (Renderer.cpp: the menu is up), a
+	// HIGHLIGHTED slider or drag steps on Left / Right / D-pad without activation, keeps the highlight, and steps once a press
+	// even when the mod runs its own helper (Deep Snow's HighlightNudge, DEM's NudgeableSlider)
+	{
+		using navside::HighlightStep;
+		const float dt60 = 1.0f / 60.0f, dt144 = 1.0f / 144.0f;
+		auto near = [](float a_a, float a_b) { return std::fabs(a_a - a_b) < 1e-4f; };
+		struct Tap { HighlightStep press, release; bool activeOnPress; ImGuiID navAfter; Seen seen; };
+		auto tapSide = [&](bool a_right, float a_dt = 1.0f / 60.0f) {
+			Tap t{};
+			Frame(!a_right, false, a_dt, a_right);
+			t.press = g_step;
+			t.activeOnPress = GImGui->ActiveId != 0;
+			t.seen = g_seen;
+			Frame(false, false, a_dt, false);
+			t.release = g_step;
+			Settle(1);
+			t.navAfter = GImGui->NavId;
+			return t;
+		};
+		struct Hold { float maxStep = 0.0f; float total = 0.0f; bool stayed = true; };
+		auto holdRight = [&](Item a_item, const float* a_v, int a_frames, float a_dt) {
+			Hold h{};
+			float last = *a_v;
+			const float first = *a_v;
+			for (int i = 0; i < a_frames; ++i)
+			{
+				Frame(false, false, a_dt, true);
+				h.maxStep = (std::max)(h.maxStep, std::fabs(*a_v - last));
+				last = *a_v;
+				h.stayed = h.stayed && GImGui->NavId == g_ids[a_item];
+			}
+			Frame(false, false, a_dt, false);
+			Settle(1);
+			h.total = *a_v - first;
+			return h;
+		};
+		g_amfStep = true;
+
+		// a. a plain ImGui slider in a table (a mod's own copy of ImGui): Right steps it and keeps the column
+		{
+			const bool there = reach(kBandA);
+			g_bandA = 10.0f;
+			const float other = g_bandB;
+			const Tap t = tapSide(true);
+			Check(there && t.press == HighlightStep::kStarted && t.activeOnPress,
+				  "8a: Right on a HIGHLIGHTED plain slider in a table makes it the active item while the key is down");
+			Check(g_bandA > 10.0f && t.navAfter == g_ids[kBandA] && g_bandB == other,
+				  "8a: ... it steps (ImGui's own step for a slider whose format AMF cannot see), the highlight keeps its column, the next column is untouched");
+			Check(t.release == HighlightStep::kReleased && GImGui->ActiveId == 0, "8a: ... and it is let go on the frame Right is released");
+			const float v = g_bandA;
+			const Tap l = tapSide(false);
+			Check(g_bandA < v && l.navAfter == g_ids[kBandA] && !MayLeave(l.seen), "8a: Left steps it back and never sends the highlight to the mod list");
+		}
+		// b. AMF's own precise slider (AMF Example's Speed shape, 0..1 "%.2f"): one unit of the shown digit
+		{
+			FocusOn(kPrecise);
+			g_speed = 0.50f;
+			const Tap r = tapSide(true);
+			const float afterRight = g_speed;
+			const Tap l = tapSide(false);
+			Check(r.press == HighlightStep::kStarted && near(afterRight, 0.51f) && r.navAfter == g_ids[kPrecise],
+				  "8b: Right on a highlighted AMF precise slider: 0.50 -> 0.51, highlight kept");
+			Check(near(g_speed, 0.50f) && l.navAfter == g_ids[kPrecise], "8b: ... Left: back to 0.50");
+		}
+		// c. a mod's slider through the export (igSliderFloat's generated body), 0..100 "%.1f": ImGui alone moves 1.0 - the export holds it to 0.1
+		{
+			FocusOn(kExport);
+			g_export = 50.0f;
+			const Tap r = tapSide(true);
+			Check(r.press == HighlightStep::kStarted && near(g_export, 50.1f) && r.navAfter == g_ids[kExport],
+				  "8c: Right on a highlighted export slider: 50.0 -> 50.1 (one unit of the shown digit, not ImGui's 1% = 1.0)");
+			const Hold h = holdRight(kExport, &g_export, 60, dt60);
+			Check(h.stayed && h.total > 0.0f && h.maxStep < 0.1f + 1e-4f, "8c: ... held 1 s: it repeats, never more than 0.1 in a frame, highlight kept");
+		}
+		// d. Deep Snow 1.1.0's band slider (precise wrapper around the export + HighlightNudge) in its table: ONE step a press
+		{
+			FocusOn(kDsA);
+			g_dsA = 10.0f;
+			const float other = g_dsB;
+			const Tap r = tapSide(true);
+			Check(r.press == HighlightStep::kStarted && g_dsA == 11.0f && r.navAfter == g_ids[kDsA] && g_dsB == other,
+				  "8d: Deep Snow band slider with its own HighlightNudge, under AMF: Right 10 -> 11 - one step, not two (HighlightNudge saw IsItemActive and stood down), column kept");
+			const Tap r2 = tapSide(true);
+			const Tap l = tapSide(false);
+			Check(g_dsA == 11.0f && r2.navAfter == g_ids[kDsA] && l.navAfter == g_ids[kDsA], "8d: ... Right, Left: 11 -> 12 -> 11");
+			const Hold h60 = holdRight(kDsA, &g_dsA, 60, dt60);
+			const Hold h144 = holdRight(kDsA, &g_dsA, 144, dt144);
+			Check(h60.stayed && h60.total > 0.0f && h60.maxStep <= 1.0f && g_dsB == other,
+				  "8d: ... held 1 s at 60 fps: never two steps in one frame, never leaves the column");
+			Check(h144.stayed && h144.total > 0.0f && h144.maxStep <= 1.0f, "8d: ... held 1 s at 144 fps: the same");
+			g_amfStep = false;   // plain SKSE Menu Framework: AMF does nothing, the mod's own helper steps it
+			g_dsA = 10.0f;
+			const Tap smf = tapSide(true);
+			g_amfStep = true;
+			Check(smf.press == HighlightStep::kNone && g_dsA == 11.0f && smf.navAfter == g_ids[kDsA],
+				  "8d: without AMF's step (plain SMF) Deep Snow's own HighlightNudge still steps it once and keeps the column");
+		}
+		// e. Dragon's Eye Minimap 1.7.5's NudgeableSlider (steps the slider last clicked or activated, unless the slider moved itself)
+		{
+			FocusOn(kRow);
+			io.AddMousePosEvent(g_mid[kDem].x, g_mid[kDem].y); Frame();
+			io.AddMouseButtonEvent(0, true);  Frame();
+			io.AddMouseButtonEvent(0, false); Frame();
+			io.AddMousePosEvent(-FLT_MAX, -FLT_MAX); Settle(2);
+			g_dem = 0.50f;   // the click itself moves the value; only the selection matters here
+			Settle(1);
+			const bool selected = g_demSelected != nullptr && GImGui->NavId == g_ids[kDem];
+			const Tap r = tapSide(true);
+			Check(selected && r.press == HighlightStep::kStarted && near(g_dem, 0.51f) && r.navAfter == g_ids[kDem],
+				  "8e (DEM N4): clicked DEM slider, Right: 0.50 -> 0.51 - one step (NudgeableSlider adds none when the slider moved), highlight kept");
+			const Hold h = holdRight(kDem, &g_dem, 144, dt144);
+			Check(h.stayed && h.total > 0.0f && h.maxStep < 0.01f + 1e-4f, "8e: ... held 1 s at 144 fps: never two steps in one frame, highlight kept");
+			g_dem = 0.50f;
+			Frame(false, true); Frame(false, false);   // Enter activates it (EnterActivatesArrowItem), as before
+			const bool active = GImGui->ActiveId == g_ids[kDem];
+			const Tap ra = tapSide(true);
+			Check(active && ra.press == HighlightStep::kNone && near(g_dem, 0.51f) && GImGui->ActiveId == g_ids[kDem],
+				  "8e (DEM N4): Enter activates the DEM slider; Right then steps it once (AMF leaves an active slider alone)");
+			Frame(false, true); Frame(false, false); Settle(2);
+			Check(GImGui->ActiveId == 0, "8e: ... Enter lets it go");
+			// DEM's selected slider cancels EVERY arrow move while it is drawn (its page is the only one on screen in game);
+			// here every item shares one page, so the rest runs as if DEM's page were closed
+			g_demSelected = nullptr;
+		}
+		// f. the D-pad (controller mode: gamepad navigation on, keyboard navigation off)
+		{
+			io.ConfigFlags = (io.ConfigFlags | ImGuiConfigFlags_NavEnableGamepad) & ~ImGuiConfigFlags_NavEnableKeyboard;
+			io.BackendFlags |= ImGuiBackendFlags_HasGamepad;
+			auto dpad = [&](ImGuiKey a_key) {
+				Tap t{};
+				io.AddKeyEvent(a_key, true); Frame();
+				t.press = g_step;
+				t.activeOnPress = GImGui->ActiveId != 0 && GImGui->ActiveIdSource == ImGuiInputSource_Gamepad;
+				io.AddKeyEvent(a_key, false); Frame();
+				t.release = g_step;
+				Settle(1);
+				t.navAfter = GImGui->NavId;
+				return t;
+			};
+			FocusOn(kPrecise);
+			g_speed = 0.50f;
+			const Tap r = dpad(ImGuiKey_GamepadDpadRight);
+			Check(r.press == HighlightStep::kStarted && r.activeOnPress && near(g_speed, 0.51f) && r.navAfter == g_ids[kPrecise] &&
+					  r.release == HighlightStep::kReleased,
+				  "8f: D-pad right on a highlighted precise slider: active from the PAD while held, 0.50 -> 0.51, highlight kept, let go on release");
+			FocusOn(kDsA);
+			g_dsA = 10.0f;
+			const Tap d = dpad(ImGuiKey_GamepadDpadRight);
+			const Tap dl = dpad(ImGuiKey_GamepadDpadLeft);
+			Check(d.press == HighlightStep::kStarted && dl.navAfter == g_ids[kDsA] && g_dsA == 10.0f,
+				  "8f: D-pad right then left on Deep Snow's band slider: 10 -> 11 -> 10, one step each, column kept");
+			io.ConfigFlags = (io.ConfigFlags | ImGuiConfigFlags_NavEnableKeyboard) & ~ImGuiConfigFlags_NavEnableGamepad;
+			io.BackendFlags &= ~ImGuiBackendFlags_HasGamepad;
+			Settle(2);
+		}
+		// g. Up / Down still move between rows
+		{
+			FocusOn(kPrecise);
+			g_speed = 0.50f;
+			io.AddKeyEvent(ImGuiKey_DownArrow, true);  Frame();
+			const HighlightStep st = g_step;
+			io.AddKeyEvent(ImGuiKey_DownArrow, false); Settle(2);
+			const bool down = GImGui->NavId == g_ids[kConsumer];
+			io.AddKeyEvent(ImGuiKey_UpArrow, true);  Frame();
+			io.AddKeyEvent(ImGuiKey_UpArrow, false); Settle(2);
+			Check(st == HighlightStep::kNone && down && GImGui->NavId == g_ids[kPrecise] && near(g_speed, 0.50f),
+				  "8g: Down / Up on a highlighted slider still move the highlight to the next / previous row, value unchanged");
+		}
+		// h. activation still works (Enter, Space), and AMF leaves an activated slider alone
+		{
+			FocusOn(kPrecise);
+			g_speed = 0.50f;
+			Frame(false, true); Frame(false, false);
+			const bool enterActive = GImGui->ActiveId == g_ids[kPrecise] && !ImGui::TempInputIsActive(g_ids[kPrecise]);
+			const Tap r = tapSide(true);
+			const bool stillActive = GImGui->ActiveId == g_ids[kPrecise];
+			Frame(false, true); Frame(false, false); Settle(2);
+			Check(enterActive && r.press == HighlightStep::kNone && near(g_speed, 0.51f) && stillActive && GImGui->ActiveId == 0,
+				  "8h: Enter activates the slider, Right steps it once, it stays active after Right is let go, Enter releases it");
+			press(ImGuiKey_Space);
+			const bool spaceActive = GImGui->ActiveId == g_ids[kPrecise];
+			press(ImGuiKey_Space);
+			Settle(2);
+			Check(spaceActive && GImGui->ActiveId == 0, "8h: Space activates it and Space lets it go, as before");
+		}
+		// i. text fields are not stepped: one typed in before (learnt), and one nobody has typed in yet (found on the first press)
+		{
+			const bool there = reach(kText);
+			const std::string before = g_text;
+			const Tap t = tapSide(true);
+			Check(there && t.press == HighlightStep::kNone && GImGui->ActiveId == 0 && before == g_text && t.navAfter == g_ids[kText],
+				  "8i: Right on a highlighted text field that was typed in before: AMF leaves it alone (learnt while it was being typed in)");
+			const bool there2 = reach(kText2);
+			const Tap t1 = tapSide(true);
+			const bool typing = io.WantTextInput;
+			const Tap t2 = tapSide(true);
+			Check(there2 && t1.press == HighlightStep::kStarted && t1.release == HighlightStep::kNotAStepper && !typing &&
+					  std::string(g_text2) == "Lydia" && t1.navAfter == g_ids[kText2],
+				  "8i: a text field nobody typed in yet: the first Right finds it is no slider (it drops the activation at once) - no typing, text unchanged, highlight kept");
+			Check(t2.press == HighlightStep::kNone, "8i: ... and from then on AMF leaves it alone");
+		}
+		// j. a plain row: Left still goes back to the mod list
+		{
+			FocusOn(kRow);
+			const Tap t = tapSide(false);
+			Check(t.press == HighlightStep::kNone && MayLeave(t.seen), "8j: Left on a plain button row: AMF's step does nothing, Left still goes back to the list");
+		}
+		g_amfStep = false;
 	}
 
 	ImGui::DestroyContext();

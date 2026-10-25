@@ -6076,6 +6076,27 @@ namespace renderer
 				{
 					logger::debug("nav: Enter activates slider/drag {} (number entry stays on Ctrl+click)", GImGui ? GImGui->NavId : 0u);
 				}
+				// 2.3.0 ONE WAY for sliders: Left / Right / D-pad on a HIGHLIGHTED slider or drag in any mod's page steps it - the item
+				// is made active while the key is held, so every copy of ImGui steps it as A then Right would (NavSide.h; design and
+				// double-step proof: 4. plans\amf-null-checks\ONE-WAY-SLIDERS.md). Logged on the transitions only.
+				{
+					const ImGuiID stepNav = GImGui ? GImGui->NavId : 0u;
+					switch (navside::StepHighlightedArrowItem(visible && interactive, keyboard::IsTextField(stepNav)))
+					{
+					case navside::HighlightStep::kStarted:
+						logger::debug("nav: Left/Right steps the highlighted slider/drag {} (active while the key is held, {})", stepNav,
+									  GImGui && GImGui->ActiveIdSource == ImGuiInputSource_Gamepad ? "D-pad" : "keyboard");
+						break;
+					case navside::HighlightStep::kReleased:
+						logger::debug("nav: highlighted slider/drag {} let go (Left/Right released)", stepNav);
+						break;
+					case navside::HighlightStep::kNotAStepper:
+						logger::debug("nav: item {} is not a slider or drag (a text field) - Left/Right leave it alone from now on", stepNav);
+						break;
+					default:
+						break;
+					}
+				}
 				profMark(frameprofile::kImGuiNewFrame);
 				mcmloader::Frame();  // MCM loader: OnConfigClose when an MCM entry stops being drawn
 				prisma::Frame();     // 2.1.6: Prisma_OnSettingsApplied when a Prisma page is left

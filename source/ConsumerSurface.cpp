@@ -735,6 +735,21 @@ bool amf_ConsumerSliderAngleWheel(float* a_rad, float a_minDegrees, float a_maxD
 	return precise::WheelNudgeAngle(a_rad, a_minDegrees, a_maxDegrees, a_format);
 }
 
+// 2.3.0 ONE WAY for sliders (4. plans\amf-null-checks\ONE-WAY-SLIDERS.md): the three horizontal single-value slider exports
+// (igSliderFloat / Int / Scalar - tools/harden-cimgui.py) read the value before ImGui's slider and, after it, turn a keyboard /
+// D-pad nudge into one unit of the digit the format shows - the step the wheel above uses - instead of ImGui's 1% of the
+// range, as AMF's own precise sliders do (rule 68). The value is set from the one before the call, so a mod's own precise
+// wrapper around the export (Deep Snow, Dragon's Eye Minimap) lands on the same single step.
+double amf_ConsumerSliderValue(int a_type, const void* a_data)
+{
+	return precise::SliderValue(a_type, a_data);
+}
+
+bool amf_ConsumerSliderNav(int a_type, void* a_data, double a_before, const void* a_min, const void* a_max, const char* a_format, int a_flags)
+{
+	return precise::NavNudge(a_type, a_data, a_before, a_min, a_max, precise::FormatStep(a_format, precise::IsIntegerType(a_type)), a_flags);
+}
+
 // 2.3.0 (combined run 2026-10-25 1515: Left on a mod's slider sent the highlight back to the mod list). Every drag export
 // and the multi-value slider exports (tools/harden-cimgui.py) call this right after ImGui's own widget, so the side
 // navigation knows Left/Right adjust the highlighted item and Left stays on the page (NavSide.h). The single-value

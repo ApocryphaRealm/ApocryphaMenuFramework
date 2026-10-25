@@ -12,7 +12,8 @@
 // single-value slider exports take a mouse-wheel notch as one step of the shown digit (2.2.0); the tooltip
 // exports wrap a mod's tooltip to the window it draws in (ConsumerTooltip.h, 2.2.2); the plain text exports wrap
 // a mod's text inside its AMF page (2.2.4); the drag and multi-value slider exports note the highlight so Left
-// adjusts them instead of leaving the page (2.3.0).
+// adjusts them instead of leaving the page (2.3.0); the horizontal single-value slider exports hold a keyboard /
+// D-pad nudge to one unit of the shown digit (2.3.0).
 // The generator's docstring explains exactly what is guarded and what is deliberately not. Since 2.3.0 every
 // pointer parameter Dear ImGui reads is guarded; one that ImGui takes as NULL (a NULL default in imgui.h, or
 // tools/imgui-null-ok.json - p_open, FocusWindow's window, PushFont's font) is left alone, because guarding
@@ -25,6 +26,8 @@ void amf_ConsumerSameLine(float a_offsetFromStartX, float a_spacing);
 bool amf_ConsumerCheckbox(const char* a_label, bool* a_value);
 bool amf_ConsumerSliderWheel(int a_type, void* a_data, const void* a_min, const void* a_max, const char* a_format);
 bool amf_ConsumerSliderAngleWheel(float* a_rad, float a_minDegrees, float a_maxDegrees, const char* a_format);
+double amf_ConsumerSliderValue(int a_type, const void* a_data);
+bool amf_ConsumerSliderNav(int a_type, void* a_data, double a_before, const void* a_min, const void* a_max, const char* a_format, int a_flags);
 void amf_NoteArrowItem();
 bool amf_BeginConsumerText();
 void amf_EndConsumerText(bool a_pushed);
@@ -920,9 +923,11 @@ CIMGUI_API bool igSliderFloat(const char* label,float* v,float v_min,float v_max
     if (!label) { label = ""; }   // AMF null guard
     if (!v) { return false; }   // AMF null guard
     if (!format) { format = "%.3f"; }   // AMF null guard
+    const double amf_b = amf_ConsumerSliderValue(ImGuiDataType_Float, v);   // AMF: the value before (2.3.0)
     const bool amf_r = ImGui::SliderFloat(label,v,v_min,v_max,format,flags);
+    const bool amf_n = amf_ConsumerSliderNav(ImGuiDataType_Float, v, amf_b, &v_min, &v_max, format, flags);   // AMF: one unit per nudge (2.3.0)
     const bool amf_w = amf_ConsumerSliderWheel(ImGuiDataType_Float, v, &v_min, &v_max, format);   // AMF: the wheel nudges a slider (2.2.0)
-    return amf_r || amf_w;
+    return amf_r || amf_n || amf_w;
 }
 CIMGUI_API bool igSliderFloat2(const char* label,float v[2],float v_min,float v_max,const char* format,ImGuiSliderFlags flags)
 {
@@ -965,9 +970,11 @@ CIMGUI_API bool igSliderInt(const char* label,int* v,int v_min,int v_max,const c
     if (!label) { label = ""; }   // AMF null guard
     if (!v) { return false; }   // AMF null guard
     if (!format) { format = "%d"; }   // AMF null guard
+    const double amf_b = amf_ConsumerSliderValue(ImGuiDataType_S32, v);   // AMF: the value before (2.3.0)
     const bool amf_r = ImGui::SliderInt(label,v,v_min,v_max,format,flags);
+    const bool amf_n = amf_ConsumerSliderNav(ImGuiDataType_S32, v, amf_b, &v_min, &v_max, format, flags);   // AMF: one unit per nudge (2.3.0)
     const bool amf_w = amf_ConsumerSliderWheel(ImGuiDataType_S32, v, &v_min, &v_max, format);   // AMF: the wheel nudges a slider (2.2.0)
-    return amf_r || amf_w;
+    return amf_r || amf_n || amf_w;
 }
 CIMGUI_API bool igSliderInt2(const char* label,int v[2],int v_min,int v_max,const char* format,ImGuiSliderFlags flags)
 {
@@ -1002,9 +1009,11 @@ CIMGUI_API bool igSliderScalar(const char* label,ImGuiDataType data_type,void* p
     if (!p_data) { return false; }   // AMF null guard
     if (!p_min) { return false; }   // AMF null guard
     if (!p_max) { return false; }   // AMF null guard
+    const double amf_b = amf_ConsumerSliderValue(data_type, p_data);   // AMF: the value before (2.3.0)
     const bool amf_r = ImGui::SliderScalar(label,data_type,p_data,p_min,p_max,format,flags);
+    const bool amf_n = amf_ConsumerSliderNav(data_type, p_data, amf_b, p_min, p_max, format, flags);   // AMF: one unit per nudge (2.3.0)
     const bool amf_w = amf_ConsumerSliderWheel(data_type, p_data, p_min, p_max, format);   // AMF: the wheel nudges a slider (2.2.0)
-    return amf_r || amf_w;
+    return amf_r || amf_n || amf_w;
 }
 CIMGUI_API bool igSliderScalarN(const char* label,ImGuiDataType data_type,void* p_data,int components,const void* p_min,const void* p_max,const char* format,ImGuiSliderFlags flags)
 {
