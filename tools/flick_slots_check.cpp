@@ -7,6 +7,7 @@
 // Prints one line per check and "flick_slots_check: N of N passed"; exits 1 on any failure.
 #include "../include/FlickToolPath.h"
 
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <iterator>
@@ -135,6 +136,54 @@ int main(int argc, char** argv)
 		Check(TranslationLine("$KEY\tText with\ta tab", k, t) && k == "$KEY" && t == "Text with\ta tab", "one tab: as before, inner tabs kept");
 		Check(!TranslationLine("not a key\tx", k, t) && !TranslationLine("$KEYONLY", k, t) && !TranslationLine(" \tx", k, t),
 			  "a line without $KEY<tab> is not a translation");
+		Check(TranslationLine("$TEMPL_ToolName              General Settings", k, t) && k == "$TEMPL_ToolName" && t == "General Settings",
+			  "2.3.0 (run 3266): spaces only between key and text, as FUCK-Template's file: key and text, inner space kept");
+	}
+	{
+		// 2.3.0 (combined run 3266): whole files as the game ships them - UTF-16 LE with a BOM, CRLF - separated by tabs, by
+		// spaces (FUCK-Template_english.txt's shape) and by a mix; each read through the same toolpath::ForEachTranslation
+		// that FlickHost.cpp's reader calls, from a real file on disk
+		using flick::toolpath::ForEachTranslation;
+		auto utf16File = [](const std::string& a_name, const std::u16string& a_text) {
+			const std::filesystem::path p = std::filesystem::temp_directory_path() / a_name;
+			std::ofstream out(p, std::ios::binary);
+			out.put(static_cast<char>(0xFF));
+			out.put(static_cast<char>(0xFE));
+			for (const char16_t c : a_text)
+			{
+				out.put(static_cast<char>(c & 0xFF));
+				out.put(static_cast<char>((c >> 8) & 0xFF));
+			}
+			out.close();
+			std::ifstream in(p, std::ios::binary);
+			return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+		};
+		using Pairs = std::vector<std::pair<std::string, std::string>>;
+		auto read = [&](const std::string& a_name, const std::u16string& a_text, Pairs& a_out) {
+			return ForEachTranslation(utf16File(a_name, a_text), [&](std::string a_k, std::string a_v) { a_out.emplace_back(std::move(a_k), std::move(a_v)); });
+		};
+		const Pairs want{ { "$TEMPL_ToolName", "General Settings" }, { "$TEMPL_Group_General", "DEMO - Template" },
+			{ "$TEMPL_HotkeyNote", "Note: Hotkeys support chorded modifiers (e.g. holding Shift+Ctrl)" } };
+		Pairs tabs, spaces, mixed;
+		const auto nTabs = read("amf_flick_tr_tabs.txt",
+			u"$TEMPL_ToolName\tGeneral Settings\r\n$TEMPL_Group_General\t\tDEMO - Template\r\n\r\n"
+			u"$TEMPL_HotkeyNote\tNote: Hotkeys support chorded modifiers (e.g. holding Shift+Ctrl)\r\n", tabs);
+		const auto nSpaces = read("amf_flick_tr_spaces.txt",
+			u"$TEMPL_ToolName              General Settings\r\n$TEMPL_Group_General         DEMO - Template\r\n\r\n"
+			u"$TEMPL_HotkeyNote            Note: Hotkeys support chorded modifiers (e.g. holding Shift+Ctrl)\r\n", spaces);
+		const auto nMixed = read("amf_flick_tr_mixed.txt",
+			u"$TEMPL_ToolName \t General Settings\r\n$TEMPL_Group_General\t   \tDEMO - Template\r\n\r\n"
+			u"$TEMPL_HotkeyNote  \tNote: Hotkeys support chorded modifiers (e.g. holding Shift+Ctrl)\r\n", mixed);
+		Check(nTabs == 3 && tabs == want, "a UTF-16 LE file separated by tabs: 3 lines, keys and texts exact (texts with spaces kept whole)");
+		Check(nSpaces == 3 && spaces == want,
+			  "THE BUG: a UTF-16 LE file separated by SPACES (FUCK-Template_english.txt's shape): 3 lines, not 0 - keys and texts exact");
+		Check(nMixed == 3 && mixed == want, "a UTF-16 LE file separated by spaces and tabs mixed: 3 lines, keys and texts exact");
+		Pairs accents;
+		// "$K" E-acute " Caf" e-acute " " U+1F600 (a surrogate pair) CR LF, as code units (no non-ASCII in this source)
+		const std::u16string accented{ u'$', u'K', char16_t(0x00C9), u' ', u'C', u'a', u'f', char16_t(0x00E9), u' ', char16_t(0xD83D), char16_t(0xDE00), u'\r', u'\n' };
+		read("amf_flick_tr_utf16.txt", accented, accents);
+		Check(accents.size() == 1 && accents[0].first == "$K\xC3\x89" && accents[0].second == "Caf\xC3\xA9 \xF0\x9F\x98\x80",
+			  "UTF-16 to UTF-8: an accented letter and a surrogate pair come out as UTF-8");
 	}
 	{
 		const auto p = Of("A:: ::B::", "T");

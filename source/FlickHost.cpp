@@ -695,47 +695,17 @@ namespace flick
 		std::unordered_map<std::string, std::string> g_tr;   // "$KEY" -> text; node-based, so c_str() stays put
 		std::set<std::string> g_trLoaded;
 
-		std::string Utf16ToUtf8(const std::wstring& a_w)
-		{
-			if (a_w.empty()) { return {}; }
-			const int n = ::WideCharToMultiByte(CP_UTF8, 0, a_w.data(), static_cast<int>(a_w.size()), nullptr, 0, nullptr, nullptr);
-			std::string out(static_cast<std::size_t>(n), '\0');
-			::WideCharToMultiByte(CP_UTF8, 0, a_w.data(), static_cast<int>(a_w.size()), out.data(), n, nullptr, nullptr);
-			return out;
-		}
-
 		bool ReadTranslationFile(const std::filesystem::path& a_path)
 		{
 			std::ifstream in(a_path, std::ios::binary);
 			if (!in) { return false; }
-			std::string raw((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-			std::string text;
-			if (raw.size() >= 2 && static_cast<unsigned char>(raw[0]) == 0xFF && static_cast<unsigned char>(raw[1]) == 0xFE)
-			{
-				std::wstring w(reinterpret_cast<const wchar_t*>(raw.data() + 2), (raw.size() - 2) / 2);
-				text = Utf16ToUtf8(w);
-			}
-			else
-			{
-				text = raw.size() >= 3 && raw.compare(0, 3, "\xEF\xBB\xBF") == 0 ? raw.substr(3) : raw;
-			}
-			std::size_t pos = 0, count = 0;
-			while (pos < text.size())
-			{
-				std::size_t end = text.find('\n', pos);
-				if (end == std::string::npos) { end = text.size(); }
-				std::string line = text.substr(pos, end - pos);
-				pos = end + 1;
-				if (!line.empty() && line.back() == '\r') { line.pop_back(); }
-				// 2.3.0 (the 2026-10-25 run): FUCK-DEMO's file lines up its columns - "$DEMO_TabBasicWidgets \t\tBasic" - so the
-				// key kept a trailing space (every lookup of it missed: its page showed raw $DEMO_ keys though 367 lines were
-				// read) and the text kept the extra tabs (its tools registered as "\tGeneral Demo", a second list entry).
-				// toolpath::TranslationLine trims both (checked offline by tools\flick_slots_check).
-				std::string key, value;
-				if (!toolpath::TranslationLine(line, key, value)) { continue; }
-				g_tr[key] = std::move(value);
-				++count;
-			}
+			const std::string raw((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+			// 2.3.0 (the 2026-10-25 runs): FUCK-DEMO's file lines up its columns - "$DEMO_TabBasicWidgets \t\tBasic" - so the
+			// key kept a trailing space (every lookup of it missed) and the text kept the extra tabs (a second list entry);
+			// FUCK-Template's separates key and text with spaces only, and a tab-only split read 0 of its lines. The whole
+			// file - UTF-16 LE / UTF-8, lines, the key ending at the first space or tab - is read by toolpath::ForEachTranslation,
+			// the code tools\flick_slots_check runs offline on tab-, space- and mixed-separated files.
+			const std::size_t count = toolpath::ForEachTranslation(raw, [](std::string a_key, std::string a_text) { g_tr[std::move(a_key)] = std::move(a_text); });
 			logger::info("flick: {} lines of text from {}", count, a_path.string());
 			return true;
 		}

@@ -362,6 +362,52 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
   0x72 - is refused, as are 0x72 in a parent or name word, a missing type, a looping parent chain, and an attached-script
   pointer of 0x72 or into unmapped memory. Not yet seen in game.
 
+### Fixed (a held slider stepped every frame - combined run 3266, step S8, 2026-10-25)
+- **Skyrim crashed holding Right on Dragon's Eye Minimap's Offset X slider** (SkyrimSE+0FFE143 in Scaleform, the address
+  of DEM 1.7.5's typed-scale crash, which came from DEM re-applying its minimap every frame). While a slider is active,
+  Dear ImGui's keyboard / pad tweak repeats at its "nav tweak" rate - 0.72 x KeyRepeatDelay, then 0.30 x KeyRepeatRate
+  (0.198 s, then every 0.015 s) - and the one-way step keeps the slider active while the key is held: measured off-game,
+  49 steps in a one-second hold at 60 fps and 55 at 144 fps, one a frame. DEM applied its display on each.
+- `navside::HoldTweakAtKeyRepeat` (NavSide.h, right after the one-way step in Renderer.cpp): while a slider or drag the
+  keyboard or pad is stepping is active and Left / Right (or the D-pad) is held, AMF paces the held key - its
+  DownDuration reads 0 ("pressed") on the press and on each key-repeat tick (io.KeyRepeatDelay 0.275 s, then every
+  io.KeyRepeatRate 0.050 s, DEM's own nudge timing) and 0.1 s on every other frame. Every reader of the key - ImGui's
+  tweak in each copy of ImGui, DEM's NudgeableSlider, Deep Snow's helper - sees one press on exactly those frames: about
+  15 steps a second at any frame rate, one step a tap. Covers a slider activated with A / Space / Enter and then held as
+  well. Text fields are untouched. (Scaling io.KeyRepeatDelay / Rate was tried and dropped: it also moved the default
+  repeat DEM's nudge reads, so DEM added steps on other frames - 20 a second.) Logged at debug on the transitions.
+- Checked off-game by tools\nav_left_check.bat (77 checks, 5 new): a one-second hold gives 16 steps at 60 and at 144 fps
+  (was 49 and 55), DEM's NudgeableSlider 16 at 144 fps, a tap after a hold is one step, ImGui's repeat settings unchanged;
+  Deep Snow's one step a press and DEM's one step a press still pass. Falsification note in
+  4. plans\amf-null-checks\ONE-WAY-SLIDERS.md. Not yet seen in game.
+
+### Fixed (FLICK translation files separated by spaces - combined run 3266, 2026-10-25)
+- **FUCK-Template's entry read "$TEMPL_Group_General (FLICK)"**: its FUCK-Template_english.txt (UTF-16 LE, 16 lines)
+  separates key and text with spaces, and AMF split on tabs only - the log said `flick: 0 lines of text from ...`.
+  As the game's own loader does, the key now ends at the first space or tab and the text is everything after that run of
+  blanks (inner spaces and tabs kept); be418a2's trimming of padded keys and leading tabs is kept.
+- The whole file read (UTF-16 LE or UTF-8, lines, the split) moved into FlickToolPath.h's `ForEachTranslation`, which
+  FlickHost.cpp calls and tools\flick_slots_check runs offline: three UTF-16 LE BOM files written to disk - tab-, space-
+  and mixed-separated - each give the same three key -> text pairs with their inner spaces whole, plus an accented
+  letter and a surrogate pair (43 checks, 5 new). Not yet seen in game.
+
+### Fixed (one theme apply a tap on Window opacity - combined run 3266, S10, 2026-10-25)
+- Each tap on Window opacity logged TWO "Theme applied" lines. The press stepped the slider (applied), and the release -
+  the one-way step letting the slider go - made ImGui report "deactivated after edit", which f1abb03's
+  `precise::ApplyNow` also applied. ApplyNow now applies on the let-go only a change it held back (a typed number, Ctrl+click),
+  never one it already applied: one apply a tap, one a typed entry (Enter), one a step while held, live while dragging and
+  wheeling. Checked by tools\nav_left_check.bat 8b S10 (a tap: 1 apply, was 2; a one-second hold: 16 applies for 16
+  steps, was 17) and tools\slider_wheel_check (46 of 46: a typed 25 still applies once on Enter, the wheel still live).
+
+### Fixed (the first Enter after a mouse click on a slider did nothing - combined run 3266, 2026-10-25)
+- A click leaves the slider as the nav item but hides the highlight (NavDisableHighlight); Dear ImGui 1.90.8 turns Enter /
+  Space / A into an activation only while the highlight shows, so the first press did nothing and the second
+  activated it (measured off-game: after click and release NavDisableHighlight 1, NavActivateId 0 on the Enter).
+  `navside::ActivateAfterClick` (NavSide.h, right after NewFrame, before EnterActivatesArrowItem): on a slider or drag
+  only, that first press shows the highlight and activates the item as a tweak - no number box, as Enter does since
+  26d2 N3. Other items keep ImGui's behaviour. Checked by tools\nav_left_check.bat 8h (click, release, the FIRST Enter
+  activates; Space then still toggles): 80 of 80.
+
 ## 2.2.3 - 2026-10-21 - untested - dropdowns on SkyUI MCM pages fill when AMF is opened from the Journal's System menu
 
 ### Fixed (dropdowns on converted MCM pages)
