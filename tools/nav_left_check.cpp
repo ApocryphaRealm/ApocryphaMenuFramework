@@ -107,20 +107,11 @@ namespace
 		}
 	}
 
-	// A RAW Dear ImGui slider, exactly as ImGui::SliderFloat draws it (its whole body is this SliderScalar call) - what a mod
-	// drawing with its own copy of ImGui, or the export before AMF's additions, puts on the page. This harness needs the
-	// un-precise slider on purpose, so it is spelled through SliderScalar: the package gate's sliders-are-precise row (rule 68)
-	// is about sliders a page ships, and reads every repo source for the literal ImGui slider call.
-	bool RawSliderFloat(const char* a_label, float* a_v, float a_min, float a_max, const char* a_format, ImGuiSliderFlags a_flags = 0)
-	{
-		return ImGui::SliderScalar(a_label, ImGuiDataType_Float, a_v, &a_min, &a_max, a_format, a_flags);
-	}
-
 	// igSliderFloat's generated body (tools\harden-cimgui.py): the value before, ImGui's slider, the one-unit nudge, the wheel
 	bool ExportSliderFloat(const char* a_label, float* a_v, float a_min, float a_max, const char* a_format, ImGuiSliderFlags a_flags = 0)
 	{
 		const double before = precise::SliderValue(ImGuiDataType_Float, a_v);
-		const bool r = RawSliderFloat(a_label, a_v, a_min, a_max, a_format, a_flags);
+		const bool r = ImGui::SliderFloat(a_label, a_v, a_min, a_max, a_format, a_flags);
 		const bool n = precise::NavNudge(ImGuiDataType_Float, a_v, before, &a_min, &a_max, precise::FormatStep(a_format, false), a_flags);
 		const bool w = precise::WheelNudge(ImGuiDataType_Float, a_v, &a_min, &a_max, precise::FormatStep(a_format, false));
 		return r || n || w;
@@ -246,7 +237,7 @@ namespace
 		// widgets drawn the way a mod with its OWN copy of Dear ImGui draws them (AMF Example): plain ImGui calls, nothing of
 		// AMF's after them - only ImGui's own state says what they are
 		ImGui::SetNextItemWidth(500);
-		RawSliderFloat("Plain speed", &g_plain, 0.5f, 3.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
+		ImGui::SliderFloat("Plain speed", &g_plain, 0.5f, 3.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
 		Mark(kPlain);
 		ImGui::SetNextItemWidth(500);
 		ImGui::DragFloat("Plain drag", &g_plainDrag, 0.1f, 0.0f, 10.0f, "%.1f");
@@ -255,7 +246,7 @@ namespace
 		ImGui::InputText("Plain name", g_text, sizeof(g_text));
 		Mark(kText);
 		ImGui::SetNextItemWidth(500);
-		RawSliderFloat("No-input slider", &g_noInput, 0.0f, 100.0f, "%.0f", ImGuiSliderFlags_NoInput);
+		ImGui::SliderFloat("No-input slider", &g_noInput, 0.0f, 100.0f, "%.0f", ImGuiSliderFlags_NoInput);
 		Mark(kNoInput);
 		// Deep Snow's band table: plain sliders in neighbouring columns
 		if (ImGui::BeginTable("##bands", 2, ImGuiTableFlags_SizingStretchProp))
@@ -263,11 +254,11 @@ namespace
 			ImGui::TableNextRow();
 			ImGui::TableNextColumn();
 			ImGui::SetNextItemWidth(-1.0f);
-			RawSliderFloat("##depth0", &g_bandA, 0.0f, 150.0f, "%.0f %%", ImGuiSliderFlags_AlwaysClamp);
+			ImGui::SliderFloat("##depth0", &g_bandA, 0.0f, 150.0f, "%.0f %%", ImGuiSliderFlags_AlwaysClamp);
 			Mark(kBandA);
 			ImGui::TableNextColumn();
 			ImGui::SetNextItemWidth(-1.0f);
-			RawSliderFloat("##speed0", &g_bandB, 10.0f, 100.0f, "%.0f %%", ImGuiSliderFlags_AlwaysClamp);
+			ImGui::SliderFloat("##speed0", &g_bandB, 10.0f, 100.0f, "%.0f %%", ImGuiSliderFlags_AlwaysClamp);
 			Mark(kBandB);
 			ImGui::EndTable();
 		}

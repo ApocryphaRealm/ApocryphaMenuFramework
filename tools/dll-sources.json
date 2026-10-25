@@ -1,0 +1,13 @@
+{
+  "_doc": "Which repo sources build which shipped DLL, for the package gate's dll-built-after-the-last-source-change row: each DLL named here is compared only with the files whose repo-relative path ('/' separators) matches its 'sources' regex; a DLL not named here is compared with every source. The framework DLL (both build lines) is built from everything except the SMF name stub and the off-game harnesses in tools/. The stub is built from stub/ and takes its version from CMakeLists.txt (through stub/SMFNameStub.rc.in), so CMakeLists.txt counts for it too: a version bump relinks it, and an unbuilt stub under a new number still fails. A CMakeLists.txt edit that does not relink the stub is answered by touching stub/SMFNameStub.cpp and building, which no longer makes the framework's DLL look older. Without this map the stub, which is not relinked when only the framework's sources change, tripped the row, and touching its source to relink it made the framework's DLL look older (2026-10-25).",
+  "dlls": [
+    {
+      "dll": "!ApocryphaMenuFramework.dll",
+      "sources": "^(?!stub/|tools/)"
+    },
+    {
+      "dll": "!ApocryphaMenuFramework-SMFName.dll",
+      "sources": "^(stub/|CMakeLists\\.txt$)"
+    }
+  ]
+}

@@ -58,10 +58,7 @@ namespace
 	{
 		__try
 		{
-			// ImGui::SliderFloat's whole body, spelled out (the package gate's sliders-are-precise row reads every source for the
-			// literal slider call; this is the unguarded control, not a slider anyone sees)
-			const float lo = 0.0f, hi = 1.0f;
-			ImGui::SliderScalar("##control", ImGuiDataType_Float, nullptr, &lo, &hi, "%.2f");
+			ImGui::SliderFloat("##control", nullptr, 0.0f, 1.0f, "%.2f");
 			return false;
 		}
 		__except (EXCEPTION_EXECUTE_HANDLER)
