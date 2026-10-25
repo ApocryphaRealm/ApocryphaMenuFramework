@@ -171,6 +171,18 @@ namespace navside
 		return g && g->NavWindow && (g->NavWindow->Flags & ImGuiWindowFlags_Popup) != 0;
 	}
 
+	// Read BEFORE ImGui::NewFrame: is a popup open that Escape will close (an open dropdown, a context menu - not a modal,
+	// which Escape leaves open)? NewFrame's own cancel (NavUpdateCancelRequest) closes it, so by the time Renderer.cpp reads
+	// Escape as "close the menu" the popup is already gone - this is the only moment it can still be seen (retest batch
+	// B-20261025-053652-453d, 26d2 N7 / c0a3: Esc in an open dropdown closed the whole AMF menu).
+	inline bool EscapeClosesAPopup()
+	{
+		const ImGuiContext* const g = GImGui;
+		if (!g || g->OpenPopupStack.Size == 0) return false;
+		const ImGuiWindow* const top = g->OpenPopupStack.back().Window;
+		return top && (top->Flags & ImGuiWindowFlags_Modal) == 0;
+	}
+
 	// This frame, after the page is drawn: ImGui made a move request in a_dir and a widget cancelled it (it used the press) -
 	// a page stepping its own value, or ImGui's own tree node closing on Left. A request FORWARDED to the next frame (a
 	// wrap-around) also passes through a cancel, but it is still moving, so it does not count.

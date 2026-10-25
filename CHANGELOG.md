@@ -229,6 +229,11 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
   activated, Right moves to the widget in the next column (ImGui's own navigation) and keys do not change the value -
   what the retest saw; activated (A, Space, or now Enter), Right and Left step it one unit and the highlight stays in its
   column. Checked by nav_left_check (the table case).
+- **Escape in an open dropdown closes the dropdown, not the menu** (26d2 N7 note, c0a3 "Other"). The menu read Escape as
+  "close" after ImGui's frame had begun - and ImGui closes the open dropdown on that same Escape as the frame begins, so
+  nothing showed a dropdown had been open. Whether a dropdown or context menu is open is now read just before, and that
+  Escape only closes it. With nothing open, Escape closes the menu as before. NavSide.h (EscapeClosesAPopup), checked by
+  nav_left_check (the cause and the fix on live frames).
 
 ## 2.2.3 - 2026-10-21 - untested - dropdowns on SkyUI MCM pages fill when AMF is opened from the Journal's System menu
 

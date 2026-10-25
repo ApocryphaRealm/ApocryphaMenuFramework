@@ -6016,6 +6016,9 @@ namespace renderer
 					}
 				}
 				profMark(frameprofile::kBackend);
+				// 2.3.0 (retest batch B-20261025-053652-453d, 26d2 N7 / c0a3): Escape in an open dropdown closes the dropdown, not
+				// the whole menu. ImGui's NewFrame closes the popup on that Escape, so whether one was open is read just before it.
+				const bool escClosesPopup = navside::EscapeClosesAPopup();
 				ImGui::NewFrame();
 				// 2.3.0 (26d2 N3): keyboard Enter on a slider or drag activates it, as Space and A do, instead of opening its
 				// number box - turned before any page draws, so every copy of ImGui drawing on this context sees it (NavSide.h)
@@ -6053,12 +6056,14 @@ namespace renderer
 				{
 					// Escape closes. The keypress was consumed input-side, so the game does
 					// not also react to the same stroke.
-					if (ImGui::IsKeyPressed(ImGuiKey_Escape, false))
+					const bool escape = ImGui::IsKeyPressed(ImGuiKey_Escape, false);
+					if (escape && !escClosesPopup)
 					{
 						ToggleMainWindow();
 					}
 					else
 					{
+						if (escape) { logger::debug("input: Escape closed an open dropdown / popup; the menu stays open"); }
 						DrawFrameworkWindow();
 					}
 				}

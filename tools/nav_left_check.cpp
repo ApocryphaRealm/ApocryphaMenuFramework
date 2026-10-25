@@ -18,7 +18,9 @@
 //      click, a drag, a text field, a NoInput slider once activated - so Left stays on them; Enter on a slider activates it
 //      (no number box), Left then steps it, Enter lets it go; Enter on a text field still starts typing;
 //   6. Deep Snow's band slider in a table: not activated, Right moves to the next column (ImGui's nav, as seen in 26d2);
-//      activated with Enter, Right / Left step the value and the highlight stays.
+//      activated with Enter, Right / Left step the value and the highlight stays;
+//   7. Escape in an open dropdown: ImGui's NewFrame closes the popup before the menu reads Escape (the cause of "Esc closes
+//      the whole menu"); navside::EscapeClosesAPopup read before NewFrame sees it.
 // What it cannot: Renderer.cpp's own branch order and the game's input path (Input.cpp turns key and pad records into
 // ImGui key events) - the in-game retest covers those.
 #include "../include/PreciseSlider.h"
@@ -57,6 +59,8 @@ namespace
 	float  g_bandA = 10.0f;         // Deep Snow's band table: "Starts at depth" ...
 	float  g_bandB = 60.0f;         // ... and the "Speed" column beside it (04f6 step 8 / 26d2 notes)
 	bool   g_enterTweaked = false;  // EnterActivatesArrowItem turned this frame's Enter into an activation
+	bool   g_escBefore = false;     // EscapeClosesAPopup() read just before NewFrame (Renderer.cpp's escClosesPopup)
+	int    g_popupsAfterNewFrame = 0;
 
 	struct Seen { bool onArrow, inPopup, tookLeft, anyActive; ImGuiID navId, activeId; };
 	Seen g_seen{};
@@ -92,7 +96,9 @@ namespace
 		io.AddKeyEvent(ImGuiKey_RightArrow, a_right);
 		io.AddKeyEvent(ImGuiKey_Enter, a_enter);
 		io.DeltaTime = a_dt;
+		g_escBefore = navside::EscapeClosesAPopup();
 		ImGui::NewFrame();
+		g_popupsAfterNewFrame = GImGui->OpenPopupStack.Size;
 		g_enterTweaked = navside::EnterActivatesArrowItem();   // Renderer.cpp: right after NewFrame
 		ImGui::SetNextWindowPos(ImVec2(100, 100));
 		ImGui::SetNextWindowSize(ImVec2(1200, 900));
@@ -381,6 +387,22 @@ int main()
 		Check(g_plain < before && GImGui->NavId == g_ids[kPlain], "... Left then steps its value down and the highlight stays on it");
 		Frame(false, true); Frame(false, false); Settle(2);
 		Check(GImGui->ActiveId == 0 && !ImGui::TempInputIsActive(g_ids[kPlain]), "... Enter again lets it go (no number box)");
+	}
+	{
+		// 4. (c0a3 / 26d2 N7) Escape in an open dropdown: ImGui's NewFrame closes the popup, so after NewFrame - where the
+		// menu read Escape as "close the menu" - nothing shows it was open; read before NewFrame, it is seen
+		FocusOn(kCombo);
+		Frame(false, true); Frame(false, false); Settle(2);   // Enter opens the combo
+		const bool open = GImGui->OpenPopupStack.Size > 0;
+		io.AddKeyEvent(ImGuiKey_Escape, true); Frame();
+		const bool before = g_escBefore;
+		const int after = g_popupsAfterNewFrame;
+		const bool escPressed = true;
+		io.AddKeyEvent(ImGuiKey_Escape, false); Settle(2);
+		Check(open && after == 0, "CAUSE (Esc in a dropdown): ImGui's NewFrame already closed the dropdown before the menu reads Escape");
+		Check(escPressed && before, "FIX: read before NewFrame, the open dropdown is seen - Escape closes it and the menu stays open");
+		Frame(); const bool none = !g_escBefore;
+		Check(none, "with no dropdown open, Escape still closes the menu (nothing seen before NewFrame)");
 	}
 	{
 		// a text field still starts editing on Enter
