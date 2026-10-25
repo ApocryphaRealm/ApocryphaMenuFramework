@@ -42,10 +42,12 @@ namespace registry
 
 	bool Register(const char* a_modName, const char* a_pageName, AMF_RenderCallback a_render)
 	{
-		if (!a_render)
+		// 2.3.0: the names are checked HERE too, not only in RegisterFn below - the loop after it compares
+		// entry.modName == a_modName, and that read must not rest on another function having refused a null
+		if (!a_render || !a_modName || !a_pageName)
 		{
-			logger::warn("AMF_RegisterPage refused: mod=\"{}\", page=\"{}\" - the render callback is null",
-						 a_modName ? a_modName : "<null>", a_pageName ? a_pageName : "<null>");
+			logger::warn("AMF_RegisterPage refused: mod=\"{}\", page=\"{}\", render set={} - every argument must be non-null",
+						 a_modName ? a_modName : "<null>", a_pageName ? a_pageName : "<null>", a_render != nullptr);
 			return false;
 		}
 		if (!RegisterFn(a_modName, a_pageName, std::function<void()>(a_render))) { return false; }

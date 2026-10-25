@@ -471,6 +471,14 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 	{
 		return true;
 	}
+	// 2.3.0 (null checks on every pointer AMF reads): SKSE always passes its load interface, but SKSE::Init reads through
+	// it at once, so a null one is refused here instead of crashing in CommonLibSSE-NG. The log does not exist yet (it
+	// comes up after SKSE::Init), so the refusal goes to the debugger output; SKSE reports the plugin as failed to load.
+	if (!a_skse)
+	{
+		OutputDebugStringA("Apocrypha Menu Framework: SKSEPlugin_Load got no SKSE load interface - not starting\n");
+		return false;
+	}
 	SKSE::Init(a_skse);
 	// 1.8.9: before anything resolves an address, say which Address Library file this game needs and whether it
 	// is there; when it is missing the plugin loads inert with a message that names the file (the guard every
