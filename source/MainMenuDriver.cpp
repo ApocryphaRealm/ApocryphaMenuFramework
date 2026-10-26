@@ -4,12 +4,14 @@
 #include "utils/Logger.h"
 #include "utils/NullGuard.h"
 
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <tuple>
 
 namespace mainmenudriver
@@ -72,17 +74,35 @@ namespace mainmenudriver
 			return o;
 		}
 
-		// Runs a_fn on the MAIN thread and waits (up to 2s) for its result string - the pattern
-		// DevBench itself uses so read ops answer synchronously from the listener thread.
-		std::string RunOnMainThreadBlocking(std::function<std::string()> a_fn)
+		// The thread SKSE's UI tasks run on, noted by the first one that runs (default id: not seen yet).
+		std::atomic<std::thread::id> g_uiThread{};
+
+		// Runs a_fn on the UI THREAD (SKSE AddUITask: inside the UI's own message processing, the thread the menu movies
+		// advance on) and waits up to 2 s for its result string, so a read op answers synchronously from DevBench's
+		// listener thread. 2.3.0 (gate rows scaleform-calls-only-on-the-ui-thread / scaleform-helpers-only-on-the-ui-thread,
+		// after Dragon's Eye Minimap 1.7.5's crashes): this used AddTask, whose queue on SE 1.5.97 runs as its own job
+		// beside the UI job, so getvar's GetVariable on the Main Menu movie could race the movie's own Advance.
+		// It cannot deadlock: DevBench calls tools on its listener thread (DevBenchAPI.h), never the UI thread; should a
+		// caller ever BE the UI thread (it matches the id the UI tasks noted), the job runs inline instead of waiting on
+		// itself; and every wait is bounded (2 s, then a "timed out" answer). The shared state outlives a timed-out wait,
+		// so a late task writes into it safely.
+		std::string RunOnUIThreadBlocking(const char* a_what, std::function<std::string()> a_fn)
 		{
 			AMF_REQUIRE(a_fn, "{\"ok\":false,\"error\":\"no job to run\"}");
+			if (g_uiThread.load() == std::this_thread::get_id())
+			{
+				logger::debug("amf.mainmenu {}: called on the UI thread - run inline", a_what ? a_what : "?");
+				return a_fn();
+			}
 			auto state = std::make_shared<std::tuple<std::mutex, std::condition_variable, std::string, bool>>();
 
 			auto* tasks = SKSE::GetTaskInterface();  // 2.3.0: null before SKSE::Init has queried it
 			AMF_REQUIRE(tasks, "{\"ok\":false,\"error\":\"SKSE task interface unavailable\"}");
-			tasks->AddTask([state, fn = std::move(a_fn)]() {
-				std::string result = fn ? fn() : std::string();   // 2.3.0: an empty job answers "" instead of throwing on the main thread
+			const std::string what = a_what ? a_what : "?";
+			tasks->AddUITask([state, what, fn = std::move(a_fn)]() {
+				g_uiThread.store(std::this_thread::get_id());
+				logger::info("amf.mainmenu {}: running on the UI task", what);
+				std::string result = fn ? fn() : std::string();   // 2.3.0: an empty job answers "" instead of throwing on the UI thread
 				{
 					std::scoped_lock l(std::get<0>(*state));
 					std::get<2>(*state) = std::move(result);
@@ -94,7 +114,8 @@ namespace mainmenudriver
 			std::unique_lock l(std::get<0>(*state));
 			if (!std::get<1>(*state).wait_for(l, std::chrono::milliseconds(2000), [&] { return std::get<3>(*state); }))
 			{
-				return "{\"ok\":false,\"error\":\"main-thread task timed out (2s) - engine busy or paused\"}";
+				logger::warn("amf.mainmenu {}: the UI task did not answer within 2 s", what);
+				return "{\"ok\":false,\"error\":\"UI task timed out (2s) - engine busy or paused\"}";
 			}
 			return std::get<2>(*state);
 		}
@@ -140,7 +161,9 @@ namespace mainmenudriver
 		{
 			auto* tasks = SKSE::GetTaskInterface();  // 2.3.0: null before SKSE::Init has queried it
 			AMF_REQUIRE_VOID(tasks);
-			tasks->AddTask([path = std::move(a_path), arg = std::move(a_arg)]() {
+			// 2.3.0: on the UI task (AddUITask), not AddTask - Invoke on the menu movie must not race its Advance
+			tasks->AddUITask([path = std::move(a_path), arg = std::move(a_arg)]() {
+				g_uiThread.store(std::this_thread::get_id());
 				auto* ui = RE::UI::GetSingleton();
 				auto menu = ui ? ui->GetMenu(RE::MainMenu::MENU_NAME) : nullptr;
 				if (!menu || !menu->uiMovie)
@@ -226,7 +249,7 @@ namespace mainmenudriver
 				}
 				else
 				{
-					result = RunOnMainThreadBlocking([path]() -> std::string {
+					result = RunOnUIThreadBlocking("getvar", [path]() -> std::string {
 						auto* ui = RE::UI::GetSingleton();
 						auto menu = ui ? ui->GetMenu(RE::MainMenu::MENU_NAME) : nullptr;
 						if (!menu || !menu->uiMovie)
@@ -261,7 +284,7 @@ namespace mainmenudriver
 			}
 			else if (op == "state" || op.empty())
 			{
-				result = RunOnMainThreadBlocking([]() -> std::string {
+				result = RunOnUIThreadBlocking("state", []() -> std::string {
 					auto* ui = RE::UI::GetSingleton();
 					const bool open = ui && ui->IsMenuOpen(RE::MainMenu::MENU_NAME);
 					auto menu = ui ? ui->GetMenu(RE::MainMenu::MENU_NAME) : nullptr;

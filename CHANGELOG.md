@@ -428,6 +428,17 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
   back to the top on the frame the page changes; going back into the same page keeps its scroll. page_switch_check
   section 4: 30 of 30 (the control: B opened at scroll 300 with its first item off screen).
 
+### Fixed (the main-menu driving tool's Scaleform calls run on the UI thread)
+- The DevBench tool `amf.mainmenu` read and called the vanilla Main Menu movie from SKSE's `AddTask` queue: `getvar`
+  (GetVariable, through a blocking wrapper), `invoke` and `delegate` (Invoke). On SE 1.5.97 that queue runs as its own
+  job beside the UI job that advances the menu movies, so those calls could race the movie's own advance - the cause
+  of Dragon's Eye Minimap 1.7.5's two Scaleform crashes (gate rows scaleform-calls-only-on-the-ui-thread and
+  scaleform-helpers-only-on-the-ui-thread, added 2026-10-25). They now go through `AddUITask`, which runs inside the
+  UI's own message processing. `getvar` and `state` still answer synchronously: the wrapper (RunOnUIThreadBlocking)
+  waits at most 2 s and then answers "timed out"; DevBench calls tools on its listener thread, never the UI thread,
+  and a call that did arrive on the UI thread would run inline rather than wait on itself. The log names it:
+  "amf.mainmenu getvar: running on the UI task". Test-only tool; players never reach it.
+
 ### Fixed (an old User.ini's Move-the-window choice - Window.bMovable)
 - 2.3.0 replaced `[Window] bMovable` with `uMoveStyle` (0 Anywhere, 1 Top edge, 2 Fixed). A User.ini from 2.2.x is
   still read: `bMovable=0` (moving off) loads as Fixed, `bMovable=1` (drag the top row, 2.2.x's only way) as Top edge,
