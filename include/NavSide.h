@@ -417,4 +417,54 @@ namespace navside
 		const ImGuiContext* const g = GImGui;
 		return g && g->NavMoveDir == a_dir && !g->NavMoveSubmitted && !g->NavMoveForwardToNextFrame;
 	}
+
+	// ---------------------------------------------------------------------------------------------------------------------
+	// A NEW PAGE STARTS AT ITS FIRST ITEM (2.3.0, regression run c768 C2: opening another mod's page reused the highlight
+	// position of the page before). Every mod's page is drawn in the same "##content" child window, and Dear ImGui keeps
+	// that window's last nav item (NavLastIds) and its rectangle (NavRectRel) across frames; crossing into the pane
+	// (FocusWindow) restores NavId from them. So mod B opened at mod A's old item - at the same item when B has one with
+	// the same label (same id inside ##content), otherwise at a dead id whose stale rectangle the next move started from.
+	// The kind memory above is keyed by id too, so B's "Speed" button could inherit A's "Speed" slider kind (Left kept on
+	// the page, Left/Right activating a button).
+	// Call right after BeginChild of the pane, on the frame the selected page changes (Renderer.cpp; tools\
+	// page_switch_check.bat): forgets the pane's own nav memory and its child windows', the item kinds learnt, a noted
+	// arrow item, and any held step or hold. When the highlight is in the pane at that moment it restarts on the new page's
+	// first item (NavInitWindow: the first item submitted this frame). A pane that does not hold the highlight is left
+	// with no remembered item, so crossing into it later lands where crossing into a never-visited pane does.
+	// True when the highlight was in the pane.
+	inline bool ForgetPaneNav(ImGuiWindow* a_pane)
+	{
+		ImGuiContext* const g = GImGui;
+		if (!g || !a_pane) return false;
+		for (ImGuiWindow* w : g->Windows)
+		{
+			if (!w || (w != a_pane && !ImGui::IsWindowChildOf(w, a_pane, false, false))) continue;
+			for (int layer = 0; layer < ImGuiNavLayer_COUNT; ++layer)
+			{
+				w->NavLastIds[layer] = 0;
+				w->NavRectRel[layer] = ImRect();
+			}
+			w->NavLastChildNavWindow = nullptr;
+		}
+		// the item kinds and the held step / hold: ids from the old page mean nothing on the new one
+		for (ImGuiID& id : detail::g_arrowIds) { id = 0; }
+		detail::g_arrowNext = 0;
+		for (ImGuiID& id : detail::g_textIds) { id = 0; }
+		detail::g_textNext = 0;
+		detail::g_navId = 0;
+		detail::g_frame = -1;
+		if (detail::g_stepId != 0 && g->ActiveId == detail::g_stepId) { ImGui::ClearActiveID(); }
+		detail::g_stepId = 0;
+		detail::g_stepFrame = -1;
+		detail::g_repeatHeld = false;
+		detail::g_repeatClock = 0.0f;
+
+		const bool inPane = g->NavWindow && (g->NavWindow == a_pane || ImGui::IsWindowChildOf(g->NavWindow, a_pane, false, false));
+		if (inPane)
+		{
+			if (g->NavWindow != a_pane) { ImGui::FocusWindow(a_pane); }
+			ImGui::NavInitWindow(a_pane, true);
+		}
+		return inPane;
+	}
 }

@@ -5352,6 +5352,25 @@ namespace renderer
 					pane->WorkRect.Max.x = (std::min)(pane->WorkRect.Max.x, pane->ContentRegionRect.Max.x);
 					pane->ParentWorkRect = pane->WorkRect;
 				}
+				// 2.3.0 (regression run c768 C2): another page in the pane starts at its first item - the pane's nav memory
+				// (and the item kinds, the held step) from the page before is forgotten (navside::ForgetPaneNav). Keyed by
+				// the mod's NAME, so a list re-sorted under the open mod is not a change, and clicking the open entry again
+				// is not one either.
+				{
+					static std::string s_shownPage;
+					std::string page = sel;
+					if (sel == "mod" && selMod >= 0 && selMod < static_cast<int>(entries.size())) { page += ":" + entries[selMod].modName; }
+					if (page != s_shownPage)
+					{
+						if (!s_shownPage.empty())
+						{
+							const bool hadNav = navside::ForgetPaneNav(ImGui::GetCurrentWindow());
+							logger::debug("nav: page {} -> {}: the pane's highlight memory reset{}", s_shownPage, page,
+										  hadNav ? " (highlight was in the pane: restarts at the first item)" : "");
+						}
+						s_shownPage = std::move(page);
+					}
+				}
 				// 2.1.6 (the owner: the background art "only changes the top row when it should apply to all of the background"):
 				// the panes paint their own colour over the window's, so the art is drawn in each pane too, over that colour
 				if (skin::HasBackground())

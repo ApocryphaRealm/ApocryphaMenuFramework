@@ -408,6 +408,22 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
   26d2 N3. Other items keep ImGui's behaviour. Checked by tools\nav_left_check.bat 8h (click, release, the FIRST Enter
   activates; Space then still toggles): 80 of 80.
 
+### Fixed (another mod's page started at the old page's highlight - regression run c768, Part C, C2)
+- Opening another mod's page reused the highlight position of the page before. Every page draws in the same pane
+  (`##content`), and Dear ImGui keeps that pane's last highlighted item and its rectangle; crossing into the pane restores
+  the highlight from them. So mod B opened on mod A's old item - on the same row when B has one with the same label,
+  otherwise at a dead item whose old position the next move started from. AMF's own item-kind memory (which items are
+  sliders, which are text fields) is kept by item id as well, so B's "Speed" button could be taken for A's "Speed"
+  slider: Left stayed on the page and a held Right activated the button.
+- `navside::ForgetPaneNav` (NavSide.h), called by Renderer.cpp on the frame the open page changes (keyed by the mod's
+  name, so re-sorting the list or clicking the open entry again is no change): forgets the pane's and its child
+  windows' remembered highlight, the item kinds learnt, and any held step or hold. If the highlight is in the pane at
+  that moment (a page changed by the driving tool), it restarts on the new page's first item. Going back to the list
+  still lands on the open entry, and going back into the same page keeps its highlight. No new text.
+- Checked off-game by the new tools\page_switch_check.bat (live ImGui frames in the menu's two-pane shape; a control
+  run with the fix off shows the bug: B opens on its item 3, with A's slider kind): 26 of 26; with `--no-fix` the
+  fix's own checks fail (8 of them). nav_left_check unchanged: 80 of 80 (every Left case, DEM's N4).
+
 ## 2.2.3 - 2026-10-21 - untested - dropdowns on SkyUI MCM pages fill when AMF is opened from the Journal's System menu
 
 ### Fixed (dropdowns on converted MCM pages)
