@@ -32,6 +32,33 @@ import shutil
 import sys
 import xml.etree.ElementTree as ET
 
+
+def supersede(folder):
+    """NEVER DELETE A PACKAGE (2026-10-25): the package folder this build replaces is MOVED to
+    <project>/_work/superseded-packages/<date>/ - <project> being the nearest folder above it that has a _work folder
+    (SUPERSEDED_PACKAGES_DIR overrides; with neither, a _superseded folder beside it) - and stays there until someone
+    clears it by hand. This script used to shutil.rmtree it."""
+    import time
+    root = os.environ.get("SUPERSEDED_PACKAGES_DIR")
+    here = os.path.dirname(os.path.abspath(folder))
+    p = here
+    while not root:
+        if os.path.isdir(os.path.join(p, "_work")):
+            root = os.path.join(p, "_work", "superseded-packages")
+        elif os.path.dirname(p) == p:
+            root = os.path.join(here, "_superseded")
+        else:
+            p = os.path.dirname(p)
+    day = os.path.join(root, time.strftime("%Y-%m-%d"))
+    os.makedirs(day, exist_ok=True)
+    to = base = os.path.join(day, "%s (replaced %s)" % (os.path.basename(os.path.normpath(folder)), time.strftime("%H%M%S")))
+    i = 2
+    while os.path.exists(to):
+        to, i = "%s %d" % (base, i), i + 1
+    shutil.move(folder, to)
+    print("the package this build replaces was moved to %s (never deleted)" % to)
+    return to
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.normpath(os.path.join(HERE, ".."))
 
@@ -119,7 +146,7 @@ def main(out_root=None):
             "Apocrypha Menu Framework %s FOMOD" % ver))
 
     if os.path.isdir(out_root):
-        shutil.rmtree(out_root)
+        supersede(out_root)
 
     # ---- the two build lines, checked against each other before anything is copied
     built = {}
