@@ -93,7 +93,9 @@ def read_keys(src):
     out = {}
     for m in re.finditer(r'Read\w+\(\s*entries,\s*"(\w+\.\w+)",\s*g_values\.([\w.]+)', load):
         out[m.group(1)] = m.group(2)
-    for m in re.finditer(r'entries\.find\("(\w+\.\w+)"\);[^}]*?g_values\.([\w.]+?)(?:\.clear\(\)|\s*=)', load, re.S):
+    # entries.find / userEntries.find: a key read by hand (2.3.0: the legacy Window.bMovable, read from the player's own
+    # User.ini only, into moveStyle) - the field it lands in is the field it must be written from
+    for m in re.finditer(r'\w*[eE]ntries\.find\("(\w+\.\w+)"\);[^}]*?g_values\.([\w.]+?)(?:\.clear\(\)|\s*=)', load, re.S):
         out.setdefault(m.group(1), m.group(2))
     return out
 

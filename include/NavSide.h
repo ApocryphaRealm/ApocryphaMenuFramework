@@ -427,7 +427,8 @@ namespace navside
 	// The kind memory above is keyed by id too, so B's "Speed" button could inherit A's "Speed" slider kind (Left kept on
 	// the page, Left/Right activating a button).
 	// Call right after BeginChild of the pane, on the frame the selected page changes (Renderer.cpp; tools\
-	// page_switch_check.bat): forgets the pane's own nav memory and its child windows', the item kinds learnt, a noted
+	// page_switch_check.bat): scrolls the pane and its child windows back to the top, forgets the pane's own nav memory
+	// and its child windows', the item kinds learnt, a noted
 	// arrow item, and any held step or hold. When the highlight is in the pane at that moment it restarts on the new page's
 	// first item (NavInitWindow: the first item submitted this frame). A pane that does not hold the highlight is left
 	// with no remembered item, so crossing into it later lands where crossing into a never-visited pane does.
@@ -445,6 +446,9 @@ namespace navside
 				w->NavRectRel[layer] = ImRect();
 			}
 			w->NavLastChildNavWindow = nullptr;
+			// and the new page opens at its top (Main Agent, after C2: A's scroll carried over, so B's first item could be
+			// off screen when it took the highlight) - applied by ImGui at the window's next Begin
+			ImGui::SetScrollY(w, 0.0f);
 		}
 		// the item kinds and the held step / hold: ids from the old page mean nothing on the new one
 		for (ImGuiID& id : detail::g_arrowIds) { id = 0; }

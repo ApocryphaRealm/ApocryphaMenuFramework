@@ -13,6 +13,8 @@
 //      AMF's one-way step activates B's button;
 //   2. the fix (navside::ForgetPaneNav on the frame the page changes, as Renderer.cpp calls it): the same steps - B starts
 //      at its first item, no stale id, no stale kind, no step or hold left over, and a held Right never activates B's button;
+//   4. the scroll: A's page scrolled down, B opened from the list starts at its top with its first item visible (the
+//      control: still scrolled, first item off screen); B re-entered from the list keeps its own scroll.
 //   (tools\page_switch_check.bat --no-fix runs section 2 with the fix off: its checks fail - the control for the check.)
 //   3. what must keep working: Left / back to the list lands on the open entry; going back into the SAME page keeps its
 //      highlight (no reset without a change); clicking the open entry again is no change.
@@ -50,6 +52,9 @@ namespace
 	bool  g_heldPacing = false;      // HoldTweakAtKeyRepeat's answer this frame
 	navside::HighlightStep g_step = navside::HighlightStep::kNone;
 	ImGuiID g_stepStartedOn = 0;     // the item AMF's one-way step activated this frame (0 = none)
+	float g_scrollTo = -1.0f;        // scroll the page there on the next frame (the player's wheel / scroll bar)
+	float g_paneScroll = 0.0f;       // the page pane's ScrollY this frame
+	bool  g_b1Visible = false;       // B's first item was inside the pane's visible area this frame
 
 	struct Keys { bool left = false, right = false, up = false, down = false, enter = false; };
 
@@ -138,10 +143,14 @@ namespace
 		else
 		{
 			ImGui::Button("Apply");    Mark(kB1);
+			g_b1Visible = ImGui::IsItemVisible();
 			ImGui::Button("Defaults"); Mark(kB2);
 			ImGui::Button("Speed");    Mark(kB3);   // the same label inside ##content: the same id as A's slider
 			ImGui::Button("Close");    Mark(kB4);
 		}
+		for (int i = 0; i < 60; ++i) { ImGui::Text("%s line %d", sel == 0 ? "A" : "B", i); }   // a page long enough to scroll
+		if (g_scrollTo >= 0.0f) { ImGui::SetScrollY(g_scrollTo); g_scrollTo = -1.0f; }
+		g_paneScroll = ImGui::GetScrollY();
 		ImGui::EndChild();
 		navside::LearnNavItemKind();   // Renderer.cpp: after the page, before the Left decision
 		ImGui::End();
@@ -243,6 +252,33 @@ namespace
 		o.heldNav = Nav();
 		return o;
 	}
+
+	// 4. the scroll: A scrolled down, B opened from the list starts at its top; the same page re-entered keeps its scroll
+	struct ScrollOutcome { float aScroll = 0, bScroll = 0, bKept = 0; bool b1Visible = false; };
+	ScrollOutcome RunScroll(bool a_fix)
+	{
+		g_fixOn = a_fix;
+		ScrollOutcome o;
+		Fresh();
+		ToPage();
+		g_scrollTo = 300.0f;
+		Settle(3);
+		o.aScroll = g_paneScroll;
+		ToList();
+		Tap({ .down = true });
+		Tap({ .enter = true });   // open B
+		Settle(3);
+		o.bScroll = g_paneScroll;
+		o.b1Visible = g_b1Visible;
+		ToPage();
+		g_scrollTo = 200.0f;      // B scrolled by the player
+		Settle(3);
+		ToList();
+		Tap({ .enter = true });   // the open entry again: no change
+		ToPage();
+		o.bKept = g_paneScroll;
+		return o;
+	}
 }
 
 int main(int argc, char** argv)
@@ -275,6 +311,17 @@ int main(int argc, char** argv)
 		Check(Nav() == g_ids[kB3] && !navside::NavOnKnownArrowItem(), "[fix] the highlight moved onto B's Speed button: not taken for a slider");
 		Tap({ .right = true });
 		Check(Nav() == g_ids[kB3] && GImGui->ActiveId == 0, "[fix] Right on B's Speed button activates nothing");
+	}
+	// 4. the scroll
+	{
+		const ScrollOutcome c = RunScroll(false);
+		Check(c.aScroll > 100.0f && c.bScroll > 100.0f && !c.b1Visible,
+			  "[control, fix off] A scrolled to " + std::to_string(c.aScroll) + ": B opens still scrolled (" + std::to_string(c.bScroll) +
+				  "), its first item off screen");
+		const ScrollOutcome f = RunScroll(!noFix);
+		Check(f.aScroll > 100.0f, "[fix] A's page scrolled down (" + std::to_string(f.aScroll) + ")");
+		Check(f.bScroll == 0.0f && f.b1Visible, "[fix] B opens at its top (scroll " + std::to_string(f.bScroll) + ") with its first item visible");
+		Check(f.bKept > 100.0f, "[fix] back into the SAME page from the list: its scroll is kept (" + std::to_string(f.bKept) + ")");
 	}
 	ImGui::DestroyContext();
 	std::cout << "page_switch_check: " << g_pass << " of " << (g_pass + g_fail) << " passed\n";

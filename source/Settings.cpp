@@ -376,6 +376,9 @@ namespace settings
 				"; top row - the name and version), 2 = Fixed (the menu stays where it is: no moving, no resizing).\n"
 				"; It opens where it was left. Top edge is the default. Replaces bMovable (bMovable=0 is read as Fixed).\n"
 				"uMoveStyle=" << a_v.moveStyle << "\n"
+				"; The same choice for AMF 2.2.x and older, which read only this key (0 = no moving, 1 = drag the top row);\n"
+				"; written from Move style so going back to an older AMF keeps it. Move style wins when both are set.\n"
+				"bMovable=" << (a_v.moveStyle == Values::kMoveFixed ? 0 : 1) << "\n"
 				"; Resize the window (0/1): on, drag any edge or corner to resize it, freely. Off: its size is fixed.\n"
 				"; On is the default.\n"
 				"bFreeResize=" << (a_v.freeResize ? 1 : 0) << "\n"
@@ -778,6 +781,9 @@ namespace settings
 			ReadNumber(entries, "Window.uResizeStyle", g_values.resizeStyle);
 			// 2.3.0: bMovable is retired for uMoveStyle. A User.ini written before 2.3.0 that turned moving off says
 			// bMovable=0 and has no uMoveStyle (it did not exist): read it as Fixed. The next save writes uMoveStyle.
+			// bMovable=1 (2.2.x: drag the top row) is Top edge, the default, so it needs nothing here. Save still writes
+			// bMovable from Move style (0 for Fixed, else 1), so a downgrade to 2.2.x - which reads only bMovable and
+			// would otherwise fall back to its default, movable - keeps the player's choice.
 			if (const auto mv = userEntries.find("Window.bMovable");
 				mv != userEntries.end() && !userEntries.contains("Window.uMoveStyle") && mv->second == "0")
 			{

@@ -423,6 +423,22 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 - Checked off-game by the new tools\page_switch_check.bat (live ImGui frames in the menu's two-pane shape; a control
   run with the fix off shows the bug: B opens on its item 3, with A's slider kind): 26 of 26; with `--no-fix` the
   fix's own checks fail (8 of them). nav_left_check unchanged: 80 of 80 (every Left case, DEM's N4).
+- The new page also opens at its TOP: the pane kept the old page's scroll, so after a long, scrolled-down page the next
+  mod's first item could be off screen as it took the highlight. The same hook scrolls the pane and its child windows
+  back to the top on the frame the page changes; going back into the same page keeps its scroll. page_switch_check
+  section 4: 30 of 30 (the control: B opened at scroll 300 with its first item off screen).
+
+### Fixed (an old User.ini's Move-the-window choice - Window.bMovable)
+- 2.3.0 replaced `[Window] bMovable` with `uMoveStyle` (0 Anywhere, 1 Top edge, 2 Fixed). A User.ini from 2.2.x is
+  still read: `bMovable=0` (moving off) loads as Fixed, `bMovable=1` (drag the top row, 2.2.x's only way) as Top edge,
+  the default; `uMoveStyle` wins when both are present.
+- AMF now WRITES `bMovable` again, from Move style (0 for Fixed, 1 otherwise), and the shipped INI carries
+  `bMovable=1` beside `uMoveStyle=1`. 2.2.x reads only `bMovable` and falls back to its default (movable) when the key
+  is missing, so without it a player who chose Fixed and went back to 2.2.x would find the window movable again; with
+  it the choice survives a downgrade, and survives coming back too (2.2.x rewrites only bMovable, which then loads as
+  above). Rule 16: the compiled default and the shipped INI agree (Top edge, bMovable=1).
+- tools\user_ini_roundtrip_check.py now also sees a key read by hand from the player's own file (`userEntries.find`),
+  so the legacy read is judged by what it really does: 69 of 69 (was 68 - "v2.2.0 wrote Window.bMovable").
 
 ## 2.2.3 - 2026-10-21 - untested - dropdowns on SkyUI MCM pages fill when AMF is opened from the Journal's System menu
 
