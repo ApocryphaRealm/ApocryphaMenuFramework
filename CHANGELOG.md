@@ -21,6 +21,11 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## Next patch after 2.3.1 - not yet numbered (2.3.1 is under test; the version gate issues this number once 2.3.1 is posted)
+
+### Fixed
+- On-screen keyboard: D-pad Up in a SkyUI item or magic list opened the search box's keyboard on rows that were not the first (owner report 2026-10-27, rows 8 and 6). The 'Up on the first row' gesture read SkyUI's selectedIndex - an index into the whole entry array, not the row on screen - and read it only after the previous pad press, so a change made on a release (Inventory Reforged leaves its R3 slot mode on the release) was missed. It now reads the visible row (getSelectedListEnumIndex) every input dispatch while an item or magic menu is in front, and opens only on the first row or an empty list - never while no row is selected because Inventory Reforged's slots or the pointer hold the selection.
+
 ## 2.3.1 - 2026-10-27 - untested
 
 ### Fixed

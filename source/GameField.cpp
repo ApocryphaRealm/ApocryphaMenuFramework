@@ -163,7 +163,11 @@ namespace gamefield
 
 		std::atomic<int> g_claim{ 0 };
 		std::atomic<bool> g_padInUse{ false };
-		std::atomic<int> g_listIndex{ -2 };        // the top item list's selectedIndex after the last press; -2 unknown
+		// the top item list's VISIBLE row (ListRow below), re-read every input dispatch while an item or magic menu is in
+		// front: >= 0 the row, -1 the list is empty, -2 unknown, kNoRow rows but none selected
+		std::atomic<int> g_listIndex{ -2 };
+		constexpr int kNoRow = -3;
+		std::atomic<std::uint64_t> g_rowReadAt{ 0 };   // the dispatch a row read was queued on; 0 none in flight
 		std::atomic<bool> g_topSearchKnown{ false };
 		std::atomic<bool> g_parkList{ false };      // parked over a menu whose list AMF moves itself (D-pad up / down)
 		std::atomic<bool> g_rectValid{ false };
@@ -324,6 +328,28 @@ namespace gamefield
 			return true;
 		}
 
+		// 2.3.1: the list's selected row as the player sees it. SkyUI's selectedIndex is an index into its whole entry
+		// array (every category, in load order), so 0 there can be any row on screen; getSelectedListEnumIndex() is the
+		// place in the visible, filtered list - the number SkyUI's own moveSelectionUp tests. -1 (no selection) is the top
+		// only when the list is empty: with rows in it the selection is elsewhere - Inventory Reforged's R3 slot mode sets
+		// selectedIndex to -1, as does the pointer leaving the list - and Up belongs to that (owner report 2026-10-27:
+		// Up on row 8 and on row 6 opened the keyboard).
+		bool ListRow(RE::GFxMovieView* a_mv, const std::string& a_listPath, int& a_out)
+		{
+			double sel = -1;
+			if (!a_mv || a_listPath.empty() || !GetNum(a_mv, a_listPath + ".selectedIndex", sel)) { return false; }
+			RE::GFxValue r;
+			if (sel < 0)
+			{
+				if (!a_mv->Invoke((a_listPath + ".getListEnumSize").c_str(), &r, nullptr, 0) || !r.IsNumber()) { return false; }
+				a_out = r.GetNumber() > 0 ? kNoRow : -1;
+				return true;
+			}
+			if (!a_mv->Invoke((a_listPath + ".getSelectedListEnumIndex").c_str(), &r, nullptr, 0) || !r.IsNumber()) { return false; }
+			a_out = static_cast<int>(r.GetNumber());
+			return true;
+		}
+
 		// Selection.getFocus(): the focused text field's path, or empty. Both spellings are tried and the one that answered
 		// is remembered (logged once). Selection is an object, so this is a method call on a real object - not the
 		// "through a function object" shape that crashed (logic library 5215).
@@ -422,8 +448,8 @@ namespace gamefield
 				if (Avail(mv, std::string(kMapFinder) + ".list.selectedIndex")) { c.listPath = std::string(kMapFinder) + ".list"; }
 			}
 			if (k == Kind::kEnchant) { c.subtype = GetStr(mv, "_root.Menu._subtypeName"); }
-			double idx = -1;
-			const bool haveIdx = !c.listPath.empty() && GetNum(mv, c.listPath + ".selectedIndex", idx);
+			int idx = -2;
+			const bool haveIdx = ListRow(mv, c.listPath, idx);
 			bool log = false;
 			bool retry = false;
 			{
@@ -440,7 +466,7 @@ namespace gamefield
 				slot.logged = wasLogged || log;
 				if (TopMenuLocked() == a_menu) { g_topSearchKnown.store(!c.searchPath.empty() || !c.finderOwner.empty(), std::memory_order_release); }
 			}
-			if (haveIdx) { g_listIndex.store(static_cast<int>(idx), std::memory_order_release); }
+			if (haveIdx) { g_listIndex.store(idx, std::memory_order_release); }
 			if (log)
 			{
 				// one info line per menu session: what the adapter found (rule 14: an edge, not a frame)
@@ -466,8 +492,8 @@ namespace gamefield
 			if (listPath.empty()) { return; }
 			auto menu = FindMenu(a_menu, {});
 			if (!menu) { return; }
-			double idx = -1;
-			if (GetNum(menu->uiMovie.get(), listPath + ".selectedIndex", idx)) { g_listIndex.store(static_cast<int>(idx), std::memory_order_release); }
+			int idx = -2;
+			if (ListRow(menu->uiMovie.get(), listPath, idx)) { g_listIndex.store(idx, std::memory_order_release); }
 		}
 
 		// ---- finding the focused field (the edge, or a gesture) ------------------------------------------
@@ -845,6 +871,33 @@ namespace gamefield
 			}
 		}
 
+		// 2.3.1: the top item or magic list's visible row, re-read once per dispatch (one read in flight at a time). Reading
+		// it only after each pad press left it stale: Inventory Reforged leaves its R3 slot mode on the RELEASE, after that
+		// read, so the next Up saw -1 with the list back on row 8 and opened the keyboard (owner report 2026-10-27)
+		// (a read not answered within 30 dispatches is treated as lost and queued again)
+		if (const std::uint64_t at = g_rowReadAt.load(std::memory_order_acquire);
+			g_topSearchKnown.load(std::memory_order_acquire) && settings::Get().keyboardUpOpensSearch && (at == 0 || dispatch - at > 30))
+		{
+			g_rowReadAt.store(dispatch, std::memory_order_release);
+			std::string top;
+			{
+				std::scoped_lock l(g_lock);
+				top = TopMenuLocked();
+			}
+			const Kind tk = KindOf(top);
+			if (tk == Kind::kItem || tk == Kind::kMagic)
+			{
+				AddUITask([top]() {
+					ReadIndex(top);
+					g_rowReadAt.store(0, std::memory_order_release);
+				});
+			}
+			else
+			{
+				g_rowReadAt.store(0, std::memory_order_release);
+			}
+		}
+
 		// THE EDGE: a game menu wants text (the count minus what AMF itself added)
 		int count = 0;
 		if (auto* controls = RE::ControlMap::GetSingleton()) { count = controls->GetRuntimeData().textEntryCount; }
@@ -977,8 +1030,11 @@ namespace gamefield
 		const auto& s = settings::Get();
 		const bool known = g_topSearchKnown.load(std::memory_order_acquire);
 		const bool button = s.keyboardOpenPad != 0 && code == static_cast<std::uint32_t>(s.keyboardOpenPad);
+		// the visible row as of the last dispatch (OnDispatch re-reads it every frame while an item or magic menu is in
+		// front): the first row, or an empty list - never "no row selected" (kNoRow), which is Inventory Reforged's slots
+		// or the pointer holding the selection (2.3.1, owner report 2026-10-27)
 		const int index = g_listIndex.load(std::memory_order_acquire);
-		const bool up = code == 0x0001 && s.keyboardUpOpensSearch && (k == Kind::kItem || k == Kind::kMagic) && index != -2 && index <= 0;
+		const bool up = code == 0x0001 && s.keyboardUpOpensSearch && (k == Kind::kItem || k == Kind::kMagic) && (index == 0 || index == -1);
 		if (!known || (!button && !up)) { return false; }
 		g_consumedPad.insert(code);
 		logger::debug("keyboard: {} on {} (list index {}) - starting its text box", button ? "the open button" : "Up on the first row", top, index);
@@ -1059,7 +1115,7 @@ namespace gamefield
 			if (haveWas) { mv->SetVariable(flag.c_str(), was); }
 			double idx = -1;
 			GetNum(mv, listPath + ".selectedIndex", idx);
-			g_listIndex.store(static_cast<int>(idx), std::memory_order_release);
+			if (int row = -2; ListRow(mv, listPath, row)) { g_listIndex.store(row, std::memory_order_release); }
 			logger::debug("keyboard: parked - D-pad {} moved {} -> {} (selectedIndex {})", a_dir < 0 ? "up" : "down", listPath, ok, static_cast<int>(idx));
 		});
 	}
