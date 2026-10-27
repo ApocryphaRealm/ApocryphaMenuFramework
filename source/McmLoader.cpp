@@ -617,6 +617,42 @@ namespace mcmloader
 			std::function<void()> _fn;
 		};
 
+		// 2.3.1: may a_script.a_function be called with DispatchStaticCall? The engine's DispatchStaticCall returns false
+		// only when the script TYPE is missing. When the type exists but is not linked, or has no global function of that
+		// name, its function lookup leaves the pointer null and the engine reads through it - a crash inside the game,
+		// not a false return (1.7.104: id 104802 +0xAE after 104311; SE 1.5.97: id 98079 +0xB1 after 97526, the same
+		// code). A 1.7.104 player crashed that way saving TrueHUD and Achievement Injector settings with no MCM Helper DLL
+		// loaded (2026-10-22). So ask the type first, the way the engine's lookup does: linked valid, and a function of
+		// that name among the type's OWN global functions (104311 -> 104355 searches only those, no parent type).
+		// a_why gets the reason when the answer is no. Call on the thread that dispatches.
+		bool StaticCallable(RE::BSScript::Internal::VirtualMachine* a_vm, const std::string& a_script, const std::string& a_function, std::string* a_why = nullptr)
+		{
+			auto fail = [a_why](std::string a_reason) {
+				if (a_why) { *a_why = std::move(a_reason); }
+				return false;
+			};
+			if (!a_vm) { return fail("no Papyrus VM"); }
+			if (a_script.empty() || a_function.empty()) { return fail("no script or function name"); }
+			RE::BSTSmartPointer<RE::BSScript::ObjectTypeInfo> type;
+			if (!a_vm->GetScriptObjectType(RE::BSFixedString(a_script.c_str()), type) || !type)
+			{
+				return fail("script " + a_script + " is not loaded");
+			}
+			if (type->linkedValid != RE::BSScript::ObjectTypeInfo::LinkValidState::kLinkedValid)
+			{
+				return fail("script " + a_script + " exists but is not linked (link state " + std::to_string(static_cast<int>(type->linkedValid)) + ")");
+			}
+			const auto funcs = type->GetGlobalFuncIter();
+			for (std::uint32_t i = 0; funcs && i < type->GetNumGlobalFuncs(); ++i)
+			{
+				const auto& fn = funcs[i].func;
+				if (!fn) { continue; }
+				const char* name = fn->GetName().c_str();
+				if (name && _stricmp(name, a_function.c_str()) == 0) { return true; }
+			}
+			return fail("script " + a_script + " has no global function " + a_function);
+		}
+
 		// Main thread. The quest from the mod's own plugin whose script derives from MCM_ConfigBase - MCM Helper's own
 		// match (FindBoundObject on the base name finds derived scripts; ScriptObject::FromForm does the same).
 		RE::BSTSmartPointer<RE::BSScript::Object> FindConfigScript(const std::string& a_modName, RE::FormID& a_questId)
@@ -677,6 +713,8 @@ namespace mcmloader
 		// a_then (optional): run once the event has FINISHED in Papyrus - or at once when it could not be sent. The
 		// DevBench path waits on OnConfigOpen this way: SkyUI's OnConfigOpen reloads properties (UnequipArmor =
 		// GetGroupFlag(...)), and run after a write it put the old value back (2026-10-04).
+		// 2.3.1: no StaticCallable-style check is needed here - the engine's DispatchMethodCall on an object (1.7.104 id
+		// 104804) tests both the lookup's result and the function pointer before using it, and returns false.
 		bool DispatchEvent(std::size_t a_mod, const char* a_event, const std::string* a_arg, std::function<void()> a_then = {})
 		{
 			const auto vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
@@ -958,8 +996,10 @@ namespace mcmloader
 				{
 					if (const auto config = EnsureScript(a_mod); config && config->GetTypeInfo()) { script = config->GetTypeInfo()->GetName(); }
 				}
-				if (!script.empty()) { sent = vm->DispatchStaticCall(script, action.function, &args, none); }
-				logger::info("MCM loader: action {}.{}({} param(s)) {}", script, action.function, action.params.size(), sent ? "called" : "NOT called");
+				std::string why;
+				if (!script.empty() && StaticCallable(vm, script, action.function, &why)) { sent = vm->DispatchStaticCall(script, action.function, &args, none); }
+				logger::info("MCM loader: action {}.{}({} param(s)) {}{}", script, action.function, action.params.size(), sent ? "called" : "NOT called",
+					why.empty() ? std::string() : " - " + why);
 			}
 			else
 			{
@@ -1087,13 +1127,16 @@ namespace mcmloader
 				case Source::kFloat: args.reset(RE::MakeFunctionArguments(std::string(modName), std::string(id), ParseFloat(a_value))); break;
 				default: args.reset(RE::MakeFunctionArguments(std::string(modName), std::string(id), std::string(a_value))); break;
 				}
-				if (!vm->DispatchStaticCall("MCM"sv, fn, args.get(), then))
+				// 2.3.1: ask first - a loaded "MCM" script without MCM Helper's DLL behind it crashed the engine's dispatch
+				std::string why;
+				if (!StaticCallable(vm, "MCM", fn, &why) || !vm->DispatchStaticCall("MCM"sv, fn, args.get(), then))
 				{
 					static bool warned = false;
 					if (!warned)
 					{
 						warned = true;
-						logger::error("MCM loader: MCM.{} could not be called - is MCM Helper installed? Changes stay in this menu only", fn);
+						logger::error("MCM loader: MCM.{} could not be called ({}) - is MCM Helper installed? Changes stay in this menu only", fn,
+							why.empty() ? std::string("dispatch failed") : why);
 					}
 				}
 			});
@@ -1445,7 +1488,7 @@ namespace mcmloader
 					[config = a_config, a_then](const RE::BSScript::Variable& a_result) {
 						a_then(a_result.IsObject() && a_result.GetObject() && a_result.GetObject().get() == config.get());
 					}) };
-				if (!vm || !vm->DispatchStaticCall("MCMUnlocked", "GetConfigBase", &args, then)) { a_then(std::nullopt); }
+				if (!vm || !StaticCallable(vm, "MCMUnlocked", "GetConfigBase") || !vm->DispatchStaticCall("MCMUnlocked", "GetConfigBase", &args, then)) { a_then(std::nullopt); }
 				return;
 			}
 			default:
@@ -2636,7 +2679,7 @@ namespace mcmloader
 									promise->set_value(r.dump());
 								}
 							}) };
-							if (!vm->DispatchStaticCall("MCMUnlocked", "GetModIDFromConfigID", &args, onId))
+							if (!StaticCallable(vm, "MCMUnlocked", "GetModIDFromConfigID") || !vm->DispatchStaticCall("MCMUnlocked", "GetModIDFromConfigID", &args, onId))
 							{
 								std::scoped_lock l(gather->lock);
 								if (--gather->left == 0)
@@ -2648,7 +2691,7 @@ namespace mcmloader
 							}
 						}
 					}) };
-					if (!vm || !vm->DispatchStaticCall("MCMUnlocked", "GetConfigCount", &none, onCount))
+					if (!vm || !StaticCallable(vm, "MCMUnlocked", "GetConfigCount") || !vm->DispatchStaticCall("MCMUnlocked", "GetConfigCount", &none, onCount))
 					{
 						promise->set_value(R"({"ok":false,"error":"MCMUnlocked.GetConfigCount could not be called"})");
 					}

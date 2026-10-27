@@ -1,6 +1,6 @@
 ApocryphaRealm Menu Framework
 =============================
-Version 2.3.0
+Version 2.3.1
 
 An original, GPL-3.0-or-later in-game menu framework (embedding Dear ImGui) - a one-for-one
 replacement for SKSE Menu Framework's consumer surface, plus user-friendly features that do
@@ -85,6 +85,9 @@ reading.
 
 WHAT CHANGED
 ------------
+
+Version 2.3.1
+Saving a setting on a converted MCM Helper page no longer crashes the game when a script named MCM is present but MCM Helper itself is not working (reported on Skyrim 1.7.104 with TrueHUD and Achievement Injector). AMF now checks that the call can be made first; when it cannot, the value stays in this menu and the log says why.
 
 Version 2.3.0
 The universal on-screen keyboard: on a controller, AMF's keyboard now types into the game's own text boxes - SkyUI's item and spell search, the map's location finder, the enchanting name box, SkyUI's MCM text dialog and other menus' text prompts - in eleven layouts (Korean syllables and a Japanese kana grid included), with LT backspace, RT space and LB / RB for the layout. Up on the first item of a list (or L3) opens the search box. With Virtual Keyboard (Nexus 158716) installed, its boxes are left to it. Settings > Framework Settings, under the on-screen keyboard.

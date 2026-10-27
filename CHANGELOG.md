@@ -21,6 +21,11 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## 2.3.1 - 2026-10-27 - untested
+
+### Fixed
+- Saving a setting on an MCM Helper page could crash the game when a script named MCM was loaded but MCM Helper's DLL was not (reported on Skyrim 1.7.104 with TrueHUD and Achievement Injector, 2026-10-22). The game's own static-call dispatch fails quietly only when the script is missing; a script that exists without the function crashes inside the game (1.7.104 id 104802, SE id 98079). AMF now checks that the script is linked and has the function before each static call (MCM.SetModSetting*, config actions, MCMUnlocked.*); when it does not, the value stays in the menu and the log says why, once. Calls on an object (OnSettingChange, OnConfigClose) were checked and already fail safely.
+
 ## 2.3.0 - 2026-10-23 - untested - (fix round 2026-10-25: presets are snapshots, comparison reads first, wrapping, keyboard labels, slider clamp, FLICK text, Left on a slider stays) on-screen keyboard keys take the theme's button shape, mouse typing works, one-shot Shift; window Move style and Resize style settings, the window kept inside the screen; pages render properly at big text sizes; side list rect for pages; a TestBench crash fixed; settings presets; mods built for FLICK 1.6 and 1.7 (API 6 and 7) hosted, and kept here when the installed FLICK is too old for them
 
 ### Diagnostics
