@@ -25,6 +25,7 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 
 ### Fixed
 - On-screen keyboard: D-pad Up in a SkyUI item or magic list opened the search box's keyboard on rows that were not the first (owner report 2026-10-27, rows 8 and 6). The 'Up on the first row' gesture read SkyUI's selectedIndex - an index into the whole entry array, not the row on screen - and read it only after the previous pad press, so a change made on a release (Inventory Reforged leaves its R3 slot mode on the release) was missed. It now reads the visible row (getSelectedListEnumIndex) every input dispatch while an item or magic menu is in front, and opens only on the first row or an empty list - never while no row is selected because Inventory Reforged's slots or the pointer hold the selection.
+- MCM loader with Menu Maid 2: taking a menu out of SkyUI's list no longer retries every few seconds for ten minutes ("UnregisterMod OBody NG did not take (result -1)", OBody NG 5.2.1 test 2026-10-27; the same retries hit 13 menus in the owner's morning session). Menu Maid 2's SKI_ConfigManager.UnregisterMod removes the menu only from Menu Maid's own native list and never clears _modConfigs, which AMF read as SkyUI's list - so the menu always looked still in. A take-out now also counts as done when UnregisterMod answers -1 ("not in the list"), or, while Menu Maid 2 is installed, any slot (>= 0); -2 (busy, the Journal open) still retries.
 
 ## 2.3.1 - 2026-10-27 - untested
 

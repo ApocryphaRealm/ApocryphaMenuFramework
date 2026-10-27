@@ -1417,6 +1417,13 @@ namespace mcmloader
 		// found nothing - the hide switch took nothing out and its give-back retried for ten minutes.
 		enum class ListLayout : int { kStock = 0, kBarzing = 1, kUnlocked = 2, kUnknown = 3 };
 		std::atomic<int> g_listLayout{ -1 };  // -1: not read yet
+		// Menu Maid 2 (its own SKI_ConfigManager.pex, Njordlinger): while it is "hired", UnregisterMod only takes the menu out
+		// of Menu Maid's NATIVE list (MenuMaid2.UnregisterMod) and never clears _modConfigs, which it only rebuilds in a
+		// SyncConfigs() nothing calls - so _modConfigs keeps every menu ever registered. Read 2026-10-27 from Menu Maid 2's
+		// Scripts\Source\SKI_ConfigManager.psc (lines 248-271, 387-402) after OBody NG retried "did not take (result -1)" for
+		// ten minutes: the first call returned 1 (taken out of Menu Maid's list), every later one -1, and _modConfigs still
+		// held it each time. With Menu Maid present, the call's answer is the evidence for a take-out.
+		std::atomic<bool> g_menuMaid{ false };
 
 		ListLayout DetectLayout(const RE::BSTSmartPointer<RE::BSScript::Object>& a_manager)
 		{
@@ -1433,6 +1440,15 @@ namespace mcmloader
 				const auto vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
 				RE::BSTSmartPointer<RE::BSScript::ObjectTypeInfo> info;
 				if (vm && vm->GetScriptObjectType("MCMUnlocked", info) && info) { layout = ListLayout::kUnlocked; }
+			}
+			{
+				const auto vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
+				RE::BSTSmartPointer<RE::BSScript::ObjectTypeInfo> info;
+				const bool maid = vm && vm->GetScriptObjectType("MenuMaid2", info) && info;
+				if (g_menuMaid.exchange(maid) != maid && maid)
+				{
+					logger::info("MCM loader: Menu Maid 2 keeps SkyUI's list - a take-out is judged from UnregisterMod's answer (its _modConfigs is never cleared)");
+				}
 			}
 			if (g_listLayout.exchange(static_cast<int>(layout)) != static_cast<int>(layout))
 			{
@@ -1624,7 +1640,12 @@ namespace mcmloader
 							done();
 							return;
 						}
-						const bool took = t.hide ? !*a_in : *a_in;
+						// A take-out is done when the list no longer holds the menu, OR when UnregisterMod answered -1 - SkyUI's
+						// "not in the list" (every manager returns it only after finding nothing) - OR, under Menu Maid 2,
+						// when it answered a slot (>= 0): its _modConfigs is a mirror its UnregisterMod never clears, so the
+						// list check alone retried forever (OBody NG, 2026-10-27). -2 (busy, the Journal open) still retries.
+						const bool answeredOut = t.hide && (a_result == -1 || (a_result >= 0 && g_menuMaid.load()));
+						const bool took = t.hide ? (!*a_in || answeredOut) : *a_in;
 						if (!took)
 						{
 							// SkyUI busy (-2, its Journal open), a full list on give-back, or a call that never ran: next pass
