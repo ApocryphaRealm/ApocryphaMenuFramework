@@ -17,10 +17,14 @@
 // and B612's text box all call skse.AllowTextInput). So: the count minus what AMF itself added (Input.cpp
 // g_textInputAdded) is above zero while AMF's own window is not up = a game menu wants text. On that EDGE a UI task
 // asks each open menu's movie, top first, for Selection.getFocus() and that path's .type; an "input" field names the
-// target, and the menu picks the adapter. For the item lists, where a pad cannot reach the search box at all, two
-// gestures start the input first: Up on the first row (the list's selectedIndex, read back after every pad press) and
-// the open button (iKeyboardOpenPad) - each calls SkyUI's searchWidget.startInput(); the map's button calls
-// showLocationFinder(). Every member path is a CANDIDATE probed when the menu opens (IsAvailable) and logged once
+// target, and the menu picks the adapter. For the item lists, where a pad cannot reach the search box at all, AMF gives
+// the box a CONTROLLER FOCUS (2.3.1, the owner, 2026-10-28: the keyboard "should only pop up when the player moves their
+// controller navigation focus to the search box and presses into it"): Up on the first row (the visible row,
+// getSelectedListEnumIndex, re-read every dispatch) moves the focus to the box, which AMF frames on screen; A on it calls
+// SkyUI's searchWidget.startInput() and the keyboard opens; B or Down gives the focus back to the list; any other button
+// is the menu's again. Up never opens the keyboard by itself, and Up with no row selected (Inventory Reforged's slots,
+// Simple Loadout System's bar) stays with the menu. The open button (iKeyboardOpenPad) still starts the input straight
+// away; the map's button calls showLocationFinder(). Every member path is a CANDIDATE probed when the menu opens (IsAvailable) and logged once
 // (rule 30); a path that is not there turns that gesture off for the menu, never a crash.
 //
 // INJECTION (plan 4d), three routes, the first that is proven by read-back wins:
@@ -74,6 +78,11 @@ namespace gamefield
 
 	// True = this event is the keyboard's (or a gesture's) and must not reach the game; it has been queued.
 	bool TakeEvent(const RE::InputEvent* a_event, Claim a_claim);
+
+	// ---- render thread: the search box's controller focus (2.3.1) ------------------------------------
+	// True while an item or spell list's search box holds the controller focus (Up on the first row put it there), with the
+	// box as fractions of the screen (0..1), for AMF's highlight frame round it.
+	bool SearchFocusRect(float& a_x0, float& a_y0, float& a_x1, float& a_y1);
 
 	// ---- render thread: the keyboard -----------------------------------------------------------
 	struct Target

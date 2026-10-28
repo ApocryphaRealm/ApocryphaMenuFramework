@@ -6182,6 +6182,28 @@ namespace renderer
 				// hover marks waited for the next frame's flush and were wiped when the keyboard window began again.
 				keyboard::Draw();
 
+				// 2.3.1: an item or spell list's search box that holds the controller focus (GameField.h: Up on the first row put
+				// it there, A opens the keyboard on it) - framed so the player can see where the focus went. SkyUI's search box
+				// has no highlight of its own, so AMF draws one over the menu: a line in the nav highlight colour, then the
+				// theme's highlight frame (the one round a highlighted row on our pages).
+				if (!IsMainWindowVisible())
+				{
+					float fx0 = 0.0f, fy0 = 0.0f, fx1 = 0.0f, fy1 = 0.0f;
+					if (gamefield::SearchFocusRect(fx0, fy0, fx1, fy1))
+					{
+						const ImVec2 ds = ImGui::GetIO().DisplaySize;
+						const ImVec2 p0(fx0 * ds.x, fy0 * ds.y), p1(fx1 * ds.x, fy1 * ds.y);
+						const float unit = ImGui::GetFontSize() / 16.0f;
+						const float pad = std::max(3.0f, std::round(4.0f * unit));
+						if (ImDrawList* fg = ImGui::GetForegroundDrawList())
+						{
+							fg->AddRect(ImVec2(p0.x - pad, p0.y - pad), ImVec2(p1.x + pad, p1.y + pad), ImGui::GetColorU32(ImGuiCol_NavHighlight), 0.0f, 0,
+								std::max(2.0f, std::round(2.0f * unit)));
+							DrawHighlightFrame(fg, p0, p1, 1.0f);
+						}
+					}
+				}
+
 				// 2.1.5: the theme's frame round the highlighted and hovered items, over every window's own drawing.
 				if (IsMainWindowVisible()) { FlushHighlightFrames(); }
 				else { g_highlights.clear(); g_mouseSinceNav = false; }

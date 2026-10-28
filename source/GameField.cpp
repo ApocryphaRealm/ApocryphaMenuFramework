@@ -168,6 +168,14 @@ namespace gamefield
 		std::atomic<int> g_listIndex{ -2 };
 		constexpr int kNoRow = -3;
 		std::atomic<std::uint64_t> g_rowReadAt{ 0 };   // the dispatch a row read was queued on; 0 none in flight
+		// 2.3.1 THE SEARCH BOX'S CONTROLLER FOCUS (the owner, 2026-10-28: the keyboard "should only pop up when the player moves
+		// their controller navigation focus to the search box and presses into it"). Up on the first row moves the focus here
+		// (AMF frames the box), A opens the keyboard on it, B or Down gives the focus back to the list. g_focusMenu is the menu it
+		// was taken in (under g_lock); the rectangle is the box as fractions of the screen, measured on the UI thread.
+		std::atomic<bool> g_searchFocus{ false };
+		std::string g_focusMenu;
+		std::atomic<bool> g_focusRectValid{ false };
+		std::atomic<float> g_focusRect[4]{};
 		std::atomic<bool> g_topSearchKnown{ false };
 		std::atomic<bool> g_parkList{ false };      // parked over a menu whose list AMF moves itself (D-pad up / down)
 		std::atomic<bool> g_rectValid{ false };
@@ -247,6 +255,15 @@ namespace gamefield
 				if (!IsOverlayMenu(*it)) { return *it; }
 			}
 			return {};
+		}
+
+		// The search box gives the controller focus back (any thread: atomics and the log only).
+		void ClearSearchFocus(const char* a_why, bool a_player = false)
+		{
+			if (!g_searchFocus.exchange(false, std::memory_order_acq_rel)) { return; }
+			g_focusRectValid.store(false, std::memory_order_release);
+			if (a_player) { logger::info("keyboard: the search box gave the focus back to the list - {}", a_why); }
+			else { logger::debug("keyboard: the search box lost the focus - {}", a_why); }
 		}
 
 		void RequestClose(const std::string& a_why)
@@ -494,6 +511,53 @@ namespace gamefield
 			if (!menu) { return; }
 			int idx = -2;
 			if (ListRow(menu->uiMovie.get(), listPath, idx)) { g_listIndex.store(idx, std::memory_order_release); }
+		}
+
+		// 2.3.1: while the search box holds the focus - where it is on screen (for AMF's frame round it), and whether the focus is
+		// still good: the list moved off its first row (the stick, the mouse wheel) or the box started typing some other way (a
+		// click on it, its own key) both end it. SkyUI's SearchWidget has no highlight state of its own (read from
+		// inventorylists.swf), so the frame is AMF's, drawn over the menu. The widget is measured, then its text field; a clip
+		// wider than 60% of the screen or taller than a quarter is a union of hidden children, not the box (as SystemRow's).
+		void MeasureSearch(const std::string& a_menu)
+		{
+			if (!g_searchFocus.load(std::memory_order_acquire)) { return; }
+			std::string searchPath;
+			{
+				std::scoped_lock l(g_lock);
+				if (auto it = g_cache.find(a_menu); it != g_cache.end()) { searchPath = it->second.searchPath; }
+			}
+			auto menu = FindMenu(a_menu, {});
+			if (!menu || searchPath.empty()) { ClearSearchFocus("its menu or search box is gone"); return; }
+			RE::GFxMovieView* mv = menu->uiMovie.get();
+			AMF_REQUIRE_VOID(mv);  // FindMenu returns only a menu with a movie; guarded all the same
+			if (GetBool(mv, searchPath + "._bActive")) { ClearSearchFocus("its search started another way"); return; }
+			if (const int row = g_listIndex.load(std::memory_order_acquire); row > 0 || row == kNoRow) { ClearSearchFocus("the list moved off its first row", true); return; }
+			RE::GFxValue root;
+			if (!mv->GetVariable(&root, "_root") || !root.IsObject()) { g_focusRectValid.store(false); return; }
+			const RE::GRectF vis = mv->GetVisibleFrameRect();
+			const float visW = vis.right - vis.left, visH = vis.bottom - vis.top;
+			if (visW <= 1.0f || visH <= 1.0f) { g_focusRectValid.store(false); return; }
+			for (const std::string& path : { searchPath, searchPath + ".textField" })
+			{
+				RE::GFxValue bounds, xMin, xMax, yMin, yMax;
+				RE::GFxValue args[1]{ root };
+				if (!mv->Invoke((path + ".getBounds").c_str(), &bounds, args, 1) || !bounds.IsObject()) { continue; }
+				if (!bounds.GetMember("xMin", &xMin) || !bounds.GetMember("xMax", &xMax) || !bounds.GetMember("yMin", &yMin) || !bounds.GetMember("yMax", &yMax) ||
+					!xMin.IsNumber() || !xMax.IsNumber() || !yMin.IsNumber() || !yMax.IsNumber())
+				{
+					continue;
+				}
+				const float x0 = static_cast<float>(xMin.GetNumber()), y0 = static_cast<float>(yMin.GetNumber());
+				const float w = static_cast<float>(xMax.GetNumber()) - x0, h = static_cast<float>(yMax.GetNumber()) - y0;
+				if (w < 1.0f || h < 1.0f || w > visW * 0.6f || h > visH * 0.25f) { continue; }
+				const float f[4] = { (x0 - vis.left) / visW, (y0 - vis.top) / visH, (x0 + w - vis.left) / visW, (y0 + h - vis.top) / visH };
+				const bool first = !g_focusRectValid.load(std::memory_order_acquire);
+				for (int i = 0; i < 4; ++i) { g_focusRect[i].store(f[i], std::memory_order_relaxed); }
+				g_focusRectValid.store(true, std::memory_order_release);
+				if (first) { logger::debug("keyboard: the focused search box {} is at {:.3f},{:.3f} - {:.3f},{:.3f} of the screen", path, f[0], f[1], f[2], f[3]); }
+				return;
+			}
+			if (g_focusRectValid.exchange(false)) { logger::debug("keyboard: the focused search box {} could not be measured - no frame drawn", searchPath); }
 		}
 
 		// ---- finding the focused field (the edge, or a gesture) ------------------------------------------
@@ -797,6 +861,7 @@ namespace gamefield
 						g_cache.erase(name);
 						if (!IsOverlayMenu(name)) { g_topSearchKnown.store(false); g_listIndex.store(-2); }
 					}
+					if (!IsOverlayMenu(name)) { ClearSearchFocus("another menu opened"); }
 					if (k != Kind::kGeneric)
 					{
 						After(2, [name]() { ProbeMenu(name); });
@@ -820,6 +885,7 @@ namespace gamefield
 						}
 						else { g_topSearchKnown.store(false); }
 					}
+					if (!IsOverlayMenu(name)) { ClearSearchFocus("a menu closed"); }
 					if (closeTarget) { RequestClose(name + " closed"); }
 				}
 				return RE::BSEventNotifyControl::kContinue;
@@ -863,18 +929,23 @@ namespace gamefield
 			{
 				const bool pad = b->GetDevice() == RE::INPUT_DEVICE::kGamepad;
 				if (pad != g_padInUse.load(std::memory_order_relaxed)) { g_padInUse.store(pad); logger::debug("keyboard: {} in use", pad ? "controller" : "keyboard/mouse"); }
+				if (!pad) { ClearSearchFocus("the keyboard or mouse was used"); }   // 2.3.1: the focus is the controller's
 			}
 			else if (e->GetEventType() == RE::INPUT_EVENT_TYPE::kThumbstick)
 			{
 				const auto* t = static_cast<const RE::ThumbstickEvent*>(e);
 				if ((std::fabs(t->xValue) > 0.35f || std::fabs(t->yValue) > 0.35f) && !g_padInUse.load()) { g_padInUse.store(true); }
+				// 2.3.1: a stick pushed (it moves the menu's list or its 3D item) - the menu has the controller again
+				if (std::fabs(t->xValue) > 0.5f || std::fabs(t->yValue) > 0.5f) { ClearSearchFocus("a stick was pushed"); }
 			}
 		}
+		if (a_amfWindow) { ClearSearchFocus("AMF's window took the input"); }
 
 		// 2.3.1: the top item or magic list's visible row, re-read once per dispatch (one read in flight at a time). Reading
 		// it only after each pad press left it stale: Inventory Reforged leaves its R3 slot mode on the RELEASE, after that
 		// read, so the next Up saw -1 with the list back on row 8 and opened the keyboard (owner report 2026-10-27)
 		// (a read not answered within 30 dispatches is treated as lost and queued again)
+		// (2.3.1: and, while the search box holds the controller focus, the box measured for its frame - MeasureSearch)
 		if (const std::uint64_t at = g_rowReadAt.load(std::memory_order_acquire);
 			g_topSearchKnown.load(std::memory_order_acquire) && settings::Get().keyboardUpOpensSearch && (at == 0 || dispatch - at > 30))
 		{
@@ -889,13 +960,19 @@ namespace gamefield
 			{
 				AddUITask([top]() {
 					ReadIndex(top);
+					MeasureSearch(top);
 					g_rowReadAt.store(0, std::memory_order_release);
 				});
 			}
 			else
 			{
+				ClearSearchFocus("no item or magic list is in front");
 				g_rowReadAt.store(0, std::memory_order_release);
 			}
+		}
+		else if (!g_topSearchKnown.load(std::memory_order_acquire) || !settings::Get().keyboardUpOpensSearch)
+		{
+			ClearSearchFocus("the menu in front has no search box, or the setting is off");
 		}
 
 		// THE EDGE: a game menu wants text (the count minus what AMF itself added)
@@ -910,6 +987,7 @@ namespace gamefield
 			logger::debug("keyboard: a game menu {} text input (text-entry count {}, AMF's {})", wants ? "started" : "stopped", count, a_amfAdded);
 			if (wants)
 			{
+				ClearSearchFocus("the menu started taking text");
 				if (settings::Get().onScreenKeyboard && settings::Get().keyboardGameFields) { AddUITask([]() { Detect(false); }); }
 			}
 			else
@@ -943,6 +1021,8 @@ namespace gamefield
 
 		// a release of a press we took is ours too, whatever the claim is now
 		if (pad && release && g_consumedPad.erase(code) != 0) { return true; }
+		// 2.3.1: and so are its held repeats - an A held on the focused search box must not reach the row under it
+		if (pad && !down && !release && g_consumedPad.count(code) != 0) { return true; }
 
 		auto queue = [](const PadEvent& a_e) {
 			std::scoped_lock l(g_lock);
@@ -1013,6 +1093,7 @@ namespace gamefield
 				code == static_cast<std::uint32_t>(s0.keyboardOpenPad))
 			{
 				g_consumedPad.insert(code);
+				ClearSearchFocus("the open button");
 				logger::debug("keyboard: the open button on {} while its text box is taking text - opening the keyboard there", top);
 				AddUITask([]() { Detect(true); });
 				return true;
@@ -1025,21 +1106,86 @@ namespace gamefield
 			const std::string menuName = top;
 			AddUITask([menuName]() { ReadIndex(menuName); });
 		}
-		if (k != Kind::kItem && k != Kind::kMagic && k != Kind::kMap) { return false; }
-		if (!AdapterOn(k) || OwnedByOther(k) || g_gameWants.load()) { return false; }
+		if (k != Kind::kItem && k != Kind::kMagic && k != Kind::kMap) { ClearSearchFocus("no item or magic list is in front"); return false; }
+		if (!AdapterOn(k) || OwnedByOther(k) || g_gameWants.load()) { ClearSearchFocus("the search box is not AMF's now"); return false; }
 		const auto& s = settings::Get();
 		const bool known = g_topSearchKnown.load(std::memory_order_acquire);
 		const bool button = s.keyboardOpenPad != 0 && code == static_cast<std::uint32_t>(s.keyboardOpenPad);
-		// the visible row as of the last dispatch (OnDispatch re-reads it every frame while an item or magic menu is in
-		// front): the first row, or an empty list - never "no row selected" (kNoRow), which is Inventory Reforged's slots
-		// or the pointer holding the selection (2.3.1, owner report 2026-10-27)
+
+		// 2.3.1 THE SEARCH BOX HOLDS THE CONTROLLER FOCUS (the owner, 2026-10-28: the keyboard "should only pop up when the
+		// player moves their controller navigation focus to the search box and presses into it"). A (or the open button)
+		// presses into it - the keyboard opens; B or Down hands the focus back to the list, which is where it left it (B does
+		// not also close the menu); Up stays (there is nothing above the box). Any other button gives the menu the controller
+		// back and is the menu's own press (a category change, Inventory Reforged's R3, a favourite).
+		if (g_searchFocus.load(std::memory_order_acquire))
+		{
+			std::string focusMenu;
+			{
+				std::scoped_lock l(g_lock);
+				focusMenu = g_focusMenu;
+			}
+			if (focusMenu != top) { ClearSearchFocus("another menu is in front"); }
+			else if (code == 0x1000 || button)
+			{
+				g_consumedPad.insert(code);
+				g_searchFocus.store(false, std::memory_order_release);
+				g_focusRectValid.store(false, std::memory_order_release);
+				logger::info("keyboard: {} pressed on the focused search box of {} - starting its text box", button ? "the open button" : "A", top);
+				const std::string menuName = top;
+				AddUITask([menuName]() { Start(menuName); });
+				return true;
+			}
+			else if (code == 0x2000 || code == 0x0002)
+			{
+				g_consumedPad.insert(code);
+				ClearSearchFocus(code == 0x2000 ? "B" : "Down", true);
+				return true;
+			}
+			else if (code == 0x0001)
+			{
+				g_consumedPad.insert(code);
+				return true;
+			}
+			else { ClearSearchFocus("another button - the menu's own press"); }
+		}
+
+		if (!known) { return false; }
+		if (button)
+		{
+			// the open button keeps opening the keyboard straight away, from any row (iKeyboardOpenPad)
+			g_consumedPad.insert(code);
+			logger::debug("keyboard: the open button on {} - starting its text box", top);
+			const std::string menuName = top;
+			AddUITask([menuName]() { Start(menuName); });
+			return true;
+		}
+		// Up on the first row moves the focus to the search box - it never opens the keyboard by itself (2.3.1, the owner,
+		// 2026-10-28). The visible row as of the last dispatch (OnDispatch re-reads it every frame while an item or magic menu
+		// is in front): the first row, or an empty list - never "no row selected" (kNoRow), which is Inventory Reforged's
+		// slots, Simple Loadout System's bar or the pointer holding the selection, and Up stays theirs (owner report 2026-10-27).
 		const int index = g_listIndex.load(std::memory_order_acquire);
 		const bool up = code == 0x0001 && s.keyboardUpOpensSearch && (k == Kind::kItem || k == Kind::kMagic) && (index == 0 || index == -1);
-		if (!known || (!button && !up)) { return false; }
+		if (!up) { return false; }
 		g_consumedPad.insert(code);
-		logger::debug("keyboard: {} on {} (list index {}) - starting its text box", button ? "the open button" : "Up on the first row", top, index);
+		{
+			std::scoped_lock l(g_lock);
+			g_focusMenu = top;
+		}
+		g_focusRectValid.store(false, std::memory_order_release);
+		g_searchFocus.store(true, std::memory_order_release);
+		logger::info("keyboard: Up on the first row of {} (list index {}) - the search box has the focus (A opens the keyboard, B or Down goes back)", top, index);
 		const std::string menuName = top;
-		AddUITask([menuName]() { Start(menuName); });
+		AddUITask([menuName]() { MeasureSearch(menuName); });
+		return true;
+	}
+
+	bool SearchFocusRect(float& a_x0, float& a_y0, float& a_x1, float& a_y1)
+	{
+		if (!g_searchFocus.load(std::memory_order_acquire) || !g_focusRectValid.load(std::memory_order_acquire)) { return false; }
+		a_x0 = g_focusRect[0].load(std::memory_order_relaxed);
+		a_y0 = g_focusRect[1].load(std::memory_order_relaxed);
+		a_x1 = g_focusRect[2].load(std::memory_order_relaxed);
+		a_y1 = g_focusRect[3].load(std::memory_order_relaxed);
 		return true;
 	}
 
@@ -1072,6 +1218,7 @@ namespace gamefield
 	void SetClaim(Claim a_claim)
 	{
 		const int was = g_claim.exchange(static_cast<int>(a_claim), std::memory_order_acq_rel);
+		if (a_claim != Claim::kNone) { ClearSearchFocus("the keyboard took the controller"); }
 		if (was != static_cast<int>(a_claim)) { logger::debug("keyboard: pad claim {} -> {}", was, static_cast<int>(a_claim)); }
 		if (a_claim == Claim::kNone)
 		{
@@ -1188,6 +1335,9 @@ namespace gamefield
 						",\"gameTextEntryCount\":" + std::to_string(g_gameCount.load()) + ",\"amfAdded\":" + std::to_string(g_amfAdded.load()) +
 						",\"gameWantsText\":" + (g_gameWants.load() ? "true" : "false") + ",\"padInUse\":" + (g_padInUse.load() ? "true" : "false") +
 						",\"listIndex\":" + std::to_string(g_listIndex.load()) + ",\"topSearchKnown\":" + (g_topSearchKnown.load() ? "true" : "false") +
+						",\"searchFocus\":" + (g_searchFocus.load() ? "true" : "false") + ",\"searchFocusMenu\":\"" + Esc(g_focusMenu) +
+						"\",\"searchFocusRect\":" + (g_focusRectValid.load() ? "[" + std::to_string(g_focusRect[0].load()) + "," + std::to_string(g_focusRect[1].load()) + "," +
+						std::to_string(g_focusRect[2].load()) + "," + std::to_string(g_focusRect[3].load()) + "]" : std::string("null")) +
 						",\"topMenu\":\"" + Esc(TopMenuLocked()) + "\",\"lastDetect\":\"" + Esc(g_lastDetect) + "\",\"focusApi\":\"" + Esc(g_focusApi) +
 						"\",\"virtualKeyboard158716\":" + (g_vk158716.load() ? "true" : "false") + ",\"b612\":" + (g_b612.load() ? "true" : "false") + ",\"routes\":{";
 		for (int r = 1; r <= 3; ++r)

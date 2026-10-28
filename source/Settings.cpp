@@ -296,7 +296,7 @@ namespace settings
 				"bKeyboardEnchantName=" << (a_v.keyboardEnchantName ? 1 : 0) << "\n"
 				"bKeyboardMcmDialog=" << (a_v.keyboardMcmDialog ? 1 : 0) << "\n"
 				"bKeyboardOtherPrompts=" << (a_v.keyboardOtherPrompts ? 1 : 0) << "\n"
-				"; 1 = in an item or spell list, Up on the first row moves to the search box and opens the keyboard.\n"
+				"; 1 = in an item or spell list, Up on the first row moves the focus to the search box; A there opens the keyboard, B or Down goes back to the list.\n"
 				"bKeyboardUpOpensSearch=" << (a_v.keyboardUpOpensSearch ? 1 : 0) << "\n"
 				"; The pad button that opens the keyboard on a menu's search box (item and spell lists) or the map's\n"
 				"; location finder, as an XInput mask: 64 (0x0040) = L3 (the default), 128 = R3, 32 = Back, 0 = none.\n"
