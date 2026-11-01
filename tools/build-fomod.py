@@ -73,6 +73,15 @@ STUB_PDB = "!ApocryphaMenuFramework-SMFName.pdb"
 STUB_FROM = "build/relwithdebinfo-se-only"
 STUB_FOLDER = "SMF-Name"
 
+# 2.4.0: the SMF import module (stub/SMFImportModule.cpp) - a code-free SKSEMenuFramework.dll whose every export forwards to
+# the framework's own, for mods that link SKSE Menu Framework at build time (Scavenger Sense, 2026-11-01: skse64.log Error
+# 126). It ships in AMF's OWN folder, never in SKSE\Plugins itself (SKSE must never load it as a plugin), in Common - every
+# install gets it, and the framework loads it at run time only while the real SKSE Menu Framework is absent.
+IMPORT_DLL = "SKSEMenuFramework.dll"
+IMPORT_PDB = "SKSEMenuFramework.pdb"
+IMPORT_FROM = "build/relwithdebinfo-se-only"
+IMPORT_DEST = ("Common", "SKSE", "Plugins", "ApocryphaMenuFramework", "SMF-Import")
+
 # The two build lines, and the folder each becomes in the installer. These names are not free -
 # ModuleConfig.xml names them as its source folders, and the check at the bottom proves they match.
 LINES = [
@@ -131,6 +140,78 @@ def version():
     return m.group(1)
 
 
+def pe_exports(path):
+    """The export table of a PE file as {name: forwarder string or None}, plus (entry point RVA, import count).
+    Plain struct reading - no third-party module, so the packager runs anywhere Python does."""
+    import struct
+    data = open(path, "rb").read()
+    pe = struct.unpack_from("<I", data, 0x3C)[0]
+    if data[pe:pe + 4] != b"PE\0\0":
+        fail("%s is not a PE file" % path)
+    nsec = struct.unpack_from("<H", data, pe + 6)[0]
+    optsize = struct.unpack_from("<H", data, pe + 20)[0]
+    opt = pe + 24
+    if struct.unpack_from("<H", data, opt)[0] != 0x20B:
+        fail("%s is not a 64-bit PE file" % path)
+    entry = struct.unpack_from("<I", data, opt + 16)[0]
+    dirs = opt + 112
+    exp_rva, exp_size = struct.unpack_from("<II", data, dirs)
+    imp_rva, imp_size = struct.unpack_from("<II", data, dirs + 8)
+    secs = []
+    for i in range(nsec):
+        o = opt + optsize + i * 40
+        vsize, va, rawsize, rawptr = struct.unpack_from("<IIII", data, o + 8)
+        secs.append((va, max(vsize, rawsize), rawptr))
+
+    def off(rva):
+        for va, size, raw in secs:
+            if va <= rva < va + size:
+                return rva - va + raw
+        fail("%s: RVA 0x%x is in no section" % (path, rva))
+
+    def cstr(rva):
+        o = off(rva)
+        return data[o:data.index(b"\0", o)].decode("ascii", "replace")
+
+    imports = 0
+    if imp_rva:
+        o = off(imp_rva)
+        while struct.unpack_from("<5I", data, o) != (0, 0, 0, 0, 0):
+            imports += 1
+            o += 20
+    out = {}
+    if exp_rva:
+        e = off(exp_rva)
+        nfuncs, nnames, funcs, names, ords = struct.unpack_from("<IIIII", data, e + 20)
+        for i in range(nnames):
+            name = cstr(struct.unpack_from("<I", data, off(names) + 4 * i)[0])
+            ordinal = struct.unpack_from("<H", data, off(ords) + 2 * i)[0]
+            frva = struct.unpack_from("<I", data, off(funcs) + 4 * ordinal)[0]
+            out[name] = cstr(frva) if exp_rva <= frva < exp_rva + exp_size else None
+    return out, entry, imports
+
+
+def check_import_module(module_path, framework_path):
+    """Refuse an import module that is not exactly: no entry point, no imports, no SKSE entry point, and a forwarder to
+    the framework for every export the framework has (its SKSEPlugin_* aside)."""
+    target = os.path.splitext(os.path.basename(framework_path))[0]
+    mod, entry, imports = pe_exports(module_path)
+    fw, _, _ = pe_exports(framework_path)
+    if entry != 0 or imports != 0:
+        fail("the SMF import module must run no code: entry point 0x%x, %d import(s) - it is linked /NOENTRY /NODEFAULTLIB"
+             % (entry, imports))
+    if any(n.startswith("SKSEPlugin_") for n in mod):
+        fail("the SMF import module exports an SKSE entry point - it must never look like an SKSE plugin")
+    wanted = sorted(n for n in fw if not n.startswith("SKSEPlugin_"))
+    missing = [n for n in wanted if mod.get(n) != "%s.%s" % (target, n)]
+    extra = sorted(set(mod) - set(wanted))
+    if missing or extra:
+        fail("the SMF import module does not forward the framework's exports one for one (%d missing or wrong, e.g. %s; "
+             "%d extra, e.g. %s) - rebuild the SE/AE line, which regenerates its forwarders"
+             % (len(missing), missing[:3], len(extra), extra[:3]))
+    return len(wanted)
+
+
 def copy_into(src, dest_dir, dest_name=None):
     if not os.path.isfile(src):
         fail("missing file the package needs: %s" % src)
@@ -179,6 +260,19 @@ def main(out_root=None):
     stub_dest = os.path.join(out_root, STUB_FOLDER, "SKSE", "Plugins")
     copy_into(stub_dll, stub_dest)
     copy_into(stub_pdb, stub_dest)                    # rule 43 - ship the symbols
+
+    # ---- the SMF import module (2.4.0): DLL and PDB into AMF's own folder, refused unless it forwards every export
+    import_dll = os.path.join(REPO, IMPORT_FROM, IMPORT_DLL)
+    import_pdb = os.path.join(REPO, IMPORT_FROM, IMPORT_PDB)
+    if not os.path.isfile(import_dll) or not os.path.isfile(import_pdb):
+        fail("the SMF import module (%s and its .pdb) is not in %s - build the SE/AE line, which builds it too"
+             % (IMPORT_DLL, IMPORT_FROM))
+    forwarded = check_import_module(import_dll, os.path.join(REPO, IMPORT_FROM, DLL))
+    import_dest = os.path.join(out_root, *IMPORT_DEST)
+    if os.path.normcase(os.path.dirname(import_dest)) == os.path.normcase(os.path.join(out_root, "Common", "SKSE", "Plugins")):
+        fail("the SMF import module must not sit in SKSE\\Plugins itself")
+    copy_into(import_dll, import_dest)
+    copy_into(import_pdb, import_dest)                # rule 43 - ship the symbols
 
     # The 1.7 line links CommonLibSSE-NG 7.x, which is GPL-3.0-or-later with a modding exception,
     # so that folder carries its own licence set. These were hand-placed in the package every
@@ -303,6 +397,8 @@ def main(out_root=None):
     print("  version ............... %s" % ver)
     print("  build lines ........... %s" % ", ".join(f for _, f in LINES))
     print("  SMF name stub ......... %s\\SKSE\\Plugins\\%s (installed only without SKSEMenuFramework.dll)" % (STUB_FOLDER, STUB_DLL))
+    print("  SMF import module ..... %s\\%s (%d forwarders, loaded only without SKSE Menu Framework)"
+          % ("\\".join(IMPORT_DEST), IMPORT_DLL, forwarded))
     print("  languages ............. %d, plus All" % len(LANGUAGES))
     print("  installer sources ..... %d, every one of them present" % len(sources))
     print("  files ................. %d" % total)

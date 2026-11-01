@@ -1,13 +1,17 @@
 {
-  "_doc": "Which repo sources build which shipped DLL, for the package gate's dll-built-after-the-last-source-change row: each DLL named here is compared only with the files whose repo-relative path ('/' separators) matches its 'sources' regex; a DLL not named here is compared with every source. The framework DLL (both build lines) is built from everything except the SMF name stub and the off-game harnesses in tools/. The stub is built from stub/ and takes its version from CMakeLists.txt (through stub/SMFNameStub.rc.in), so CMakeLists.txt counts for it too: a version bump relinks it, and an unbuilt stub under a new number still fails. A CMakeLists.txt edit that does not relink the stub is answered by touching stub/SMFNameStub.cpp and building, which no longer makes the framework's DLL look older. Without this map the stub, which is not relinked when only the framework's sources change, tripped the row, and touching its source to relink it made the framework's DLL look older (2026-10-25).",
+  "_doc": "Which repo sources build which shipped DLL, for the package gate's dll-built-after-the-last-source-change row: each DLL named here is compared only with the files whose repo-relative path ('/' separators) matches its 'sources' regex; a DLL not named here is compared with every source. The framework DLL (both build lines) is built from everything except the SMF name stub and the off-game harnesses in tools/. The stub is built from stub/ and takes its version from CMakeLists.txt (through stub/SMFNameStub.rc.in), so CMakeLists.txt counts for it too: a version bump relinks it, and an unbuilt stub under a new number still fails. A CMakeLists.txt edit that does not relink the stub is answered by touching stub/SMFNameStub.cpp and building, which no longer makes the framework's DLL look older. Without this map the stub, which is not relinked when only the framework's sources change, tripped the row, and touching its source to relink it made the framework's DLL look older (2026-10-25). 2.4.0: the SMF import module (SKSEMenuFramework.dll, stub/SMFImportModule.cpp) is relinked whenever the framework relinks - its forwarders are generated from the framework DLL's export table by cmake/gen-smf-import-forwards.cmake - so it counts every source but the name stub's and the harnesses; the name stub counts only its own files, and the generator script does not count for the framework (editing it relinks only the import module).",
   "dlls": [
     {
       "dll": "!ApocryphaMenuFramework.dll",
-      "sources": "^(?!stub/|tools/)"
+      "sources": "^(?!stub/|tools/|cmake/gen-smf-import-forwards\\.cmake$)"
     },
     {
       "dll": "!ApocryphaMenuFramework-SMFName.dll",
-      "sources": "^(stub/|CMakeLists\\.txt$)"
+      "sources": "^(stub/SMFNameStub|CMakeLists\\.txt$)"
+    },
+    {
+      "dll": "SKSEMenuFramework.dll",
+      "sources": "^(?!tools/|stub/SMFNameStub)"
     }
   ]
 }

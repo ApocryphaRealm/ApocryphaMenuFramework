@@ -167,3 +167,42 @@ if (MSVC)
 	target_compile_options(SMFNameStub PRIVATE /Zi "/d1trimfile:${PROJECT_NATIVE_DIR}")
 	target_link_options(SMFNameStub PRIVATE /DEBUG:FULL /OPT:REF /OPT:ICF /PDBALTPATH:%_PDB%)
 endif()
+
+########################################################################################################################
+## The SMF import module (2.4.0) - stub/SMFImportModule.cpp, shipped as SKSE\Plugins\ApocryphaMenuFramework\SMF-Import\SKSEMenuFramework.dll
+########################################################################################################################
+#
+# For mods that link SKSE Menu Framework at build time (an import-table entry for SKSEMenuFramework.dll - Scavenger Sense
+# 0.10.1beta, 2026-11-01: skse64.log "Error 126"). A code-free DLL whose every export forwards to the same-named export
+# of !ApocryphaMenuFramework.dll; the forwarders are generated from the framework DLL's export table after it links, so
+# the two can never drift. The framework loads it by full path from its own folder, only without the real SKSE Menu
+# Framework (source/SmfImportModule.cpp). Not an SKSE plugin: no entry point, no SKSEPlugin_* export, never in
+# SKSE\Plugins itself.
+set(SMF_IMPORT_FORWARDS "${CMAKE_CURRENT_BINARY_DIR}/smf_import_forwards.inc")
+add_custom_command(
+	OUTPUT "${SMF_IMPORT_FORWARDS}"
+	COMMAND "${CMAKE_COMMAND}" "-DLINKER=${CMAKE_LINKER}" "-DDLL=$<TARGET_FILE:${PROJECT_NAME}>" "-DOUT=${SMF_IMPORT_FORWARDS}"
+		-P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/gen-smf-import-forwards.cmake"
+	DEPENDS ${PROJECT_NAME} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/gen-smf-import-forwards.cmake"
+	COMMENT "SMF import module: forwarders from the framework DLL's export table"
+	VERBATIM
+)
+configure_file(
+	${CMAKE_CURRENT_SOURCE_DIR}/stub/SMFImportModule.rc.in
+	${CMAKE_CURRENT_BINARY_DIR}/SMFImportModule.rc
+	@ONLY
+)
+add_library(SMFImportModule SHARED
+	${CMAKE_CURRENT_SOURCE_DIR}/stub/SMFImportModule.cpp
+	${CMAKE_CURRENT_BINARY_DIR}/SMFImportModule.rc
+	"${SMF_IMPORT_FORWARDS}"
+)
+set_source_files_properties("${SMF_IMPORT_FORWARDS}" PROPERTIES HEADER_FILE_ONLY ON)
+set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/stub/SMFImportModule.cpp PROPERTIES OBJECT_DEPENDS "${SMF_IMPORT_FORWARDS}")
+target_include_directories(SMFImportModule PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+set_target_properties(SMFImportModule PROPERTIES OUTPUT_NAME "SKSEMenuFramework" INTERPROCEDURAL_OPTIMIZATION OFF)
+if (MSVC)
+	# rules 43 and 45, as above. /NOENTRY + /NODEFAULTLIB: no DllMain and no C runtime, so loading the module runs nothing.
+	target_compile_options(SMFImportModule PRIVATE /Zi "/d1trimfile:${PROJECT_NATIVE_DIR}")
+	target_link_options(SMFImportModule PRIVATE /NOENTRY /NODEFAULTLIB /DEBUG:FULL /OPT:REF /OPT:ICF /PDBALTPATH:%_PDB%)
+endif()
