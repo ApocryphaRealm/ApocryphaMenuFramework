@@ -87,7 +87,7 @@ WHAT CHANGED
 ------------
 
 Version 2.4.0
-Mods that link SKSE Menu Framework directly now load with this menu instead of it - Scavenger Sense, for one, which SKSE refused before ("Error 126" in skse64.log). See REQUIREMENTS for the small file this adds.
+With SKSE Menu Framework installed as well, mods made for it now use it, not this menu - before, a mod could end up half on each and crash the game at load. The small name file below steps aside then too.
 Other mods' windows can pause the game, the way SKSE Menu Framework does: with "Pause the game while this menu is open" on (Settings > General), a mod's window that asks to pause the game - OBody NG's preset window, for one - stops time while it is open, and time runs again when it closes. Windows that only show information and take no mouse input never pause. AMF's own menu pauses exactly as before. For mod authors: SetWindowsPauseGame(bool) now works and sets whether your own mod's windows pause the game.
 
 Version 2.3.1
@@ -374,9 +374,7 @@ REQUIREMENTS
 The .pdb debug symbols ship in this download so Crash Logger can resolve this framework's
 stack frames; there is no separate symbols file to fetch.
 
-The installer also adds !ApocryphaMenuFramework-SMFName.dll when SKSE Menu Framework is not installed: a tiny file whose only job is to tell SKSE (and Papyrus scripts that ask for "SKSEMenuFramework") that a menu framework is present, reporting version 3.14.0.
-
-Every install also gets SKSE\Plugins\ApocryphaMenuFramework\SMF-Import\SKSEMenuFramework.dll (2.4.0): a small file with no code of its own that passes every call a mod makes to SKSE Menu Framework on to this framework, for mods that link SKSE Menu Framework directly. This framework loads it only when SKSE Menu Framework itself is not installed, and it sits in this framework's own folder, so SKSE never loads it as a plugin and it never takes the place of the real SKSE Menu Framework. With SKSE Menu Framework installed as well, mods made for it use it, not this framework, and the small name file above steps aside.
+The installer also adds !ApocryphaMenuFramework-SMFName.dll when SKSE Menu Framework is not installed: a tiny file whose only job is to tell SKSE (and Papyrus scripts that ask for "SKSEMenuFramework") that a menu framework is present, reporting version 3.14.0. If SKSE Menu Framework itself is installed later, the file steps aside and leaves that name to it.
 
 BUILDING FROM SOURCE
 --------------------

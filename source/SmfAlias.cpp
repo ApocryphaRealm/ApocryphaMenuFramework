@@ -1,5 +1,5 @@
 #include "SmfAlias.h"
-#include "SmfImportModule.h"
+#include "RealSmf.h"
 #include "ExportStubs.h"
 #include "FlickHost.h"
 
@@ -154,7 +154,7 @@ namespace
 		// to the real framework and whose GetModuleHandle("SKSEMenuFramework.dll") was answered with AMF registered its HUD
 		// element here, and AMF's draw called into the real framework's ImGui with no context (Scavenger Sense, 2026-11-01).
 		// Every consumer now binds wholly to the one framework that owns the name. AMF's own old name and FLICK are unaffected.
-		return (lowered == kSmf && !smf_import::RealSmfPresent()) || lowered == kAmfOld || (lowered == kFlick && flick::Enabled());
+		return (lowered == kSmf && !realsmf::Present()) || lowered == kAmfOld || (lowered == kFlick && flick::Enabled());
 	}
 
 	bool IsFlickName(std::wstring_view a_name)
@@ -203,7 +203,7 @@ namespace
 	bool IsSmfFileName(std::wstring_view a_path)
 	{
 		// 2.4.0: the real file exists when the real framework is installed - the honest answer is the right one.
-		if (a_path.empty() || smf_import::RealSmfPresent()) {
+		if (a_path.empty() || realsmf::Present()) {
 			return false;
 		}
 		if (const auto slash = a_path.find_last_of(L"\\/"); slash != std::wstring_view::npos) {
@@ -1006,9 +1006,6 @@ namespace smf_alias
 			g_selfPathW.assign(path, len);
 			g_selfPathA = Narrow(g_selfPathW);
 			logger::debug("SMF file alias: file queries for SKSEMenuFramework.dll will be answered with \"{}\"", g_selfPathA);
-			if (smf_import::RealSmfPresent()) {
-				logger::info("SMF alias: the real SKSE Menu Framework is installed - lookups of SKSEMenuFramework (module name and file) are left to it, so its consumers bind to it and not to AMF");
-			}
 		}
 
 		if (!g_realW || !g_realA) {

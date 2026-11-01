@@ -25,7 +25,7 @@
 
 namespace renderer { void RequestFontRebuild(); }
 #include "SmfAlias.h"
-#include "SmfImportModule.h"
+#include "RealSmf.h"
 #include "SystemRow.h"
 #include "Theme.h"
 
@@ -512,8 +512,8 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 
 	logger::debug("SKSE core APIs initialized");
 
-	// 2.4.0: what DllMain decided about the SMF import module (SmfImportModule.h) - it ran before the log existed.
-	smf_import::Report();
+	// 2.4.0: is the real SKSE Menu Framework installed? Then the alias leaves its name to it (RealSmf.h).
+	realsmf::Report();
 
 	// 1.9.4: the guard above runs before this logger exists, so its line was lost (oproso's Wheeler log had none,
 	// and AMF's own log had none either). Say it again now that the log is up, from the report the guard ALREADY
