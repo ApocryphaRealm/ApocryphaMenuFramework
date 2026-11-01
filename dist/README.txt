@@ -1,6 +1,6 @@
 ApocryphaRealm Menu Framework
 =============================
-Version 2.3.1
+Version 2.4.0
 
 An original, GPL-3.0-or-later in-game menu framework (embedding Dear ImGui) - a one-for-one
 replacement for SKSE Menu Framework's consumer surface, plus user-friendly features that do
@@ -85,6 +85,9 @@ reading.
 
 WHAT CHANGED
 ------------
+
+Version 2.4.0
+Other mods' windows can pause the game, the way SKSE Menu Framework does: with "Pause the game while this menu is open" on (Settings > General), a mod's window that asks to pause the game - OBody NG's preset window, for one - stops time while it is open, and time runs again when it closes. Windows that only show information and take no mouse input never pause. AMF's own menu pauses exactly as before. For mod authors: SetWindowsPauseGame(bool) now works and sets whether your own mod's windows pause the game.
 
 Version 2.3.1
 Saving a setting on a converted MCM Helper page no longer crashes the game when a script named MCM is present but MCM Helper itself is not working (reported on Skyrim 1.7.104 with TrueHUD and Achievement Injector). AMF now checks that the call can be made first; when it cannot, the value stays in this menu and the log says why.

@@ -46,7 +46,9 @@ namespace consumer
 
 	// a_view is the optional "view name" of AddWindowWithView - kept with the entry so a window
 	// can be addressed by name later; nullptr for a plain AddWindow.
-	WindowInterface* AddWindow(RenderFunction a_render, const char* a_view);
+	// a_owner (2.4.0): the module (HMODULE) the AddWindow call came from - the export reads it off its own return address,
+	// so SetWindowsPauseGame can act on the calling mod's windows only. Null when it could not be told.
+	WindowInterface* AddWindow(RenderFunction a_render, const char* a_view, void* a_owner = nullptr);
 
 	std::int64_t RegisterHudElement(HudCallback a_callback);
 	void UnregisterHudElement(std::int64_t a_id);
@@ -70,6 +72,19 @@ namespace consumer
 	bool AnyWindowOwnsInput();
 	// The ImGui name of the first window that makes AnyWindowOwnsInput() true, for the transition log.
 	std::string InputOwnerName();
+
+	// A MOD'S WINDOW PAUSES THE GAME (2.4.0; kaboom001, Nexus 2026-10-31: OBody NG's window paused the game under SKSE Menu
+	// Framework but not under AMF). In SKSE Menu Framework the stock header's AddWindow(render, doesWindowPauseGame = true)
+	// writes that argument into BlockUserInput, and that one flag is both its pause and its input hold. AMF now pauses for
+	// the same windows: exactly those AnyWindowOwnsInput() counts (open, BlockUserInput, drew a window last frame that takes
+	// the mouse - so a passive overlay never pauses), less the windows of any module that has called
+	// SetWindowsPauseGame(false). The renderer applies it only while [Menu] bPauseGame is on. Render thread.
+	bool AnyWindowPausesGame();
+	// The ImGui name of the first window that makes AnyWindowPausesGame() true, for the transition log.
+	std::string PauseOwnerName();
+	// SetWindowsPauseGame(bool) from the module a_module (the caller, read off the export's return address): whether that
+	// mod's windows pause the game while they hold the input. Every module starts at true (the header's default). Any thread.
+	void SetWindowsPauseGame(void* a_module, bool a_pause);
 
 	// ---- fonts ----------------------------------------------------------------------------
 	// PushFont(name) and the three family pushes are always balanced by Pop(): an unknown name
@@ -137,6 +152,8 @@ namespace consumer
 		bool open{ false };
 		bool blocking{ false };
 		bool acceptsMouse{ false };    // 2.0.4: a submitted window takes the mouse
+		bool pausesGame{ false };      // 2.4.0: its owner has not called SetWindowsPauseGame(false)
+		std::string owner;             // 2.4.0: the file name of the module that registered it ("" if unknown)
 		std::string view;   // AddWindowWithView's name; empty for a plain AddWindow
 		std::vector<SubmittedWindow> submitted;
 	};

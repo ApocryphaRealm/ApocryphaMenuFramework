@@ -21,6 +21,15 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## 2.4.0 - 2026-10-31 - untested
+
+### Added
+- SetWindowsPauseGame(bool) is now real: it sets whether the CALLING mod's windows pause the game (every mod starts at true, the header's default; a mod cannot switch another mod's windows; AMF's pause setting still decides whether any window pauses). The stock SKSE Menu Framework header only declares its type (no wrapper), and neither SKSE Menu Framework build in the reference copy exports it, so until now AMF answered a GetProcAddress for it with a logging no-op stub. The calling mod is read off the call's return address; AddWindow now also records which DLL registered each window.
+- Other mods' windows can pause the game, the way SKSE Menu Framework does (kaboom001, Nexus comment 2026-10-31: OBody NG's preset window paused the game under SKSE Menu Framework but not under AMF, with AMF's pause setting on). With Settings > General > 'Pause the game while this menu is open' on, a window a mod made with AddWindow / AddWindowWithView and doesWindowPauseGame = true (the stock header's default, written into BlockUserInput) pauses the game while it is open and holding the player's input - the same test AMF already uses to hand such a window the cursor, so a passive overlay that takes no mouse input never pauses. It is the same single pause AMF holds for its own menu: opening or closing AMF's menu over such a window changes nothing, and the pause goes when the window closes or stops drawing, when the setting goes off, or when a load starts (a window left open through the load pauses again once the loaded game runs). AMF's own menu pauses exactly as before. This reverses 2.0.4's 'a mod's window never pauses the game'.
+
+### Changed
+- The pause setting's help text says that another mod's window that asks to pause the game pauses it too (all eleven languages). The amf.menu state's consumerWindows entries carry pausesGame and owner (the DLL that registered the window); pauseHeld covers a mod's pausing window too. The log names the window that pauses the game and when it lets go.
+
 ## 2.3.1 - 2026-10-27 - untested
 
 ### Changed

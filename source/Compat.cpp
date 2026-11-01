@@ -8,6 +8,8 @@
 
 #include <imgui.h>
 
+#include <intrin.h>   // _ReturnAddress: which mod called AddWindow / SetWindowsPauseGame (2.4.0)
+
 #include <algorithm>
 #include <atomic>
 #include <cstdarg>
@@ -346,14 +348,41 @@ AMF_EXPORT bool IsHotkeyEnabled()
 // not AddSectionItem. The bodies live in ConsumerSurface.cpp; these are the ABI edge.
 // --------------------------------------------------------------------------------------------
 
+namespace
+{
+	// 2.4.0: the module a call into one of these exports came from - the stock header's wrappers are inline, so the return
+	// address lies in the calling mod's own DLL. Null when it cannot be told (the window then counts as one unknown mod's).
+	void* CallerModule(void* a_returnAddress)
+	{
+		HMODULE module = nullptr;
+		if (!a_returnAddress ||
+			!::GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+								  static_cast<LPCWSTR>(a_returnAddress), &module)) {
+			return nullptr;
+		}
+		return module;
+	}
+}
+
 AMF_EXPORT void* AddWindow(RenderFunction a_render)
 {
-	return consumer::AddWindow(a_render, nullptr);
+	return consumer::AddWindow(a_render, nullptr, CallerModule(_ReturnAddress()));
 }
 
 AMF_EXPORT void* AddWindowWithView(RenderFunction a_render, const char* a_view)
 {
-	return consumer::AddWindow(a_render, a_view);
+	return consumer::AddWindow(a_render, a_view, CallerModule(_ReturnAddress()));
+}
+
+// SetWindowsPauseGame(bool) - the stock SKSE Menu Framework header declares it (SetWindowsPauseGameFuction, void(bool)) but
+// has no wrapper for it, and neither SKSE Menu Framework build in the reference copy exports it (checked 2026-10-31), so a
+// mod reaches it only through GetProcAddress. Until 2.4.0 AMF answered with a logging no-op stub. Now it is real: it says
+// whether the CALLING mod's windows pause the game while they hold the player's input (the header's AddWindow default,
+// doesWindowPauseGame = true, is that mod's starting value). A mod cannot switch another mod's windows; [Menu] bPauseGame
+// still decides whether any window pauses at all.
+AMF_EXPORT void SetWindowsPauseGame(bool a_pause)
+{
+	consumer::SetWindowsPauseGame(CallerModule(_ReturnAddress()), a_pause);
 }
 
 AMF_EXPORT std::int64_t RegisterHudElement(void (*a_callback)())

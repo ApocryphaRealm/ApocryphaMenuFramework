@@ -53,7 +53,39 @@ namespace
 		std::vector<consumer::SubmittedWindow> submitted;
 		bool acceptsMouse{ false };
 		bool passiveLogged{ false };   // "open and blocking but takes no mouse" said once per opening
+
+		// 2.4.0: the module that registered it (AddWindow's caller) - SetWindowsPauseGame acts on its owner's windows
+		void* owner{ nullptr };
+		std::string ownerName;   // its file name, for the log and the DevBench state
 	};
+
+	// 2.4.0: the modules that have called SetWindowsPauseGame, and what they asked for. A module not listed pauses (true),
+	// the stock header's doesWindowPauseGame default. Guarded by g_lock.
+	std::vector<std::pair<void*, bool>> g_pauseByModule;
+
+	// g_lock held
+	bool OwnerPauses(const void* a_owner)
+	{
+		for (const auto& [module, pause] : g_pauseByModule) {
+			if (module == a_owner) { return pause; }
+		}
+		return true;
+	}
+
+	std::string ModuleFileName(void* a_module)
+	{
+		if (!a_module) {
+			return {};
+		}
+		char path[MAX_PATH]{};
+		const DWORD n = ::GetModuleFileNameA(static_cast<HMODULE>(a_module), path, MAX_PATH);
+		if (n == 0 || n >= MAX_PATH) {
+			return {};
+		}
+		const std::string full(path, n);
+		const auto cut = full.find_last_of("\\/");
+		return cut == std::string::npos ? full : full.substr(cut + 1);
+	}
 
 	struct HudEntry
 	{
@@ -116,12 +148,14 @@ namespace
 
 namespace consumer
 {
-	WindowInterface* AddWindow(RenderFunction a_render, const char* a_view)
+	WindowInterface* AddWindow(RenderFunction a_render, const char* a_view, void* a_owner)
 	{
 		if (!a_render) {
 			logger::warn("AddWindow refused: null render function");
 			return nullptr;
 		}
+
+		std::string ownerName = ModuleFileName(a_owner);   // outside the lock: a loader call
 
 		std::scoped_lock lock(g_lock);
 
@@ -131,14 +165,38 @@ namespace consumer
 		if (a_view) {
 			entry.view = a_view;
 		}
+		entry.owner = a_owner;
+		entry.ownerName = std::move(ownerName);
 
 		auto* const handed = entry.iface.get();
 		g_windows.push_back(std::move(entry));
 
-		logger::info("AddWindow{} (SMF-compat): consumer window registered ({} total)",
-					 a_view ? "WithView" : "", g_windows.size());
+		logger::info("AddWindow{} (SMF-compat): consumer window registered by {} ({} total)",
+					 a_view ? "WithView" : "", g_windows.back().ownerName.empty() ? "an unknown module" : g_windows.back().ownerName,
+					 g_windows.size());
 
 		return handed;
+	}
+
+	void SetWindowsPauseGame(void* a_module, bool a_pause)
+	{
+		const std::string name = ModuleFileName(a_module);   // outside the lock: a loader call
+		bool changed = true;
+		{
+			std::scoped_lock lock(g_lock);
+			auto it = std::find_if(g_pauseByModule.begin(), g_pauseByModule.end(),
+				[a_module](const std::pair<void*, bool>& p) { return p.first == a_module; });
+			if (it == g_pauseByModule.end()) {
+				changed = !a_pause;   // not listed = already pausing
+				g_pauseByModule.emplace_back(a_module, a_pause);
+			} else {
+				changed = it->second != a_pause;
+				it->second = a_pause;
+			}
+		}
+		logger::info("SetWindowsPauseGame({}) (SMF-compat) from {}: that mod's windows {} the game while they hold the input{}",
+					 a_pause, name.empty() ? "an unknown module" : name, a_pause ? "pause" : "do not pause",
+					 changed ? "" : " (unchanged)");
 	}
 
 	std::int64_t RegisterHudElement(HudCallback a_callback)
@@ -300,6 +358,35 @@ namespace consumer
 			}
 			for (const auto& s : w.submitted) {
 				if (!s.noMouseInputs) { return s.name; }
+			}
+		}
+		return {};
+	}
+
+	bool AnyWindowPausesGame()
+	{
+		// the input gate's own test (AnyWindowOwnsInput), less the windows whose mod turned the pause off
+		std::scoped_lock lock(g_lock);
+		return std::any_of(g_windows.begin(), g_windows.end(), [](const WindowEntry& w) {
+			return w.acceptsMouse &&
+				   w.iface->IsOpen.load(std::memory_order_acquire) &&
+				   w.iface->BlockUserInput.load(std::memory_order_acquire) &&
+				   OwnerPauses(w.owner);
+		});
+	}
+
+	std::string PauseOwnerName()
+	{
+		std::scoped_lock lock(g_lock);
+		for (const auto& w : g_windows) {
+			if (!w.acceptsMouse || !w.iface->IsOpen.load(std::memory_order_acquire) ||
+				!w.iface->BlockUserInput.load(std::memory_order_acquire) || !OwnerPauses(w.owner)) {
+				continue;
+			}
+			for (const auto& s : w.submitted) {
+				if (!s.noMouseInputs) {
+					return w.ownerName.empty() ? std::string(s.name) : std::string(s.name) + " (" + w.ownerName + ")";
+				}
 			}
 		}
 		return {};
@@ -615,6 +702,8 @@ namespace consumer
 			s.open = w.iface->IsOpen.load(std::memory_order_acquire);
 			s.blocking = w.iface->BlockUserInput.load(std::memory_order_acquire);
 			s.acceptsMouse = w.acceptsMouse;
+			s.pausesGame = OwnerPauses(w.owner);
+			s.owner = w.ownerName;
 			s.view = w.view;
 			s.submitted = w.submitted;
 			states.push_back(std::move(s));

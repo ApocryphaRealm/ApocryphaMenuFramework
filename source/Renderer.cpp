@@ -164,7 +164,7 @@ namespace renderer
 					++ui->numPausesGame;
 					g_pauseHeld = true;
 					g_pauseHeldMirror.store(true, std::memory_order_relaxed);
-					logger::info("pause: game paused while the menu is open (pause count now {})", ui->numPausesGame);
+					logger::info("pause: game paused while the menu or a mod's pausing window is open (pause count now {})", ui->numPausesGame);
 				}
 				else if (!own && g_pauseHeld)
 				{
@@ -174,7 +174,7 @@ namespace renderer
 					}
 					g_pauseHeld = false;
 					g_pauseHeldMirror.store(false, std::memory_order_relaxed);
-					logger::info("pause: released (menu closed, setting off, or a menu's scripts running) - game resumed (pause count now {})", ui->numPausesGame);
+					logger::info("pause: released (menu and mods' pausing windows closed, setting off, or a menu's scripts running) - game resumed (pause count now {})", ui->numPausesGame);
 				}
 			});
 		}
@@ -2270,7 +2270,8 @@ namespace renderer
 					settings::Save();
 				}
 				ImGui::TextWrapped("%s", TR("AMF_PauseGameHelp", "On: time stops while this menu is open, the way it does in the game's own "
-								   "menus - nothing moves, fights or ticks down behind it. Off: the game keeps running while you change settings."));
+								   "menus - nothing moves, fights or ticks down behind it. Off: the game keeps running while you change settings. "
+								   "Another mod's window that asks to pause the game (as in SKSE Menu Framework) pauses it too while it is open."));
 				ImGui::Spacing();
 
 				// next after 2.1.9 (the owner, 2026-10-12): the Oblivion version's [Menu] bKeepCameraAwake, as a switch
@@ -5841,12 +5842,14 @@ namespace renderer
 				const bool visible = g_windowVisible.load(std::memory_order_acquire);
 				backMark(2);
 
-				// TWO STATES, NOT ONE (2.0.4). `visible` is OUR menu: it alone pauses the game, takes
-				// Escape as "close" and draws the framework window. `interactive` is "someone on screen
-				// has the player's input" - our menu, or a mod's own window that is open and blocking -
-				// and it is what feeds ImGui, draws the cursor and turns text entry on. A mod's window
-				// never pauses the game: [Menu] bPauseGame is the player's setting for OUR menu, and a
-				// mod that wants the world stopped behind its window is the one to decide that.
+				// TWO STATES, NOT ONE (2.0.4). `visible` is OUR menu: it takes Escape as "close" and draws the
+				// framework window. `interactive` is "someone on screen has the player's input" - our menu, or a
+				// mod's own window that is open and blocking - and it is what feeds ImGui, draws the cursor and
+				// turns text entry on. 2.4.0 reverses 2.0.4's "a mod's window never pauses the game" (kaboom001,
+				// Nexus 2026-10-31: OBody NG's window paused under SKSE Menu Framework, not under AMF): with
+				// [Menu] bPauseGame on, a mod's window that holds the input and was made with
+				// doesWindowPauseGame = true (the header's BlockUserInput) pauses the game too, unless that mod
+				// called SetWindowsPauseGame(false) - see consumer::AnyWindowPausesGame and the pause block below.
 				// The gate is the flags AND what the window really is (see consumer::AnyWindowOwnsInput): open,
 				// BlockUserInput, and a window it drew last frame that takes the mouse. The flags alone made
 				// StepUpOnto SKSE's passive NPC perf overlay take the whole game's input during play.
@@ -5861,7 +5864,7 @@ namespace renderer
 									 consumerOwnsInput ? " \"" + consumer::InputOwnerName() + "\"" : std::string(),
 									 consumerOwnsInput ? "took" : "handed back",
 									 visible ? "open" : "closed",
-									 consumerOwnsInput ? " - cursor shown, game input held; the game is not paused" : "");
+									 consumerOwnsInput ? " - cursor shown, game input held" : "");
 					}
 				}
 
@@ -5888,7 +5891,33 @@ namespace renderer
 					// not on top of the journal's own pause (the System row): ours there only added a count to take off again
 					const bool nestedNow = g_nested.load(std::memory_order_acquire);
 					const bool ownPause = visible && settings::Get().pauseGameWhileOpen && !nestedNow;
-					SyncGamePause(ownPause, visible && s_lifted);
+					// 2.4.0: a mod's window that pauses (consumer::AnyWindowPausesGame - the input gate's test, less mods that
+					// called SetWindowsPauseGame(false)) holds the same single count while [Menu] bPauseGame is on. It is
+					// the same count, not a second one: our menu opening or closing over such a window changes nothing, and
+					// the count goes when the last reason goes - the window closes (IsOpen read this frame) or stops drawing
+					// (its submitted windows are a frame old), the setting goes off, or a load closes the window (the edge
+					// waits out the loading guard in SyncGamePause, as our menu's does).
+					// Not while the game is loading (LoadGuard.h): a window a mod leaves open through a load pauses again only
+					// once the loaded game is running and the window is still drawn.
+					const bool consumerPause = settings::Get().pauseGameWhileOpen && consumerOwnsInput && !loadguard::Blocked() &&
+						consumer::AnyWindowPausesGame();
+					{
+						static bool s_lastConsumerPause = false;   // render thread only; transition log
+						if (consumerPause != s_lastConsumerPause)
+						{
+							s_lastConsumerPause = consumerPause;
+							if (consumerPause)
+							{
+								logger::info("pause: a mod's window \"{}\" pauses the game ([Menu] bPauseGame on, as in SKSE Menu Framework){}",
+											 consumer::PauseOwnerName(), ownPause ? " - the framework menu already holds the pause" : "");
+							}
+							else
+							{
+								logger::info("pause: no mod's window pauses the game any more{}", ownPause ? " - the framework menu still holds the pause" : "");
+							}
+						}
+					}
+					SyncGamePause(ownPause || consumerPause, visible && s_lifted);
 					// the idle camera only matters while time runs behind the menu: not under our own pause (lifted for a
 					// page's scripts, time runs, so it is held again)
 					SyncIdleCamera(visible && settings::Get().keepCameraAwake && !(ownPause && !s_lifted));
@@ -6839,6 +6868,9 @@ namespace renderer
 				windows += "{\"open\":" + std::string(states[i].open ? "true" : "false") +
 						   ",\"blocking\":" + (states[i].blocking ? "true" : "false") +
 						   ",\"acceptsMouse\":" + (states[i].acceptsMouse ? "true" : "false") +
+						   // 2.4.0: its mod has not turned the pause off (SetWindowsPauseGame), and which DLL registered it
+						   ",\"pausesGame\":" + (states[i].pausesGame ? "true" : "false") +
+						   ",\"owner\":\"" + esc(states[i].owner) + "\"" +
 						   ",\"view\":\"" + esc(states[i].view) + "\"" +
 						   ",\"submitted\":[" + submitted + "]}";
 			}
