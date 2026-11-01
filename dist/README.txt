@@ -376,7 +376,7 @@ stack frames; there is no separate symbols file to fetch.
 
 The installer also adds !ApocryphaMenuFramework-SMFName.dll when SKSE Menu Framework is not installed: a tiny file whose only job is to tell SKSE (and Papyrus scripts that ask for "SKSEMenuFramework") that a menu framework is present, reporting version 3.14.0.
 
-Every install also gets SKSE\Plugins\ApocryphaMenuFramework\SMF-Import\SKSEMenuFramework.dll (2.4.0): a small file with no code of its own that passes every call a mod makes to SKSE Menu Framework on to this framework, for mods that link SKSE Menu Framework directly. This framework loads it only when SKSE Menu Framework itself is not installed, and it sits in this framework's own folder, so SKSE never loads it as a plugin and it never takes the place of the real SKSE Menu Framework.
+Every install also gets SKSE\Plugins\ApocryphaMenuFramework\SMF-Import\SKSEMenuFramework.dll (2.4.0): a small file with no code of its own that passes every call a mod makes to SKSE Menu Framework on to this framework, for mods that link SKSE Menu Framework directly. This framework loads it only when SKSE Menu Framework itself is not installed, and it sits in this framework's own folder, so SKSE never loads it as a plugin and it never takes the place of the real SKSE Menu Framework. With SKSE Menu Framework installed as well, mods made for it use it, not this framework, and the small name file above steps aside.
 
 BUILDING FROM SOURCE
 --------------------

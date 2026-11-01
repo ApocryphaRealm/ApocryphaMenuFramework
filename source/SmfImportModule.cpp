@@ -25,6 +25,7 @@ namespace
 	DWORD g_error = 0;
 	HMODULE g_module = nullptr;
 	HMODULE g_self = nullptr;      // this DLL, as DllMain was handed it
+	bool g_realSmf = false;        // the real SKSE Menu Framework is installed (RealSmfPresent)
 	wchar_t g_modulePath[MAX_PATH * 2]{};
 	wchar_t g_realPath[MAX_PATH * 2]{};
 
@@ -89,14 +90,17 @@ namespace smf_import
 	void LoadFromDllMain(HMODULE a_self) noexcept
 	{
 		g_self = a_self;
-		// The real SKSE Menu Framework, or anything else already answering to the name, wins outright.
-		if (::GetModuleHandleW(kModuleName)) {
+		// The real SKSE Menu Framework, or anything else already answering to the name, wins outright. Only a module that
+		// is not AMF itself counts as the real one (an old MO2 alias presented AMF's own file under that name).
+		if (const HMODULE existing = ::GetModuleHandleW(kModuleName)) {
 			g_outcome = Outcome::AlreadyLoaded;
+			g_realSmf = existing != a_self;
 			return;
 		}
 		// The game's Data folder as the game sees it (under Mod Organizer, the virtual one): the exe's folder.
 		if (FolderOf(nullptr, kRelativeToGame, g_realPath, std::size(g_realPath)) && FileExists(g_realPath)) {
 			g_outcome = Outcome::RealSmfFile;
+			g_realSmf = true;
 			return;
 		}
 		// The import module beside our own file. Under Mod Organizer our module path is the real mod folder, where the
@@ -119,6 +123,8 @@ namespace smf_import
 	}
 
 	HMODULE Handle() noexcept { return g_module; }
+
+	bool RealSmfPresent() noexcept { return g_realSmf; }
 
 	void Report()
 	{
@@ -144,10 +150,11 @@ namespace smf_import
 				break;
 			}
 		case Outcome::RealSmfFile:
-			logger::info("SMF import module: not loaded - the real SKSE Menu Framework is installed ({}), so mods that link it load against it", Narrow(g_realPath));
+			logger::info("SMF import module: not loaded - the real SKSE Menu Framework is installed ({}), so mods that link it load against it and the SKSEMenuFramework name is left to it", Narrow(g_realPath));
 			break;
 		case Outcome::AlreadyLoaded:
-			logger::info("SMF import module: not loaded - a module named SKSEMenuFramework.dll was already in the process");
+			logger::info("SMF import module: not loaded - a module named SKSEMenuFramework.dll was already in the process ({})",
+						 g_realSmf ? "the real SKSE Menu Framework: the SKSEMenuFramework name is left to it" : "AMF's own file under that name");
 			break;
 		case Outcome::NoPath:
 			logger::warn("SMF import module: not loaded - could not build its path from this DLL's location");

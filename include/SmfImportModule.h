@@ -36,4 +36,10 @@ namespace smf_import
 
 	// The module's handle when AMF loaded it, else null.
 	HMODULE Handle() noexcept;
+
+	// True when the REAL SKSE Menu Framework is installed: its DLL in Data\SKSE\Plugins, or a module of that name
+	// already in the process that is not AMF itself (decided once, in DllMain). The module-name and file aliases
+	// (SmfAlias.cpp) then leave the name SKSEMenuFramework to it, so every consumer binds to ONE framework - a mod
+	// whose static imports went to the real one and whose runtime lookup came to AMF crashed (2026-11-01, phase B).
+	bool RealSmfPresent() noexcept;
 }

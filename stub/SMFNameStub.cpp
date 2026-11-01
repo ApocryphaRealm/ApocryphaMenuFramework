@@ -25,6 +25,9 @@
 // no Address Library file needed.
 
 #include <cstdint>
+#include <cwchar>
+
+#include <Windows.h>
 
 namespace
 {
@@ -35,6 +38,9 @@ namespace
 	}
 
 	constexpr char          kDeclaredName[] = "SKSEMenuFramework";
+	// 2.4.0: the name declared beside the REAL SKSE Menu Framework, which owns "SKSEMenuFramework" (DllMain below).
+	constexpr char          kStandDownName[] = "ApocryphaMenuFramework-SMFName";
+	const char*             g_declaredName = kDeclaredName;
 	constexpr std::uint32_t kDeclaredVersion = Pack(3, 14, 0);
 	static_assert(kDeclaredVersion == 0x030E0000, "3.14.0 packs to 0x030E0000");
 
@@ -88,9 +94,34 @@ extern "C"
 	{
 		if (!a_info) { return false; }
 		a_info->infoVersion = 1;
-		a_info->name = kDeclaredName;
+		a_info->name = g_declaredName;
 		a_info->version = kDeclaredVersion;
 		return true;
+	}
+
+	// 2.4.0 STAND DOWN BESIDE THE REAL FRAMEWORK. The FOMOD installs this file only while SKSEMenuFramework.dll is missing,
+	// but a player can tick the real SKSE Menu Framework later - then two plugins declared "SKSEMenuFramework" (combined run
+	// 2026-11-01, phase B). DllMain runs before SKSE reads the version data (AE / 1.7) or calls Query (SE), so when the real
+	// DLL is in Data\SKSE\Plugins it renames this plugin to kStandDownName: no clash, and no refusal (a refused plugin
+	// raises SKSE AE's blocking "failed to load" dialog).
+	BOOL APIENTRY DllMain(HMODULE, DWORD a_reason, LPVOID)
+	{
+		if (a_reason != DLL_PROCESS_ATTACH) { return TRUE; }
+		wchar_t path[MAX_PATH * 2]{};
+		const DWORD len = ::GetModuleFileNameW(nullptr, path, static_cast<DWORD>(sizeof(path) / sizeof(path[0])));
+		if (len == 0 || len >= sizeof(path) / sizeof(path[0])) { return TRUE; }
+		wchar_t* slash = std::wcsrchr(path, L'\\');
+		if (!slash) { return TRUE; }
+		slash[1] = L'\0';
+		if (::wcscat_s(path, L"Data\\SKSE\\Plugins\\SKSEMenuFramework.dll") != 0) { return TRUE; }
+		const DWORD attributes = ::GetFileAttributesW(path);
+		if (attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_DIRECTORY)) { return TRUE; }
+		g_declaredName = kStandDownName;
+		for (auto& c : SKSEPlugin_Version.pluginName) { c = '\0'; }
+		for (std::uint32_t i = 0; i < sizeof(kStandDownName) && i < sizeof(SKSEPlugin_Version.pluginName); ++i) {
+			SKSEPlugin_Version.pluginName[i] = kStandDownName[i];
+		}
+		return TRUE;
 	}
 
 	// Every runtime: nothing to do. Returning true is what keeps the declared name registered.
