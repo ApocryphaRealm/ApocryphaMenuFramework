@@ -88,6 +88,8 @@ namespace mcmloader::scripts
 			std::vector<Option> options = std::vector<Option>(kSlots);
 			unsigned generation = 0;   // +1 per page build
 			std::map<int, SliderParams> sliders;  // slot -> range, this page
+			std::map<int, float> sliderShown;     // slot -> a nudge's value, shown until the script has been given it and rebuilt
+			std::map<int, float> sliderGiven;     // slot -> the last value the script was given
 			std::map<int, std::string> info;      // slot -> HighlightOption's text, this page
 			int menuSlot = -1;
 			bool menuReady = false;
@@ -704,7 +706,25 @@ namespace mcmloader::scripts
 						g_session.pageName = a_name;
 						g_session.options = std::move(options);
 						++g_session.generation;
-						if (newPage) { g_session.sliders.clear(); }
+						if (newPage)
+						{
+							g_session.sliders.clear();
+							g_session.sliderShown.clear();
+							g_session.sliderGiven.clear();
+						}
+						// a rebuild can finish while newer nudges wait in the queue: they stay shown, or the next nudge would
+						// step from the older value. Once the script has the newest one, what it reports is the truth.
+						for (auto it = g_session.sliderShown.begin(); it != g_session.sliderShown.end();)
+						{
+							const auto given = g_session.sliderGiven.find(it->first);
+							if (given != g_session.sliderGiven.end() && given->second == it->second)
+							{
+								it = g_session.sliderShown.erase(it);
+								continue;
+							}
+							if (it->first >= 0 && it->first < static_cast<int>(g_session.options.size())) { g_session.options[it->first].num = it->second; }
+							++it;
+						}
 						g_session.info.clear();
 					}
 				}
@@ -887,7 +907,21 @@ namespace mcmloader::scripts
 		void QueueDefault(int a_mod, int a_slot) { QueueChange(a_mod, a_slot, nullptr, "ResetOption", [a_slot]() { return Args(a_slot); }); }
 		void QueueSlider(int a_mod, int a_slot, float a_v)
 		{
-			QueueChange(a_mod, a_slot, "RequestSliderDialogData", "SetSliderValue", [a_v]() { return ArgsF(a_v); }, "slider:" + std::to_string(a_slot));
+			QueueChange(a_mod, a_slot, "RequestSliderDialogData", "SetSliderValue", [a_slot, a_v]() {
+				{
+					std::scoped_lock lock(g_mutex);
+					g_session.sliderGiven[a_slot] = a_v;
+				}
+				return ArgsF(a_v);
+			}, "slider:" + std::to_string(a_slot));
+		}
+		// A nudge counts at once: the page rebuild behind it can take a second on a big page, and a nudge stepping from the
+		// value still shown would come to the same number as the one before it and collapse into it in the queue.
+		void ShowSliderNow(int a_slot, float a_v)
+		{
+			std::scoped_lock lock(g_mutex);
+			g_session.sliderShown[a_slot] = a_v;
+			if (a_slot >= 0 && a_slot < static_cast<int>(g_session.options.size())) { g_session.options[a_slot].num = a_v; }
 		}
 		void QueueMenu(int a_mod, int a_slot, int a_index)
 		{
@@ -1189,7 +1223,11 @@ namespace mcmloader::scripts
 					if (v != before && std::fabs(v - before) < p.interval * 0.5f) { v = before + (v > before ? p.interval : -p.interval); }
 					v = p.min + std::round((v - p.min) / p.interval) * p.interval;
 					v = std::clamp(v, p.min, p.max);
-					if (v != before) { QueueSlider(a_mod, a_slot, v); }
+					if (v != before)
+					{
+						ShowSliderNow(a_slot, v);
+						QueueSlider(a_mod, a_slot, v);
+					}
 				}
 				HelpTooltip(a_mod, a_s, a_slot);
 				DefaultMenu(a_mod, a_slot);
