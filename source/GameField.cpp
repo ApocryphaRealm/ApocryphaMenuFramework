@@ -163,11 +163,20 @@ namespace gamefield
 
 		std::atomic<int> g_claim{ 0 };
 		std::atomic<bool> g_padInUse{ false };
-		// the top item list's VISIBLE row (ListRow below), re-read every input dispatch while an item or magic menu is in
-		// front: >= 0 the row, -1 the list is empty, -2 unknown, kNoRow rows but none selected
+		// the top item list's VISIBLE row (ListRow below), read while the row reads are armed (ArmRowReads): >= 0 the row,
+		// -1 the list is empty, -2 unknown, kNoRow rows but none selected
 		std::atomic<int> g_listIndex{ -2 };
 		constexpr int kNoRow = -3;
 		std::atomic<std::uint64_t> g_rowReadAt{ 0 };   // the dispatch a row read was queued on; 0 none in flight
+		// 2.4.0: no read of the list while nothing can have moved it. A menu's first kRowOpenSettle dispatches get no read
+		// (g_rowReadsFrom); after that, reads run for kRowReadWindow dispatches past the last input or menu change
+		// (g_rowReadsUntil) and stop. The window has to outlast a release's own effect: Inventory Reforged leaves its R3 slot
+		// mode on the RELEASE, a category change rebuilds the list a few frames later.
+		constexpr std::uint64_t kRowOpenSettle = 30;
+		constexpr std::uint64_t kRowReadWindow = 30;
+		std::atomic<std::uint64_t> g_rowReadsFrom{ 0 };
+		std::atomic<std::uint64_t> g_rowReadsUntil{ 0 };
+		std::atomic<std::uint64_t> g_rowReadsQueued{ 0 };   // reads queued since the game started (DevBench gamefield state: "rowReads")
 		// 2.3.1 THE SEARCH BOX'S CONTROLLER FOCUS (the owner, 2026-10-28: the keyboard "should only pop up when the player moves
 		// their controller navigation focus to the search box and presses into it"). Up on the first row moves the focus here
 		// (AMF frames the box), A opens the keyboard on it, B or Down gives the focus back to the list. g_focusMenu is the menu it
@@ -246,6 +255,21 @@ namespace gamefield
 		{
 			std::scoped_lock l(g_lock);
 			g_timed.push_back({ g_dispatch.load(std::memory_order_relaxed) + a_dispatches, std::move(a_fn) });
+		}
+
+		// Something may have moved the list: read its row for the next kRowReadWindow dispatches (any thread: atomics only).
+		void ArmRowReads()
+		{
+			const std::uint64_t until = g_dispatch.load(std::memory_order_relaxed) + kRowReadWindow;
+			if (until > g_rowReadsUntil.load(std::memory_order_acquire)) { g_rowReadsUntil.store(until, std::memory_order_release); }
+		}
+
+		// A menu opened or closed: leave the movies alone while it settles, then read once the window opens.
+		void HoldRowReadsForMenuChange()
+		{
+			const std::uint64_t from = g_dispatch.load(std::memory_order_relaxed) + kRowOpenSettle;
+			g_rowReadsFrom.store(from, std::memory_order_release);
+			g_rowReadsUntil.store(from + kRowReadWindow, std::memory_order_release);
 		}
 
 		std::string TopMenuLocked()
@@ -465,8 +489,6 @@ namespace gamefield
 				if (Avail(mv, std::string(kMapFinder) + ".list.selectedIndex")) { c.listPath = std::string(kMapFinder) + ".list"; }
 			}
 			if (k == Kind::kEnchant) { c.subtype = GetStr(mv, "_root.Menu._subtypeName"); }
-			int idx = -2;
-			const bool haveIdx = ListRow(mv, c.listPath, idx);
 			bool log = false;
 			bool retry = false;
 			{
@@ -483,7 +505,7 @@ namespace gamefield
 				slot.logged = wasLogged || log;
 				if (TopMenuLocked() == a_menu) { g_topSearchKnown.store(!c.searchPath.empty() || !c.finderOwner.empty(), std::memory_order_release); }
 			}
-			if (haveIdx) { g_listIndex.store(idx, std::memory_order_release); }
+			ArmRowReads();   // 2.4.0: the row is read by OnDispatch once the opening has settled, not from this probe
 			if (log)
 			{
 				// one info line per menu session: what the adapter found (rule 14: an edge, not a frame)
@@ -861,7 +883,7 @@ namespace gamefield
 						g_cache.erase(name);
 						if (!IsOverlayMenu(name)) { g_topSearchKnown.store(false); g_listIndex.store(-2); }
 					}
-					if (!IsOverlayMenu(name)) { ClearSearchFocus("another menu opened"); }
+					if (!IsOverlayMenu(name)) { ClearSearchFocus("another menu opened"); HoldRowReadsForMenuChange(); }
 					if (k != Kind::kGeneric)
 					{
 						After(2, [name]() { ProbeMenu(name); });
@@ -885,7 +907,7 @@ namespace gamefield
 						}
 						else { g_topSearchKnown.store(false); }
 					}
-					if (!IsOverlayMenu(name)) { ClearSearchFocus("a menu closed"); }
+					if (!IsOverlayMenu(name)) { ClearSearchFocus("a menu closed"); HoldRowReadsForMenuChange(); }
 					if (closeTarget) { RequestClose(name + " closed"); }
 				}
 				return RE::BSEventNotifyControl::kContinue;
@@ -941,15 +963,23 @@ namespace gamefield
 		}
 		if (a_amfWindow) { ClearSearchFocus("AMF's window took the input"); }
 
-		// 2.3.1: the top item or magic list's visible row, re-read once per dispatch (one read in flight at a time). Reading
-		// it only after each pad press left it stale: Inventory Reforged leaves its R3 slot mode on the RELEASE, after that
-		// read, so the next Up saw -1 with the list back on row 8 and opened the keyboard (owner report 2026-10-27)
+		// The top item or magic list's visible row (one read in flight at a time). Reading it only on each pad press left it
+		// stale: Inventory Reforged leaves its R3 slot mode on the RELEASE, after that read, so the next Up saw -1 with the
+		// list back on row 8 and opened the keyboard (owner report 2026-10-27). 2.3.1 therefore read it on every dispatch,
+		// the whole time the menu was up; a player's crash landed in that read (CHANGELOG 2.4.0), and only Up uses the number.
+		// 2.4.0: every event in this dispatch - press, release, repeat, stick, mouse - arms the reads for kRowReadWindow
+		// dispatches, so the release is still seen, and an idle menu is not called at all.
 		// (a read not answered within 30 dispatches is treated as lost and queued again)
-		// (2.3.1: and, while the search box holds the controller focus, the box measured for its frame - MeasureSearch)
+		// (2.3.1: while the search box holds the controller focus it reads on every dispatch: the box is measured for its
+		// frame - MeasureSearch - and the focus ends when the list moves. Only the player's own Up starts that.)
+		if (a_head) { ArmRowReads(); }
+		const bool rowReadsDue = g_searchFocus.load(std::memory_order_acquire) ||
+			(dispatch >= g_rowReadsFrom.load(std::memory_order_acquire) && dispatch <= g_rowReadsUntil.load(std::memory_order_acquire));
 		if (const std::uint64_t at = g_rowReadAt.load(std::memory_order_acquire);
-			g_topSearchKnown.load(std::memory_order_acquire) && settings::Get().keyboardUpOpensSearch && (at == 0 || dispatch - at > 30))
+			rowReadsDue && g_topSearchKnown.load(std::memory_order_acquire) && settings::Get().keyboardUpOpensSearch && (at == 0 || dispatch - at > 30))
 		{
 			g_rowReadAt.store(dispatch, std::memory_order_release);
+			g_rowReadsQueued.fetch_add(1, std::memory_order_relaxed);
 			std::string top;
 			{
 				std::scoped_lock l(g_lock);
@@ -1100,12 +1130,6 @@ namespace gamefield
 			}
 		}
 		const Kind k = KindOf(top);
-		if (k == Kind::kItem || k == Kind::kMagic)
-		{
-			// the list's index after this press settles, for the next Up
-			const std::string menuName = top;
-			AddUITask([menuName]() { ReadIndex(menuName); });
-		}
 		if (k != Kind::kItem && k != Kind::kMagic && k != Kind::kMap) { ClearSearchFocus("no item or magic list is in front"); return false; }
 		if (!AdapterOn(k) || OwnedByOther(k) || g_gameWants.load()) { ClearSearchFocus("the search box is not AMF's now"); return false; }
 		const auto& s = settings::Get();
@@ -1160,8 +1184,8 @@ namespace gamefield
 			return true;
 		}
 		// Up on the first row moves the focus to the search box - it never opens the keyboard by itself (2.3.1, the owner,
-		// 2026-10-28). The visible row as of the last dispatch (OnDispatch re-reads it every frame while an item or magic menu
-		// is in front): the first row, or an empty list - never "no row selected" (kNoRow), which is Inventory Reforged's
+		// 2026-10-28). The visible row as last read (OnDispatch reads it after any input or menu change, and nothing else moves
+		// the list): the first row, or an empty list - never "no row selected" (kNoRow), which is Inventory Reforged's
 		// slots, Simple Loadout System's bar or the pointer holding the selection, and Up stays theirs (owner report 2026-10-27).
 		const int index = g_listIndex.load(std::memory_order_acquire);
 		const bool up = code == 0x0001 && s.keyboardUpOpensSearch && (k == Kind::kItem || k == Kind::kMagic) && (index == 0 || index == -1);
@@ -1334,7 +1358,7 @@ namespace gamefield
 						"\",\"route\":" + std::to_string(g_route) + ",\"routeForced\":" + (g_routeForced ? "true" : "false") +
 						",\"gameTextEntryCount\":" + std::to_string(g_gameCount.load()) + ",\"amfAdded\":" + std::to_string(g_amfAdded.load()) +
 						",\"gameWantsText\":" + (g_gameWants.load() ? "true" : "false") + ",\"padInUse\":" + (g_padInUse.load() ? "true" : "false") +
-						",\"listIndex\":" + std::to_string(g_listIndex.load()) + ",\"topSearchKnown\":" + (g_topSearchKnown.load() ? "true" : "false") +
+						",\"listIndex\":" + std::to_string(g_listIndex.load()) + ",\"rowReads\":" + std::to_string(g_rowReadsQueued.load()) + ",\"topSearchKnown\":" + (g_topSearchKnown.load() ? "true" : "false") +
 						",\"searchFocus\":" + (g_searchFocus.load() ? "true" : "false") + ",\"searchFocusMenu\":\"" + Esc(g_focusMenu) +
 						"\",\"searchFocusRect\":" + (g_focusRectValid.load() ? "[" + std::to_string(g_focusRect[0].load()) + "," + std::to_string(g_focusRect[1].load()) + "," +
 						std::to_string(g_focusRect[2].load()) + "," + std::to_string(g_focusRect[3].load()) + "]" : std::string("null")) +
