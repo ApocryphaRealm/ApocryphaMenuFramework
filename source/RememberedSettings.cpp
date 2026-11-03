@@ -15,6 +15,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -134,6 +135,7 @@ namespace rememberedsettings
 						rec.id = r.value("id", std::string());
 						rec.value = r.value("value", std::string());
 						rec.menuIndex = r.value("menuIndex", -1);
+						rec.user = r.value("user", false);
 						data.records.push_back(std::move(rec));
 					}
 					g_menus[key] = std::move(data);
@@ -200,6 +202,7 @@ namespace rememberedsettings
 						j["nth"] = r.nth;
 						if (r.type == Type::kMenu) { j["menuIndex"] = r.menuIndex; }
 					}
+					if (r.user) { j["user"] = true; }
 					list.push_back(std::move(j));
 				}
 				file["menus"][key] = { { "entry", m.entry }, { "autoRestore", m.autoRestore }, { "settings", std::move(list) } };
@@ -222,7 +225,8 @@ namespace rememberedsettings
 			if (ec) { logger::error("Remembered settings: {} could not replace {} ({})", tmp.string(), path.string(), ec.message()); }
 		}
 
-		// Merge records into a menu: a setting already there takes the new value in its place, a new one goes last.
+		// Merge records into a menu: a setting already there takes the new value in its place, a new one goes last. A setting
+		// the player changed stays his (a backup reading it later does not make it the mod's again).
 		int MergeLocked(const std::string& a_key, const std::string& a_entry, const std::vector<Record>& a_records)
 		{
 			MenuData& m = g_menus[a_key];
@@ -233,8 +237,10 @@ namespace rememberedsettings
 				const auto it = std::find_if(m.records.begin(), m.records.end(), [&](const Record& x) { return SameSetting(x, r); });
 				if (it != m.records.end())
 				{
-					if (it->value != r.value || it->menuIndex != r.menuIndex) { ++changed; }
+					const bool user = it->user || r.user;
+					if (it->value != r.value || it->menuIndex != r.menuIndex || it->user != user) { ++changed; }
 					*it = r;
+					it->user = user;
 				}
 				else
 				{
@@ -272,6 +278,10 @@ namespace rememberedsettings
 			bool useSupplied = false;
 			std::map<std::string, std::vector<Record>> supplied;
 			std::function<void(int, int, int)> onApplied;
+			// 2.4.0: an automatic pass stops with the game it belongs to; on a load it plays only what the player changed
+			bool automatic = false;
+			bool userOnly = false;
+			unsigned generation = 0;
 		};
 
 		void SetResult(const std::string& a_text)
@@ -327,6 +337,11 @@ namespace rememberedsettings
 			{
 				Finish(a_job);  // logs the null and clears the busy flag
 				return;
+			}
+			if (a_job->automatic && a_job->generation != g_gameGeneration.load())
+			{
+				logger::debug("Remembered settings: an automatic pass stopped - it belonged to the game just left");
+				return;   // the busy flag was cleared when that game was left
 			}
 			if (a_job->next >= a_job->targets.size())
 			{
@@ -410,8 +425,11 @@ namespace rememberedsettings
 			{
 				std::scoped_lock lock(g_mutex);
 				EnsureLoadedLocked();
-				const auto it = g_menus.find(key);
-				if (it != g_menus.end()) { records = it->second.records; }
+				if (const auto it = g_menus.find(key); it != g_menus.end())
+				{
+					std::copy_if(it->second.records.begin(), it->second.records.end(), std::back_inserter(records),
+						[&](const Record& a_r) { return !a_job->userOnly || a_r.user; });
+				}
 				g_restoredThisGame.insert(key);
 			}
 			if (records.empty())
@@ -466,8 +484,8 @@ namespace rememberedsettings
 		}
 
 		// The menus a restore covers: saved in the profile, present in this game, and (automatic) switched to restore and
-		// not done yet after this new game.
-		std::vector<std::pair<std::string, std::string>> RestoreTargets(const std::vector<std::string>& a_keys, bool a_automatic)
+		// not done yet after this new game or load; a_userOnly: holding something the player changed.
+		std::vector<std::pair<std::string, std::string>> RestoreTargets(const std::vector<std::string>& a_keys, bool a_automatic, bool a_userOnly = false)
 		{
 			std::vector<std::pair<std::string, std::string>> out;
 			const auto present = PresentMenus();
@@ -478,10 +496,48 @@ namespace rememberedsettings
 				if (m.records.empty()) { continue; }
 				if (!a_keys.empty() && std::find(a_keys.begin(), a_keys.end(), key) == a_keys.end()) { continue; }
 				if (a_automatic && (!m.autoRestore || g_restoredThisGame.contains(key))) { continue; }
+				if (a_userOnly && std::none_of(m.records.begin(), m.records.end(), [](const Record& a_r) { return a_r.user; })) { continue; }
 				const bool here = std::any_of(present.begin(), present.end(), [&](const auto& p) { return p.first == key; });
 				if (here) { out.emplace_back(key, m.entry); }
 			}
 			return out;
+		}
+
+		// The automatic passes of one game. Menus appear over the first minutes (discovery looks at 2 s ... 8 min), so each pass
+		// takes the menus that have appeared and are not done yet. Nothing runs on the loading path itself: a pass only queues
+		// script calls, one at a time, and skips while the game is paused or loading, when the VM does not answer.
+		// A new game plays the whole record when bRestoreOnNewGame is on; otherwise, and on a load, what the player changed.
+		void ArmPasses(unsigned a_generation, bool a_newGame)
+		{
+			const auto wanted = [a_newGame]() {
+				return settings::Get().mcmRestoreOnLoad || (a_newGame && settings::Get().mcmRestoreOnNewGame);
+			};
+			if (!wanted()) { return; }
+			logger::info("Remembered settings: {} - {} comes back once the menus appear", a_newGame ? "new game" : "save loaded",
+				a_newGame && settings::Get().mcmRestoreOnNewGame ? "the record" : "what you changed");
+			std::thread([a_generation, a_newGame, wanted]() {
+				std::this_thread::sleep_for(std::chrono::seconds(a_newGame ? 40 : 10));
+				for (int pass = 0; pass < 15; ++pass)
+				{
+					if (g_gameGeneration.load() != a_generation || !wanted()) { return; }
+					if (const auto tasks = SKSE::GetTaskInterface())
+					{
+						tasks->AddTask([a_generation, a_newGame]() {
+							if (g_gameGeneration.load() != a_generation) { return; }
+							if (const auto ui = RE::UI::GetSingleton(); ui && (ui->GameIsPaused() || ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME))) { return; }
+							const bool userOnly = !(a_newGame && settings::Get().mcmRestoreOnNewGame);
+							auto targets = RestoreTargets({}, true, userOnly);
+							if (targets.empty()) { return; }
+							auto job = std::make_shared<Job>();
+							job->automatic = true;
+							job->userOnly = userOnly;
+							job->generation = a_generation;
+							Start(true, std::move(targets), job);
+						});
+					}
+					std::this_thread::sleep_for(std::chrono::seconds(20));
+				}
+			}).detach();
 		}
 	}
 
@@ -501,43 +557,51 @@ namespace rememberedsettings
 			g_restoredThisGame.clear();
 		}
 		g_busy = false;  // a drive of the game just left never finishes
-		if (!settings::Get().mcmRestoreOnNewGame) { return; }
-		logger::info("Remembered settings: new game - the profile is applied again once the menus appear (40 s to 4 min)");
-		std::thread([generation]() {
-			// the menus set themselves up over the first minutes of a new game (discovery looks at 2 s ... 8 min)
-			std::this_thread::sleep_for(std::chrono::seconds(40));
-			for (int pass = 0; pass < 12; ++pass)
-			{
-				if (g_gameGeneration.load() != generation || !settings::Get().mcmRestoreOnNewGame) { return; }
-				if (const auto tasks = SKSE::GetTaskInterface())
-				{
-					tasks->AddTask([generation]() {
-						if (g_gameGeneration.load() != generation) { return; }
-						auto targets = RestoreTargets({}, true);
-						if (!targets.empty()) { Start(true, std::move(targets)); }
-					});
-				}
-				std::this_thread::sleep_for(std::chrono::seconds(20));
-			}
-		}).detach();
+		ArmPasses(generation, true);
 	}
 
 	void OnSaveLoaded()
 	{
-		++g_gameGeneration;  // a loaded save holds its own settings: no automatic restore
+		const unsigned generation = ++g_gameGeneration;   // a pass still waiting for the game just left stops
+		{
+			std::scoped_lock lock(g_mutex);
+			g_restoredThisGame.clear();
+		}
 		g_busy = false;
+		ArmPasses(generation, false);
+	}
+
+	void RememberAll(const std::string& a_key, const std::string& a_entry, const std::vector<Record>& a_records)
+	{
+		if (!settings::Get().mcmAutoBackup) { return; }
+		std::vector<Record> records = a_records;
+		for (Record& r : records) { r.user = true; }
+		std::scoped_lock lock(g_mutex);
+		EnsureLoadedLocked();
+		if (MergeLocked(a_key, a_entry, records) > 0)
+		{
+			SaveLocked();
+			for (const Record& r : records)
+			{
+				logger::info("Remembered settings: {} - {} \"{}\" = {}", a_entry, TypeName(r.type), r.type == Type::kHelper ? r.id : r.text, r.value);
+			}
+		}
 	}
 
 	void Remember(const std::string& a_key, const std::string& a_entry, const Record& a_record)
 	{
-		if (!settings::Get().mcmAutoBackup) { return; }
+		RememberAll(a_key, a_entry, { a_record });
+	}
+
+	void ForgetSetting(const std::string& a_key, const Record& a_record)
+	{
 		std::scoped_lock lock(g_mutex);
 		EnsureLoadedLocked();
-		if (MergeLocked(a_key, a_entry, { a_record }) > 0)
+		const auto it = g_menus.find(a_key);
+		if (it != g_menus.end() && std::erase_if(it->second.records, [&](const Record& a_r) { return SameSetting(a_r, a_record); }) > 0)
 		{
 			SaveLocked();
-			logger::debug("Remembered settings: {} - {} \"{}\" = {}", a_entry, TypeName(a_record.type),
-				a_record.type == Type::kHelper ? a_record.id : a_record.text, a_record.value);
+			logger::info("Remembered settings: \"{}\" dropped - it runs something, it does not hold a value", a_record.text);
 		}
 	}
 
@@ -550,7 +614,8 @@ namespace rememberedsettings
 		for (const auto& [key, m] : g_menus)
 		{
 			const bool here = std::any_of(present.begin(), present.end(), [&](const auto& p) { return p.first == key; });
-			rows.push_back({ key, m.entry, static_cast<int>(m.records.size()), m.autoRestore, here });
+			const auto yours = std::count_if(m.records.begin(), m.records.end(), [](const Record& a_r) { return a_r.user; });
+			rows.push_back({ key, m.entry, static_cast<int>(m.records.size()), m.autoRestore, here, static_cast<int>(yours) });
 		}
 		for (const auto& [key, entry] : present)
 		{
@@ -732,7 +797,13 @@ namespace rememberedsettings
 		std::scoped_lock lock(g_mutex);
 		EnsureLoadedLocked();
 		int changed = 0;
-		for (const auto& [key, snap] : a_menus) { changed += MergeLocked(key, snap.entry, snap.records); }
+		for (const auto& [key, snap] : a_menus)
+		{
+			// a preset loaded is the player's choice: it comes back on a load like a change made on the page
+			std::vector<Record> records = snap.records;
+			for (Record& r : records) { r.user = true; }
+			changed += MergeLocked(key, snap.entry, records);
+		}
 		if (changed > 0)
 		{
 			SaveLocked();
@@ -1126,7 +1197,7 @@ namespace rememberedsettings
 			for (const Record& r : it->second.records)
 			{
 				list.push_back({ { "type", TypeName(r.type) }, { "page", r.page }, { "text", r.text }, { "nth", r.nth }, { "id", r.id },
-					{ "value", r.value }, { "menuIndex", r.menuIndex } });
+					{ "value", r.value }, { "menuIndex", r.menuIndex }, { "user", r.user } });
 			}
 			return json{ { "ok", true }, { "key", it->first }, { "entry", it->second.entry }, { "autoRestore", it->second.autoRestore }, { "settings", list } }.dump();
 		}
@@ -1164,14 +1235,19 @@ namespace rememberedsettings
 			OnNewGame();
 			return R"({"ok":true,"armed":true})";
 		}
-		if (action != "status") { return R"({"ok":false,"error":"action: status | backup | restore | records | forget | auto | profile | create | delete | newgame"})"; }
+		if (action == "afterload")  // the pass after a load, as after kPostLoadGame (a test drive without loading a save)
+		{
+			OnSaveLoaded();
+			return R"({"ok":true,"armed":true})";
+		}
+		if (action != "status") { return R"({"ok":false,"error":"action: status | backup | restore | records | forget | auto | profile | create | delete | newgame | afterload"})"; }
 
 		json out{ { "ok", true }, { "profile", ActiveProfile() }, { "profiles", Profiles() }, { "autoBackup", settings::Get().mcmAutoBackup },
-			{ "restoreOnNewGame", settings::Get().mcmRestoreOnNewGame }, { "busy", Busy() }, { "idle", scripts::MemoryIdle() }, { "last", LastResult() } };
+			{ "restoreOnNewGame", settings::Get().mcmRestoreOnNewGame }, { "restoreOnLoad", settings::Get().mcmRestoreOnLoad }, { "busy", Busy() }, { "idle", scripts::MemoryIdle() }, { "last", LastResult() } };
 		out["menus"] = json::array();
 		for (const auto& row : Menus())
 		{
-			out["menus"].push_back({ { "key", row.key }, { "entry", row.entry }, { "saved", row.saved }, { "autoRestore", row.autoRestore },
+			out["menus"].push_back({ { "key", row.key }, { "entry", row.entry }, { "saved", row.saved }, { "yours", row.yours }, { "autoRestore", row.autoRestore },
 				{ "present", row.present } });
 		}
 		return out.dump();

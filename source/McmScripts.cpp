@@ -4,6 +4,7 @@
 #include "Keyboard.h"
 #include "McmLoader.h"
 #include "RememberedSettings.h"
+#include "RememberedCore.h"
 #include "McmShared.h"
 #include "McmStyle.h"
 #include "PreciseSlider.h"
@@ -15,6 +16,10 @@
 #include "utils/Logger.h"
 #include "utils/NullGuard.h"
 #include "utils/ToggleSwitch.h"
+
+#include <map>
+#include <optional>
+#include <tuple>
 
 #include <imgui.h>
 #include <nlohmann/json.hpp>
@@ -352,6 +357,12 @@ namespace mcmloader::scripts
 			int mod = -1;
 		} g_message;
 
+		// Set while the memory drives a menu (a backup reading pages, a restore writing them): those are not the player's
+		// changes, so nothing is recorded, and no player is there to answer a question.
+		std::atomic<bool> g_memoryDriving{ false };
+
+		void Answer(bool a_yes);
+
 		bool EndsWith(std::string_view a_s, std::string_view a_tail)
 		{
 			return a_s.size() >= a_tail.size() && a_s.substr(a_s.size() - a_tail.size()) == a_tail;
@@ -381,22 +392,28 @@ namespace mcmloader::scripts
 				}
 			}
 			const auto strings = ReadStringArray(&frame->GetStackFrameVariable(2, page));
-			std::scoped_lock lock(g_captureMutex);
-			if (isMenu)
+			const bool driving = g_memoryDriving.load();
 			{
-				g_capturedMenu = strings;
-				g_menuCaptured = true;
-				logger::debug("MCM scripts: recorded a menu list of {} option(s) ({} AMF call(s) running)", strings.size(), amfCalls);
+				std::scoped_lock lock(g_captureMutex);
+				if (isMenu)
+				{
+					g_capturedMenu = strings;
+					g_menuCaptured = true;
+					logger::debug("MCM scripts: recorded a menu list of {} option(s) ({} AMF call(s) running)", strings.size(), amfCalls);
+				}
+				else
+				{
+					g_message.pending = true;
+					g_message.text = strings.size() > 0 ? strings[0] : std::string();
+					g_message.accept = strings.size() > 1 ? strings[1] : std::string("$Accept");
+					g_message.cancel = strings.size() > 2 ? strings[2] : std::string();
+					g_message.mod = g_open.load();
+					logger::info("MCM scripts: the mod asked a question (ShowMessage) - {}", driving ? "answered yes: the player said yes to reach the remembered value" : "shown as AMF's popup");
+				}
 			}
-			else
-			{
-				g_message.pending = true;
-				g_message.text = strings.size() > 0 ? strings[0] : std::string();
-				g_message.accept = strings.size() > 1 ? strings[1] : std::string("$Accept");
-				g_message.cancel = strings.size() > 2 ? strings[2] : std::string();
-				g_message.mod = g_open.load();
-				logger::info("MCM scripts: the mod asked a question (ShowMessage) - shown as AMF's popup");
-			}
+			// A replay has no window to show the question in. Left pending it would hold the queue for good (the watchdog
+			// waits for a question showing), so it takes the answer that led to the value being replayed.
+			if (isMessage && driving) { Answer(true); }
 		}
 
 		class InvokeStringAForwarder : public RE::BSScript::IFunction
@@ -509,6 +526,7 @@ namespace mcmloader::scripts
 			std::string key;  // non-empty: a newer op with the same key replaces this one while it is still waiting
 			std::string name;
 			std::function<void(std::function<void()>)> run;
+			bool change = false;  // a value on its way to the script: leaving the page must not lose it
 		};
 
 		std::mutex g_queueMutex;
@@ -605,10 +623,15 @@ namespace mcmloader::scripts
 			Pump();
 		}
 
-		void ClearQueue()
+		void ClearQueue(bool a_keepChanges = false)
 		{
 			std::scoped_lock lock(g_queueMutex);
-			g_queue.clear();
+			if (!a_keepChanges)
+			{
+				g_queue.clear();
+				return;
+			}
+			std::erase_if(g_queue, [](const Op& a_op) { return !a_op.change; });
 		}
 
 		// Main thread: one call on the config script. a_then runs on a VM thread once it has finished.
@@ -734,6 +757,17 @@ namespace mcmloader::scripts
 			if (!sent) { amf::Call(a_done)(); }
 		}
 
+		// SetPage for a page no longer open: the options it leaves, for a change that reached the script after its page was left.
+		void ReadPage(const ObjectPtr& a_config, int a_page, const std::string& a_name, std::function<void(std::vector<Option>)> a_then)
+		{
+			VarArgs args;
+			args.args.resize(2);
+			args.args[0].SetString(a_name);
+			args.args[1].SetSInt(a_page);
+			const bool sent = Call(a_config, "SetPage", std::move(args), [a_config, a_then](const RE::BSScript::Variable&) { amf::Call(a_then)(ReadOptions(a_config)); });
+			if (!sent) { amf::Call(a_then)(std::vector<Option>{}); }
+		}
+
 		// The page currently open, rebuilt (after every change: the script's own Set*OptionValue calls reach only the Flash
 		// panel, and SetOptionFlags never writes back to the arrays - a fresh OnPageReset is the state the script holds).
 		void Rebuild(int a_mod, const ObjectPtr& a_config, std::function<void()> a_done)
@@ -772,7 +806,9 @@ namespace mcmloader::scripts
 
 		void QueueClose(int a_mod)
 		{
-			ClearQueue();  // whatever was waiting belonged to the config being closed
+			// whatever was waiting belonged to the config being closed - but a value on its way still goes in first: a slider
+			// shows a nudge at once, so a page left within the rebuild behind it looked set and never was
+			ClearQueue(true);
 			Enqueue({ "", "CloseConfig" + LabelOf(a_mod), [a_mod](std::function<void()> a_done) {
 				const auto config = ScriptOf(a_mod);
 				if (!config || !Call(config, "CloseConfig", Args(), [a_done](const RE::BSScript::Variable&) { amf::Call(a_done)(); })) { amf::Call(a_done)(); }
@@ -817,10 +853,6 @@ namespace mcmloader::scripts
 
 		// ------------------------------------------------------- Remembered MCM settings: what a change left (RememberedSettings.cpp)
 
-		// Set while the memory drives a menu (a backup reading pages, a restore writing them): those are not the player's
-		// changes, so nothing is recorded.
-		std::atomic<bool> g_memoryDriving{ false };
-
 		// A value as the memory stores it: toggle "1"/"0", slider "%.6g", colour and key an integer, menu and input the text.
 		std::string MemoryValue(const Option& a_o)
 		{
@@ -851,28 +883,84 @@ namespace mcmloader::scripts
 			return nth;
 		}
 
-		// After a change the page made and the page was rebuilt: the option's new value, recorded for the next new game.
-		void RememberSlot(int a_mod, int a_slot, int a_menuIndex)
+		// A row that runs something instead of holding a value, told from its words (raw key and shown text). Holding g_mutex.
+		bool LooksLikeAction(const SMod& a_mod, const Option& a_o)
 		{
-			if (g_memoryDriving.load() || a_slot < 0 || a_slot >= kSlots) { return; }
+			return (a_o.type == kToggle || a_o.type == kMenu) && rememberedcore::LooksLikeAction(a_o.text, Tr(&a_mod.translations, a_o.text));
+		}
+
+		// What a page holds, by the identity a record uses: type, raw label, which of those on the page.
+		std::map<std::tuple<int, std::string, int>, std::string> ValuesOf(const std::vector<Option>& a_options)
+		{
+			std::map<std::tuple<int, std::string, int>, std::string> out;
+			std::map<std::pair<int, std::string>, int> seen;
+			for (const Option& o : a_options)
+			{
+				if (Rememberable(o)) { out[{ o.type, o.text, seen[{ o.type, o.text }]++ }] = MemoryValue(o); }
+			}
+			return out;
+		}
+
+		// The player's change, once the page was rebuilt. Remembered: the row changed (a_menuIndex: the index a menu was set
+		// to) and every other row the change moved - "Force first person" turns "Force third person" off, and a record that
+		// kept the old value of the other one played the choice back wrong (the owner's camera setting, 2026-11-03). A text
+		// row runs something and holds nothing, but what it moved is remembered all the same.
+		//
+		// A toggle that was pressed and reports the same value is a button, not a setting; so is a row its words name as one
+		// (Reset, Uninstall...). Those are never played back. a_before is empty when the page was left before the change ran.
+		void RememberChange(int a_mod, const std::string& a_page, const std::vector<Option>& a_before, const std::vector<Option>& a_after, int a_slot, int a_menuIndex)
+		{
+			if (g_memoryDriving.load() || a_slot < 0 || a_slot >= static_cast<int>(a_after.size())) { return; }
 			std::string key;
 			std::string entry;
-			rememberedsettings::Record record;
+			std::vector<rememberedsettings::Record> records;
+			std::optional<rememberedsettings::Record> button;
 			{
 				std::scoped_lock lock(g_mutex);
-				if (g_open.load() != a_mod || a_mod < 0 || a_mod >= static_cast<int>(g_mods.size())) { return; }
-				const Option& o = g_session.options[a_slot];
-				if (!Rememberable(o)) { return; }  // a text row is an action, not a setting
-				key = "script|" + g_mods[a_mod]->plugin + "|" + g_mods[a_mod]->modName;
-				entry = g_mods[a_mod]->entryName;
-				record.type = static_cast<rememberedsettings::Type>(o.type - kToggle);
-				record.page = g_session.pageName;
-				record.text = o.text;
-				record.nth = NthOf(g_session.options, a_slot);
-				record.value = MemoryValue(o);
-				record.menuIndex = o.type == kMenu ? a_menuIndex : -1;
+				if (a_mod < 0 || a_mod >= static_cast<int>(g_mods.size())) { return; }
+				const SMod& mod = *g_mods[a_mod];
+				key = "script|" + mod.plugin + "|" + mod.modName;
+				entry = mod.entryName;
+				const auto record = [&](const Option& a_o, int a_nth, int a_index) {
+					rememberedsettings::Record r;
+					r.type = static_cast<rememberedsettings::Type>(a_o.type - kToggle);
+					r.page = a_page;
+					r.text = a_o.text;
+					r.nth = a_nth;
+					r.value = MemoryValue(a_o);
+					r.menuIndex = a_o.type == kMenu ? a_index : -1;
+					return r;
+				};
+				const bool compared = a_before.size() == a_after.size();
+				const Option& changed = a_after[a_slot];
+				if (Rememberable(changed))
+				{
+					const bool sameRow = compared && a_before[a_slot].type == changed.type && a_before[a_slot].text == changed.text;
+					const bool heldItsValue = changed.type == kToggle && sameRow && MemoryValue(a_before[a_slot]) == MemoryValue(changed);
+					if (heldItsValue || LooksLikeAction(mod, changed))
+					{
+						button = record(changed, NthOf(a_after, a_slot), -1);
+						logger::debug("Remembered settings: \"{}\" is a button, not a setting - not remembered", changed.text);
+					}
+					else { records.push_back(record(changed, NthOf(a_after, a_slot), a_menuIndex)); }
+				}
+				if (compared)
+				{
+					const auto was = ValuesOf(a_before);
+					std::map<std::pair<int, std::string>, int> seen;
+					for (int i = 0; i < static_cast<int>(a_after.size()); ++i)
+					{
+						const Option& o = a_after[i];
+						if (!Rememberable(o)) { continue; }
+						const int nth = seen[{ o.type, o.text }]++;
+						if (i == a_slot || (o.flags & kFlagHidden) || LooksLikeAction(mod, o)) { continue; }
+						const auto it = was.find({ o.type, o.text, nth });
+						if (it != was.end() && it->second != MemoryValue(o)) { records.push_back(record(o, nth, -1)); }
+					}
+				}
 			}
-			rememberedsettings::Remember(key, entry, record);
+			if (button) { rememberedsettings::ForgetSetting(key, *button); }
+			if (!records.empty()) { rememberedsettings::RememberAll(key, entry, records); }
 		}
 
 		// An interaction: the Request (when the dialog has one, so _activeOption is this option even if another call ran
@@ -883,13 +971,42 @@ namespace mcmloader::scripts
 			AMF_REQUIRE_VOID(a_accept);
 			AMF_REQUIRE_VOID(a_acceptArgs);
 			std::string name = std::string(a_accept) + " " + std::to_string(a_slot);
-			Enqueue({ a_key, name, [a_mod, a_slot, a_request, a_accept, a_acceptArgs, a_menuIndex](std::function<void()> a_done) {
+			int page = -2;
+			std::string pageName;
+			{
+				std::scoped_lock lock(g_mutex);
+				page = g_session.page;
+				pageName = g_session.pageName;
+			}
+			Op op{ a_key, name, [a_mod, a_slot, page, pageName, a_request, a_accept, a_acceptArgs, a_menuIndex](std::function<void()> a_done) {
 				const auto config = ScriptOf(a_mod);
-				if (!config || g_open.load() != a_mod) { amf::Call(a_done)(); return; }
-				auto accept = [a_mod, a_slot, a_menuIndex, config, a_accept, a_acceptArgs, a_done]() {
-					if (!Call(config, a_accept, amf::Call(a_acceptArgs)(), [a_mod, a_slot, a_menuIndex, config, a_done](const RE::BSScript::Variable&) {
-							Rebuild(a_mod, config, [a_mod, a_slot, a_menuIndex, a_done]() {
-								RememberSlot(a_mod, a_slot, a_menuIndex);
+				if (!config) { amf::Call(a_done)(); return; }
+				// the page as it was, for what this change moves; left empty once the page was left (QueueClose keeps this op)
+				auto before = std::make_shared<std::vector<Option>>();
+				if (g_open.load() == a_mod)
+				{
+					std::scoped_lock lock(g_mutex);
+					*before = g_session.options;
+				}
+				auto accept = [a_mod, a_slot, page, pageName, a_menuIndex, config, a_accept, a_acceptArgs, before, a_done]() {
+					if (!Call(config, a_accept, amf::Call(a_acceptArgs)(), [a_mod, a_slot, page, pageName, a_menuIndex, config, before, a_done](const RE::BSScript::Variable&) {
+							if (g_open.load() == a_mod)
+							{
+								Rebuild(a_mod, config, [a_mod, a_slot, pageName, a_menuIndex, before, a_done]() {
+									std::vector<Option> after;
+									if (g_open.load() == a_mod)
+									{
+										std::scoped_lock lock(g_mutex);
+										after = g_session.options;
+									}
+									RememberChange(a_mod, pageName, *before, after, a_slot, a_menuIndex);
+									amf::Call(a_done)();
+								});
+								return;
+							}
+							if (page == -2) { amf::Call(a_done)(); return; }
+							ReadPage(config, page, pageName, [a_mod, a_slot, pageName, a_menuIndex, a_done](std::vector<Option> a_after) {
+								RememberChange(a_mod, pageName, {}, a_after, a_slot, a_menuIndex);
 								amf::Call(a_done)();
 							});
 						}))
@@ -900,7 +1017,9 @@ namespace mcmloader::scripts
 				if (!a_request) { accept(); return; }
 				// the accept runs on a VM thread here; dispatching from it is what the manager's own events do
 				if (!Call(config, a_request, Args(a_slot), [accept](const RE::BSScript::Variable&) { accept(); })) { amf::Call(a_done)(); }
-			} });
+			} };
+			op.change = true;
+			Enqueue(std::move(op));
 		}
 
 		void QueueSelect(int a_mod, int a_slot) { QueueChange(a_mod, a_slot, nullptr, "SelectOption", [a_slot]() { return Args(a_slot); }); }
@@ -1377,6 +1496,14 @@ namespace mcmloader::scripts
 
 		void DrawTab(int a_mod, const std::string& a_rawPage)
 		{
+			// a replay is driving a menu (right after a load): opening a page now would close that menu and drop the rest of the
+			// replay's queue, and with it the op that ends the drive
+			if (g_memoryDriving.load())
+			{
+				g_lastDrawFrame = ImGui::GetFrameCount();
+				PageNote(icons::kInfo, TR("AMF_McmMemSettingNow", "Setting this menu's remembered values. One moment."));
+				return;
+			}
 			if (g_open.load() != a_mod)
 			{
 				Open(a_mod, false);
@@ -1946,6 +2073,7 @@ namespace mcmloader::scripts
 			int applied = 0;
 			int same = 0;
 			int missing = 0;
+			int left = 0;   // there, but not set: a disabled row, or a row that runs something
 		};
 
 		// The slot of the option a record names on the page built now: same type, same raw label, the nth of those.
@@ -2005,6 +2133,18 @@ namespace mcmloader::scripts
 			if (SameValue(current, a_r))
 			{
 				++a_st->same;
+				amf::Call(a_done)();
+				return;
+			}
+			bool leave = (current.flags & kFlagDisabled) != 0;   // the player could not change it now either
+			{
+				std::scoped_lock lock(g_mutex);
+				leave = leave || LooksLikeAction(*g_mods[a_mod], current);   // a record older than this check, or imported
+			}
+			if (leave)
+			{
+				logger::debug("Remembered settings: \"{}\" is disabled now or runs something - left as it is", a_r.text);
+				++a_st->left;
 				amf::Call(a_done)();
 				return;
 			}
@@ -2224,13 +2364,13 @@ namespace mcmloader::scripts
 			Enqueue({ "", "memory: read page " + name, [mod, index, name, read](std::function<void()> a_done) {
 				const auto config = ScriptOf(mod);
 				if (!config || g_open.load() != mod) { amf::Call(a_done)(); return; }
-				Build(mod, config, index, name, [name, read, a_done]() {
+				Build(mod, config, index, name, [mod, name, read, a_done]() {
 					{
 						std::scoped_lock lock(g_mutex);
 						for (int i = 0; i < kSlots; ++i)
 						{
 							const Option& o = g_session.options[i];
-							if (!Rememberable(o) || (o.flags & kFlagHidden)) { continue; }
+							if (!Rememberable(o) || (o.flags & kFlagHidden) || LooksLikeAction(*g_mods[mod], o)) { continue; }
 							MemoryOption r;
 							r.type = o.type - kToggle;
 							r.page = name;
@@ -2271,8 +2411,8 @@ namespace mcmloader::scripts
 			entry = g_mods[mod]->entryName;
 		}
 		EndDrive([state, a_done, entry]() {
-			logger::info("Remembered settings: {} restored - {} set, {} already right, {} not found{}", entry, state->applied, state->same, state->missing,
-				state->missing > 0 ? " (options or pages not in the menu now - details at log level debug)" : "");
+			logger::info("Remembered settings: {} restored - {} set, {} already right, {} not found, {} left{}", entry, state->applied, state->same, state->missing, state->left,
+				state->missing + state->left > 0 ? " (options or pages not in the menu now, disabled rows, rows that run something - details at log level debug)" : "");
 			amf::Call(a_done)(state->applied, state->missing);
 		});
 		return true;

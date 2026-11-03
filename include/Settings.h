@@ -198,9 +198,11 @@ namespace settings
 		std::int32_t mcmColumnGap = 75;
 		std::int32_t mcmRowSpacing = 20;
 		// remembered MCM settings (RememberedSettings.h): [RememberedSettings] bAutoBackup - remember each MCM change made here;
-		// bRestoreOnNewGame - apply the profile again after a new game; sProfile - the active profile's name.
+		// bRestoreOnNewGame - apply the profile again after a new game; bRestoreOnLoad - what the player changed comes back on
+		// every loaded save and new game (2.4.0); sProfile - the active profile's name.
 		bool mcmAutoBackup = true;
 		bool mcmRestoreOnNewGame = true;
+		bool mcmRestoreOnLoad = true;
 		std::string rememberedProfile = "Default";
 		bool watchdogEnabled = true;
 		// Fast exit (the author, 2026-09-05: "a way to deal with this on exit no kill function issue"):

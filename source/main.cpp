@@ -118,7 +118,7 @@ namespace
 			persistence::OnPostLoadGame(a_msg->data != nullptr);
 			loadguard::OnGameReady();  // 2.2.0: only the running game loop sends this - the start-up hold is over
 			mcmloader::OnGameLoaded();  // MCM loader: config scripts belong to the game just loaded
-			rememberedsettings::OnSaveLoaded();  // a loaded save holds its own MCM settings: no automatic restore
+			rememberedsettings::OnSaveLoaded();  // what the player changed comes back: a save does not hold every setting (a DLL's)
 			break;
 		case SKSE::MessagingInterface::kNewGame:
 			loadguard::OnGameReady();  // 2.2.0: as kPostLoadGame

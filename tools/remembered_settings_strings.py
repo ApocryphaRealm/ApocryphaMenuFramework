@@ -291,6 +291,74 @@ S['chinese']['AMF_McmMemRestored'] = '已恢复：设置了 %d 项，涉及 %d �
 S['japanese']['AMF_McmMemRestored'] = '復元完了：%d 件の設定（%d 個のメニュー、%d 件見つからず）。'
 S['korean']['AMF_McmMemRestored'] = '복원됨: %d개 설정 적용 (%d개 메뉴, %d개 찾지 못함).'
 
+# 2.4.0: what the player changed comes back on every load (the owner, 2026-11-03).
+S['english'].update({
+    'AMF_McmMemOnLoad': 'Set what you changed again on every load',
+    'AMF_McmMemOnLoadHelp': 'What you change on these menus comes back whenever you load a save or start a new game, in every save, the way a setting on an SKSE menu does. Only the rows you changed; a row already right is left alone. Rows that run something, like a reset or an uninstall, are never run again. Forget below drops what a menu remembers.',
+    'AMF_McmMemYours': '%d you changed',
+    'AMF_McmMemSettingNow': "Setting this menu's remembered values. One moment.",
+})
+S['german'].update({
+    'AMF_McmMemOnLoad': 'Was du geändert hast, bei jedem Laden wieder setzen',
+    'AMF_McmMemOnLoadHelp': 'Was du in diesen Menüs änderst, kommt zurück, wann immer du einen Spielstand lädst oder ein neues Spiel beginnst, in jedem Spielstand, so wie eine Einstellung in einem SKSE-Menü. Nur die Zeilen, die du geändert hast; eine Zeile, die schon stimmt, bleibt unberührt. Zeilen, die etwas ausführen, etwa Zurücksetzen oder Deinstallieren, werden nie erneut ausgeführt. Mit Vergessen unten verwirfst du, was ein Menü sich gemerkt hat.',
+    'AMF_McmMemYours': '%d von dir geändert',
+    'AMF_McmMemSettingNow': 'Die gemerkten Werte dieses Menüs werden gesetzt. Einen Moment.',
+})
+S['french'].update({
+    'AMF_McmMemOnLoad': 'Réappliquer ce que vous avez changé à chaque chargement',
+    'AMF_McmMemOnLoadHelp': "Ce que vous changez dans ces menus revient chaque fois que vous chargez une sauvegarde ou commencez une nouvelle partie, dans toutes les sauvegardes, comme un réglage d'un menu SKSE. Seulement les lignes que vous avez changées ; une ligne déjà correcte n'est pas touchée. Les lignes qui exécutent quelque chose, comme une réinitialisation ou une désinstallation, ne sont jamais relancées. Oublier, plus bas, efface ce qu'un menu a retenu.",
+    'AMF_McmMemYours': '%d changés par vous',
+    'AMF_McmMemSettingNow': 'Application des valeurs retenues de ce menu. Un instant.',
+})
+S['italian'].update({
+    'AMF_McmMemOnLoad': 'Reimposta ciò che hai cambiato a ogni caricamento',
+    'AMF_McmMemOnLoadHelp': "Ciò che cambi in questi menu torna ogni volta che carichi un salvataggio o inizi una nuova partita, in ogni salvataggio, come un'impostazione di un menu SKSE. Solo le righe che hai cambiato; una riga già giusta non viene toccata. Le righe che eseguono qualcosa, come un ripristino o una disinstallazione, non vengono mai rieseguite. Dimentica, qui sotto, elimina ciò che un menu ricorda.",
+    'AMF_McmMemYours': '%d cambiate da te',
+    'AMF_McmMemSettingNow': 'Impostazione dei valori ricordati di questo menu. Un momento.',
+})
+S['spanish'].update({
+    'AMF_McmMemOnLoad': 'Volver a aplicar lo que cambiaste en cada carga',
+    'AMF_McmMemOnLoadHelp': 'Lo que cambias en estos menús vuelve cada vez que cargas una partida o empiezas una nueva, en todas las partidas, como un ajuste de un menú SKSE. Solo las filas que cambiaste; una fila que ya está bien no se toca. Las filas que ejecutan algo, como un reinicio o una desinstalación, nunca se vuelven a ejecutar. Olvidar, más abajo, borra lo que un menú recuerda.',
+    'AMF_McmMemYours': '%d cambiados por ti',
+    'AMF_McmMemSettingNow': 'Aplicando los valores recordados de este menú. Un momento.',
+})
+S['polish'].update({
+    'AMF_McmMemOnLoad': 'Ustawiaj ponownie to, co zmieniono, przy każdym wczytaniu',
+    'AMF_McmMemOnLoadHelp': 'To, co zmieniasz w tych menu, wraca przy każdym wczytaniu zapisu lub rozpoczęciu nowej gry, w każdym zapisie, tak jak ustawienie w menu SKSE. Tylko wiersze, które zmieniono; wiersz już poprawny pozostaje nietknięty. Wiersze, które coś uruchamiają, na przykład reset lub odinstalowanie, nigdy nie są uruchamiane ponownie. Zapomnij poniżej usuwa to, co menu zapamiętało.',
+    'AMF_McmMemYours': 'zmienione przez Ciebie: %d',
+    'AMF_McmMemSettingNow': 'Ustawianie zapamiętanych wartości tego menu. Chwileczkę.',
+})
+S['czech'].update({
+    'AMF_McmMemOnLoad': 'Při každém načtení znovu nastavit, co jste změnili',
+    'AMF_McmMemOnLoadHelp': 'Co v těchto nabídkách změníte, se vrátí při každém načtení uložené hry nebo začátku nové hry, v každé uložené hře, stejně jako nastavení v nabídce SKSE. Jen řádky, které jste změnili; řádek, který už souhlasí, zůstane nedotčen. Řádky, které něco spouštějí, například reset nebo odinstalaci, se znovu nikdy nespustí. Zapomenout níže zahodí, co si nabídka pamatuje.',
+    'AMF_McmMemYours': 'změněno vámi: %d',
+    'AMF_McmMemSettingNow': 'Nastavují se zapamatované hodnoty této nabídky. Okamžik.',
+})
+S['russian'].update({
+    'AMF_McmMemOnLoad': 'Снова устанавливать изменённое при каждой загрузке',
+    'AMF_McmMemOnLoadHelp': 'То, что вы меняете в этих меню, возвращается при каждой загрузке сохранения или начале новой игры, в любом сохранении, как настройка в меню SKSE. Только изменённые вами строки; строка с верным значением не затрагивается. Строки, которые что-то запускают, например сброс или удаление, никогда не запускаются снова. Кнопка «Забыть» ниже стирает то, что запомнило меню.',
+    'AMF_McmMemYours': 'изменено вами: %d',
+    'AMF_McmMemSettingNow': 'Устанавливаются запомненные значения этого меню. Минуту.',
+})
+S['chinese'].update({
+    'AMF_McmMemOnLoad': '每次读取时重新设置你更改过的内容',
+    'AMF_McmMemOnLoadHelp': '你在这些菜单中更改的内容，会在每次读取存档或开始新游戏时恢复，适用于所有存档，就像 SKSE 菜单中的设置一样。只恢复你更改过的行；已经正确的行不会被改动。执行操作的行（例如重置或卸载）绝不会再次运行。下方的“忘记”会清除某个菜单记住的内容。',
+    'AMF_McmMemYours': '你更改了 %d 项',
+    'AMF_McmMemSettingNow': '正在设置此菜单记住的值，请稍候。',
+})
+S['japanese'].update({
+    'AMF_McmMemOnLoad': '変更した内容をロードのたびに再設定する',
+    'AMF_McmMemOnLoadHelp': 'これらのメニューで変更した内容は、セーブをロードしたり新しいゲームを始めたりするたびに、どのセーブでも、SKSE メニューの設定と同じように戻ります。変更した行だけが対象で、すでに正しい行には触れません。リセットやアンインストールなど何かを実行する行は、二度と実行されません。下の「忘れる」で、メニューが覚えている内容を消せます。',
+    'AMF_McmMemYours': '変更した項目 %d 件',
+    'AMF_McmMemSettingNow': 'このメニューの記憶した値を設定しています。少々お待ちください。',
+})
+S['korean'].update({
+    'AMF_McmMemOnLoad': '변경한 내용을 불러올 때마다 다시 설정',
+    'AMF_McmMemOnLoadHelp': '이 메뉴에서 변경한 내용은 저장을 불러오거나 새 게임을 시작할 때마다, 모든 저장에서, SKSE 메뉴의 설정처럼 되돌아옵니다. 변경한 줄만 해당하며, 이미 맞는 줄은 건드리지 않습니다. 초기화나 제거처럼 무언가를 실행하는 줄은 다시 실행되지 않습니다. 아래의 잊기를 누르면 메뉴가 기억하는 내용이 지워집니다.',
+    'AMF_McmMemYours': '변경한 항목 %d개',
+    'AMF_McmMemSettingNow': '이 메뉴에 기억된 값을 설정하는 중입니다. 잠시만 기다려 주세요.',
+})
+
 
 def main():
     check = '--check' in sys.argv

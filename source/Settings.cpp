@@ -271,6 +271,8 @@ namespace settings
 				"bAutoBackup=" << (a_v.mcmAutoBackup ? 1 : 0) << "\n"
 				"; 1 = after a NEW game (not a loaded save), set those menus to the profile again once they appear.\n"
 				"bRestoreOnNewGame=" << (a_v.mcmRestoreOnNewGame ? 1 : 0) << "\n"
+				"; 1 = what you changed on those menus comes back on every loaded save and new game, like a setting on an SKSE menu.\n"
+				"bRestoreOnLoad=" << (a_v.mcmRestoreOnLoad ? 1 : 0) << "\n"
 				"; The profile in use: SKSE\\Plugins\\ApocryphaMenuFramework\\RememberedSettings\\<name>.json.\n"
 				"sProfile=" << a_v.rememberedProfile << "\n"
 				"\n"
@@ -760,6 +762,7 @@ namespace settings
 			ReadBool(entries, "MCM.bHideInSkyUI", g_values.hideMcmInSkyUI);
 			ReadBool(entries, "RememberedSettings.bAutoBackup", g_values.mcmAutoBackup);
 			ReadBool(entries, "RememberedSettings.bRestoreOnNewGame", g_values.mcmRestoreOnNewGame);
+			ReadBool(entries, "RememberedSettings.bRestoreOnLoad", g_values.mcmRestoreOnLoad);
 			if (const auto it = entries.find("RememberedSettings.sProfile"); it != entries.end() && !it->second.empty()) { g_values.rememberedProfile = it->second; }
 
 			// Window profiles. Each field defaults to -1, which the renderer reads as "this profile

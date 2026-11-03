@@ -2956,6 +2956,14 @@ namespace renderer
 							logger::info("settings page: remembered settings: restore on a new game -> {}", values.mcmRestoreOnNewGame);
 							settings::Save();
 						}
+						if (widgets::Toggle(TR("AMF_McmMemOnLoad", "Set what you changed again on every load"), &values.mcmRestoreOnLoad))
+						{
+							logger::info("settings page: remembered settings: what was changed comes back on a load -> {}", values.mcmRestoreOnLoad);
+							settings::Save();
+						}
+						ImGui::TextWrapped("%s", TR("AMF_McmMemOnLoadHelp", "What you change on these menus comes back whenever you load a save or start a new game, in every "
+										   "save, the way a setting on an SKSE menu does. Only the rows you changed; a row already right is left alone. Rows that run something, "
+										   "like a reset or an uninstall, are never run again. Forget below drops what a menu remembers."));
 
 						const bool memBusy = rememberedsettings::Busy();
 						// 2.3.0: what is remembered here is the new-game record, kept apart from the presets (a preset changes only
@@ -3044,6 +3052,11 @@ namespace renderer
 								ImGui::SameLine();
 								if (row.present) { ImGui::TextDisabled(TR("AMF_McmMemSaved", "%d saved"), row.saved); }
 								else { ImGui::TextDisabled(TR("AMF_McmMemAbsent", "%d saved - not in this game"), row.saved); }
+								if (row.yours > 0)
+								{
+									ImGui::SameLine();
+									ImGui::TextDisabled(TR("AMF_McmMemYours", "%d you changed"), row.yours);
+								}
 								if (row.saved > 0)
 								{
 									ImGui::SameLine();

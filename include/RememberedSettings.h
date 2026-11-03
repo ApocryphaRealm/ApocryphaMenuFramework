@@ -11,6 +11,14 @@
 // recorded into the new-game record; "Back up all now" reads every menu AMF can read; after a NEW
 // game the record is played back through the same calls the pages make.
 //
+// 2.4.0 (the owner, 2026-11-03: converted menus should remember "the way all the changes you make for SKSE menus are
+// remembered on a reload"): a save does not hold everything either - Improved Alternate Conversation Camera keeps its
+// settings in its DLL and reads them from its INI once at game start, so a change was gone after a restart whichever
+// save was loaded. What the PLAYER changed (Record::user) now also comes back on every loaded save, through the same
+// calls and the same visit (open, set what differs, OnConfigClose). It is one global record, like an SKSE menu's INI:
+// the player's latest choice wins in every save, for the rows he changed; every other row stays as the save or mod
+// has it. A row already right is not touched, and text rows and rows that run something are never played back.
+//
 // 2.3.0: the new-game record is ONE file, SKSE\Plugins\ApocryphaMenuFramework\RememberedSettings.json - outside
 // the save and the download, and never a preset. The files in RememberedSettings\<name>.json are the settings
 // presets (Presets.h): snapshots that change only when saved; "the preset in use" ([RememberedSettings] sProfile) is
@@ -43,19 +51,23 @@ namespace rememberedsettings
 		std::string id;
 		std::string value;
 		int menuIndex = -1;
+		bool user = false;   // 2.4.0: the player set it (or moved it by setting another row); only these come back on a load
 	};
 
 	// kDataLoaded: read the INI's profile.
 	void Init();
 
 	// kNewGame: arm the automatic restore (it runs once the menus are found, from 40 s to 4 min after the start).
-	// kPostLoadGame: disarm it - a loaded save already holds its settings.
+	// kPostLoadGame: disarm that, and arm the pass for what the player changed (10 s to 5 min after the load).
 	void OnNewGame();
 	void OnSaveLoaded();
 
 	// Any thread. A change AMF just made, recorded when [RememberedSettings] bAutoBackup=1 (and never while a restore runs).
 	// a_key is the import key ("script|<plugin>|<ModName>" or "mcmhelper|<mod>"), a_entry the AMF entry name.
 	void Remember(const std::string& a_key, const std::string& a_entry, const Record& a_record);
+	void RememberAll(const std::string& a_key, const std::string& a_entry, const std::vector<Record>& a_records);
+	// Any thread. A row that turned out to run something instead of holding a value: its record goes.
+	void ForgetSetting(const std::string& a_key, const Record& a_record);
 
 	// The settings page and DevBench.
 	struct MenuRow
@@ -65,6 +77,7 @@ namespace rememberedsettings
 		int saved = 0;            // settings in the active profile
 		bool autoRestore = true;  // takes part in the automatic new-game restore
 		bool present = false;     // found in the game loaded now
+		int yours = 0;            // of those, the settings the player changed: they come back on every load
 	};
 	std::vector<MenuRow> Menus();
 	void SetAutoRestore(const std::string& a_key, bool a_on);
@@ -129,6 +142,7 @@ namespace rememberedsettings
 	bool DeletePreset(const std::string& a_name);
 
 	// DevBench amf.mcm op=remembered: action status | backup {keys} | restore {keys} | records {key} | forget {key} |
-	// auto {key,on} | profile {name} | create {name,copy} | delete {name}. Thread-safe.
+	// auto {key,on} | profile {name} | create {name,copy} | delete {name} | newgame | afterload (the two automatic passes, armed
+	// with no new game or load). Thread-safe.
 	std::string ToolJson(const std::string& a_argsJson);
 }
