@@ -21,7 +21,7 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
-## 2.4.0 - 2026-10-31 - untested
+## 2.4.0 - 2026-10-31 - working
 
 ### Added
 - **Converted script MCM menus now remember like SKSE menu pages** (the owner, 2026-11-03). What you change on them comes back on every loaded save and new game, in every save, whichever way the mod keeps it: some settings are not in the save at all (Improved Alternate Conversation Camera keeps them in its DLL and reads its INI once at game start, so a change was gone after a restart). `[RememberedSettings] bRestoreOnLoad=1`, a switch on Converted menus > MCM > Remembered settings, on by default.
