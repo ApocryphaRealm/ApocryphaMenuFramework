@@ -1412,7 +1412,7 @@ namespace mcmloader::scripts
 				if (ImGui::Button(button.c_str()) && !waiting)
 				{
 					g_capturing = a_slot;
-					input::ArmKeyCapture();
+					input::ArmKeyRowCapture();
 				}
 				HelpTooltip(a_mod, a_s, a_slot);
 				DefaultMenu(a_mod, a_slot);
@@ -1422,19 +1422,13 @@ namespace mcmloader::scripts
 					if (ImGui::SmallButton((std::string(icons::kClear) + "##unmap").c_str())) { QueueKey(a_mod, a_slot, -1); }  // SkyUI's unmap sends -1
 				}
 				mcmstyle::LabelAfter(label);
+				if (waiting) { input::KeepKeyRowCapture(); }
 				if (waiting && !input::IsKeyCaptureArmed())
 				{
-					// (device << 32) | code - 0 keyboard (DirectInput scan code), 1 mouse
-					const std::int64_t packed = input::LastCapturedKey();
+					// 2.4.0: a pad button too, as its SKSE code (right bumper 275). -1: cancelled, the row keeps its key
+					const std::int32_t key = input::LastCapturedMcmKey();
 					g_capturing.reset();
-					if (packed >= 0)
-					{
-						const auto device = static_cast<std::int32_t>(packed >> 32);
-						const auto key = static_cast<std::int32_t>(packed & 0xFFFFFFFF);
-						if (device == 0 && key != 0x01) { QueueKey(a_mod, a_slot, key); }
-						else if (device == 1) { QueueKey(a_mod, a_slot, 256 + key); }
-						else { logger::info("MCM scripts: keymap {} - Escape or a controller button; keymaps take keyboard and mouse for now", a_slot); }
-					}
+					if (key >= 0) { QueueKey(a_mod, a_slot, key); }
 				}
 				break;
 			}

@@ -1914,23 +1914,17 @@ namespace mcmloader
 				if (ImGui::Button(button.c_str()) && !waiting)
 				{
 					g_capturing = std::make_pair(a_mod, a_c.id);
-					input::ArmKeyCapture();
+					input::ArmKeyRowCapture();
 				}
 				mcmstyle::SameLineIfFits(mcmstyle::LabelWidth(clear) + framePad);
 				if (ImGui::Button(clear.c_str())) { Apply(a_mod, a_c, "-1"); }
+				if (waiting) { input::KeepKeyRowCapture(); }
 				if (waiting && !input::IsKeyCaptureArmed())
 				{
-					// LastCapturedKey: (device << 32) | code - 0 keyboard (DirectInput scan code), 1 mouse, 2 gamepad
-					const std::int64_t packed = input::LastCapturedKey();
+					// 2.4.0: a pad button too, as its SKSE code (right bumper 275). -1: cancelled, the row keeps its key
+					const std::int32_t code = input::LastCapturedMcmKey();
 					g_capturing.reset();
-					if (packed >= 0)
-					{
-						const auto device = static_cast<std::int32_t>(packed >> 32);
-						const auto code = static_cast<std::int32_t>(packed & 0xFFFFFFFF);
-						if (device == 0 && code != 0x01) { Apply(a_mod, a_c, std::to_string(code)); }
-						else if (device == 1) { Apply(a_mod, a_c, std::to_string(256 + code)); }
-						else { logger::info("MCM loader: keymap {} - Escape or a controller button; keymaps take keyboard and mouse in phase 1", a_c.id); }
-					}
+					if (code >= 0) { Apply(a_mod, a_c, std::to_string(code)); }
 				}
 				Tooltip(a_c, KeyName(static_cast<std::int32_t>(ParseInt(a_value))));
 				break;

@@ -577,25 +577,20 @@ namespace prisma
 				if (ImGui::Button(button.c_str()) && !waiting)
 				{
 					g_capturing = std::make_pair(a_index, a_s.id);
-					input::ArmKeyCapture();
+					input::ArmKeyRowCapture();
 				}
 				ImGui::SameLine();
 				if (ImGui::Button((std::string(icons::kClear) + "  " + strings::TR("AMF_McmClear", "Clear") + "##clr" + a_s.id).c_str()))
 				{
 					SetValue(a_index, a_s.id, "0");
 				}
+				if (waiting) { input::KeepKeyRowCapture(); }
 				if (waiting && !input::IsKeyCaptureArmed())
 				{
-					// (device << 32) | code: 0 keyboard (DirectInput scan code, what Redux stores), 1 mouse
-					const std::int64_t packed = input::LastCapturedKey();
+					// A DirectInput scan code (what Redux stores), or 2.4.0 a pad button as its SKSE code. -1: cancelled, the row keeps its key
+					const std::int32_t captured = input::LastCapturedMcmKey();
 					g_capturing.reset();
-					if (packed >= 0)
-					{
-						const auto device = static_cast<std::int32_t>(packed >> 32);
-						const auto captured = static_cast<std::int32_t>(packed & 0xFFFFFFFF);
-						if (device == 0 && captured != 0x01) { SetValue(a_index, a_s.id, std::to_string(captured)); }
-						else if (device == 1) { SetValue(a_index, a_s.id, std::to_string(256 + captured)); }
-					}
+					if (captured >= 0) { SetValue(a_index, a_s.id, std::to_string(captured)); }
 				}
 				break;
 			}

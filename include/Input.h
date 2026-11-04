@@ -152,4 +152,15 @@ namespace input
 	// Packed last capture: -1 = none yet, else (device << 32) | scan code
 	// (device: RE::INPUT_DEVICE - 0 keyboard, 1 mouse, 2 gamepad).
 	std::int64_t LastCapturedKey();
+
+	// A KEY ROW'S CAPTURE (2.4.0) - a keymap row of a converted MCM (MCM Helper or script) or Prisma page. The same slot as above,
+	// read the same way with IsKeyCaptureArmed, but this one TAKES the press: the next keyboard key or pad button goes to the row
+	// and nowhere else - no navigation, no tab step, no framework command, no mod's input callback, no game - with its held
+	// frames and its release. Escape, or the pad button that closes the menu (Start), cancels and is taken the same way. Both sticks
+	// read as centred meanwhile. It ends by itself when the menu closes or the row stops being drawn: call KeepKeyRowCapture
+	// on every frame the row is waiting. Render thread.
+	void ArmKeyRowCapture();
+	void KeepKeyRowCapture();
+	// The last capture as the code an MCM stores: a keyboard's scan code, or a pad button's SKSE code (right bumper 275). -1 = none.
+	std::int32_t LastCapturedMcmKey();
 }

@@ -70,6 +70,32 @@ namespace inputframes
 		return (a_fedDown || a_heldSecs > 0.0f) ? Edge::kRelease : Edge::kNone;
 	}
 
+	// A pad button's XInput mask (what a ButtonEvent's GetIDCode holds, triggers 9 and 10) as the key code an MCM stores: SKSE's
+	// InputMap, kMacro_GamepadOffset 266 upward, right bumper 275. -1 for a mask that is no button (2.4.0, the key rows' capture).
+	inline std::int32_t PadMaskToSkseKey(std::uint32_t a_mask)
+	{
+		switch (a_mask)
+		{
+		case 0x0001: return 266;   // D-pad up
+		case 0x0002: return 267;   // D-pad down
+		case 0x0004: return 268;   // D-pad left
+		case 0x0008: return 269;   // D-pad right
+		case 0x0010: return 270;   // Start
+		case 0x0020: return 271;   // Back
+		case 0x0040: return 272;   // L3
+		case 0x0080: return 273;   // R3
+		case 0x0100: return 274;   // L1
+		case 0x0200: return 275;   // R1
+		case 0x1000: return 276;   // A
+		case 0x2000: return 277;   // B
+		case 0x4000: return 278;   // X
+		case 0x8000: return 279;   // Y
+		case 0x0009: return 280;   // L2
+		case 0x000A: return 281;   // R2
+		default:     return -1;
+		}
+	}
+
 	// The buttons whose press was passed on and whose release has not been, by key (device and code). One thread only.
 	class FedButtons
 	{
