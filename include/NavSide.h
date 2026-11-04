@@ -1,24 +1,30 @@
 #pragma once
 
 // ============================================================================================================
-// When a sideways press inside a mod's page may send the highlight back to the mod list (2.3.0).
+// When a sideways press inside a mod's page may send the highlight back to the mod list, and how a slider is taken hold of.
 //
-// The menu's rule since 1.8.8: Left at a row with nothing to its left goes back to the list. Until 2.3.0 the only guard
-// was "no item is active" (ImGui::IsAnyItemActive). A slider with the highlight on it is NOT active - ImGui activates a
-// slider only on A / Enter / a held click - so a Left on a slider found nothing to its left and left the page, while a
-// page that steps the slider itself on Left (Dragon's Eye Minimap's held arrows) kept stepping it too (combined run
-// 2026-10-25 1515: any Left on DEM's sliders and on AMF Example's plain Speed slider moved focus to the list).
-//
-// Now a Left press leaves the page only when ALL of these hold:
-//   - the page has the highlight and nothing is being edited (as before);
+// The menu's rule since 1.8.8: Left at a row with nothing to its left goes back to the list. A Left press leaves the page
+// only when ALL of these hold:
+//   - the page has the highlight and nothing is being edited (a slider or drag that was activated is "being edited");
 //   - the highlight is not inside a popup (an open combo, a context menu);
-//   - the highlighted item is not a widget that Left/Right adjust - any slider, drag or text field, AMF's own, a converted
-//     menu's, a mod's through the exports, or a mod's drawn by its own copy of Dear ImGui. AMF's own and the exports call
-//     NoteArrowItem() right after drawing one; every other is known from ImGui's own item state (LearnNavItemKind);
+//   - the highlighted item is not a text or number-entry field (they kept the press in 2.3.0 and are unchanged);
 //   - the page did not take the press itself - ImGui made a Left move request this frame and a widget cancelled it
 //     (NavMoveRequestCancel), which is how a page that steps its own value on Left says "mine".
-// Left on a plain row (a switch, a button, a text line, a key binding) still goes back to the list.
-// The decision itself is LeftPressMayLeave() - a pure function, proven off-game by tools\nav_left_check.bat.
+// A highlighted slider or drag is a row like any other (2.4.0).
+//
+// HOW A SLIDER TAKES INPUT (2.4.0; the owner, 2026-11-03: "you should have to click a slider for it to activate and then
+// slide left to right" - "if you're using a mouse, you can just not have to click and you can just drag it directly. But
+// if you're using a controller, you have to focus it first, click, and then you can use the D-pad to nudge it"). This is
+// Dear ImGui's own behaviour, in every copy of ImGui drawing on the context, and AMF no longer overrides it:
+//   - D-pad / arrows move the highlight, across a slider as across any row; A / Enter / Space activates it;
+//   - while active, Left / Right nudge it (PreciseSlider.h and the slider exports hold that to one unit of the shown digit),
+//     and a held key steps at the key-repeat rate (HoldTweakAtKeyRepeat below);
+//   - A / Enter / Space, or B / Escape, lets go (B and Escape do only that on that press);
+//   - Up / Down let go and move the highlight to the next row, the nudged value kept and reported as released;
+//   - the mouse drags directly and the wheel notches, activated or not.
+// The 2.3.0 mechanism that activated a highlighted slider on Left / Right (StepHighlightedArrowItem) was removed: it is why
+// the D-pad could not leave a slider. The decision is LeftPressMayLeave() - a pure function, proven off-game by
+// tools\nav_left_check.bat.
 // ============================================================================================================
 
 #include <imgui.h>
@@ -31,14 +37,14 @@ namespace navside
 		bool contentHasNav  = false;   // the mod page (content pane) holds ImGui's nav highlight
 		bool editing        = false;   // ImGui::IsAnyItemActive(): a slider held, a text field typing
 		bool inPopup        = false;   // the highlight is in a popup window (an open combo, a context menu)
-		bool onArrowItem    = false;   // the highlighted item is a slider or drag (NoteArrowItem saw it this frame)
+		bool onEntryField   = false;   // the highlighted item is a text or number-entry field (NavOnEntryField)
 		bool pageTookTheKey = false;   // a widget cancelled ImGui's Left move this frame - it used the press itself
 	};
 
 	// True when this Left press may send the highlight back to the mod list (once ImGui has also found nothing to the left).
 	inline bool LeftPressMayLeave(const LeftPress& a_p)
 	{
-		return a_p.contentHasNav && !a_p.editing && !a_p.inPopup && !a_p.onArrowItem && !a_p.pageTookTheKey;
+		return a_p.contentHasNav && !a_p.editing && !a_p.inPopup && !a_p.onEntryField && !a_p.pageTookTheKey;
 	}
 
 	namespace detail
@@ -46,35 +52,52 @@ namespace navside
 		inline ImGuiContext* g_ctx = nullptr;   // the context the note below was taken in
 		inline int     g_frame = -1;            // the frame an arrow-adjusted item was seen holding the highlight
 		inline ImGuiID g_navId = 0;             // ImGui's NavId at that moment
+
+		inline ImGuiContext* g_entryCtx = nullptr;   // the same for a number-entry field (NoteEntryField)
+		inline int     g_entryFrame = -1;
+		inline ImGuiID g_entryNavId = 0;
+
+		// The item just drawn holds ImGui's nav highlight: on the item itself, or on one of its parts for a multi-part widget
+		// (SliderFloat3's fields, a drag range, a number box with its - and + buttons), whose last item is the group around them.
+		inline bool LastItemHoldsNav(ImGuiContext* a_g)
+		{
+			if (!a_g || a_g->NavId == 0 || !a_g->CurrentWindow || a_g->NavWindow != a_g->CurrentWindow) return false;
+			if (a_g->LastItemData.ID != 0 && a_g->LastItemData.ID == a_g->NavId) return true;
+			if (!a_g->NavIdIsAlive) return false;
+			ImGuiWindow* const w = a_g->CurrentWindow;
+			const ImRect nav = ImGui::WindowRectRelToAbs(w, w->NavRectRel[a_g->NavLayer]);
+			return a_g->LastItemData.Rect.Contains(nav);
+		}
 	}
 
-	// Call right after drawing a widget that Left/Right adjust (a slider, a drag). Notes it when ImGui's nav highlight is
-	// on it - on the item itself, or on one of its parts for a multi-value widget (SliderFloat3's fields, a drag range),
-	// whose last item is the group around them.
+	// Call right after drawing a slider or drag: notes it when the highlight is on it, so Enter and the first press after a
+	// mouse click activate it (EnterActivatesArrowItem, ActivateAfterClick) and a held key is paced (HoldTweakAtKeyRepeat).
 	inline void NoteArrowItem()
 	{
 		ImGuiContext* const g = GImGui;
-		if (!g || g->NavId == 0 || !g->CurrentWindow || g->NavWindow != g->CurrentWindow) return;
-		bool on = g->LastItemData.ID != 0 && g->LastItemData.ID == g->NavId;
-		if (!on && g->NavIdIsAlive)
-		{
-			ImGuiWindow* const w = g->CurrentWindow;
-			const ImRect nav = ImGui::WindowRectRelToAbs(w, w->NavRectRel[g->NavLayer]);
-			on = g->LastItemData.Rect.Contains(nav);
-		}
-		if (on)
-		{
-			detail::g_ctx = g;
-			detail::g_frame = g->FrameCount;
-			detail::g_navId = g->NavId;
-		}
+		if (!detail::LastItemHoldsNav(g)) return;
+		detail::g_ctx = g;
+		detail::g_frame = g->FrameCount;
+		detail::g_navId = g->NavId;
+	}
+
+	// Call right after drawing a number-entry field (InputInt / InputFloat / InputScalar...): Left on it keeps to the page, as
+	// it did before sliders went back to navigating. AMF's own pages and the number-entry exports do; a mod's own copy of
+	// ImGui cannot, and such a field is known only once it has been typed in (KnownText).
+	inline void NoteEntryField()
+	{
+		ImGuiContext* const g = GImGui;
+		if (!detail::LastItemHoldsNav(g)) return;
+		detail::g_entryCtx = g;
+		detail::g_entryFrame = g->FrameCount;
+		detail::g_entryNavId = g->NavId;
 	}
 
 	// ---------------------------------------------------------------------------------------------------------------------
-	// Items known from ImGui's OWN state (2.3.0, retest batch B-20261025-053652-453d, 26d2 N1-N5: AMF Example's Speed slider
-	// is drawn by AMF Example's own copy of Dear ImGui on the framework's context - precise::SliderFloat from the SDK, which
-	// never calls NoteArrowItem - so Left on it still left the page). Any code drawing on the context leaves the item's kind in
-	// shared state, whichever copy of ImGui drew it:
+	// Items known from ImGui's OWN state (2.3.0, retest batch B-20261025-053652-453d, 26d2: AMF Example's Speed slider is drawn
+	// by AMF Example's own copy of Dear ImGui on the framework's context - precise::SliderFloat from the SDK, which never calls
+	// NoteArrowItem). Enter's activation and the paced hold below need to know a slider from a button there too. Any code
+	// drawing on the context leaves the item's kind in shared state, whichever copy of ImGui drew it:
 	//   - a nav move, tab or init result that landed on the item carries its item flags (ImGuiNavItemData::InFlags), and
 	//     sliders, drags and text fields are added with ImGuiItemFlags_Inputable (a NoInput slider is not);
 	//   - the last item a page drew, when it is the highlighted one (g.LastItemData.InFlags);
@@ -104,7 +127,7 @@ namespace navside
 		}
 	}
 
-	// Every frame, after the pages are drawn (Renderer.cpp, before the Left decision; tools\nav_left_check.cpp per frame).
+	// Every frame, after the pages are drawn (Renderer.cpp; tools\nav_left_check.cpp per frame).
 	inline void LearnNavItemKind()
 	{
 		ImGuiContext* const g = GImGui;
@@ -133,16 +156,6 @@ namespace navside
 	{
 		const ImGuiContext* const g = GImGui;
 		return g && detail::g_kindCtx == g && detail::KnownArrow(g->NavId);
-	}
-
-	// This frame, after the page is drawn: is the highlight on a slider or drag (noted by NoteArrowItem as it was drawn, or
-	// known from ImGui's own state)?
-	inline bool NavOnArrowItem()
-	{
-		const ImGuiContext* const g = GImGui;
-		if (!g) return false;
-		const bool noted = detail::g_ctx == g && detail::g_frame == g->FrameCount && detail::g_navId != 0 && detail::g_navId == g->NavId;
-		return noted || NavOnKnownArrowItem();
 	}
 
 	// Right after ImGui::NewFrame, before any page draws: keyboard Enter on a slider or drag ACTIVATES it (Left / Right then
@@ -191,30 +204,10 @@ namespace navside
 		return true;
 	}
 
-	// ---------------------------------------------------------------------------------------------------------------------
-	// ONE WAY for sliders (2.3.0; the owner, via Main Agent, 2026-10-25: a highlighted slider steps on Left/Right and the
-	// D-pad without activation, in every mod - design and double-step proof in 4. plans\amf-null-checks\ONE-WAY-SLIDERS.md).
-	// Dear ImGui changes a slider from the keyboard or pad only while it is the ACTIVE item; a slider that merely holds the
-	// highlight hands Left / Right to navigation, which walks the highlight to the next table column. AMF cannot step a
-	// mod's slider itself - a slider drawn by the mod's own copy of ImGui leaves no value, type, range or format in the
-	// shared context - so instead, right after ImGui::NewFrame and before any page draws, a Left / Right (or D-pad left /
-	// right) press on a highlighted slider or drag makes THAT item the active one, from the keyboard or the pad as ImGui
-	// itself would, for as long as the key is held, and lets go on the first frame none of those keys is down. Every copy of
-	// ImGui drawing on the context then sees an active slider and runs its own keyboard / pad tweak with its own format and
-	// range (a precise slider holds that to one unit of the shown digit), exactly as A then Right does. A mod's own helper
-	// that steps a highlighted, NOT active slider (Deep Snow's HighlightNudge) sees IsItemActive() and stands down; DEM's
-	// NudgeableSlider adds nothing on a frame where the slider already moved. Text fields carry the same Inputable flag, so
-	// they are excluded: one AMF knows (a_navIsTextField), one learnt while it was being typed in (it owned Home), and one
-	// that dropped the activation within the frame it got it (InputTextEx does that for a field with no edit state) or
-	// started typing on it (the field holding the context's edit state) - released at once and learnt.
-	// ---------------------------------------------------------------------------------------------------------------------
 	namespace detail
 	{
-		inline ImGuiContext* g_stepCtx = nullptr;
-		inline ImGuiID       g_stepId = 0;          // the item AMF activated for a held Left / Right, 0 = none
-		inline int           g_stepFrame = -1;      // the frame it was activated on
-		inline ImGuiID       g_textIds[64] = {};    // items that are not steppers (text fields)
-		inline int           g_textNext = 0;
+		inline ImGuiID g_textIds[64] = {};    // items known to be text fields, learnt while they were being typed in
+		inline int     g_textNext = 0;
 
 		inline bool KnownText(ImGuiID a_id)
 		{
@@ -235,83 +228,32 @@ namespace navside
 			return ImGui::IsKeyDown(ImGuiKey_LeftArrow) || ImGui::IsKeyDown(ImGuiKey_RightArrow) ||
 			       ImGui::IsKeyDown(ImGuiKey_GamepadDpadLeft) || ImGui::IsKeyDown(ImGuiKey_GamepadDpadRight);
 		}
+
+		// The item holding ActiveId is a slider or drag the keyboard or pad has hold of: known from ImGui's state or noted as
+		// drawn last frame, no text field, no number being typed into it, not held by the mouse.
+		inline bool SliderHeldByKeys(const ImGuiContext* a_g)
+		{
+			if (!a_g || a_g->ActiveId == 0) return false;
+			if (a_g->ActiveIdSource != ImGuiInputSource_Keyboard && a_g->ActiveIdSource != ImGuiInputSource_Gamepad) return false;
+			const bool noted = g_ctx == a_g && g_navId == a_g->ActiveId && g_frame >= a_g->FrameCount - 1;
+			return (noted || KnownArrow(a_g->ActiveId)) && !KnownText(a_g->ActiveId) && a_g->TempInputId != a_g->ActiveId;
+		}
 	}
 
-	enum class HighlightStep { kNone, kStarted, kReleased, kNotAStepper };
-
-	// Right after ImGui::NewFrame, before any page draws, every frame (Renderer.cpp, after EnterActivatesArrowItem;
-	// tools\nav_left_check.cpp section 8). a_enabled: the menu is up and taking input. a_navIsTextField: AMF knows the
-	// highlighted item as a text field (keyboard::IsTextField). Returns what it did this frame (for the log).
-	inline HighlightStep StepHighlightedArrowItem(bool a_enabled, bool a_navIsTextField)
+	// This frame, after the page is drawn: is the highlight on a text or number-entry field? a_navIsTextField: AMF knows the
+	// highlighted item as a text field (keyboard::IsTextField).
+	inline bool NavOnEntryField(bool a_navIsTextField)
 	{
-		ImGuiContext* const g = GImGui;
-		if (!g) return HighlightStep::kNone;
-		if (detail::g_stepCtx != g)
-		{
-			detail::g_stepCtx = g;
-			detail::g_stepId = 0;
-			detail::g_stepFrame = -1;
-			for (ImGuiID& id : detail::g_textIds) { id = 0; }
-			detail::g_textNext = 0;
-		}
-		// a text field being typed in (any copy of ImGui): while active it owns Home / End (InputTextEx's SetKeyOwner, which a
-		// slider or drag never does), and it is not a slider's number box (Ctrl+click: TempInputId)
-		if (g->ActiveId != 0 && g->TempInputId != g->ActiveId && ImGui::GetKeyOwner(ImGuiKey_Home) == g->ActiveId) { detail::LearnText(g->ActiveId); }
-
-		if (detail::g_stepId != 0)
-		{
-			const ImGuiID id = detail::g_stepId;
-			if (g->ActiveId != id)
-			{
-				detail::g_stepId = 0;
-				// it let go within the frame it was given the activation: not a slider or drag (a text field with no state)
-				if (detail::g_stepFrame == g->FrameCount - 1 && g->ActiveIdPreviousFrame != id)
-				{
-					detail::LearnText(id);
-					return HighlightStep::kNotAStepper;
-				}
-				return HighlightStep::kNone;   // A / Enter / Escape / a click took it over, or it stopped being drawn
-			}
-			if (detail::KnownText(id))   // it started typing (a text field holding the context's edit state): let it go at once
-			{
-				detail::g_stepId = 0;
-				ImGui::ClearActiveID();
-				return HighlightStep::kNotAStepper;
-			}
-			if (!a_enabled || !detail::HorizontalKeyDown())
-			{
-				detail::g_stepId = 0;
-				ImGui::ClearActiveID();   // a normal let-go: IsItemDeactivated(AfterEdit) report it to the mod this frame
-				return HighlightStep::kReleased;
-			}
-			return HighlightStep::kNone;   // held: the slider steps itself on ImGui's tweak repeat
-		}
-
-		if (!a_enabled || g->ActiveId != 0 || g->NavId == 0 || !g->NavWindow) return HighlightStep::kNone;
-		if (g->IO.MouseDown[ImGuiMouseButton_Left]) return HighlightStep::kNone;   // a drag is the mouse's
-		const ImGuiID nav = g->NavId;
-		const bool noted = detail::g_ctx == g && detail::g_navId == nav && detail::g_frame == g->FrameCount - 1;
-		if (!noted && !NavOnKnownArrowItem()) return HighlightStep::kNone;
-		if (a_navIsTextField || detail::KnownText(nav)) return HighlightStep::kNone;
-
-		const bool keyboardNav = (g->IO.ConfigFlags & ImGuiConfigFlags_NavEnableKeyboard) != 0;
-		const bool padNav = (g->IO.ConfigFlags & ImGuiConfigFlags_NavEnableGamepad) != 0;
-		const bool keys = keyboardNav && (ImGui::IsKeyPressed(ImGuiKey_LeftArrow, true) || ImGui::IsKeyPressed(ImGuiKey_RightArrow, true));
-		const bool pad = padNav && (ImGui::IsKeyPressed(ImGuiKey_GamepadDpadLeft, true) || ImGui::IsKeyPressed(ImGuiKey_GamepadDpadRight, true));
-		if (!keys && !pad) return HighlightStep::kNone;
-
-		ImGui::SetActiveID(nav, g->NavWindow);
-		const ImGuiInputSource source = pad && !keys ? ImGuiInputSource_Gamepad : ImGuiInputSource_Keyboard;
-		g->ActiveIdSource = source;   // what a precise slider tests to tell a nudge from a drag
-		g->NavInputSource = source;   // which keys ImGui's tweak reads (GetNavTweakPressedAmount)
-		g->ActiveIdUsingNavDirMask |= (1 << ImGuiDir_Left) | (1 << ImGuiDir_Right);   // held: no navigation move either way
-		ImGui::NavMoveRequestCancel();   // this press's move (made in NewFrame): the highlight stays
-		g->NavDisableHighlight = false;  // and shows, as a keyboard / pad move would show it (so A / Enter work on it next)
-		g->NavDisableMouseHover = true;
-		detail::g_stepId = nav;
-		detail::g_stepFrame = g->FrameCount;
-		return HighlightStep::kStarted;
+		const ImGuiContext* const g = GImGui;
+		if (!g) return false;
+		const bool noted = detail::g_entryCtx == g && detail::g_entryFrame == g->FrameCount && detail::g_entryNavId != 0 && detail::g_entryNavId == g->NavId;
+		return a_navIsTextField || noted || detail::KnownText(g->NavId);
 	}
+
+	// Read BEFORE ImGui::NewFrame: is a slider or drag held by the keyboard or pad? NewFrame's own cancel (NavUpdateCancelRequest)
+	// lets it go on Escape or B, so by the time Renderer.cpp reads Escape as "close the menu" nothing shows it was held. That
+	// press only lets go. A number being typed, a text field and a mouse drag are not this.
+	inline bool SliderHeldByKeys() { return detail::SliderHeldByKeys(GImGui); }
 
 	// ---------------------------------------------------------------------------------------------------------------------
 	// A HELD key steps a slider at the key-repeat rate, never every frame (2.3.0; combined run 3266, 2026-10-25, step S8:
@@ -321,7 +263,7 @@ namespace navside
 	// frame at 60 fps; tools\nav_left_check.cpp measured 49 at 60 fps and 55 at 144 before this). A mod that applies each
 	// change (DEM re-applies its minimap display) then does that every frame.
 	//
-	// So while a slider or drag that the keyboard or pad is stepping is active and Left / Right (D-pad left / right) is
+	// So while a slider or drag that the keyboard or pad has hold of is active and Left / Right (D-pad left / right) is
 	// held, AMF paces the held key itself: it keeps its own clock of the hold and, right after NewFrame, writes the key's
 	// DownDuration as 0 ("pressed") on the press and on each key-repeat tick - after io.KeyRepeatDelay (0.275 s), one every
 	// io.KeyRepeatRate (0.050 s), DEM's own nudge timing - and as 0.1 s (below every repeat delay ImGui uses) on every other
@@ -330,7 +272,7 @@ namespace navside
 	// one-second hold at any frame rate, one step a tap, and never a navigation-move repeat (that waits 0.198 s). Changing
 	// io.KeyRepeatDelay / Rate instead was tried first and dropped: it moves the default repeat too, so DEM's nudge then
 	// fired on other frames and added steps (20 a second in the check). A text field is never touched.
-	// Right after StepHighlightedArrowItem, every frame (Renderer.cpp; tools\nav_left_check.cpp section 8b and 8e).
+	// Right after ImGui::NewFrame, every frame (Renderer.cpp; tools\nav_left_check.cpp section 8b and 8e).
 	namespace detail
 	{
 		inline ImGuiContext* g_repeatCtx = nullptr;
@@ -354,12 +296,13 @@ namespace navside
 		{
 			detail::g_repeatCtx = g;
 			detail::g_repeatHeld = false;
+			for (ImGuiID& id : detail::g_textIds) { id = 0; }
+			detail::g_textNext = 0;
 		}
-		const ImGuiID active = g->ActiveId;
-		const bool byKeys = g->ActiveIdSource == ImGuiInputSource_Keyboard || g->ActiveIdSource == ImGuiInputSource_Gamepad;
-		const bool stepper = active != 0 && (active == detail::g_stepId || detail::KnownArrow(active)) && !detail::KnownText(active) &&
-		                     g->TempInputId != active;
-		if (!(stepper && byKeys && detail::HorizontalKeyDown()))
+		// a text field being typed in (any copy of ImGui): while active it owns Home / End (InputTextEx's SetKeyOwner, which a
+		// slider or drag never does), and it is not a slider's number box (Ctrl+click: TempInputId)
+		if (g->ActiveId != 0 && g->TempInputId != g->ActiveId && ImGui::GetKeyOwner(ImGuiKey_Home) == g->ActiveId) { detail::LearnText(g->ActiveId); }
+		if (!(detail::SliderHeldByKeys(g) && detail::HorizontalKeyDown()))
 		{
 			detail::g_repeatHeld = false;
 			return false;
@@ -424,12 +367,11 @@ namespace navside
 	// that window's last nav item (NavLastIds) and its rectangle (NavRectRel) across frames; crossing into the pane
 	// (FocusWindow) restores NavId from them. So mod B opened at mod A's old item - at the same item when B has one with
 	// the same label (same id inside ##content), otherwise at a dead id whose stale rectangle the next move started from.
-	// The kind memory above is keyed by id too, so B's "Speed" button could inherit A's "Speed" slider kind (Left kept on
-	// the page, Left/Right activating a button).
+	// The kind memory above is keyed by id too, so B's "Speed" button could inherit A's "Speed" slider kind.
 	// Call right after BeginChild of the pane, on the frame the selected page changes (Renderer.cpp; tools\
 	// page_switch_check.bat): scrolls the pane and its child windows back to the top, forgets the pane's own nav memory
 	// and its child windows', the item kinds learnt, a noted
-	// arrow item, and any held step or hold. When the highlight is in the pane at that moment it restarts on the new page's
+	// arrow item, and any slider held by the keys. When the highlight is in the pane at that moment it restarts on the new page's
 	// first item (NavInitWindow: the first item submitted this frame). A pane that does not hold the highlight is left
 	// with no remembered item, so crossing into it later lands where crossing into a never-visited pane does.
 	// True when the highlight was in the pane.
@@ -450,16 +392,17 @@ namespace navside
 			// off screen when it took the highlight) - applied by ImGui at the window's next Begin
 			ImGui::SetScrollY(w, 0.0f);
 		}
-		// the item kinds and the held step / hold: ids from the old page mean nothing on the new one
+		// a slider held by the keys on the old page lets go (the new page may reuse its id)
+		if (detail::SliderHeldByKeys(g)) { ImGui::ClearActiveID(); }
+		// the item kinds and the hold: ids from the old page mean nothing on the new one
 		for (ImGuiID& id : detail::g_arrowIds) { id = 0; }
 		detail::g_arrowNext = 0;
 		for (ImGuiID& id : detail::g_textIds) { id = 0; }
 		detail::g_textNext = 0;
 		detail::g_navId = 0;
 		detail::g_frame = -1;
-		if (detail::g_stepId != 0 && g->ActiveId == detail::g_stepId) { ImGui::ClearActiveID(); }
-		detail::g_stepId = 0;
-		detail::g_stepFrame = -1;
+		detail::g_entryNavId = 0;
+		detail::g_entryFrame = -1;
 		detail::g_repeatHeld = false;
 		detail::g_repeatClock = 0.0f;
 

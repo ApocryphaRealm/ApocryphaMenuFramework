@@ -824,7 +824,7 @@ bool amf_ConsumerSliderAngleWheel(float* a_rad, float a_minDegrees, float a_maxD
 	return precise::WheelNudgeAngle(a_rad, a_minDegrees, a_maxDegrees, a_format);
 }
 
-// 2.3.0 ONE WAY for sliders (4. plans\amf-null-checks\ONE-WAY-SLIDERS.md): the three horizontal single-value slider exports
+// 2.3.0: the three horizontal single-value slider exports
 // (igSliderFloat / Int / Scalar - tools/harden-cimgui.py) read the value before ImGui's slider and, after it, turn a keyboard /
 // D-pad nudge into one unit of the digit the format shows - the step the wheel above uses - instead of ImGui's 1% of the
 // range, as AMF's own precise sliders do (rule 68). The value is set from the one before the call, so a mod's own precise
@@ -839,13 +839,19 @@ bool amf_ConsumerSliderNav(int a_type, void* a_data, double a_before, const void
 	return precise::NavNudge(a_type, a_data, a_before, a_min, a_max, precise::FormatStep(a_format, precise::IsIntegerType(a_type)), a_flags);
 }
 
-// 2.3.0 (combined run 2026-10-25 1515: Left on a mod's slider sent the highlight back to the mod list). Every drag export
-// and the multi-value slider exports (tools/harden-cimgui.py) call this right after ImGui's own widget, so the side
-// navigation knows Left/Right adjust the highlighted item and Left stays on the page (NavSide.h). The single-value
+// Every drag export and the multi-value slider exports (tools/harden-cimgui.py) call this right after ImGui's own widget, so
+// NavSide.h knows the highlighted item is a slider or drag (Enter activates it, a held key is paced). The single-value
 // slider exports reach the same note through amf_ConsumerSliderWheel.
 void amf_NoteArrowItem()
 {
 	navside::NoteArrowItem();
+}
+
+// 2.4.0: the number-entry exports (igInputInt, igInputFloat, igInputScalar...; tools/harden-cimgui.py) call this right after
+// ImGui's own widget: a highlighted slider now leaves on Left, a number box keeps the press as it did (NavSide.h).
+void amf_NoteEntryField()
+{
+	navside::NoteEntryField();
 }
 
 void amf_BeginConsumerHeader()

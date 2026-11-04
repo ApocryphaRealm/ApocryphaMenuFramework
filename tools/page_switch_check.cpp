@@ -7,12 +7,13 @@
 //   tools\page_switch_check.bat   -> one line per check and "page_switch_check: N of N passed"; exits 1 on any failure.
 // Mod A's page: Enabled, Reset, Speed (a slider - item 3), Done. Mod B's page: Apply, Defaults, Speed (a BUTTON with the
 // same label, so the same id inside ##content), Close. What it proves:
-//   1. the CONTROL (the fix off, as 2.3.0 was before C2): highlight A's item 3 and step it, go back to the list, open B,
+//   1. the CONTROL (the fix off, as 2.3.0 was before C2): highlight A's item 3 and activate it, go back to the list, open B,
 //      cross into B - the highlight comes back on B's item 3 (A's remembered id), and B's Speed button carries A's slider
-//      kind (Left would stay on the page, Left/Right would activate the button); with Right held while the page changes,
-//      AMF's one-way step activates B's button;
+//      kind;
 //   2. the fix (navside::ForgetPaneNav on the frame the page changes, as Renderer.cpp calls it): the same steps - B starts
-//      at its first item, no stale id, no stale kind, no step or hold left over, and a held Right never activates B's button;
+//      at its first item, no stale id, no stale kind, no hold left over, and a held Right never activates B's button;
+//   5. B inside the menu's own panes: on an activated slider B only lets go - the highlight stays on the page; only the next B
+//      leaves the page pane (ImGui's own "exit child window").
 //   4. the scroll: A's page scrolled down, B opened from the list starts at its top with its first item visible (the
 //      control: still scrolled, first item off screen); B re-entered from the list keeps its own scroll.
 //   (tools\page_switch_check.bat --no-fix runs section 2 with the fix off: its checks fail - the control for the check.)
@@ -50,8 +51,6 @@ namespace
 	int   g_resets = 0;
 	float g_speed = 0.50f;
 	bool  g_heldPacing = false;      // HoldTweakAtKeyRepeat's answer this frame
-	navside::HighlightStep g_step = navside::HighlightStep::kNone;
-	ImGuiID g_stepStartedOn = 0;     // the item AMF's one-way step activated this frame (0 = none)
 	float g_scrollTo = -1.0f;        // scroll the page there on the next frame (the player's wheel / scroll bar)
 	float g_paneScroll = 0.0f;       // the page pane's ScrollY this frame
 	bool  g_b1Visible = false;       // B's first item was inside the pane's visible area this frame
@@ -94,9 +93,7 @@ namespace
 		// Renderer.cpp, right after NewFrame, in this order
 		navside::ActivateAfterClick();
 		navside::EnterActivatesArrowItem();
-		g_step = navside::StepHighlightedArrowItem(true, false);
 		g_heldPacing = navside::HoldTweakAtKeyRepeat();
-		g_stepStartedOn = g_step == navside::HighlightStep::kStarted ? GImGui->ActiveId : 0;   // what AMF's step made active
 
 		int sel = g_sel;
 		if (g_selExternal >= 0) { sel = g_selExternal; g_selExternal = -1; }
@@ -198,14 +195,16 @@ namespace
 		Outcome o;
 		const std::string tag = a_fix ? "[fix] " : "[control, fix off] ";
 
-		// --- A: the highlight on item 3, stepped once (its kind learnt, as in play), then back to the list
+		// --- A: the highlight on item 3, activated and stepped once (its kind learnt, as in play), then back to the list
 		Fresh();
 		ToPage();
 		ReachA3();
 		if (a_print) Check(Nav() == g_ids[kA3] && g_ids[kA3] != 0, tag + "A's page: the highlight on item 3 (the Speed slider)");
 		const float before = g_speed;
+		Tap({ .enter = true });
 		Tap({ .right = true });
-		if (a_print) Check(g_speed > before && navside::NavOnKnownArrowItem(), tag + "A: Right steps the slider and its kind is learnt");
+		if (a_print) Check(g_speed > before && navside::NavOnKnownArrowItem(), tag + "A: Enter then Right steps the slider and its kind is learnt");
+		Tap({ .enter = true });
 		ToList();
 		if (a_print) Check(Nav() == g_ids[kRowA], tag + "back to the list lands on the open entry (Mod A)");
 
@@ -235,17 +234,19 @@ namespace
 		Fresh();
 		ToPage();
 		ReachA3();
-		Tap({ .right = true });            // learn its kind as in play
-		Frame({ .right = true });          // press and hold: AMF's one-way step makes the slider active
-		if (a_print) Check(GImGui->ActiveId == g_ids[kA3], tag + "Right held on A's slider: it is the active item (one-way step)");
+		Tap({ .enter = true });            // take hold of it, as in play: its kind is learnt
+		Frame({ .right = true });          // press and hold
+		if (a_print) Check(GImGui->ActiveId == g_ids[kA3], tag + "Right held on A's activated slider: it is the active item");
 		g_selExternal = 1;                 // the page changes under the held key
 		for (int i = 0; i < 40; ++i)
 		{
 			Frame({ .right = true });
-			// a button lets go of an activation it did not get from A / Enter within the frame, so the step's own answer is read
-			const ImGuiID on = g_stepStartedOn;
-			if (on != 0 && (on == g_ids[kB1] || on == g_ids[kB2] || on == g_ids[kB3] || on == g_ids[kB4])) { o.heldActivated = true; }
-			if (i > 2 && g_heldPacing) { o.heldPacing = true; }
+			if (i > 2)
+			{
+				const ImGuiID on = GImGui->ActiveId;
+				if (on != 0 && (on == g_ids[kB1] || on == g_ids[kB2] || on == g_ids[kB3] || on == g_ids[kB4])) { o.heldActivated = true; }
+				if (g_heldPacing) { o.heldPacing = true; }
+			}
 		}
 		Frame();
 		Settle(3);
@@ -290,7 +291,6 @@ int main(int argc, char** argv)
 		const Outcome c = Run(false, true);
 		Check(c.afterCross == g_ids[kB3], "[control, fix off] crossing into B restores A's remembered id: the highlight is on B's ITEM 3 (the bug, C2)");
 		Check(c.staleKind, "[control, fix off] B's Speed BUTTON carries A's slider kind (stale kind)");
-		Check(c.heldActivated, "[control, fix off] Right held across the change: AMF's step activates an item of B's page");
 		Check(c.heldNav != g_ids[kB1], "[control, fix off] a change made with the highlight in the page leaves it off B's first item");
 	}
 	// 2. the fix
@@ -322,6 +322,28 @@ int main(int argc, char** argv)
 		Check(f.aScroll > 100.0f, "[fix] A's page scrolled down (" + std::to_string(f.aScroll) + ")");
 		Check(f.bScroll == 0.0f && f.b1Visible, "[fix] B opens at its top (scroll " + std::to_string(f.bScroll) + ") with its first item visible");
 		Check(f.bKept > 100.0f, "[fix] back into the SAME page from the list: its scroll is kept (" + std::to_string(f.bKept) + ")");
+	}
+	// 5. B inside the menu's own panes (2.4.0)
+	{
+		g_fixOn = true;
+		Fresh();
+		ImGuiIO& io = ImGui::GetIO();
+		io.ConfigFlags = (io.ConfigFlags | ImGuiConfigFlags_NavEnableGamepad) & ~ImGuiConfigFlags_NavEnableKeyboard;
+		io.BackendFlags |= ImGuiBackendFlags_HasGamepad;
+		auto pad = [&](ImGuiKey a_key) { io.AddKeyEvent(a_key, true); Frame(); io.AddKeyEvent(a_key, false); Frame(); Settle(1); };
+		ToPage();
+		for (int i = 0; i < 6 && Nav() != g_ids[kA3]; ++i) { pad(ImGuiKey_GamepadDpadDown); }
+		const ImGuiWindow* const page = GImGui->NavWindow;
+		pad(ImGuiKey_GamepadFaceDown);
+		const bool held = GImGui->ActiveId == g_ids[kA3];
+		const float before = g_speed;
+		pad(ImGuiKey_GamepadDpadRight);
+		const bool stepped = g_speed > before;
+		pad(ImGuiKey_GamepadFaceRight);
+		Check(held && stepped, "B: A takes hold of the slider and the D-pad steps it");
+		Check(GImGui->ActiveId == 0 && Nav() == g_ids[kA3] && GImGui->NavWindow == page, "B: B on the activated slider only lets go: the highlight stays on it, on the page");
+		pad(ImGuiKey_GamepadFaceRight);
+		Check(GImGui->NavWindow != page, "B: the next B leaves the page pane, as it does from any row");
 	}
 	ImGui::DestroyContext();
 	std::cout << "page_switch_check: " << g_pass << " of " << (g_pass + g_fail) << " passed\n";

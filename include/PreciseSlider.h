@@ -12,7 +12,7 @@
 #include <imgui.h>
 #include <imgui_internal.h>
 
-#include "NavSide.h"   // every slider notes when it holds the highlight, so Left adjusts instead of leaving the page (2.3.0)
+#include "NavSide.h"   // every slider notes when it holds the highlight, so Enter activates it and a held key is paced
 
 #include <algorithm>
 #include <cmath>
@@ -181,7 +181,7 @@ namespace precise
 	inline bool WheelNudge(ImGuiDataType a_type, void* a_data, const void* a_min, const void* a_max, double a_step)
 	{
 		// 2.3.0: every slider passes through here right after it is drawn (AMF's precise sliders, converted menus, the
-		// consumer slider exports), so this is where a slider tells the side-navigation it holds the highlight (NavSide.h)
+		// consumer slider exports), so this is where a slider tells NavSide.h it holds the highlight
 		navside::NoteArrowItem();
 		if (!GImGui) return false;
 		const int dir = WheelDirection();
@@ -208,7 +208,7 @@ namespace precise
 	inline bool IsIntegerType(ImGuiDataType a_type) { return a_type != ImGuiDataType_Float && a_type != ImGuiDataType_Double; }
 
 	// ---------------------------------------------------------------------------------------------------------
-	// 2.3.0 ONE WAY for sliders (ONE-WAY-SLIDERS.md): a slider a mod draws through the exports (igSliderFloat / Int / Scalar)
+	// 2.3.0: a slider a mod draws through the exports (igSliderFloat / Int / Scalar)
 	// steps one unit of its shown digit on a keyboard / D-pad nudge, as AMF's own precise sliders do - Dear ImGui alone moves
 	// it 1% of its range for a decimal format. The export knows the format and range; the generated wrapper reads the value
 	// before ImGui's slider (SliderValue) and hands it here after (NavNudge). The new value is ASSIGNED from the one before
@@ -336,7 +336,7 @@ namespace precise
 	// for a change to apply now - a drag, a nudge, a wheel notch, and a typed number once it settles (Enter, or the field let
 	// go) - and false for each keystroke of a number still being typed (Ctrl+click), whose value is in the variable already.
 	// 2.3.0 (combined run 3266, S10: each TAP on Window opacity applied the theme twice - on the press, which stepped it, and
-	// again on the release, when the one-way step let it go and ImGui reported "deactivated after edit"): the let-go applies
+	// again on the release, when it was let go and ImGui reported "deactivated after edit"): the let-go applies
 	// only a change that was held back - a typed number - never one already applied. One apply a tap, one a typed entry, one a
 	// step while held, live while dragging or wheeling (tools\nav_left_check.cpp 8b S10, tools\slider_wheel_check).
 	namespace detail

@@ -4084,10 +4084,11 @@ namespace renderer
 
 				ImGui::SeparatorText(icons::Label(icons::kArrows, TR("AMF_ManMoving", "Moving around")).c_str());
 				bullet(TR("AMF_ManMoving1", "Mouse: point and click, as anywhere else. The cursor is drawn by the menu itself."));
-				bullet(TR("AMF_ManMoving2", "Keyboard: the arrow keys move the highlight, Enter activates, Escape closes."));
+				bullet(TR("AMF_ManMoving2", "Keyboard: the arrow keys move the highlight, Enter activates, Escape closes. "
+						  "Press Enter on a slider to take hold of it and the left and right arrows nudge it; Enter or Escape lets go."));
 				bullet(TR("AMF_ManMoving3", "Controller: the D-pad and the left stick move the highlight, A activates, B goes back. "
-						  "Take hold of a slider with A and the RIGHT stick moves it, so adjusting a value never "
-						  "also moves the highlight."));
+						  "Press A on a slider to take hold of it and the D-pad nudges it left and right; A or B lets go. "
+						  "With a mouse, just drag it."));
 				bullet(TR("AMF_ManMoving4", "Left and right cross between the list and the page beside it. The bumpers - Page Up and Page Down on a keyboard - step through the tabs at the top of a page; moving sideways never changes the tab under you."));
 				bullet(TR("AMF_ManMoving6", "Right-click a mod in the list, or press Y on a controller, for its options."));
 				ImGui::Spacing();
@@ -5516,8 +5517,9 @@ namespace renderer
 					g_selNode = sel; g_selMod = selMod;
 				}
 				// Right out of the list, left back into it. Only when nothing is being edited, so
-				// pushing left inside a slider adjusts the value instead of leaving the pane. Both
-				// sticks and the D-pad and the arrow keys all count as the same "move across".
+				// pushing left inside an ACTIVATED slider adjusts the value instead of leaving the pane; a slider that is only
+				// highlighted is a row like any other (2.4.0). Both sticks and the D-pad and the arrow keys all count as the
+				// same "move across".
 				// 2.3.0 (retest batch B-20261025-053652-453d, 26d2): every frame, what kind of item holds the highlight, from
 				// ImGui's own state - a mod drawing with its own copy of Dear ImGui (AMF Example) never calls NoteArrowItem.
 				navside::LearnNavItemKind();
@@ -5560,18 +5562,19 @@ namespace renderer
 					// decision is taken one frame late, when ImGui has reported the move (NavJustMovedToId),
 					// so the two never race. A driven op=nav press moves no ImGui cursor and therefore always
 					// steps, which keeps the driving tool's proof of this path intact.
-					// 2.3.0 (combined run 2026-10-25 1515: any Left on Dragon's Eye Minimap's sliders, and on AMF Example's plain
-					// Speed slider, moved the highlight to the mod list while the value kept stepping): a Left press is noted
-					// for leaving only when navside::LeftPressMayLeave agrees - not on a slider or drag (they adjust with
-					// Left/Right; each notes itself as it is drawn), not inside a popup (an open combo), and not when a widget
-					// on the page took the press itself (cancelled ImGui's move). A driven op=nav press goes through the
-					// same decision, so the driving tool proves it. Left on a plain row still goes back to the list.
+					// 2.4.0 (the owner, 2026-11-03: the D-pad could not leave a slider): a Left press is noted for leaving only when
+					// navside::LeftPressMayLeave agrees - not inside a popup (an open combo), not on a text or number-entry field,
+					// and not when a widget on the page took the press itself (cancelled ImGui's move). A slider or drag is left
+					// out of that list on purpose: only highlighted, Left leaves it like any row; activated, `editing` holds it.
+					// A driven op=nav press goes through the same decision, so the driving tool proves it.
 					else if (contentHasNav && navLeft && !navRight && !editing && g_pendingTabStep == 0 &&
-							 !navside::LeftPressMayLeave({ contentHasNav, editing, navside::NavInPopup(), navside::NavOnArrowItem(),
+							 !navside::LeftPressMayLeave({ contentHasNav, editing, navside::NavInPopup(),
+														   navside::NavOnEntryField(keyboard::IsTextField(GImGui ? GImGui->NavId : 0u)),
 														   wantsLeft && navside::PageTookTheMove(ImGuiDir_Left) }))
 					{
-						logger::debug("nav: left press kept on the page (popup {}, slider/drag {}, taken by the page {})",
-									  navside::NavInPopup(), navside::NavOnArrowItem(), wantsLeft && navside::PageTookTheMove(ImGuiDir_Left));
+						logger::debug("nav: left press kept on the page (popup {}, entry field {}, taken by the page {})",
+									  navside::NavInPopup(), navside::NavOnEntryField(keyboard::IsTextField(GImGui ? GImGui->NavId : 0u)),
+									  wantsLeft && navside::PageTookTheMove(ImGuiDir_Left));
 					}
 					else if (contentHasNav && (navRight || navLeft) && !editing && g_pendingTabStep == 0)
 					{
@@ -6131,6 +6134,8 @@ namespace renderer
 				// 2.3.0 (retest batch B-20261025-053652-453d, 26d2 N7 / c0a3): Escape in an open dropdown closes the dropdown, not
 				// the whole menu. ImGui's NewFrame closes the popup on that Escape, so whether one was open is read just before it.
 				const bool escClosesPopup = navside::EscapeClosesAPopup();
+				// 2.4.0: and whether a slider or drag is held by the keys: Escape, like B, only lets go of it on that press
+				const bool escLetsGo = navside::SliderHeldByKeys();
 				ImGui::NewFrame();
 				// 2.3.0 (combined run 3266): the first Enter / Space / A after a mouse click on a slider or drag activates it - ImGui
 				// spent that press on showing the hidden highlight (NavSide.h ActivateAfterClick)
@@ -6144,26 +6149,7 @@ namespace renderer
 				{
 					logger::debug("nav: Enter activates slider/drag {} (number entry stays on Ctrl+click)", GImGui ? GImGui->NavId : 0u);
 				}
-				// 2.3.0 ONE WAY for sliders: Left / Right / D-pad on a HIGHLIGHTED slider or drag in any mod's page steps it - the item
-				// is made active while the key is held, so every copy of ImGui steps it as A then Right would (NavSide.h; design and
-				// double-step proof: 4. plans\amf-null-checks\ONE-WAY-SLIDERS.md). Logged on the transitions only.
 				{
-					const ImGuiID stepNav = GImGui ? GImGui->NavId : 0u;
-					switch (navside::StepHighlightedArrowItem(visible && interactive, keyboard::IsTextField(stepNav)))
-					{
-					case navside::HighlightStep::kStarted:
-						logger::debug("nav: Left/Right steps the highlighted slider/drag {} (active while the key is held, {})", stepNav,
-									  GImGui && GImGui->ActiveIdSource == ImGuiInputSource_Gamepad ? "D-pad" : "keyboard");
-						break;
-					case navside::HighlightStep::kReleased:
-						logger::debug("nav: highlighted slider/drag {} let go (Left/Right released)", stepNav);
-						break;
-					case navside::HighlightStep::kNotAStepper:
-						logger::debug("nav: item {} is not a slider or drag (a text field) - Left/Right leave it alone from now on", stepNav);
-						break;
-					default:
-						break;
-					}
 					// S8 (combined run 3266): a held Left / Right steps a slider at the key-repeat rate (0.275 s, then every 0.050 s),
 					// never every frame - a mod that applies each change (DEM re-applies its minimap) did so 50 times a second
 					static bool repeatHeld = false;
@@ -6208,13 +6194,19 @@ namespace renderer
 					// Escape closes. The keypress was consumed input-side, so the game does
 					// not also react to the same stroke.
 					const bool escape = ImGui::IsKeyPressed(ImGuiKey_Escape, false);
-					if (escape && !escClosesPopup)
+					if (escape && !escClosesPopup && !escLetsGo)
 					{
 						ToggleMainWindow();
 					}
 					else
 					{
-						if (escape) { logger::debug("input: Escape closed an open dropdown / popup; the menu stays open"); }
+						if (escape && escLetsGo)
+						{
+							// ImGui's NewFrame has done this when keyboard navigation is on; a slider taken from the pad may not have
+							if (GImGui && GImGui->ActiveId != 0) { ImGui::ClearActiveID(); }
+							logger::debug("input: Escape let go of a slider/drag; the menu stays open");
+						}
+						else if (escape) { logger::debug("input: Escape closed an open dropdown / popup; the menu stays open"); }
 						DrawFrameworkWindow();
 					}
 				}

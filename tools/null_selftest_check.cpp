@@ -41,6 +41,7 @@ bool amf_ConsumerSliderNav(int a_type, void* a_data, double a_before, const void
 	return precise::NavNudge(a_type, a_data, a_before, a_min, a_max, precise::FormatStep(a_format, precise::IsIntegerType(a_type)), a_flags);
 }
 void amf_NoteArrowItem() { navside::NoteArrowItem(); }
+void amf_NoteEntryField() { navside::NoteEntryField(); }
 bool amf_BeginConsumerText() { return false; }
 void amf_EndConsumerText(bool) {}
 

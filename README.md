@@ -29,7 +29,7 @@ Licence: GPL-3.0-or-later (see `LICENSE` and `NOTICE.md`). Not a fork: contains 
 - **Keep the camera awake.** With the game left running behind the menu, the idle camera never starts circling
   the character while it is open, and one already circling stops as the menu opens (Settings -> General, on by
   default, `[Menu] bKeepCameraAwake`).
-- **Toggles render as sliding switches**, sliders can be nudged with the arrow keys, and
+- **Toggles render as sliding switches**, sliders are taken hold of with A / Enter and then nudged with the D-pad / arrow keys, and
   explanatory text is never drawn in the near-invisible disabled grey.
 - **Hang watchdog.** If the renderer produces no frame for 120 s (configurable, `[Watchdog]`), the
   framework terminates the game process itself - the only thing that closes a kernel-wedged

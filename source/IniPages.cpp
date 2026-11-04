@@ -2,6 +2,7 @@
 
 #include "HelpBar.h"
 #include "IniCore.h"
+#include "NavSide.h"
 #include "PageRefresh.h"
 #include "Registry.h"
 #include "Settings.h"
@@ -711,6 +712,7 @@ namespace inipages
 					int v = std::atoi(s.value.c_str());
 					ImGui::SetNextItemWidth(ImGui::GetFontSize() * 9.0f);
 					if (ImGui::InputInt(label.c_str(), &v, 1, 10)) { SetValue(mod, *sec, s, std::to_string(v), error); }
+					navside::NoteEntryField();
 					break;
 				}
 				case Kind::kFloat:
@@ -726,6 +728,7 @@ namespace inipages
 						v = std::round(v / step) * step;
 						SetValue(mod, *sec, s, FormatFloat(v, s.decimals), error);
 					}
+					navside::NoteEntryField();
 					break;
 				}
 				case Kind::kChoice:

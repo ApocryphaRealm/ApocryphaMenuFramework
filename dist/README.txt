@@ -70,8 +70,9 @@ USING IT WITH A CONTROLLER
 Just pick up the pad - the menu follows whatever you last used, and shows which one it is
 reading.
   * The left stick moves through the list AND across into the options - no button needed.
-  * A takes hold of a slider; the RIGHT stick then moves it, so changing a value can never
-    also move your selection. A again lets go.
+  * Left and Right on a highlighted slider move on, like any other row. A takes hold of it;
+    the D-pad then nudges it one unit of the digit it shows. A or B lets go. On a keyboard,
+    Enter takes hold, the arrows nudge, Enter or Escape lets go. A mouse just drags it.
   * A opens a drop-down, the sticks choose, A confirms.
   * B cancels, START closes the menu. The D-pad does everything the left stick does.
   * Leaving the options to the left puts you back on the entry whose page is open.

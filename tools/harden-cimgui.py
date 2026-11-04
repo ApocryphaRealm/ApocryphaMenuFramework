@@ -450,21 +450,25 @@ def main() -> int:
         "igVSliderScalar": ("data_type", "p_data", "p_min", "p_max", "format"),
     }
     sliders = 0
-    # 2.3.0 ONE WAY for sliders (4. plans\amf-null-checks\ONE-WAY-SLIDERS.md): the three horizontal single-value slider
+    # 2.3.0: the three horizontal single-value slider
     # exports read the value before ImGui's slider and, after it, hold a keyboard / D-pad nudge to one unit of the shown
     # digit (amf_ConsumerSliderNav, ConsumerSurface.cpp) - set from the value before the call, so a mod's own precise
     # wrapper around the export still makes one step. The vertical sliders (Up / Down) and igSliderAngle keep ImGui's step.
     NAV_SLIDERS = {"igSliderFloat", "igSliderInt", "igSliderScalar"}
     nav_sliders = 0
-    # 2.3.0 (combined run 2026-10-25 1515: Left on a mod's slider sent the highlight back to the mod list): a widget that
-    # Left/Right adjust tells the side-navigation it holds the highlight (navside::NoteArrowItem, NavSide.h), so Left does
-    # not leave the page. The single-value sliders above already note it through the wheel helper; these are the rest -
+    # 2.3.0: a slider or drag tells NavSide.h it holds the highlight (navside::NoteArrowItem), so Enter activates it and a
+    # held key is paced. The single-value sliders above already note it through the wheel helper; these are the rest -
     # every drag and the multi-value sliders - which call amf_NoteArrowItem (ConsumerSurface.cpp) after ImGui's own widget.
     ARROW_ITEMS = {"igDragFloat", "igDragFloat2", "igDragFloat3", "igDragFloat4", "igDragFloatRange2", "igDragInt",
                    "igDragInt2", "igDragInt3", "igDragInt4", "igDragIntRange2", "igDragScalar", "igDragScalarN",
                    "igSliderFloat2", "igSliderFloat3", "igSliderFloat4", "igSliderInt2", "igSliderInt3", "igSliderInt4",
                    "igSliderScalarN"}
     arrow_items = 0
+    # 2.4.0: a highlighted slider leaves on Left, a number box keeps the press (navside::NoteEntryField, NavSide.h): the
+    # number-entry exports call amf_NoteEntryField (ConsumerSurface.cpp) after ImGui's own widget.
+    ENTRY_ITEMS = {"igInputFloat", "igInputFloat2", "igInputFloat3", "igInputFloat4", "igInputInt", "igInputInt2", "igInputInt3",
+                   "igInputInt4", "igInputDouble", "igInputScalar", "igInputScalarN"}
+    entry_items = 0
     # 2.2.2 (BanMarwein: Skyrim Performance Solution's long description ran off the screen on one line): a mod's tooltips
     # are wrapped to the window it draws in. The seven tooltip exports call consumer_tooltip:: (ConsumerTooltip.h) in
     # place of the same-named ImGui function; Dear ImGui never wraps a tooltip.
@@ -534,7 +538,7 @@ def main() -> int:
             else:
                 wheel = "amf_ConsumerSliderWheel(" + ", ".join(SLIDERS[name]) + ")"
             if name in NAV_SLIDERS:
-                # 2.3.0 ONE WAY for sliders: a keyboard / D-pad nudge is one unit of the shown digit (amf_ConsumerSliderNav)
+                # 2.3.0: a keyboard / D-pad nudge is one unit of the shown digit (amf_ConsumerSliderNav)
                 t, v, lo, hi, fmt = SLIDERS[name]
                 out.append("\n    const double amf_b = amf_ConsumerSliderValue(" + t + ", " + v + ");   // AMF: the value before (2.3.0)\n"
                            "    const bool amf_r = " + call + ";\n"
@@ -555,10 +559,20 @@ def main() -> int:
             assert body.strip().startswith("return ImGui::"), name
             call = body.strip()[len("return "):].rstrip(";")
             out.append("\n    const bool amf_r = " + call + ";\n"
-                       "    amf_NoteArrowItem();   // AMF: Left/Right adjust it, so Left stays on the page (2.3.0)\n"
+                       "    amf_NoteArrowItem();   // AMF: it is a slider or drag (2.3.0)\n"
                        "    return amf_r;")
             pos = body_end
             arrow_items += 1
+        elif name in ENTRY_ITEMS:
+            body_end = src.index("\n}", pos)
+            body = src[pos:body_end]
+            assert body.strip().startswith("return ImGui::"), name
+            call = body.strip()[len("return "):].rstrip(";")
+            out.append("\n    const bool amf_r = " + call + ";\n"
+                       "    amf_NoteEntryField();   // AMF: a number box keeps a Left press (2.4.0)\n"
+                       "    return amf_r;")
+            pos = body_end
+            entry_items += 1
         elif name in TEXTS:
             body_end = src.index("\n}", pos)
             body = src[pos:body_end]
@@ -661,6 +675,8 @@ def main() -> int:
     assert nav_sliders == 3, nav_sliders
     # 2.3.0: the twelve drags and seven multi-value sliders note the highlight (amf_NoteArrowItem, ConsumerSurface.cpp).
     assert arrow_items == 19, arrow_items
+    # 2.4.0: the eleven number-entry exports note themselves (amf_NoteEntryField, ConsumerSurface.cpp).
+    assert entry_items == 11, entry_items
     # 2.2.2: the seven tooltip exports (ConsumerTooltip.h, included after cimgui.h below).
     assert tooltips == 7, tooltips
     # 2.2.4: the seven text exports (amf_BeginConsumerText / amf_EndConsumerText, ConsumerSurface.cpp).
@@ -674,6 +690,7 @@ def main() -> int:
             "double amf_ConsumerSliderValue(int a_type, const void* a_data);\n"
             "bool amf_ConsumerSliderNav(int a_type, void* a_data, double a_before, const void* a_min, const void* a_max, const char* a_format, int a_flags);\n"
             "void amf_NoteArrowItem();\n"
+            "void amf_NoteEntryField();\n"
             "bool amf_BeginConsumerText();\nvoid amf_EndConsumerText(bool a_pushed);\n"
             + "".join(out))
     assert text.count('#include "cimgui.h"\n') == 1

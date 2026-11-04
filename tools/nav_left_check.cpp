@@ -1,36 +1,22 @@
-// Off-game check of when a Left press inside a mod's page may send the highlight back to the mod list (AMF 2.3.0; combined
-// run 2026-10-25 1515: any keyboard Left on Dragon's Eye Minimap's sliders, and on AMF Example's plain Speed slider, moved
-// the highlight to the list's row while the value kept stepping). Runs AMF's own ImGui build (1.90.8 with the overlay
-// patches, the SE line's vcpkg tree) headless, with keyboard navigation on, as the menu runs it.
+// Off-game check of how a slider takes input and when a Left press inside a mod's page may send the highlight back to the
+// mod list (AMF 2.4.0; the owner, 2026-11-03: the D-pad could not leave a slider). Runs AMF's own ImGui build (1.90.8 with the
+// overlay patches, the SE line's vcpkg tree) headless, with keyboard navigation on, as the menu runs it.
 //   tools\nav_left_check.bat   -> one line per check and "nav_left_check: N of N passed"; exits 1 on any failure.
 // What it proves:
 //   1. the decision (navside::LeftPressMayLeave): each guard on its own keeps the press on the page; with none it may leave;
-//   2. on live frames, the cause: with the highlight on a slider that is NOT active (ActiveId 0, IsAnyItemActive false - the
-//      state the old guard read), ImGui finds nothing to the left - so before 2.3.0 the press left the page;
-//   3. on live frames, the fix: the highlight on AMF's precise slider, on a consumer-shaped slider (ImGui's slider + the
-//      wheel helper, what igSliderFloat runs), on a drag and on a three-value slider (+ amf_NoteArrowItem, what the drag and
-//      multi-value exports run) is seen by NavOnArrowItem, so the press stays; on a widget that steps its own value and
-//      cancels ImGui's move (Dragon's Eye Minimap's way) and on an open tree node, PageTookTheMove sees it; inside an open
-//      combo, NavInPopup sees it; on a plain button row none of them fire, so Left still goes back to the list;
-//   4. a held Left (key repeat) on the slider keeps the highlight on it frame after frame;
-//   5. (retest 26d2) widgets drawn as a mod with its OWN copy of Dear ImGui draws them (AMF Example: plain ImGui calls, no
-//      NoteArrowItem) are known from ImGui's own state (navside::LearnNavItemKind) - a plain slider reached by a key or a
-//      click, a drag, a text field, a NoInput slider once activated - so Left stays on them; Enter on a slider activates it
-//      (no number box), Left then steps it, Enter lets it go; Enter on a text field still starts typing;
-//   6. Deep Snow's band slider in a table: not activated, Right moves to the next column (ImGui's nav, as seen in 26d2);
-//      activated with Enter, Right / Left step the value and the highlight stays;
-//   7. Escape in an open dropdown: ImGui's NewFrame closes the popup before the menu reads Escape (the cause of "Esc closes
-//      the whole menu"); navside::EscapeClosesAPopup read before NewFrame sees it.
-//   8. ONE WAY for sliders (navside::StepHighlightedArrowItem, 4. plans\amf-null-checks\ONE-WAY-SLIDERS.md), with AMF's step
-//      on as Renderer.cpp runs it while the menu is up (sections 1-7 run with it off, so they still show ImGui's own
-//      behaviour): a HIGHLIGHTED plain slider in a table steps on Right and keeps its column; AMF's precise slider and an
-//      export-shaped slider step one unit of the shown digit; Deep Snow 1.1.0's band slider (its precise wrapper + its own
-//      HighlightNudge) and DEM 1.7.5's NudgeableSlider step ONCE a press and never twice in one frame while held (60 and
-//      144 fps) - and without AMF's step Deep Snow's helper still steps it; the D-pad does the same from the pad; Up / Down
-//      still move rows; Enter and Space still activate (DEM's N4 included); text fields are left alone (one typed in
-//      before, and one never typed in, found on the first press); Left on a plain row still goes back to the list.
+//   2-3. on live frames, a HIGHLIGHTED slider or drag (AMF's precise slider, a consumer-shaped slider, a drag, a three-value
+//      slider) is a row: Left may leave, its value never moves, nothing activates it, also while the key is held. On a widget
+//      that steps its own value and cancels ImGui's move and on an open tree node, PageTookTheMove sees it; inside an open
+//      combo, NavInPopup sees it. An activated slider is being edited: Left adjusts it and stays;
+//   5. the same for widgets drawn as a mod with its OWN copy of Dear ImGui draws them (AMF Example). Text and number-entry
+//      fields keep the press: AMF's and the exports' note themselves, a mod's own are known once typed in;
+//      Enter on a slider activates it (no number box); Escape in an open dropdown closes only the dropdown; a band slider in
+//      a table: not activated, Right moves to the next column; activated, Right / Left step it and the column stays;
+//   8. activate, nudge, let go: one unit of the shown digit (precise and export sliders), a held key at the key-repeat rate at
+//      60 and 144 fps, one apply a step; the controller's own sequence (A, D-pad, A or B; Down lets go and moves on); Escape
+//      lets go without closing the menu; the mouse drags directly; and two mods' own helpers, which only those mods can drop.
 // What it cannot: Renderer.cpp's own branch order and the game's input path (Input.cpp turns key and pad records into
-// ImGui key events) - the in-game retest covers those.
+// ImGui key events) - the in-game test covers those. tools\page_switch_check.bat covers B inside the menu's own panes.
 #include "../include/PreciseSlider.h"
 #include "../include/NavSide.h"
 
@@ -53,7 +39,7 @@ namespace
 	}
 
 	enum Item { kRow, kPrecise, kConsumer, kDrag, kTriple, kCustom, kTree, kCombo, kPlain, kPlainDrag, kText, kNoInput, kBandA, kBandB,
-				kExport, kText2, kDsA, kDsB, kDem, kCount };
+				kExport, kText2, kDsA, kDsB, kDem, kNumber, kPlainNumber, kCount };
 	ImGuiID g_ids[kCount] = {};
 	ImVec2  g_mid[kCount] = {};     // each item's centre on screen (for a mouse click)
 	int     g_focusRequest = -1;   // focus this item (SetFocusID) the next frame it is drawn
@@ -71,21 +57,21 @@ namespace
 	float  g_noInput = 50.0f;       // a NoInput slider from a mod's own ImGui (no Inputable flag)
 	float  g_bandA = 10.0f;         // Deep Snow's band table: "Starts at depth" ...
 	float  g_bandB = 60.0f;         // ... and the "Speed" column beside it (04f6 step 8 / 26d2 notes)
-	// 8. ONE WAY for sliders (ONE-WAY-SLIDERS.md)
 	float  g_export = 50.0f;        // a mod's slider through igSliderFloat's generated body: 0..100 "%.1f" (ImGui alone: 1.0 a nudge)
 	char   g_text2[32] = "Lydia";   // a text field nobody has typed in yet (no edit state of its own)
 	float  g_dsA = 10.0f;           // Deep Snow 1.1.0's band table, as it really runs: its precise wrapper around the export ...
 	float  g_dsB = 60.0f;           // ... plus precise::HighlightNudge (include\SliderNudge.h), in neighbouring columns
 	float  g_dem = 0.50f;           // Dragon's Eye Minimap 1.7.5's NudgeableSlider (UI.cpp) around its precise wrapper, 0..1 "%.2f"
 	const char* g_demSelected = nullptr;   // DEM's selectedSlider
-	bool   g_amfStep = false;       // Renderer.cpp's a_enabled: the menu is up and taking input (off for sections 1-7)
-	navside::HighlightStep g_step = navside::HighlightStep::kNone;
+	int    g_number = 5;            // a number box AMF or an export draws (+ NoteEntryField)
+	float  g_plainNumber = 1.5f;    // a number box from a mod's own ImGui
 	bool   g_enterTweaked = false;  // EnterActivatesArrowItem turned this frame's Enter into an activation
 	bool   g_clickActivated = false;// ActivateAfterClick turned the first press after a mouse click into an activation
 	bool   g_escBefore = false;     // EscapeClosesAPopup() read just before NewFrame (Renderer.cpp's escClosesPopup)
+	bool   g_escHeld = false;       // SliderHeldByKeys() read just before NewFrame (Renderer.cpp's escLetsGo)
 	int    g_popupsAfterNewFrame = 0;
 
-	struct Seen { bool onArrow, inPopup, tookLeft, anyActive; ImGuiID navId, activeId; };
+	struct Seen { bool onField, inPopup, tookLeft, anyActive; ImGuiID navId, activeId; };
 	Seen g_seen{};
 
 	void BuildFonts()
@@ -195,11 +181,11 @@ namespace
 		io.AddKeyEvent(ImGuiKey_Enter, a_enter);
 		io.DeltaTime = a_dt;
 		g_escBefore = navside::EscapeClosesAPopup();
+		g_escHeld = navside::SliderHeldByKeys();
 		ImGui::NewFrame();
 		g_popupsAfterNewFrame = GImGui->OpenPopupStack.Size;
 		g_clickActivated = navside::ActivateAfterClick();      // Renderer.cpp: right after NewFrame, first
 		g_enterTweaked = navside::EnterActivatesArrowItem();   // Renderer.cpp: then this
-		g_step = navside::StepHighlightedArrowItem(g_amfStep, false);   // Renderer.cpp: next, every frame (8. ONE WAY)
 		navside::HoldTweakAtKeyRepeat();   // Renderer.cpp: then this (S8: a held key steps at the key-repeat rate)
 		ImGui::SetNextWindowPos(ImVec2(20, 20));
 		ImGui::SetNextWindowSize(ImVec2(1200, 1040));
@@ -270,7 +256,7 @@ namespace
 			Mark(kBandB);
 			ImGui::EndTable();
 		}
-		// 8. ONE WAY for sliders: a mod's slider through the export, a fresh text field, Deep Snow 1.1.0's band table and DEM's slider
+		// a mod's slider through the export, a fresh text field, Deep Snow 1.1.0's band table and DEM's slider
 		ImGui::SetNextItemWidth(500);
 		ExportSliderFloat("Export slider", &g_export, 0.0f, 100.0f, "%.1f");
 		Mark(kExport);
@@ -294,8 +280,15 @@ namespace
 		}
 		ImGui::SetNextItemWidth(500);
 		NudgeableSlider("DEM Offset", &g_dem, 0.0f, 1.0f, "%.2f");
+		ImGui::SetNextItemWidth(300);
+		ImGui::InputInt("Number", &g_number, 1, 10);
+		navside::NoteEntryField();
+		Mark(kNumber);
+		ImGui::SetNextItemWidth(300);
+		ImGui::InputFloat("Plain number", &g_plainNumber, 0.0f, 0.0f, "%.2f");
+		Mark(kPlainNumber);
 		navside::LearnNavItemKind();   // Renderer.cpp: after the page, before the Left decision
-		g_seen = { navside::NavOnArrowItem(), navside::NavInPopup(), navside::PageTookTheMove(ImGuiDir_Left), ImGui::IsAnyItemActive(),
+		g_seen = { navside::NavOnEntryField(false), navside::NavInPopup(), navside::PageTookTheMove(ImGuiDir_Left), ImGui::IsAnyItemActive(),
 				   GImGui->NavId, GImGui->ActiveId };
 		ImGui::End();
 		ImGui::Render();
@@ -321,7 +314,7 @@ namespace
 
 	bool MayLeave(const Seen& a_s)
 	{
-		return navside::LeftPressMayLeave({ true, a_s.anyActive, a_s.inPopup, a_s.onArrow, a_s.tookLeft });
+		return navside::LeftPressMayLeave({ true, a_s.anyActive, a_s.inPopup, a_s.onField, a_s.tookLeft });
 	}
 }
 
@@ -329,11 +322,11 @@ int main()
 {
 	// 1. the decision
 	using navside::LeftPress;
-	Check(navside::LeftPressMayLeave({ true, false, false, false, false }), "a plain row with nothing to the left: Left may go back to the list");
+	Check(navside::LeftPressMayLeave({ true, false, false, false, false }), "a plain row or a highlighted slider with nothing to the left: Left may go back to the list");
 	Check(!navside::LeftPressMayLeave({ false, false, false, false, false }), "the page does not hold the highlight: no");
-	Check(!navside::LeftPressMayLeave({ true, true, false, false, false }), "an item is being edited (held slider, typing): no");
+	Check(!navside::LeftPressMayLeave({ true, true, false, false, false }), "an item is being edited (an activated slider, typing): no");
 	Check(!navside::LeftPressMayLeave({ true, false, true, false, false }), "the highlight is in a popup (an open combo): no");
-	Check(!navside::LeftPressMayLeave({ true, false, false, true, false }), "the highlight is on a slider or drag: no");
+	Check(!navside::LeftPressMayLeave({ true, false, false, true, false }), "the highlight is on a text or number-entry field: no");
 	Check(!navside::LeftPressMayLeave({ true, false, false, false, true }), "a widget took the press itself: no");
 
 	IMGUI_CHECKVERSION();
@@ -345,50 +338,46 @@ int main()
 	BuildFonts();
 	Settle(3);
 
-	// 2 + 3. the slider: the cause, and the fix
+	// 2 + 3. a highlighted slider is a row like any other (the owner, 2026-11-03: D-pad left stayed on the slider and moved it)
 	FocusOn(kPrecise);
 	Check(GImGui->NavId == g_ids[kPrecise] && g_ids[kPrecise] != 0, "the highlight sits on AMF Example's Speed slider");
 	{
 		const float before = g_speed;
 		const Seen s = TapLeft();
-		Check(s.activeId == 0 && !s.anyActive, "CAUSE: during the Left press the slider is NOT active - IsAnyItemActive() is false, the only guard before 2.3.0");
-		Check(navside::LeftPressMayLeave({ true, s.anyActive, s.inPopup, false, s.tookLeft }),
-			  "CAUSE: without the slider note the decision lets the press leave the page (the 2.2.x behaviour)");
-		Check(s.onArrow, "FIX: NavOnArrowItem sees the highlight on the precise slider");
-		Check(!MayLeave(s), "FIX: a single Left on the precise slider stays on the page");
-		Check(GImGui->NavId == g_ids[kPrecise], "after the tap ImGui's highlight is still on the slider (nothing to its left)");
-		Check(g_speed == before, "an unactivated slider's value is not changed by the tap (ImGui moves nothing)");
+		Check(s.activeId == 0 && !s.anyActive, "during the Left press the highlighted slider is NOT active");
+		Check(MayLeave(s), "FIX: a Left on a highlighted precise slider with nothing to its left goes back to the list");
+		Check(g_speed == before, "FIX: ... and its value does not move");
 	}
 	{
-		// held: key repeat - every frame of the hold keeps reading "on a slider", and the highlight never moves
-		bool allOn = true, stayed = true;
-		for (int i = 0; i < 60; ++i)   // one second at 60 fps, past ImGui's 0.275 s repeat delay
+		// held: ImGui's move repeats, nothing steps the value
+		const float before = g_speed;
+		bool leaves = true;
+		for (int i = 0; i < 60; ++i)
 		{
 			Frame(true);
-			allOn = allOn && g_seen.onArrow && !MayLeave(g_seen);
-			stayed = stayed && GImGui->NavId == g_ids[kPrecise];
+			leaves = leaves && MayLeave(g_seen) && GImGui->ActiveId == 0;
 		}
 		Frame(false);
 		Settle(2);
-		Check(allOn, "a held Left on the precise slider reads 'stays' on every frame of a one-second hold");
-		Check(stayed, "a held Left keeps ImGui's highlight on the slider throughout");
+		Check(leaves && g_speed == before, "a held Left on a highlighted slider never activates it and never moves it");
 	}
 	FocusOn(kConsumer);
 	{
+		const double before = g_scale;
 		const Seen s = TapLeft();
-		Check(GImGui->NavId == g_ids[kConsumer] && s.onArrow && !MayLeave(s), "a mod's slider (igSliderScalar's body: slider + wheel helper) stays on Left");
+		Check(MayLeave(s) && g_scale == before, "a mod's slider (igSliderScalar's body: slider + wheel helper): Left may leave, value kept");
 	}
 	FocusOn(kDrag);
 	{
+		const float before = g_drag;
 		const Seen s = TapLeft();
-		Check(GImGui->NavId == g_ids[kDrag] && s.onArrow && !MayLeave(s), "a mod's drag (igDragFloat's body + amf_NoteArrowItem) stays on Left");
+		Check(MayLeave(s) && g_drag == before, "a mod's drag (igDragFloat's body + amf_NoteArrowItem): Left may leave, value kept");
 	}
 	{
-		// the three-value slider: put the highlight on its middle field by moving right from the first via nav
-		// (the fields are separate items inside a group; the group is what NoteArrowItem sees last)
+		// the three-value slider: put the highlight on its middle field by moving right from the first via nav. Left moves back
+		// to the first field (Renderer.cpp sees ImGui moved and stays); Left on the first field may leave.
 		ImGuiID tripleField = 0;
 		FocusOn(kDrag);
-		// down once from the drag lands on the triple's first field
 		io.AddKeyEvent(ImGuiKey_DownArrow, true);  Frame();
 		io.AddKeyEvent(ImGuiKey_DownArrow, false); Settle(2);
 		tripleField = GImGui->NavId;
@@ -396,16 +385,18 @@ int main()
 		io.AddKeyEvent(ImGuiKey_RightArrow, true);  Frame();
 		io.AddKeyEvent(ImGuiKey_RightArrow, false); Settle(2);
 		const ImGuiID middle = GImGui->NavId;
+		TapLeft();
+		Check(onTriple && middle != tripleField && GImGui->NavId == tripleField, "a three-value slider, not activated: Left walks back field by field");
+		const float before = g_triple[0];
 		const Seen s = TapLeft();
-		Check(onTriple && middle != tripleField, "the highlight reached the three-value slider's second field");
-		Check(s.onArrow && !MayLeave(s), "a mod's three-value slider (igSliderFloat3's body + amf_NoteArrowItem) reads 'stays' on Left, field by field");
+		Check(MayLeave(s) && g_triple[0] == before, "... and from the first field it may leave, value kept");
 	}
 	FocusOn(kCustom);
 	{
 		const int before = g_custom;
 		const Seen s = TapLeft();
 		Check(g_custom == before - 1, "the self-stepping widget stepped its own value on Left");
-		Check(!s.onArrow && s.tookLeft && !MayLeave(s), "a widget that cancels ImGui's Left move (DEM's way) keeps the press on the page");
+		Check(s.tookLeft && !MayLeave(s), "a widget that cancels ImGui's Left move keeps the press on the page");
 	}
 	FocusOn(kTree);
 	{
@@ -425,22 +416,21 @@ int main()
 	FocusOn(kRow);
 	{
 		const Seen s = TapLeft();
-		Check(!s.onArrow && !s.inPopup && !s.tookLeft && !s.anyActive, "a plain button row: no guard fires");
+		Check(!s.onField && !s.inPopup && !s.tookLeft && !s.anyActive, "a plain button row: no guard fires");
 		Check(MayLeave(s) && GImGui->NavId == g_ids[kRow], "a plain row with nothing to its left: Left still goes back to the list (ImGui moved nothing)");
 	}
 	FocusOn(kPrecise);
 	{
-		// activated with Enter: the slider is being edited - the old guard, still in place
+		// activated with Enter: the slider is being edited, so Left adjusts it and stays
 		Frame(false, true);
 		Frame(false, false);
 		Settle(1);
 		const Seen s = TapLeft();
-		Check(s.anyActive && !MayLeave(s), "a slider activated with Enter (being edited) stays on the page, as before");
+		Check(s.anyActive && !MayLeave(s), "a slider activated with Enter (being edited) stays on the page");
 		Frame(false, true); Frame(false, false); Settle(2);   // Enter again lets it go
 	}
 
-	// 5. a mod drawing with its OWN copy of Dear ImGui (AMF Example's real Speed slider; retest 26d2 N1-N5 FAIL): no
-	// NoteArrowItem is ever called, so only ImGui's own state can tell
+	// 5. a mod drawing with its OWN copy of Dear ImGui (AMF Example's real Speed slider): no note is ever called
 	auto reach = [&](Item a_item) {   // the highlight arrives as a player brings it: keyboard Down from the item above
 		FocusOn(static_cast<Item>(a_item - 1));
 		io.AddKeyEvent(ImGuiKey_DownArrow, true);  Frame();
@@ -456,15 +446,14 @@ int main()
 		const float before = g_plain;
 		const Seen s = TapLeft();
 		Check(there, "keyboard Down brought the highlight onto the plain slider (a mod's own ImGui)");
-		Check(s.onArrow && !MayLeave(s), "FIX 26d2 N1: a single Left on a plain slider from a mod's own ImGui stays on the page");
-		Check(GImGui->NavId == g_ids[kPlain] && g_plain == before, "... the highlight is still on it and its value is unchanged (not activated)");
-		bool allOn = true;
-		for (int i = 0; i < 90; ++i) { Frame(true); allOn = allOn && g_seen.onArrow && !MayLeave(g_seen) && GImGui->NavId == g_ids[kPlain]; }
+		Check(MayLeave(s) && g_plain == before, "a Left on a plain slider from a mod's own ImGui may leave, value unchanged (no activation by AMF)");
+		bool quiet = true;
+		for (int i = 0; i < 90; ++i) { Frame(true); quiet = quiet && GImGui->ActiveId == 0; }
 		Frame(false); Settle(2);
-		Check(allOn, "FIX 26d2 N2: a held Left (1.5 s) on the plain slider stays on it every frame");
+		Check(quiet && g_plain == before, "a held Left (1.5 s) on it activates nothing and changes nothing");
 	}
 	{
-		// 26d2 N1 try 2: the highlight put there by a click on the knob (pressed and let go), not by a key
+		// the highlight put there by a click on the knob (pressed and let go), not by a key
 		FocusOn(kRow);
 		const float before = g_plain;
 		io.AddMousePosEvent(g_mid[kPlain].x, g_mid[kPlain].y); Frame();
@@ -474,32 +463,55 @@ int main()
 		io.AddMousePosEvent(-FLT_MAX, -FLT_MAX); Settle(2);
 		const bool onIt = GImGui->NavId == g_ids[kPlain];
 		const Seen s = TapLeft();
-		Check(onIt && s.onArrow && !MayLeave(s), "FIX 26d2 N1 (click focus): after a click on a plain slider, Left stays on the page");
+		Check(onIt && MayLeave(s) && g_plain == before, "after a click on a plain slider, Left does not step it and may leave");
 	}
 	{
-		// a NoInput slider carries no Inputable flag: unknown until it is activated, when it claims Left / Right
 		const bool there = reach(kNoInput);
 		const Seen s0 = TapLeft();
-		Check(there && !s0.onArrow, "a NoInput slider reached by keyboard is not known yet (no Inputable flag) - Left may leave, as before");
+		Check(there && MayLeave(s0), "a NoInput slider: Left may leave");
 		press(ImGuiKey_Space);   // Space activates it
 		const bool active = GImGui->ActiveId == g_ids[kNoInput];
 		press(ImGuiKey_Space);   // Space again lets it go
 		Settle(2);
 		const Seen s1 = TapLeft();
-		Check(active && s1.onArrow && !MayLeave(s1), "once activated (it claimed Left/Right), the NoInput slider is known: Left stays on the page");
+		Check(active && MayLeave(s1), "... activated and let go, it is a row again");
 	}
 	{
 		const bool there = reach(kPlainDrag);
 		const Seen s = TapLeft();
-		Check(there && s.onArrow && !MayLeave(s), "a plain drag from a mod's own ImGui stays on Left");
+		Check(there && MayLeave(s), "a plain drag from a mod's own ImGui may leave");
+	}
+	// text and number-entry fields keep the press, as they did
+	{
+		reach(kNumber);   // a number box with - and + buttons: the highlight lands on its text part
+		const int before = g_number;
+		const Seen s = TapLeft();
+		Check(s.onField && !MayLeave(s) && g_number == before, "a number box AMF or the exports drew (NoteEntryField): Left stays on the page, unchanged");
+	}
+	{
+		const Seen n = [&] { FocusOn(kPlainNumber); return TapLeft(); }();
+		Check(MayLeave(n), "LIMIT: a number box from a mod's own ImGui, never typed in, cannot be told from its slider: Left may leave");
+		press(ImGuiKey_Enter);   // Enter starts typing in it
+		const bool typing = GImGui->ActiveId != 0;
+		press(ImGuiKey_Escape);
+		Settle(2);
+		const Seen s = TapLeft();
+		Check(typing && s.onField && !MayLeave(s), "... typed in once, it is known and keeps the press");
 	}
 	{
 		const bool there = reach(kText);
+		const Seen s0 = TapLeft();
+		Frame(false, true); Frame(false, false); Frame();
+		const bool typing = GImGui->ActiveId == g_ids[kText];
+		Check(there && typing, "Enter on a text field still starts typing in it");
+		press(ImGuiKey_Escape);
+		Settle(2);
 		const Seen s = TapLeft();
-		Check(there && s.onArrow && !MayLeave(s), "a plain text field from a mod's own ImGui (not being typed in) stays on Left");
+		Check(MayLeave(s0) && s.onField && !MayLeave(s), "a text field from a mod's own ImGui: known once typed in, then Left stays on the page");
 	}
+	Check(navside::LeftPressMayLeave({ true, false, false, navside::NavOnEntryField(false), false }) == !navside::NavOnEntryField(false), "the decision follows the field check");
 	{
-		// 26d2 N3: Enter on the plain slider ACTIVATES it (no number box); Left steps it; Enter again lets it go
+		// Enter on the plain slider ACTIVATES it (no number box); Left steps it; Enter again lets it go
 		const bool there = reach(kPlain);
 		g_plain = 1.0f;
 		Frame(false, true);
@@ -507,7 +519,7 @@ int main()
 		Frame(false, false);
 		const bool active = GImGui->ActiveId == g_ids[kPlain];
 		const bool box = ImGui::TempInputIsActive(g_ids[kPlain]);
-		Check(there && tweaked && active && !box, "FIX 26d2 N3: Enter on a plain slider activates it - no number box opens");
+		Check(there && tweaked && active && !box, "Enter on a plain slider activates it - no number box opens");
 		const float before = g_plain;
 		Frame(true); Frame(false); Settle(1);
 		Check(g_plain < before && GImGui->NavId == g_ids[kPlain], "... Left then steps its value down and the highlight stays on it");
@@ -515,36 +527,26 @@ int main()
 		Check(GImGui->ActiveId == 0 && !ImGui::TempInputIsActive(g_ids[kPlain]), "... Enter again lets it go (no number box)");
 	}
 	{
-		// 4. (c0a3 / 26d2 N7) Escape in an open dropdown: ImGui's NewFrame closes the popup, so after NewFrame - where the
-		// menu read Escape as "close the menu" - nothing shows it was open; read before NewFrame, it is seen
+		// Escape in an open dropdown: ImGui's NewFrame closes the popup, so after NewFrame - where the menu read Escape as
+		// "close the menu" - nothing shows it was open; read before NewFrame, it is seen
 		FocusOn(kCombo);
 		Frame(false, true); Frame(false, false); Settle(2);   // Enter opens the combo
 		const bool open = GImGui->OpenPopupStack.Size > 0;
 		io.AddKeyEvent(ImGuiKey_Escape, true); Frame();
 		const bool before = g_escBefore;
 		const int after = g_popupsAfterNewFrame;
-		const bool escPressed = true;
 		io.AddKeyEvent(ImGuiKey_Escape, false); Settle(2);
 		Check(open && after == 0, "CAUSE (Esc in a dropdown): ImGui's NewFrame already closed the dropdown before the menu reads Escape");
-		Check(escPressed && before, "FIX: read before NewFrame, the open dropdown is seen - Escape closes it and the menu stays open");
+		Check(before, "FIX: read before NewFrame, the open dropdown is seen - Escape closes it and the menu stays open");
 		Frame(); const bool none = !g_escBefore;
 		Check(none, "with no dropdown open, Escape still closes the menu (nothing seen before NewFrame)");
 	}
 	{
-		// a text field still starts editing on Enter
-		const bool there = reach(kText);
-		Frame(false, true); Frame(false, false);
-		Check(there && GImGui->ActiveId == g_ids[kText], "Enter on a text field still starts typing in it");
-		press(ImGuiKey_Escape);
-		Settle(2);
-	}
-	{
-		// Deep Snow's band slider in a table (04f6 step 8 / 26d2 notes): NOT activated, Right moves to the next column -
-		// ImGui's own navigation (there is a widget there); once ACTIVATED, Right / Left step the value and the highlight stays
+		// Deep Snow's band slider in a table: NOT activated, Right moves to the next column; ACTIVATED, Right / Left step it
 		const bool there = reach(kBandA);
 		Frame(false, false, 1.0f / 60.0f, true); Frame(); Settle(2);
 		const bool movedOver = GImGui->NavId == g_ids[kBandB];
-		Check(there && movedOver && g_bandA == 10.0f, "Deep Snow band slider, not activated: Right moves to the next column (ImGui nav), value unchanged - as seen in 26d2");
+		Check(there && movedOver && g_bandA == 10.0f, "a band slider in a table, not activated: Right moves to the next column, value unchanged");
 		FocusOn(kBandA);
 		Frame(false, true); Frame(false, false);   // Enter activates it
 		const bool active = GImGui->ActiveId == g_ids[kBandA] && !ImGui::TempInputIsActive(g_ids[kBandA]);
@@ -553,32 +555,22 @@ int main()
 		const bool stayed = GImGui->NavId == g_ids[kBandA];
 		Frame(true); Frame(); Settle(1);
 		const float afterLeft = g_bandA;
-		Check(active && afterRight > 10.0f && stayed, "Deep Snow band slider, activated with Enter: Right steps the value up and the highlight stays in the column");
+		Check(active && afterRight > 10.0f && stayed, "... activated with Enter: Right steps the value up and the highlight stays in the column");
 		Check(afterLeft < afterRight && GImGui->NavId == g_ids[kBandA], "... Left steps it back down, still on the slider");
 		Frame(false, true); Frame(false, false); Settle(2);
 		Check(GImGui->ActiveId == 0, "... Enter lets it go");
 	}
 
-	// 8. ONE WAY for sliders (4. plans\amf-null-checks\ONE-WAY-SLIDERS.md): with AMF's step on (Renderer.cpp: the menu is up), a
-	// HIGHLIGHTED slider or drag steps on Left / Right / D-pad without activation, keeps the highlight, and steps once a press
-	// even when the mod runs its own helper (Deep Snow's HighlightNudge, DEM's NudgeableSlider)
+	// 8. Activate, nudge, let go (2.4.0): one unit of the shown digit a press, a held key at the key-repeat rate, one apply a step
 	{
-		using navside::HighlightStep;
 		const float dt60 = 1.0f / 60.0f, dt144 = 1.0f / 144.0f;
 		auto near = [](float a_a, float a_b) { return std::fabs(a_a - a_b) < 1e-4f; };
-		struct Tap { HighlightStep press, release; bool activeOnPress; ImGuiID navAfter; Seen seen; };
 		auto tapSide = [&](bool a_right, float a_dt = 1.0f / 60.0f) {
-			Tap t{};
 			Frame(!a_right, false, a_dt, a_right);
-			t.press = g_step;
-			t.activeOnPress = GImGui->ActiveId != 0;
-			t.seen = g_seen;
 			Frame(false, false, a_dt, false);
-			t.release = g_step;
 			Settle(1);
-			t.navAfter = GImGui->NavId;
-			return t;
 		};
+		auto enter = [&] { Frame(false, true); Frame(false, false); };
 		struct Hold { float maxStep = 0.0f; float total = 0.0f; bool stayed = true; };
 		auto holdRight = [&](Item a_item, const float* a_v, int a_frames, float a_dt) {
 			Hold h{};
@@ -596,33 +588,23 @@ int main()
 			h.total = *a_v - first;
 			return h;
 		};
-		g_amfStep = true;
 
-		// a. a plain ImGui slider in a table (a mod's own copy of ImGui): Right steps it and keeps the column
-		{
-			const bool there = reach(kBandA);
-			g_bandA = 10.0f;
-			const float other = g_bandB;
-			const Tap t = tapSide(true);
-			Check(there && t.press == HighlightStep::kStarted && t.activeOnPress,
-				  "8a: Right on a HIGHLIGHTED plain slider in a table makes it the active item while the key is down");
-			Check(g_bandA > 10.0f && t.navAfter == g_ids[kBandA] && g_bandB == other,
-				  "8a: ... it steps (ImGui's own step for a slider whose format AMF cannot see), the highlight keeps its column, the next column is untouched");
-			Check(t.release == HighlightStep::kReleased && GImGui->ActiveId == 0, "8a: ... and it is let go on the frame Right is released");
-			const float v = g_bandA;
-			const Tap l = tapSide(false);
-			Check(g_bandA < v && l.navAfter == g_ids[kBandA] && !MayLeave(l.seen), "8a: Left steps it back and never sends the highlight to the mod list");
-		}
 		// b. AMF's own precise slider (AMF Example's Speed shape, 0..1 "%.2f"): one unit of the shown digit
 		{
 			FocusOn(kPrecise);
 			g_speed = 0.50f;
-			const Tap r = tapSide(true);
+			tapSide(true);
+			Check(near(g_speed, 0.50f) && GImGui->ActiveId == 0, "8b: Right on a highlighted precise slider moves nothing and activates nothing");
+			enter();
+			const bool held = GImGui->ActiveId == g_ids[kPrecise];
+			tapSide(true);
 			const float afterRight = g_speed;
-			const Tap l = tapSide(false);
-			Check(r.press == HighlightStep::kStarted && near(afterRight, 0.51f) && r.navAfter == g_ids[kPrecise],
-				  "8b: Right on a highlighted AMF precise slider: 0.50 -> 0.51, highlight kept");
-			Check(near(g_speed, 0.50f) && l.navAfter == g_ids[kPrecise], "8b: ... Left: back to 0.50");
+			tapSide(false);
+			Check(held && near(afterRight, 0.51f) && near(g_speed, 0.50f) && GImGui->NavId == g_ids[kPrecise] && GImGui->ActiveId == g_ids[kPrecise],
+				  "8b: activated: Right 0.50 -> 0.51, Left back to 0.50, highlight kept, it stays active after the key is let go");
+			enter();
+			Settle(1);
+			Check(GImGui->ActiveId == 0, "8b: ... Enter lets it go");
 			// S8 (combined run 3266, 2026-10-25: Skyrim crashed holding Right on DEM's Offset X): a HELD key steps at the
 			// key-repeat rate - the first press, then after io.KeyRepeatDelay (0.275 s) one step every io.KeyRepeatRate (0.050 s):
 			// about 1 + (1 - 0.275) / 0.05 = 15 in a one-second hold, at any frame rate. ImGui's own nav tweak repeats at
@@ -630,8 +612,11 @@ int main()
 			auto steps = [&](int a_frames, float a_dt) {
 				FocusOn(kPrecise);
 				g_speed = 0.0f;
+				enter();
 				Settle(1);
 				const Hold h = holdRight(kPrecise, &g_speed, a_frames, a_dt);
+				enter();
+				Settle(1);
 				return std::pair<int, Hold>{ static_cast<int>(std::lround(h.total / 0.01f)), h };
 			};
 			const auto [n60, h60] = steps(60, dt60);
@@ -639,67 +624,66 @@ int main()
 			std::printf("    (S8 hold: %d steps in 1 s at 60 fps, %d at 144 fps; io repeat delay %.3f, rate %.3f after the hold)\n", n60, n144,
 				io.KeyRepeatDelay, io.KeyRepeatRate);
 			Check(n60 >= 13 && n60 <= 17 && h60.stayed && h60.maxStep < 0.01f + 1e-4f,
-				  "8b S8: Right HELD 1 s at 60 fps on a highlighted precise slider: about 15 steps (the key-repeat rate), not one a frame; highlight kept");
+				  "8b S8: Right HELD 1 s at 60 fps on an activated precise slider: about 15 steps (the key-repeat rate), not one a frame; highlight kept");
 			Check(n144 >= 13 && n144 <= 17 && h144.stayed && h144.maxStep < 0.01f + 1e-4f,
 				  "8b S8: ... held 1 s at 144 fps: the same about 15, not 54 or 144");
-			Check(near(io.KeyRepeatDelay, 0.275f) && near(io.KeyRepeatRate, 0.050f), "8b S8: ... and ImGui's repeat settings are back to their own values once the key is let go");
-			g_speed = 0.50f;
-			const Tap again = tapSide(true);
-			Check(again.press == HighlightStep::kStarted && near(g_speed, 0.51f), "8b S8: a TAP after the hold is still exactly one step (0.50 -> 0.51)");
-			// S10 (combined run 3266: each tap on Window opacity logged TWO theme applies, one on the press, one on the release):
-			// a slider applied through precise::ApplyNow applies ONCE a tap; held, once a step (live)
-			g_speed = 0.50f;
-			g_speedApplies = 0;
-			const Tap s10 = tapSide(true);
-			const int tapApplies = g_speedApplies;
-			std::printf("    (S10: %d apply(ies) for one tap)\n", tapApplies);
-			Check(s10.press == HighlightStep::kStarted && near(g_speed, 0.51f) && tapApplies == 1,
-				  "8b S10: one tap on a highlighted slider applied through ApplyNow: ONE apply (not one on the press and one on the release)");
-			g_speed = 0.0f;
-			g_speedApplies = 0;
+			Check(near(io.KeyRepeatDelay, 0.275f) && near(io.KeyRepeatRate, 0.050f), "8b S8: ... and ImGui's repeat settings are untouched");
+			// S10: a slider applied through precise::ApplyNow applies once a step, and nothing again when it is let go
 			FocusOn(kPrecise);
+			g_speed = 0.50f;
+			enter();
+			g_speedApplies = 0;
+			tapSide(true);
+			const int tapApplies = g_speedApplies;
+			tapSide(true);
+			const int twoApplies = g_speedApplies;
+			enter();
 			Settle(1);
-			const Hold s10h = holdRight(kPrecise, &g_speed, 60, dt60);
-			const int heldSteps = static_cast<int>(std::lround(s10h.total / 0.01f));
-			Check(g_speedApplies == heldSteps, "8b S10: held 1 s: one apply per step, live (" + std::to_string(g_speedApplies) + " applies, " +
-				  std::to_string(heldSteps) + " steps)");
+			std::printf("    (S10: %d apply(ies) for one tap, %d for two, %d after the let-go)\n", tapApplies, twoApplies, g_speedApplies);
+			Check(near(g_speed, 0.52f) && tapApplies == 1 && twoApplies == 2 && g_speedApplies == 2,
+				  "8b S10: activated, each tap through ApplyNow is ONE apply, and letting go adds none");
 			g_speed = 0.50f;
 		}
 		// c. a mod's slider through the export (igSliderFloat's generated body), 0..100 "%.1f": ImGui alone moves 1.0 - the export holds it to 0.1
 		{
 			FocusOn(kExport);
 			g_export = 50.0f;
-			const Tap r = tapSide(true);
-			Check(r.press == HighlightStep::kStarted && near(g_export, 50.1f) && r.navAfter == g_ids[kExport],
-				  "8c: Right on a highlighted export slider: 50.0 -> 50.1 (one unit of the shown digit, not ImGui's 1% = 1.0)");
+			tapSide(true);
+			const bool quiet = near(g_export, 50.0f) && GImGui->ActiveId == 0;
+			enter();
+			tapSide(true);
+			Check(quiet && near(g_export, 50.1f) && GImGui->NavId == g_ids[kExport],
+				  "8c: an export slider: highlighted, Right moves nothing; activated, 50.0 -> 50.1 (one unit of the shown digit, not ImGui's 1%)");
 			const Hold h = holdRight(kExport, &g_export, 60, dt60);
 			Check(h.stayed && h.total > 0.0f && h.maxStep < 0.1f + 1e-4f, "8c: ... held 1 s: it repeats, never more than 0.1 in a frame, highlight kept");
+			enter();
+			Settle(1);
 		}
-		// d. Deep Snow 1.1.0's band slider (precise wrapper around the export + HighlightNudge) in its table: ONE step a press
+		// d. a drag: the same activation; its step stays ImGui's (the larger of its speed and the shown digit)
+		{
+			FocusOn(kDrag);
+			g_drag = 1.0f;
+			tapSide(true);
+			const bool quiet = g_drag == 1.0f && GImGui->ActiveId == 0;
+			enter();
+			tapSide(true);
+			const float afterRight = g_drag;
+			enter();
+			Settle(1);
+			Check(quiet && near(afterRight, 1.1f) && GImGui->ActiveId == 0, "8d: a drag: highlighted, Right moves nothing; activated, Right steps 1.0 -> 1.1; Enter lets go");
+		}
+		// e. Deep Snow 1.1.0's own HighlightNudge and DEM's NudgeableSlider are in those mods, not in AMF
 		{
 			FocusOn(kDsA);
 			g_dsA = 10.0f;
-			const float other = g_dsB;
-			const Tap r = tapSide(true);
-			Check(r.press == HighlightStep::kStarted && g_dsA == 11.0f && r.navAfter == g_ids[kDsA] && g_dsB == other,
-				  "8d: Deep Snow band slider with its own HighlightNudge, under AMF: Right 10 -> 11 - one step, not two (HighlightNudge saw IsItemActive and stood down), column kept");
-			const Tap r2 = tapSide(true);
-			const Tap l = tapSide(false);
-			Check(g_dsA == 11.0f && r2.navAfter == g_ids[kDsA] && l.navAfter == g_ids[kDsA], "8d: ... Right, Left: 11 -> 12 -> 11");
-			const Hold h60 = holdRight(kDsA, &g_dsA, 60, dt60);
-			const Hold h144 = holdRight(kDsA, &g_dsA, 144, dt144);
-			Check(h60.stayed && h60.total > 0.0f && h60.maxStep <= 1.0f && g_dsB == other,
-				  "8d: ... held 1 s at 60 fps: never two steps in one frame, never leaves the column");
-			Check(h144.stayed && h144.total > 0.0f && h144.maxStep <= 1.0f, "8d: ... held 1 s at 144 fps: the same");
-			g_amfStep = false;   // plain SKSE Menu Framework: AMF does nothing, the mod's own helper steps it
-			g_dsA = 10.0f;
-			const Tap smf = tapSide(true);
-			g_amfStep = true;
-			Check(smf.press == HighlightStep::kNone && g_dsA == 11.0f && smf.navAfter == g_ids[kDsA],
-				  "8d: without AMF's step (plain SMF) Deep Snow's own HighlightNudge still steps it once and keeps the column");
-		}
-		// e. Dragon's Eye Minimap 1.7.5's NudgeableSlider (steps the slider last clicked or activated, unless the slider moved itself)
-		{
+			tapSide(true);
+			Check(g_dsA == 11.0f && GImGui->NavId == g_ids[kDsA] && GImGui->ActiveId == 0,
+				  "8e LIMIT: Deep Snow 1.1.0's HighlightNudge steps its own band slider while only highlighted - until Deep Snow drops it");
+			enter();
+			tapSide(true);
+			Check(g_dsA == 12.0f, "8e: ... activated it is one step a press, not two");
+			enter();
+			Settle(1);
 			FocusOn(kRow);
 			io.AddMousePosEvent(g_mid[kDem].x, g_mid[kDem].y); Frame();
 			io.AddMouseButtonEvent(0, true);  Frame();
@@ -707,131 +691,170 @@ int main()
 			io.AddMousePosEvent(-FLT_MAX, -FLT_MAX); Settle(2);
 			g_dem = 0.50f;   // the click itself moves the value; only the selection matters here
 			Settle(1);
-			const bool selected = g_demSelected != nullptr && GImGui->NavId == g_ids[kDem];
-			const Tap r = tapSide(true);
-			Check(selected && r.press == HighlightStep::kStarted && near(g_dem, 0.51f) && r.navAfter == g_ids[kDem],
-				  "8e (DEM N4): clicked DEM slider, Right: 0.50 -> 0.51 - one step (NudgeableSlider adds none when the slider moved), highlight kept");
+			enter();
+			const bool active = GImGui->ActiveId == g_ids[kDem];
+			tapSide(true);
+			Check(active && near(g_dem, 0.51f), "8e: DEM's NudgeableSlider, activated: Right 0.50 -> 0.51, one step");
 			const Hold h = holdRight(kDem, &g_dem, 144, dt144);
-			Check(h.stayed && h.total > 0.0f && h.maxStep < 0.01f + 1e-4f, "8e: ... held 1 s at 144 fps: never two steps in one frame, highlight kept");
 			const int demSteps = static_cast<int>(std::lround(h.total / 0.01f));
 			std::printf("    (S8 DEM hold: %d steps in 1 s at 144 fps)\n", demSteps);
-			Check(demSteps >= 13 && demSteps <= 17,
-				  "8e S8: ... and about 15 steps in that second (the key-repeat rate), not one a frame - the hold that crashed DEM in combined run 3266");
-			g_dem = 0.50f;
-			Frame(false, true); Frame(false, false);   // Enter activates it (EnterActivatesArrowItem), as before
-			const bool active = GImGui->ActiveId == g_ids[kDem];
-			const Tap ra = tapSide(true);
-			Check(active && ra.press == HighlightStep::kNone && near(g_dem, 0.51f) && GImGui->ActiveId == g_ids[kDem],
-				  "8e (DEM N4): Enter activates the DEM slider; Right then steps it once (AMF leaves an active slider alone)");
-			Frame(false, true); Frame(false, false); Settle(2);
-			Check(GImGui->ActiveId == 0, "8e: ... Enter lets it go");
-			// DEM's selected slider cancels EVERY arrow move while it is drawn (its page is the only one on screen in game);
-			// here every item shares one page, so the rest runs as if DEM's page were closed
-			g_demSelected = nullptr;
+			Check(h.stayed && h.maxStep < 0.01f + 1e-4f && demSteps >= 13 && demSteps <= 17,
+				  "8e S8: ... held 1 s at 144 fps: about 15 steps, never two in a frame - the hold that crashed DEM in combined run 3266");
+			enter();
+			Settle(2);
+			g_demSelected = nullptr;   // DEM's selected slider cancels every arrow move while drawn; the rest runs as if its page were closed
 		}
-		// f. the D-pad (controller mode: gamepad navigation on, keyboard navigation off)
+		// f. the controller (gamepad navigation on, keyboard navigation off): the owner's own sequence
 		{
 			io.ConfigFlags = (io.ConfigFlags | ImGuiConfigFlags_NavEnableGamepad) & ~ImGuiConfigFlags_NavEnableKeyboard;
 			io.BackendFlags |= ImGuiBackendFlags_HasGamepad;
-			auto dpad = [&](ImGuiKey a_key) {
-				Tap t{};
+			auto pad = [&](ImGuiKey a_key) {
 				io.AddKeyEvent(a_key, true); Frame();
-				t.press = g_step;
-				t.activeOnPress = GImGui->ActiveId != 0 && GImGui->ActiveIdSource == ImGuiInputSource_Gamepad;
+				const Seen s = g_seen;
 				io.AddKeyEvent(a_key, false); Frame();
-				t.release = g_step;
 				Settle(1);
-				t.navAfter = GImGui->NavId;
-				return t;
+				return s;
 			};
 			FocusOn(kPrecise);
 			g_speed = 0.50f;
-			const Tap r = dpad(ImGuiKey_GamepadDpadRight);
-			Check(r.press == HighlightStep::kStarted && r.activeOnPress && near(g_speed, 0.51f) && r.navAfter == g_ids[kPrecise] &&
-					  r.release == HighlightStep::kReleased,
-				  "8f: D-pad right on a highlighted precise slider: active from the PAD while held, 0.50 -> 0.51, highlight kept, let go on release");
-			FocusOn(kDsA);
-			g_dsA = 10.0f;
-			const Tap d = dpad(ImGuiKey_GamepadDpadRight);
-			const Tap dl = dpad(ImGuiKey_GamepadDpadLeft);
-			Check(d.press == HighlightStep::kStarted && dl.navAfter == g_ids[kDsA] && g_dsA == 10.0f,
-				  "8f: D-pad right then left on Deep Snow's band slider: 10 -> 11 -> 10, one step each, column kept");
+			const Seen l = pad(ImGuiKey_GamepadDpadLeft);
+			Check(MayLeave(l) && near(g_speed, 0.50f) && GImGui->ActiveId == 0, "8f: D-pad left on a highlighted slider: may go back to the list, value unmoved");
+			pad(ImGuiKey_GamepadDpadRight);
+			Check(near(g_speed, 0.50f) && GImGui->ActiveId == 0, "8f: D-pad right: value unmoved, not activated");
+			pad(ImGuiKey_GamepadFaceDown);
+			const bool active = GImGui->ActiveId == g_ids[kPrecise] && GImGui->ActiveIdSource == ImGuiInputSource_Gamepad;
+			pad(ImGuiKey_GamepadDpadRight);
+			const float r1 = g_speed;
+			const Seen l2 = pad(ImGuiKey_GamepadDpadLeft);
+			pad(ImGuiKey_GamepadDpadLeft);
+			Check(active && near(r1, 0.51f) && near(g_speed, 0.49f) && !MayLeave(l2), "8f: A takes hold; D-pad right 0.50 -> 0.51, left 0.50, left 0.49; Left no longer leaves");
+			pad(ImGuiKey_GamepadFaceDown);
+			Check(GImGui->ActiveId == 0 && GImGui->NavId == g_ids[kPrecise], "8f: A lets go, highlight kept");
+			pad(ImGuiKey_GamepadFaceDown);
+			const bool again = GImGui->ActiveId == g_ids[kPrecise];
+			pad(ImGuiKey_GamepadFaceRight);
+			Check(again && GImGui->ActiveId == 0 && GImGui->NavId == g_ids[kPrecise], "8f: A takes hold again; B lets go, highlight kept (page_switch_check: B does not leave the page)");
+			pad(ImGuiKey_GamepadFaceDown);
+			pad(ImGuiKey_GamepadDpadDown);
+			Check(GImGui->ActiveId == 0 && GImGui->NavId == g_ids[kConsumer], "8f: held, D-pad down lets go and moves to the next row");
+			FocusOn(kExport);
+			g_export = 50.0f;
+			pad(ImGuiKey_GamepadFaceDown);
+			pad(ImGuiKey_GamepadDpadRight);
+			Check(near(g_export, 50.1f), "8f: an export slider from the pad: A, then D-pad right: 50.0 -> 50.1");
+			pad(ImGuiKey_GamepadFaceRight);
+			FocusOn(kPlain);
+			g_plain = 1.0f;
+			pad(ImGuiKey_GamepadDpadRight);
+			const bool plainQuiet = g_plain == 1.0f;
+			pad(ImGuiKey_GamepadFaceDown);
+			pad(ImGuiKey_GamepadDpadRight);
+			Check(plainQuiet && g_plain > 1.0f, "8f: a plain slider from a mod's own ImGui: the D-pad moves it only after A");
+			pad(ImGuiKey_GamepadFaceRight);
 			io.ConfigFlags = (io.ConfigFlags | ImGuiConfigFlags_NavEnableKeyboard) & ~ImGuiConfigFlags_NavEnableGamepad;
 			io.BackendFlags &= ~ImGuiBackendFlags_HasGamepad;
 			Settle(2);
 		}
-		// g. Up / Down still move between rows
+		// g. Up / Down
 		{
 			FocusOn(kPrecise);
 			g_speed = 0.50f;
 			io.AddKeyEvent(ImGuiKey_DownArrow, true);  Frame();
-			const HighlightStep st = g_step;
 			io.AddKeyEvent(ImGuiKey_DownArrow, false); Settle(2);
 			const bool down = GImGui->NavId == g_ids[kConsumer];
 			io.AddKeyEvent(ImGuiKey_UpArrow, true);  Frame();
 			io.AddKeyEvent(ImGuiKey_UpArrow, false); Settle(2);
-			Check(st == HighlightStep::kNone && down && GImGui->NavId == g_ids[kPrecise] && near(g_speed, 0.50f),
-				  "8g: Down / Up on a highlighted slider still move the highlight to the next / previous row, value unchanged");
+			Check(down && GImGui->NavId == g_ids[kPrecise] && near(g_speed, 0.50f), "8g: Down / Up on a highlighted slider move the highlight to the next / previous row, value unchanged");
+			enter();
+			tapSide(true);
+			g_speedApplies = 0;
+			io.AddKeyEvent(ImGuiKey_DownArrow, true);  Frame();
+			io.AddKeyEvent(ImGuiKey_DownArrow, false); Settle(2);
+			Check(GImGui->NavId == g_ids[kConsumer] && GImGui->ActiveId == 0 && near(g_speed, 0.51f) && g_speedApplies == 0,
+				  "8g: on an ACTIVATED slider, Down lets it go and moves to the next row; the nudged value stays");
 		}
-		// h. activation still works (Enter, Space), and AMF leaves an activated slider alone
+		// h. Enter / Space, and a mouse click then Enter
 		{
 			FocusOn(kPrecise);
 			g_speed = 0.50f;
-			Frame(false, true); Frame(false, false);
-			const bool enterActive = GImGui->ActiveId == g_ids[kPrecise] && !ImGui::TempInputIsActive(g_ids[kPrecise]);
-			const Tap r = tapSide(true);
-			const bool stillActive = GImGui->ActiveId == g_ids[kPrecise];
-			Frame(false, true); Frame(false, false); Settle(2);
-			Check(enterActive && r.press == HighlightStep::kNone && near(g_speed, 0.51f) && stillActive && GImGui->ActiveId == 0,
-				  "8h: Enter activates the slider, Right steps it once, it stays active after Right is let go, Enter releases it");
-			// combined run 3266: the FIRST Enter after a mouse click on a slider did nothing; the second activated it
-			{
-				g_speed = 0.50f;
-				io.AddMousePosEvent(g_mid[kPrecise].x, g_mid[kPrecise].y); Frame();
-				io.AddMouseButtonEvent(0, true);  Frame();
-				io.AddMouseButtonEvent(0, false); Frame();
-				io.AddMousePosEvent(-FLT_MAX, -FLT_MAX); Settle(2);
-				const bool clicked = GImGui->NavId == g_ids[kPrecise] && GImGui->ActiveId == 0;
-				Frame(false, true);
-				const bool tweakedFirst = g_enterTweaked;
-				Frame(false, false);
-				const bool activeFirst = GImGui->ActiveId == g_ids[kPrecise] && !ImGui::TempInputIsActive(g_ids[kPrecise]);
-				std::printf("    (click then Enter: clicked %d, nav %u active %u, Enter turned %d, NavDisableHighlight %d)\n", clicked ? 1 : 0,
-					GImGui->NavId, GImGui->ActiveId, tweakedFirst ? 1 : 0, GImGui->NavDisableHighlight ? 1 : 0);
-				Check(clicked && activeFirst, "8h: after a mouse click and release on a slider, the FIRST Enter activates it (no number box)");
-				if (GImGui->ActiveId != 0) { Frame(false, true); Frame(false, false); }
-				Settle(2);
-				g_speed = 0.50f;
-			}
+			io.AddMousePosEvent(g_mid[kPrecise].x, g_mid[kPrecise].y); Frame();
+			io.AddMouseButtonEvent(0, true);  Frame();
+			io.AddMouseButtonEvent(0, false); Frame();
+			io.AddMousePosEvent(-FLT_MAX, -FLT_MAX); Settle(2);
+			const bool clicked = GImGui->NavId == g_ids[kPrecise] && GImGui->ActiveId == 0;
+			Frame(false, true);
+			Frame(false, false);
+			const bool activeFirst = GImGui->ActiveId == g_ids[kPrecise] && !ImGui::TempInputIsActive(g_ids[kPrecise]);
+			Check(clicked && activeFirst, "8h: after a mouse click and release on a slider, the FIRST Enter activates it (no number box)");
+			if (GImGui->ActiveId != 0) { Frame(false, true); Frame(false, false); }
+			Settle(2);
 			press(ImGuiKey_Space);
 			const bool spaceActive = GImGui->ActiveId == g_ids[kPrecise];
 			press(ImGuiKey_Space);
 			Settle(2);
-			Check(spaceActive && GImGui->ActiveId == 0, "8h: Space activates it and Space lets it go, as before");
+			Check(spaceActive && GImGui->ActiveId == 0, "8h: Space activates it and Space lets it go");
 		}
-		// i. text fields are not stepped: one typed in before (learnt), and one nobody has typed in yet (found on the first press)
+		// i. Escape lets go of a slider the keys hold, and does not close the menu; a mouse drag and a typed number are not this
 		{
-			const bool there = reach(kText);
-			const std::string before = g_text;
-			const Tap t = tapSide(true);
-			Check(there && t.press == HighlightStep::kNone && GImGui->ActiveId == 0 && before == g_text && t.navAfter == g_ids[kText],
-				  "8i: Right on a highlighted text field that was typed in before: AMF leaves it alone (learnt while it was being typed in)");
-			const bool there2 = reach(kText2);
-			const Tap t1 = tapSide(true);
-			const bool typing = io.WantTextInput;
-			const Tap t2 = tapSide(true);
-			Check(there2 && t1.press == HighlightStep::kStarted && t1.release == HighlightStep::kNotAStepper && !typing &&
-					  std::string(g_text2) == "Lydia" && t1.navAfter == g_ids[kText2],
-				  "8i: a text field nobody typed in yet: the first Right finds it is no slider (it drops the activation at once) - no typing, text unchanged, highlight kept");
-			Check(t2.press == HighlightStep::kNone, "8i: ... and from then on AMF leaves it alone");
+			FocusOn(kPrecise);
+			g_speed = 0.50f;
+			enter();
+			Frame();
+			io.AddKeyEvent(ImGuiKey_Escape, true); Frame();
+			const bool seen = g_escHeld;
+			const ImGuiID activeAfter = GImGui->ActiveId;
+			io.AddKeyEvent(ImGuiKey_Escape, false); Settle(2);
+			Check(seen && activeAfter == 0 && GImGui->NavId == g_ids[kPrecise], "8i: Escape on an activated slider: seen before NewFrame (the menu stays open), let go, highlight kept");
+			io.AddKeyEvent(ImGuiKey_Escape, true); Frame();
+			const bool notHeld = !g_escHeld;
+			io.AddKeyEvent(ImGuiKey_Escape, false); Settle(2);
+			Check(notHeld, "8i: ... the next Escape is the menu's again");
+			io.AddMousePosEvent(g_mid[kPrecise].x, g_mid[kPrecise].y); Frame();
+			io.AddMouseButtonEvent(0, true);  Frame(); Frame();
+			const bool mouseActive = GImGui->ActiveId == g_ids[kPrecise];
+			io.AddKeyEvent(ImGuiKey_Escape, true); Frame();
+			const bool mouseNotHeld = !g_escHeld;
+			io.AddKeyEvent(ImGuiKey_Escape, false);
+			io.AddMouseButtonEvent(0, false); Frame();
+			io.AddMousePosEvent(-FLT_MAX, -FLT_MAX); Settle(2);
+			Check(mouseActive && mouseNotHeld, "8i: a slider held by the mouse is not this");
+			FocusOn(kText);
+			Frame(false, true); Frame(false, false); Frame();
+			const bool typing = GImGui->ActiveId == g_ids[kText];
+			io.AddKeyEvent(ImGuiKey_Escape, true); Frame();
+			const bool textNotHeld = !g_escHeld;
+			io.AddKeyEvent(ImGuiKey_Escape, false); Settle(2);
+			Check(typing && textNotHeld, "8i: a text field being typed in is not this");
 		}
-		// j. a plain row: Left still goes back to the mod list
+		// j. the mouse: a drag needs no click first, and moves the value at once
 		{
 			FocusOn(kRow);
-			const Tap t = tapSide(false);
-			Check(t.press == HighlightStep::kNone && MayLeave(t.seen), "8j: Left on a plain button row: AMF's step does nothing, Left still goes back to the list");
+			g_speed = 0.20f;
+			const ImVec2 at = g_mid[kPrecise];
+			io.AddMousePosEvent(at.x, at.y); Frame();
+			io.AddMouseButtonEvent(0, true);  Frame(); Frame();
+			const float onPress = g_speed;
+			const bool held = GImGui->ActiveId == g_ids[kPrecise] && GImGui->ActiveIdSource == ImGuiInputSource_Mouse;
+			io.AddMousePosEvent(at.x + 100.0f, at.y); Frame(); Frame();
+			const float dragged = g_speed;
+			io.AddMouseButtonEvent(0, false); Frame();
+			io.AddMousePosEvent(-FLT_MAX, -FLT_MAX); Settle(2);
+			Check(held && !near(onPress, 0.20f) && dragged > onPress && GImGui->ActiveId == 0, "8j: the mouse drags a slider directly from a plain row, and lets go on release");
+			g_speed = 0.50f;
 		}
-		g_amfStep = false;
+		// k. text fields are not stepped, a plain row still leaves
+		{
+			FocusOn(kText2);
+			const std::string before = g_text2;
+			const ImGuiID nav = GImGui->NavId;
+			tapSide(false);
+			Check(GImGui->ActiveId == 0 && before == g_text2 && !io.WantTextInput && GImGui->NavId != 0 && nav != 0, "8k: Left on a highlighted text field starts no typing and changes nothing");
+			FocusOn(kRow);
+			Frame(true);
+			const Seen s = g_seen;
+			Frame(); Settle(1);
+			Check(MayLeave(s), "8k: Left on a plain button row still goes back to the list");
+		}
 	}
 
 	ImGui::DestroyContext();

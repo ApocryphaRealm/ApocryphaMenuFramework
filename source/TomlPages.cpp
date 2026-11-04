@@ -4,6 +4,7 @@
 #include "HelpBar.h"
 #include "IniCore.h"
 #include "IniPages.h"
+#include "NavSide.h"
 #include "PageRefresh.h"
 #include "Registry.h"
 #include "Renderer.h"
@@ -507,6 +508,7 @@ namespace tomlpages
 				std::snprintf(fmt, sizeof(fmt), "%%.%df", decimals);
 				ImGui::SetNextItemWidth(ImGui::GetFontSize() * 10.0f);
 				if (ImGui::InputDouble(label.c_str(), &r.f, step, step * 10.0, fmt)) { r.pending = true; }
+				navside::NoteEntryField();
 				break;
 			}
 			case Control::kInt:
@@ -514,6 +516,7 @@ namespace tomlpages
 				int v = static_cast<int>(std::clamp<long long>(r.i, INT32_MIN, INT32_MAX));
 				ImGui::SetNextItemWidth(ImGui::GetFontSize() * 10.0f);
 				if (ImGui::InputInt(label.c_str(), &v, 1, 10)) { r.i = v; r.pending = true; }
+				navside::NoteEntryField();
 				break;
 			}
 			case Control::kUInt:
@@ -522,6 +525,7 @@ namespace tomlpages
 				const ImU32 one = 1, ten = 10;
 				ImGui::SetNextItemWidth(ImGui::GetFontSize() * 10.0f);
 				if (ImGui::InputScalar(label.c_str(), ImGuiDataType_U32, &v, &one, &ten)) { r.i = v; r.pending = true; }
+				navside::NoteEntryField();
 				break;
 			}
 			case Control::kInt64:
@@ -530,6 +534,7 @@ namespace tomlpages
 				const ImS64 one = 1, ten = 10;
 				ImGui::SetNextItemWidth(ImGui::GetFontSize() * 10.0f);
 				if (ImGui::InputScalar(label.c_str(), ImGuiDataType_S64, &v, &one, &ten)) { r.i = v; r.pending = true; }
+				navside::NoteEntryField();
 				break;
 			}
 			case Control::kColor:
