@@ -1193,7 +1193,7 @@ namespace mcmloader::scripts
 		// (2.1.5) - or, with the bar switched off, a popup kept inside the right pane. Hover and controller highlight alike.
 		void HelpTooltip(int a_mod, const Session& a_s, int a_slot)
 		{
-			if (!ImGui::IsItemHovered() && !ImGui::IsItemFocused()) { return; }
+			if (!helpbar::ItemHighlighted()) { return; }
 			if (const auto it = a_s.info.find(a_slot); it != a_s.info.end())
 			{
 				if (!it->second.empty()) { helpbar::OfferForLastItem(Tr(it->second)); }

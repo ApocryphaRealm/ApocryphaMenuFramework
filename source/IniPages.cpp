@@ -754,7 +754,7 @@ namespace inipages
 					break;
 				}
 				}
-				if (!help.empty() && (ImGui::IsItemHovered() || ImGui::IsItemFocused())) { helpbar::OfferForLastItem(help); }
+				if (!help.empty() && helpbar::ItemHighlighted()) { helpbar::OfferForLastItem(help); }
 				if (s.custom || s.value != s.mainValue)
 				{
 					ImGui::SameLine();

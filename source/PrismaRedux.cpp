@@ -519,7 +519,7 @@ namespace prisma
 
 		void Help(const std::string& a_text)
 		{
-			if (!a_text.empty() && (ImGui::IsItemHovered() || ImGui::IsItemFocused())) { helpbar::OfferForLastItem(a_text); }
+			if (!a_text.empty() && helpbar::ItemHighlighted()) { helpbar::OfferForLastItem(a_text); }
 		}
 
 		void DrawSetting(std::size_t a_index, const Setting& a_s, const std::string& a_value)

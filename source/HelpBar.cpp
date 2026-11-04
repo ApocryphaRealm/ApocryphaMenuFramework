@@ -17,7 +17,8 @@ namespace helpbar
 	{
 		int g_wantFrame = -10;   // the last frame a page asked for the bar
 		std::string g_page;      // that page's name: a different page starts with an empty bar
-		std::string g_text;      // the help on show (the last highlighted item's, as SkyUI's info line keeps it)
+		std::string g_text;      // the help on show: the highlighted row's
+		int g_offerFrame = -10;  // the last frame a row offered help (2.4.0): no offer, no help on show
 		float g_paneMinX = 0.0f, g_paneMinY = 0.0f, g_paneMaxX = 0.0f, g_paneMaxY = 0.0f;   // the right pane, last frame
 		constexpr int kLines = 3;  // the bar's height in text lines; longer help scrolls inside it
 		bool g_inModPage = false;  // a registered mod page is drawing (Renderer): its tooltips may go to the bar
@@ -28,6 +29,7 @@ namespace helpbar
 		{
 			if (!g_inModPage || !a_text || !*a_text) { return false; }
 			if (!settings::Get().helpBar || g_wantFrame < ImGui::GetFrameCount() - 1) { return false; }
+			g_offerFrame = ImGui::GetFrameCount();
 			if (g_text != a_text)
 			{
 				g_text = a_text;
@@ -42,6 +44,8 @@ namespace helpbar
 	void EnterModPage()
 	{
 		g_inModPage = true;
+		consumer_tooltip::LinkRows() = true;
+		consumer_tooltip::LinkMouse() = Active();
 	}
 
 	bool InModPage()
@@ -52,6 +56,8 @@ namespace helpbar
 	void LeaveModPage(const std::string& a_pageKey)
 	{
 		g_inModPage = false;
+		consumer_tooltip::LinkRows() = false;
+		consumer_tooltip::LinkMouse() = false;
 		// A page that asked for the bar itself keeps its own name; any other mod page asks here, under its own key.
 		if (g_wantFrame != ImGui::GetFrameCount()) { Want(a_pageKey); }
 	}
@@ -84,12 +90,18 @@ namespace helpbar
 		g_paneMaxY = a_maxY;
 	}
 
+	bool ItemHighlighted()
+	{
+		return ImGui::IsItemHovered() || consumer_tooltip::RowHighlighted(ImGuiHoveredFlags_None, Active());
+	}
+
 	void OfferForLastItem(const std::string& a_help)
 	{
 		if (a_help.empty()) { return; }
-		if (!ImGui::IsItemHovered() && !ImGui::IsItemFocused()) { return; }
+		if (!ItemHighlighted()) { return; }
 		if (settings::Get().helpBar)
 		{
+			g_offerFrame = ImGui::GetFrameCount();
 			if (g_text != a_help)
 			{
 				g_text = a_help;
@@ -119,6 +131,16 @@ namespace helpbar
 
 	void Draw(float a_width)
 	{
+		// 2.4.0 (the owner): help stays for as long as its row is highlighted, and a row with no help empties the bar. The
+		// page has drawn by now, so an offer this frame is the current row's. The row keeps its help while it is being
+		// worked: an open dropdown has the highlight in its popup, and a dragged slider or a text field may lose the pointer.
+		const ImGuiContext* g = ImGui::GetCurrentContext();
+		const bool working = g && (g->OpenPopupStack.Size > 0 || g->ActiveId != 0);
+		if (g_offerFrame != ImGui::GetFrameCount() && !working && !g_text.empty())
+		{
+			g_text.clear();
+			logger::debug("help bar: emptied, no highlighted row has help");
+		}
 		// NoNav: the D-pad never walks into the bar - it only reports what the highlight is on.
 		ImGui::BeginChild("##helpbar", ImVec2(a_width, Height()), true, ImGuiWindowFlags_NoNav);
 		if (!g_text.empty())

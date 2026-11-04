@@ -69,7 +69,7 @@ THE PROOF THAT THE GUARDS CHANGE NOTHING ELSE
         python tools/harden-cimgui.py --no-guards --out <scratch>\\cimgui-unguarded.cpp
     source/cimgui/cimgui.cpp with its marked lines removed must equal that copy line for line, and the copy
     differs from upstream only in the rewritten bodies described below (text fields, headers, SameLine,
-    Checkbox, sliders, drags, tooltips, text). `--out <path>` writes anywhere without touching the compiled copy.
+    Checkbox, sliders, drags, tooltips, hover, text). `--out <path>` writes anywhere without touching the compiled copy.
 
 RE-VENDORING A NEWER CIMGUI
     Drop the new cimgui.cpp/cimgui.h into extern/<tag>/, point SOURCE below at it, and run this
@@ -476,6 +476,9 @@ def main() -> int:
                 "igSetTooltip": "SetTooltipV", "igSetTooltipV": "SetTooltipV", "igSetItemTooltip": "SetItemTooltipV",
                 "igSetItemTooltipV": "SetItemTooltipV"}
     tooltips = 0
+    # 2.4.0 (the owner: a hint "doesn't show ... unless you hover over the question mark, which you can't do with controller"):
+    # igIsItemHovered answers yes for a mod's "(?)" marker while the control on its row holds the highlight (ConsumerTooltip.h).
+    item_hovered = 0
     # 2.2.4 (the menu render matrix: Compass Navigation Overhaul's INI path line was cut mid-word at the window's edge from
     # text size 2.00): a mod's plain text on its AMF page wraps inside the page instead of running past its edge. The seven
     # text exports run between amf_BeginConsumerText() and amf_EndConsumerText() (ConsumerSurface.cpp), which turn wrapping
@@ -604,6 +607,14 @@ def main() -> int:
             out.append(body.replace(target, "consumer_tooltip::" + TOOLTIPS[name] + "(") + "   // AMF: wrapped (2.2.2)")
             pos = body_end
             tooltips += 1
+        elif name == "igIsItemHovered":
+            body_end = src.index("\n}", pos)
+            body = src[pos:body_end]
+            target = "ImGui::IsItemHovered("
+            assert body.count(target) == 1, (name, body)
+            out.append(body.replace(target, "consumer_tooltip::ItemHovered(") + "   // AMF: a control and its marker are one row (2.4.0)")
+            pos = body_end
+            item_hovered += 1
         elif name in TEXT_FIELDS:
             body_end = src.index("\n}", pos)
             body = src[pos:body_end]
@@ -679,6 +690,8 @@ def main() -> int:
     assert entry_items == 11, entry_items
     # 2.2.2: the seven tooltip exports (ConsumerTooltip.h, included after cimgui.h below).
     assert tooltips == 7, tooltips
+    # 2.4.0: the one hover export (ConsumerTooltip.h).
+    assert item_hovered == 1, item_hovered
     # 2.2.4: the seven text exports (amf_BeginConsumerText / amf_EndConsumerText, ConsumerSurface.cpp).
     assert texts == 7, texts
     text = (banner + "void amf_NoteTextField(unsigned int a_itemId);\n"

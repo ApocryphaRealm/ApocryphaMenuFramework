@@ -2,6 +2,7 @@
 
 #include "FlickHost.h"
 
+#include "ConsumerTooltip.h"
 #include "FlickCrashCore.h"
 #include "FlickImGuiMap.h"
 #include "FlickRouteCore.h"
@@ -1146,7 +1147,7 @@ namespace flick
 
 		// Interaction
 		bool IsPopupOpen(const char* a_id, int a_flags) { return ImGui::IsPopupOpen(a_id, Fl(a_flags, map::kPopupFlags)); }
-		bool IsItemHovered(int a_flags) { return ImGui::IsItemHovered(Fl(a_flags, map::kHoveredFlags)); }
+		bool IsItemHovered(int a_flags) { return consumer_tooltip::ItemHovered(Fl(a_flags, map::kHoveredFlags)); }   // 2.4.0: a control and its marker are one row
 		bool IsItemClicked(int a_button) { return ImGui::IsItemClicked(a_button); }
 		bool IsItemActive() { return ImGui::IsItemActive(); }
 		bool IsItemFocused() { return ImGui::IsItemFocused(); }

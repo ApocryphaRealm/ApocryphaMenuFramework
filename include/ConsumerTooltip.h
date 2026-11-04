@@ -51,6 +51,97 @@ namespace consumer_tooltip
 		return Bar()(text.c_str());
 	}
 
+	// 2.4.0 THE ROW IS ONE THING (the owner, on Perfected Wheeler's page: the hint "doesn't show ... unless you hover over the
+	// question mark, which you can't do with controller ... linking it to its parent"). The usual help marker is
+	//     ImGui::SameLine(); ImGui::TextDisabled("(?)"); if (ImGui::IsItemHovered()) ImGui::SetTooltip(...);
+	// Plain text has no id, so the D-pad can never land on it and Dear ImGui's IsItemHovered is false for it the moment the
+	// controller is in use. A mod's control and its marker are one row: while the highlight is on a control earlier on the
+	// same line, a text item answers as hovered, through the igIsItemHovered / tooltip exports, so the mod's own code runs
+	// unchanged. Nothing in the mod has to know.
+	//   - The highlight's rect is Dear ImGui's own (the nav window's NavRectRel), refreshed when the highlighted item is
+	//     submitted; NavIdIsAlive says that has happened this frame, which is what "earlier on the line" means.
+	//   - A marker drawn before its control is not linked. Two markers on a row: the first after the highlight has it, and
+	//     keeps it for the second question about the same item (IsItemHovered, then SetItemTooltip). A row whose first
+	//     control has no marker but whose second does would show the second's hint on the first: not told apart.
+	//   - The mouse (a_mouseToo): the text answers while the pointer is on its line at or left of it, with the same one-owner
+	//     rule. Never while a mouse button is down or just let go, so a mod's `IsItemHovered() && IsMouseClicked()` on a text
+	//     item fires only for a click on the text itself.
+	// Only ever adds answers for an item whose own answer was no.
+	inline bool& LinkRows()    // AMF: a mod's page is drawing (HelpBar's EnterModPage / LeaveModPage). Off: Dear ImGui's answers only.
+	{
+		static bool s_on = false;
+		return s_on;
+	}
+
+	inline bool& LinkMouse()   // AMF: the help bar is showing, so a hover ends in the bar and not in a popup over the row
+	{
+		static bool s_on = false;
+		return s_on;
+	}
+
+	inline bool RowHighlighted(ImGuiHoveredFlags a_flags, bool a_mouseToo)
+	{
+		struct Owner
+		{
+			int frame = -1;
+			ImVec2 at;
+		};
+		static Owner s_owner;
+
+		ImGuiContext* g = ImGui::GetCurrentContext();
+		if (!g) { return false; }
+		ImGuiWindow* window = g->CurrentWindow;
+		if (!window || window->SkipItems) { return false; }
+		const ImGuiLastItemData& item = g->LastItemData;
+		if ((item.InFlags & ImGuiItemFlags_Disabled) != 0 && (a_flags & ImGuiHoveredFlags_AllowWhenDisabled) == 0) { return false; }
+
+		const bool taken = s_owner.frame == g->FrameCount;
+		if (taken && s_owner.at.x == item.Rect.Min.x && s_owner.at.y == item.Rect.Min.y) { return true; }   // the same item, asked again
+
+		// The line the item sits on: a marker's text is shorter than the switch beside it.
+		const float lineTop = (std::min)(item.Rect.Min.y, window->DC.CursorPosPrevLine.y);
+		const float lineBottom = (std::max)(item.Rect.Max.y, window->DC.CursorPosPrevLine.y + window->DC.PrevLineSize.y);
+
+		const bool mouseHere = ImGui::IsWindowHovered();
+		bool on = false;
+		if (!g->NavDisableHighlight && (g->NavDisableMouseHover || !mouseHere) && g->NavId != 0 && g->NavIdIsAlive && g->NavWindow == window)
+		{
+			const ImRect nav = ImGui::WindowRectRelToAbs(window, window->NavRectRel[g->NavLayer]);
+			if (item.ID != 0)
+			{
+				// A group whose last item has an id: the group holds the highlight when the highlighted item is inside it.
+				ImRect around = item.Rect;
+				around.Expand(1.0f);
+				on = item.ID == g->NavId || around.Contains(nav);
+			}
+			else
+			{
+				on = !taken && nav.Max.y - 1.0f > lineTop && nav.Min.y + 1.0f < lineBottom;
+			}
+		}
+		else if (a_mouseToo && !taken && item.ID == 0 && !g->NavDisableMouseHover && mouseHere && !ImGui::IsAnyMouseDown())
+		{
+			bool justLetGo = false;
+			for (const bool released : g->IO.MouseReleased) { justLetGo = justLetGo || released; }
+			const ImVec2 mouse = g->IO.MousePos;
+			on = !justLetGo && mouse.y >= lineTop && mouse.y < lineBottom && mouse.x <= item.Rect.Max.x;
+		}
+		if (on)
+		{
+			s_owner.frame = g->FrameCount;
+			s_owner.at = item.Rect.Min;
+		}
+		return on;
+	}
+
+	// What igIsItemHovered answers a mod: Dear ImGui's answer, or the row link while a mod's page draws.
+	inline bool ItemHovered(ImGuiHoveredFlags a_flags)
+	{
+		if (ImGui::IsItemHovered(a_flags)) { return true; }
+		if (!LinkRows() || (a_flags & ImGuiHoveredFlags_NoNavOverride) != 0) { return false; }
+		return RowHighlighted(a_flags, LinkMouse());
+	}
+
 	// The wrap width for a tooltip opened now (before the tooltip window begins).
 	inline float WrapWidth()
 	{
@@ -91,7 +182,7 @@ namespace consumer_tooltip
 	inline bool BeginItemTooltip()
 	{
 		const float wrap = WrapWidth();
-		if (!ImGui::BeginItemTooltip()) { return false; }
+		if (!ItemHovered(ImGuiHoveredFlags_ForTooltip) || !ImGui::BeginTooltip()) { return false; }
 		PushWrapInsideTooltip(wrap);
 		return true;
 	}
@@ -121,6 +212,6 @@ namespace consumer_tooltip
 	// ImGui's SetItemTooltipV, with the text wrapped.
 	inline void SetItemTooltipV(const char* a_fmt, va_list a_args)
 	{
-		if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) { SetTooltipV(a_fmt, a_args); }
+		if (ItemHovered(ImGuiHoveredFlags_ForTooltip)) { SetTooltipV(a_fmt, a_args); }
 	}
 }

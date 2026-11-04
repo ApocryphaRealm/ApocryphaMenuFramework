@@ -1786,7 +1786,7 @@ CIMGUI_API void igSetNextItemAllowOverlap()
 }
 CIMGUI_API bool igIsItemHovered(ImGuiHoveredFlags flags)
 {
-    return ImGui::IsItemHovered(flags);
+    return consumer_tooltip::ItemHovered(flags);   // AMF: a control and its marker are one row (2.4.0)
 }
 CIMGUI_API bool igIsItemActive()
 {

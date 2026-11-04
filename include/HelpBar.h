@@ -15,9 +15,14 @@ namespace helpbar
 	// The bar takes its room from the NEXT frame on, so asking every frame the page draws is the contract.
 	void Want(const std::string& a_page);
 
-	// The help of the item just submitted, shown when that item is hovered or holds the keyboard/controller highlight.
-	// Call right after the item. a_help is shown as given (already translated); empty does nothing.
+	// The help of the item just submitted, shown while that item's row is hovered or holds the keyboard/controller highlight
+	// (ItemHighlighted). Call right after the item, every frame the page draws. a_help is shown as given (already translated);
+	// empty does nothing. 2.4.0: the bar shows only what was offered this frame, so a row with no help empties it.
 	void OfferForLastItem(const std::string& a_help);
+
+	// 2.4.0: whether the item just submitted, or the row it ends (a switch draws its label last; ConsumerTooltip.h), is what
+	// the mouse is on or what the highlight is on.
+	bool ItemHighlighted();
 
 	// 2.2.2: pages of SKSE mods (the SKSE Menu Framework API) do not call Want themselves - their help is a tooltip.
 	// The Renderer brackets a registered mod page's render with EnterModPage / LeaveModPage; a page that did not ask for

@@ -569,7 +569,7 @@ namespace tomlpages
 			}
 			ImGui::EndGroup();
 			const bool active = ImGui::IsItemActive();   // the group: any of the control's parts still in use
-			const bool hovered = ImGui::IsItemHovered() || ImGui::IsItemFocused();
+			const bool hovered = helpbar::ItemHighlighted();
 			if (control == Control::kFloat || control == Control::kInt || control == Control::kUInt || control == Control::kInt64)
 			{
 				if (const int dir = WheelOnGroup(); dir != 0)

@@ -1743,7 +1743,7 @@ namespace mcmloader
 		// Hover and controller highlight alike.
 		void Tooltip(const Control& a_c, const std::string& a_value)
 		{
-			if (a_c.help.empty() || (!ImGui::IsItemHovered() && !ImGui::IsItemFocused())) { return; }
+			if (a_c.help.empty() || !helpbar::ItemHighlighted()) { return; }
 			std::string help = Translate(a_c.help);
 			if (const auto at = help.find("{value}"); at != std::string::npos) { help.replace(at, 7, a_value); }
 			helpbar::OfferForLastItem(help);
