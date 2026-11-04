@@ -154,6 +154,15 @@ namespace
 int main()
 {
 	{
+		// the codes a key row's capture hands an MCM (SKSE's InputMap; 2.4.0)
+		const std::uint32_t masks[16] = { 0x0001, 0x0002, 0x0004, 0x0008, 0x0010, 0x0020, 0x0040, 0x0080, 0x0100, 0x0200, 0x1000, 0x2000, 0x4000, 0x8000, 0x0009, 0x000A };
+		bool inOrder = true;
+		for (int i = 0; i < 16; ++i) { inOrder = inOrder && inputframes::PadMaskToSkseKey(masks[i]) == 266 + i; }
+		Check(inOrder, "every pad button is its SKSE code, 266 to 281 in InputMap's order");
+		Check(inputframes::PadMaskToSkseKey(0x0200) == 275, "right bumper is 275");
+		Check(inputframes::PadMaskToSkseKey(0x0400) == -1 && inputframes::PadMaskToSkseKey(0) == -1, "a mask that is no button has no code");
+	}
+	{
 		// a click shorter than a frame: press and release in the same drain
 		const Run r = Drive({ { M(), P(), R() } });
 		Check(r.clicks == 1 && r.state[0] == 1 && r.state[1] == 0, "a press and release in ONE frame: down for frame 0, up on frame 1 (" + Str(r.state) + ")");

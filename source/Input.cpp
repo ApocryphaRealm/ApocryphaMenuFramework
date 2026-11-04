@@ -112,6 +112,14 @@ namespace input
 		std::atomic<bool> g_captureArmed{ false };
 		std::atomic<std::int64_t> g_lastCaptured{ -1 };
 
+		// A KEY ROW'S CAPTURE (2.4.0; Input.h ArmKeyRowCapture): the armed capture above is one that takes the press.
+		std::atomic<bool> g_keyRowCapture{ false };
+		// The row drew itself since the last drain. A row no longer drawn (a mouse click on another page) must not go on
+		// eating the next key for a button nobody can see waiting.
+		std::atomic<bool> g_keyRowDrawn{ false };
+		// The presses that capture took, until their release (input thread only): the game keeps sending a held button's frames.
+		std::unordered_set<std::uint64_t> g_keyRowTaken;
+
 		// XInput Start button mask (RE::BSWin32GamepadDevice::kStart) - closes the menu in
 		// controller mode, since there is otherwise no gamepad way out (design decision, 2026-08-28).
 		constexpr std::uint32_t kGamepadStart = 0x0010;
@@ -685,6 +693,32 @@ namespace input
 				return a_button->GetIDCode() == key;
 			}
 
+			// A KEY ROW'S CAPTURE takes this press, or cancels on it (Input.h ArmKeyRowCapture). Records it where the row reads it
+			// and disarms; a cancel leaves "none" there, so the row keeps its key. A mask with no code keeps the capture waiting.
+			static void TakeForKeyRow(const RE::ButtonEvent* a_button)
+			{
+				AMF_REQUIRE_VOID(a_button);  // the caller tests it; guarded for the gate
+				const std::uint32_t code = a_button->GetIDCode();
+				const bool pad = a_button->GetDevice() == RE::INPUT_DEVICE::kGamepad;
+				g_keyRowTaken.insert(ButtonKey(a_button));
+				if (pad ? bindings::FromGamepad(code) == bindings::Action::kClose : code == kDIKEscape)
+				{
+					logger::info("key row capture: cancelled by device {} code {}", static_cast<std::uint32_t>(a_button->GetDevice()), code);
+				}
+				else if (pad && inputframes::PadMaskToSkseKey(code) < 0)
+				{
+					logger::info("key row capture: pad code 0x{:04X} has no key code - still waiting", code);
+					return;
+				}
+				else
+				{
+					g_lastCaptured.store((static_cast<std::int64_t>(a_button->GetDevice()) << 32) | static_cast<std::int64_t>(code), std::memory_order_release);
+					logger::info("key row capture: took device {} code {}", static_cast<std::uint32_t>(a_button->GetDevice()), code);
+				}
+				g_keyRowCapture.store(false, std::memory_order_release);
+				g_captureArmed.store(false, std::memory_order_release);
+			}
+
 			static bool TakeForImGui(RE::InputEvent* a_event, const RE::ButtonEvent* a_button, const char* a_holder)
 			{
 				// SMF-compat input callbacks (e.g. DEM's "Press a key..." bind capture, another mod's
@@ -801,6 +835,13 @@ namespace input
 				const bool controllerMode = UsingController();
 				const bool awaitingRebind = g_awaitingRebind.load(std::memory_order_acquire);
 
+				// A key row's capture lives inside the menu: closed, the next press is the game's.
+				if (!menuOpen && g_keyRowCapture.load(std::memory_order_acquire))
+				{
+					logger::info("key row capture: cancelled - the menu is closed");
+					CancelKeyCapture();
+				}
+
 				RE::InputEvent* head = spliced;
 				RE::InputEvent* previous = nullptr;
 				RE::InputEvent* current = head;
@@ -811,6 +852,48 @@ namespace input
 					bool passThrough = true;
 
 					const RE::ButtonEvent* button = current->AsButtonEvent();
+
+					// A press a key row's capture took (below): its held frames and its release follow it out of the list,
+					// so no callback or widget sees half a press. A new press means the release was never seen (the
+					// loading guard hands the whole list on), and is judged as any other.
+					if (button)
+					{
+						const auto taken = g_keyRowTaken.find(ButtonKey(button));
+						if (taken != g_keyRowTaken.end())
+						{
+							if (button->IsDown() || IsRelease(button)) { g_keyRowTaken.erase(taken); }
+							if (!button->IsDown())
+							{
+								passThrough = false;
+								goto consumed;
+							}
+						}
+					}
+
+					// A KEY ROW'S CAPTURE (2.4.0; the owner's report, 2026-11-04: right bumper on Bow Rapid Combo's key row
+					// walked AMF's tabs instead of binding). The press must be the row's alone, so this comes ahead of the
+					// menu key, Start, the input callbacks and ImGui - nothing downstream raises a command for what it never
+					// sees. It is here and not in ImGui's nav because the tab steps, Y and the on-screen keyboard are ours,
+					// read in the drain. Releases and held frames still go on: the A that armed this is held down in ImGui
+					// and must be let go there. The mouse also goes on, so a click still works the page.
+					if (g_keyRowCapture.load(std::memory_order_acquire))
+					{
+						if (current->GetEventType() == RE::INPUT_EVENT_TYPE::kThumbstick)
+						{
+							// Centred rather than dropped: a stick pushed before the capture would otherwise stay "held" in nav.
+							const auto* thumb = static_cast<const RE::ThumbstickEvent*>(current);
+							Enqueue({ Record::Kind::kThumbstick, thumb->IsLeft() ? 0u : 1u, false, 0.0f, 0.0f });
+							passThrough = false;
+							goto consumed;
+						}
+						if (button && button->IsDown() &&
+							(button->GetDevice() == RE::INPUT_DEVICE::kKeyboard || button->GetDevice() == RE::INPUT_DEVICE::kGamepad))
+						{
+							TakeForKeyRow(button);
+							passThrough = false;
+							goto consumed;
+						}
+					}
 
 					// Observe-only keybind capture: record the next keyboard/gamepad PRESS and
 					// disarm. Never consumes and never touches settings - purely a witness, so it
@@ -1285,6 +1368,13 @@ namespace input
 
 	void ProcessQueuedEvents()
 	{
+		// A key row that was not drawn in the frame just gone is not waiting any more (Input.h ArmKeyRowCapture)
+		if (g_keyRowCapture.load(std::memory_order_acquire) && !g_keyRowDrawn.exchange(false, std::memory_order_acq_rel))
+		{
+			logger::info("key row capture: cancelled - the row is no longer on the page");
+			CancelKeyCapture();
+		}
+
 		std::vector<Record> drained;
 		{
 			std::scoped_lock lock(g_queueLock);
@@ -1645,6 +1735,7 @@ namespace input
 
 	void ArmKeyCapture()
 	{
+		g_keyRowCapture.store(false, std::memory_order_release);
 		g_lastCaptured.store(-1, std::memory_order_release);
 		g_captureArmed.store(true, std::memory_order_release);
 		logger::info("keybind capture armed - next keyboard/gamepad press will be recorded (not consumed)");
@@ -1652,7 +1743,31 @@ namespace input
 
 	void CancelKeyCapture()
 	{
+		g_keyRowCapture.store(false, std::memory_order_release);
 		g_captureArmed.store(false, std::memory_order_release);
+	}
+
+	void ArmKeyRowCapture()
+	{
+		g_lastCaptured.store(-1, std::memory_order_release);
+		g_keyRowDrawn.store(true, std::memory_order_release);
+		g_captureArmed.store(true, std::memory_order_release);
+		g_keyRowCapture.store(true, std::memory_order_release);
+		logger::info("key row capture armed - the next keyboard key or pad button goes to the row alone");
+	}
+
+	void KeepKeyRowCapture()
+	{
+		g_keyRowDrawn.store(true, std::memory_order_release);
+	}
+
+	std::int32_t LastCapturedMcmKey()
+	{
+		const std::int64_t packed = g_lastCaptured.load(std::memory_order_acquire);
+		if (packed < 0) { return -1; }
+		const auto code = static_cast<std::uint32_t>(packed & 0xFFFFFFFF);
+		const bool pad = static_cast<std::int32_t>(packed >> 32) == static_cast<std::int32_t>(RE::INPUT_DEVICE::kGamepad);
+		return pad ? inputframes::PadMaskToSkseKey(code) : static_cast<std::int32_t>(code);
 	}
 
 	bool IsKeyCaptureArmed()
