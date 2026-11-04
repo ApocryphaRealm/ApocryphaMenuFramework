@@ -75,7 +75,7 @@ namespace navside
 	inline void NoteArrowItem()
 	{
 		ImGuiContext* const g = GImGui;
-		if (!detail::LastItemHoldsNav(g)) return;
+		if (!g || !detail::LastItemHoldsNav(g)) return;
 		detail::g_ctx = g;
 		detail::g_frame = g->FrameCount;
 		detail::g_navId = g->NavId;
@@ -87,7 +87,7 @@ namespace navside
 	inline void NoteEntryField()
 	{
 		ImGuiContext* const g = GImGui;
-		if (!detail::LastItemHoldsNav(g)) return;
+		if (!g || !detail::LastItemHoldsNav(g)) return;
 		detail::g_entryCtx = g;
 		detail::g_entryFrame = g->FrameCount;
 		detail::g_entryNavId = g->NavId;
