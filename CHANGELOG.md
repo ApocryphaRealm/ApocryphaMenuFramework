@@ -21,6 +21,11 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## 2.4.1 - 2026-11-07 - untested
+
+### Fixed
+- Opening the ImGui menus section of AMF's settings (Other menus) crashed the game since 2.3.0 - three menu names (Open Animation Replacer, Community Shaders, Immersive Equipment Displays) were lost from the list; they are back, and a compile-time check now refuses any missing name.
+
 ## 2.4.0 - 2026-10-31 - working
 
 ### Added

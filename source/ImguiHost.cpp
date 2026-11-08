@@ -50,8 +50,15 @@ namespace imguihost
 		// nonnull: constexpr table of string literals only
 		constexpr std::array<const char*, kCount> kIds = { "oar", "cs", "ied", "optiscaler", "enb" };
 		// the mods' own names - proper names, the same in every language
-		constexpr std::array<const char*, kCount> kNames = {   // nonnull: constexpr table of string literals only "Open Animation Replacer", "Community Shaders", "Immersive Equipment Displays",
+		// nonnull: constexpr table of string literals only
+		constexpr std::array<const char*, kCount> kNames = { "Open Animation Replacer", "Community Shaders", "Immersive Equipment Displays",
 															 "OptiScaler", "ENB" };
+		// 2.4.1: a std::array with too few initialisers zero-fills the rest without a warning - every entry is checked here
+		static_assert(kNames[kOar] != nullptr && kNames[kCs] != nullptr && kNames[kIed] != nullptr && kNames[kOpti] != nullptr &&
+						  kNames[kEnb] != nullptr,
+					  "every target needs a name");
+		static_assert(kIds[kOar] != nullptr && kIds[kCs] != nullptr && kIds[kIed] != nullptr && kIds[kOpti] != nullptr && kIds[kEnb] != nullptr,
+					  "every target needs an id");
 
 		struct Target
 		{

@@ -1,6 +1,6 @@
 ApocryphaRealm Menu Framework
 =============================
-Version 2.4.0
+Version 2.4.1
 
 An original, GPL-3.0-or-later in-game menu framework (embedding Dear ImGui) - a one-for-one
 replacement for SKSE Menu Framework's consumer surface, plus user-friendly features that do
@@ -86,6 +86,9 @@ reading.
 
 WHAT CHANGED
 ------------
+
+Version 2.4.1
+Opening the ImGui menus section of the settings (Other menus) no longer crashes the game. Since 2.3.0 three of its menu names - Open Animation Replacer, Community Shaders and Immersive Equipment Displays - had gone missing from the list, and drawing an unnamed row crashed. All five rows are back.
 
 Version 2.4.0
 With SKSE Menu Framework installed as well, mods made for it now use it, not this menu - before, a mod could end up half on each and crash the game at load. The small name file below steps aside then too.
