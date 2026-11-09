@@ -49,20 +49,97 @@ namespace slotguard
 		return a_value >= 0x10000 && a_value <= 0x00007FFFFFFFFFFFull && (a_value & 7) == 0;
 	}
 
+	// 2.4.2 - a pass-scoped cache of regions VirtualQuery has already called readable.
+	//
+	// WHY (the save-load stutter since 2.3.0, Nexus 2026-11-05/06): 2.3.0's guarded MCM lookup asks VirtualQuery about every
+	// script object, every parent type and every type name of every quest's attached scripts - two system calls per inheritance
+	// level - so one discovery pass cost 160-220 ms of main-thread time on a big list, and the passes after a load froze the game.
+	// Nearly all of those addresses sit in a few heap regions. Inside one pass (a PassScope on the calling thread) a region already
+	// judged committed and readable answers from the cache with two compares; outside a pass, or for a region not seen yet, the
+	// system call runs exactly as before. The cache is emptied at the start and end of every pass, so it never outlives one walk
+	// (a few milliseconds); within it, the guard is the same snapshot it always was (a net for made-up values, not a lock).
+	// Made-up values (0x72, 0xB2CB0001) still fail PlausiblePointer before any of this, and an unmapped one still goes to VirtualQuery.
+	namespace detail
+	{
+		struct Region
+		{
+			std::uintptr_t begin;
+			std::uintptr_t end;
+		};
+		inline constexpr std::size_t kRegionSlots = 16;
+		struct RegionCache
+		{
+			bool active = false;
+			std::size_t next = 0;
+			std::size_t used = 0;
+			Region slots[kRegionSlots]{};
+			std::uint64_t queries = 0;  // VirtualQuery calls this pass
+			std::uint64_t hits = 0;     // answered from the cache this pass
+		};
+		inline thread_local RegionCache t_regions;
+	}
+
+	// Marks one discovery pass on this thread: the region cache is live inside it and cleared on both ends.
+	class PassScope
+	{
+	public:
+		PassScope() noexcept { Reset(); detail::t_regions.active = true; }
+		~PassScope() noexcept { detail::t_regions.active = false; detail::t_regions.used = 0; detail::t_regions.next = 0; }
+		PassScope(const PassScope&) = delete;
+		PassScope& operator=(const PassScope&) = delete;
+		[[nodiscard]] static std::uint64_t Queries() noexcept { return detail::t_regions.queries; }
+		[[nodiscard]] static std::uint64_t Hits() noexcept { return detail::t_regions.hits; }
+
+	private:
+		static void Reset() noexcept
+		{
+			auto& c = detail::t_regions;
+			c.used = 0;
+			c.next = 0;
+			c.queries = 0;
+			c.hits = 0;
+		}
+	};
+
 	// Is [a_p, a_p + a_size) mapped, committed and readable right now? Reads nothing from it. (A snapshot: the memory can still be
 	// freed a moment later - this is a net for made-up values, not a lock.)
 	[[nodiscard]] inline bool Readable(const void* a_p, std::size_t a_size) noexcept
 	{
 		auto at = reinterpret_cast<std::uintptr_t>(a_p);
 		const auto end = at + a_size;
+		if (end < at) { return false; }  // wrapped: not a real range
+		auto& cache = detail::t_regions;
 		while (at < end)
 		{
+			if (cache.active)
+			{
+				bool hit = false;
+				for (std::size_t i = 0; i < cache.used; ++i)
+				{
+					if (at >= cache.slots[i].begin && at < cache.slots[i].end)
+					{
+						at = cache.slots[i].end;
+						++cache.hits;
+						hit = true;
+						break;
+					}
+				}
+				if (hit) { continue; }
+			}
 			MEMORY_BASIC_INFORMATION info{};
+			++cache.queries;
 			if (::VirtualQuery(reinterpret_cast<const void*>(at), &info, sizeof(info)) != sizeof(info)) { return false; }
 			if (info.State != MEM_COMMIT || (info.Protect & (PAGE_NOACCESS | PAGE_GUARD))) { return false; }
 			constexpr DWORD readable = PAGE_READONLY | PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY;
 			if (!(info.Protect & readable)) { return false; }
-			at = reinterpret_cast<std::uintptr_t>(info.BaseAddress) + info.RegionSize;
+			const auto regionEnd = reinterpret_cast<std::uintptr_t>(info.BaseAddress) + info.RegionSize;
+			if (cache.active)
+			{
+				cache.slots[cache.next] = { reinterpret_cast<std::uintptr_t>(info.BaseAddress), regionEnd };
+				cache.next = (cache.next + 1) % detail::kRegionSlots;
+				if (cache.used < detail::kRegionSlots) { ++cache.used; }
+			}
+			at = regionEnd;
 		}
 		return true;
 	}

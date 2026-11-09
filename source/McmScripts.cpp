@@ -1659,6 +1659,18 @@ namespace mcmloader::scripts
 		// Quests already reported as holding an unsettled variable (one log line per quest, not one per pass).
 		std::set<RE::FormID> g_warnedUnstable;
 
+		// 2.4.2 - the save-load stutter since 2.3.0 (Nexus 2026-11-05/06): every discovery pass walked every quest in the game
+		// through the guarded attached-script lookup, 160-220 ms of main-thread time on a big list, at 2, 5, 10, 20 and 40 s
+		// after a load and later - and the 2 s and 5 s passes piled up behind the loading screen and ran back to back.
+		// The first pass after a load (or a new game) still walks every quest. It remembers the quests that carry an
+		// SKI_ConfigBase script, or that were left for a later pass; the timed passes after it look at those quests only (a
+		// quest's attached scripts are bound when the game loads, so a quest with no config script will not grow one while the
+		// game runs). The AMF menu opening still asks for a full walk. A timed pass that arrives within 1.5 s of the last one is
+		// merged into it.
+		std::vector<RE::FormID> g_candidates;    // main thread only (DiscoverNow runs from SKSE tasks)
+		bool g_fullWalkDone = false;
+		Clock::time_point g_lastPassEnd{};
+
 		// ------------------------------------------------------------------- the guarded attached-script lookup (2.3.0)
 		//
 		// WHY (a Nolvus user's crash on 2.2.3, Skyrim 1.5.97, 2026-10-25): discovery called vm->FindBoundObject(handle,
@@ -1749,8 +1761,10 @@ namespace mcmloader::scripts
 			return engineFound ? Bound::kFound : Bound::kNone;
 		}
 
-		void DiscoverNow()
+		void DiscoverNow(bool a_full)
 		{
+			const auto passStart = Clock::now();
+			const slotguard::PassScope regionCache;  // 2.4.2: VirtualQuery answers cached for this pass only (SlotGuard.h)
 			const auto vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
 			const auto dataHandler = RE::TESDataHandler::GetSingleton();
 			const auto policy = vm ? vm->GetObjectHandlePolicy() : nullptr;
@@ -1768,15 +1782,34 @@ namespace mcmloader::scripts
 			int deferred = 0;
 			const RE::BSFixedString configBase("SKI_ConfigBase");  // its pooled pointer: the fast compare in the guarded lookup
 			const auto configBasePooled = *reinterpret_cast<const std::uintptr_t*>(std::addressof(configBase));
-			for (const auto quest : dataHandler->GetFormArray<RE::TESQuest>())
+			const bool walkAll = a_full || !g_fullWalkDone;
+			std::vector<RE::TESQuest*> quests;
+			if (walkAll)
+			{
+				const auto& all = dataHandler->GetFormArray<RE::TESQuest>();
+				quests.assign(all.begin(), all.end());
+			}
+			else
+			{
+				quests.reserve(g_candidates.size());
+				for (const auto id : g_candidates)
+				{
+					if (const auto q = RE::TESForm::LookupByID<RE::TESQuest>(id)) { quests.push_back(q); }
+				}
+			}
+			std::vector<RE::FormID> candidates;
+			std::size_t walked = 0;
+			for (const auto quest : quests)
 			{
 				if (!quest) { continue; }
+				++walked;
 				const auto handle = policy->GetHandleForObject(RE::TESQuest::FORMTYPE, quest);
 				if (!handle) { continue; }
 				ObjectPtr config;
 				// 2.3.0: not vm->FindBoundObject - the engine's walk wrote through a script object's type word (0x72) on a Nolvus
 				// list (2026-10-25); the guarded lookup judges every word first and leaves an unsettled quest for a later pass
 				const Bound bound = FindBound(*vm, handle, "SKI_ConfigBase", configBasePooled, config);
+				if (bound != Bound::kNone) { candidates.push_back(quest->GetFormID()); }
 				if (bound == Bound::kUnstable)
 				{
 					++deferred;
@@ -1858,8 +1891,21 @@ namespace mcmloader::scripts
 				mod.pages = pages;
 				SyncTabs(index);
 			}
+			if (walkAll)
+			{
+				g_candidates = std::move(candidates);
+				g_fullWalkDone = true;
+			}
+			else
+			{
+				// a revisit keeps every candidate it was given (a quest whose lookup now reads none stays listed until the next full walk)
+			}
+			const auto passMs = std::chrono::duration<double, std::milli>(Clock::now() - passStart).count();
+			g_lastPassEnd = Clock::now();
 			logger::info("MCM scripts: discovery - {} script-only SkyUI menu(s) in this game, {} new, {} not registered with SkyUI's manager, {} left for a later pass (script variables not settled yet)",
 				found, added, unregistered, deferred);
+			logger::info("MCM scripts: discovery pass took {:.1f} ms ({} walk, {} quest(s) looked at, {} candidate(s) kept; region checks: {} VirtualQuery, {} cached)",
+				passMs, walkAll ? "full" : "candidates only", walked, g_candidates.size(), slotguard::PassScope::Queries(), slotguard::PassScope::Hits());
 			mcmloader::WarmSortRules();   // the menus this pass found, judged off the render thread (McmLoader.h)
 		}
 
@@ -1909,6 +1955,9 @@ namespace mcmloader::scripts
 	void OnGameLoaded()
 	{
 		g_open.store(-1);
+		g_fullWalkDone = false;   // 2.4.2: the first pass of every load / new game walks every quest again
+		g_candidates.clear();
+		g_lastPassEnd = {};
 		ClearQueue();
 		g_memoryDriving = false;  // a backup or restore that was running belonged to the game just left
 		{
@@ -1952,14 +2001,26 @@ namespace mcmloader::scripts
 		if (now - last.load() < 2000 || !settings::Get().loadSkyUIScriptMenus) { return; }
 		last = now;
 		logger::info("MCM scripts: the menu opened - one more discovery pass queued");
-		if (const auto tasks = SKSE::GetTaskInterface()) { tasks->AddTask([]() { Discover(); }); }
+		if (const auto tasks = SKSE::GetTaskInterface()) {
+			tasks->AddTask([]() {
+				try { DiscoverNow(true); }   // the player opened the menu: a full walk
+				catch (const std::exception& e) { logger::error("MCM scripts: discovery failed - {}", e.what()); }
+			});
+		}
 	}
 
 	void Discover()
 	{
 		// Runs with the switch off too: the configs it finds are what the SkyUI-list give-back returns. Off, no tab shows
 		// and the recorder stays out.
-		try { DiscoverNow(); }
+		// 2.4.2: passes that piled up (the 2 s and 5 s timers held behind the loading screen, RunPass right after a timed pass)
+		// are merged - a pass within 1.5 s of the last one has nothing new to find.
+		if (g_fullWalkDone && g_lastPassEnd != Clock::time_point{} && Clock::now() - g_lastPassEnd < std::chrono::milliseconds(1500))
+		{
+			logger::debug("MCM scripts: discovery pass merged into the one that ended moments ago");
+			return;
+		}
+		try { DiscoverNow(false); }
 		catch (const std::exception& e) { logger::error("MCM scripts: discovery failed - {}", e.what()); }
 	}
 

@@ -21,6 +21,11 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## 2.4.2 - 2026-11-08 - untested
+
+### Fixed
+- The stutter after loading a save or a new game (since 2.3.0, Nexus reports 2026-11-05/06): each MCM script discovery pass walked every quest through 2.3.0's guarded lookup, which asked VirtualQuery about every script object, parent type and type name - about 160-220 ms of main-thread time per pass on a big list, at 2, 5, 10, 20 and 40 s after a load and later. A pass now caches the memory regions it has already judged readable (cleared at the start and end of each pass), the first pass of a load walks every quest and later timed passes revisit only the quests that carry an SKI_ConfigBase script or were left for later (the menu opening still walks all), and a pass within 1.5 s of the last one is merged into it. The 2.3.0 crash guard is unchanged: no reference count is written through a word that has not been judged live. Each pass logs its time and its VirtualQuery / cached counts.
+
 ## 2.4.1 - 2026-11-07 - untested
 
 ### Fixed
