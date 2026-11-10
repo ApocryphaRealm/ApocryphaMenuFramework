@@ -53,6 +53,7 @@ namespace vkeylabels
 		// Copies the catalog again when its revision moved. Called at most once a second.
 		void Refresh(const api::InterfaceV2& a_api)
 		{
+			if (!a_api.GetBindingRevision || !a_api.CopyBindings) { return; }   // FindApi checked them too; kept here for the gate
 			if (a_api.IsReady && !a_api.IsReady()) { return; }
 			const std::uint64_t revision = a_api.GetBindingRevision();
 			if (revision == g_revision) { return; }
