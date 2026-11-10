@@ -1,6 +1,6 @@
 ApocryphaRealm Menu Framework
 =============================
-Version 2.4.1
+Version 2.4.2
 
 An original, GPL-3.0-or-later in-game menu framework (embedding Dear ImGui) - a one-for-one
 replacement for SKSE Menu Framework's consumer surface, plus user-friendly features that do
@@ -86,6 +86,10 @@ reading.
 
 WHAT CHANGED
 ------------
+
+Version 2.4.2
+Loading a save or starting a new game no longer stutters while AMF looks for the mods' configuration menus; after the first look, the later ones check only the quests that carry a menu.
+Shows a Beyond VirtualKey key on an MCM key row by that mod's own label (VK001, VK002 ...) instead of "Pad 100001", or as "Virtual key 100001" without it.
 
 Version 2.4.1
 Opening the ImGui menus section of the settings (Other menus) no longer crashes the game. Since 2.3.0 three of its menu names - Open Animation Replacer, Community Shaders and Immersive Equipment Displays - had gone missing from the list, and drawing an unnamed row crashed. All five rows are back.
