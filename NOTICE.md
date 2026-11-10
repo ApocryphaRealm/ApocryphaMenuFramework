@@ -52,3 +52,10 @@ The menus and SkyUI hooks for game text boxes were mapped from shazdeh2's Virtua
 https://www.nexusmods.com/skyrimspecialedition/mods/158716), whose permissions allow modification and asset use. AMF's
 universal keyboard (2.3.0, `source/GameField.cpp`) is AMF's own code on AMF's own keyboard; no file of that mod - its
 Flash files, its script or its plugin - is shipped, and it is not required.
+
+## Beyond VirtualKey's interface
+
+AMF reads Beyond VirtualKey's key labels (wwsme, Nexus 187350, https://www.nexusmods.com/skyrimspecialedition/mods/187350)
+through that mod's published native API. `include/VirtualKeyLabels.h` declares the few types it uses in AMF's own words,
+written to match the layout of `VirtualKeyAPI.h` in Beyond VirtualKey 2.1.0 (Zero-Clause BSD). No file of that mod is
+shipped, and it is not required.

@@ -15,6 +15,7 @@
 #include "Settings.h"
 #include "Strings.h"
 #include "Theme.h"
+#include "VirtualKeyLabels.h"
 #include "utils/Logger.h"
 #include "utils/NullGuard.h"
 #include "utils/ToggleSwitch.h"
@@ -1730,6 +1731,8 @@ namespace mcmloader
 		{
 			if (a_code <= 0) { return "-"; }
 			if (a_code >= 256 && a_code < 266) { return "Mouse " + std::to_string(a_code - 256 + 1); }
+			// 2.4.2: a Beyond VirtualKey code (100000..9999999) reads as its label ("VK001"), else "Virtual key N" - not "Pad N".
+			if (vkeylabels::IsVirtualKey(a_code)) { return vkeylabels::Name(a_code); }
 			if (a_code >= 266) { return "Pad " + std::to_string(a_code); }
 			const LONG lParam = ((a_code & 0x7F) << 16) | ((a_code & 0x80) ? (1 << 24) : 0);
 			wchar_t name[64]{};
