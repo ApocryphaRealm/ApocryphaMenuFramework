@@ -58,7 +58,11 @@ namespace bindings
 			set(Action::kBack,         KeyKind::kKeyboard, 0x0E, PadKind::kButton,   0x2000);   // Backspace / B
 			set(Action::kPaneLeft,     KeyKind::kNone,       -1, PadKind::kStickDir, 0x02);     // left stick left
 			set(Action::kPaneRight,    KeyKind::kNone,       -1, PadKind::kStickDir, 0x03);     // left stick right
-			set(Action::kOskShift,     KeyKind::kNone,       -1, PadKind::kButton,   0x4000);   // X
+			// 2.4.2 (the owner, 2026-11-15: "Change the X button from shift to space while using the on-screen
+			// keyboard"): X types a space and Shift moves to RT, the button that typed a space until now - a swap, so
+			// Shift keeps a button. Triggers arrive as Skyrim's ButtonEvent ids, LT 0x9 and RT 0xA (Input.cpp).
+			set(Action::kOskShift,     KeyKind::kNone,       -1, PadKind::kButton,   0x000A);   // RT
+			set(Action::kOskSpace,     KeyKind::kNone,       -1, PadKind::kButton,   0x4000);   // X
 			set(Action::kOskBackspace, KeyKind::kNone,       -1, PadKind::kButton,   0x8000);   // Y
 			set(Action::kOskDone,      KeyKind::kNone,       -1, PadKind::kButton,   0x0020);   // Back
 			// The bumpers walk the tabs (the owner, 2026-09-19). They reached ImGui before and the
@@ -87,7 +91,7 @@ namespace bindings
 		bool ExclusiveTogether(Action a, Action b)
 		{
 			const auto osk = [](Action x) {
-				return x == Action::kOskShift || x == Action::kOskBackspace || x == Action::kOskDone;
+				return x == Action::kOskShift || x == Action::kOskSpace || x == Action::kOskBackspace || x == Action::kOskDone;
 			};
 			if (osk(a) && osk(b)) { return true; }
 			if (osk(a) != osk(b)) { return false; }
@@ -179,7 +183,11 @@ namespace bindings
 			case 0x2000: return TR("AMF_BindB", "B");
 			case 0x4000: return TR("AMF_BindX", "X");
 			case 0x8000: return TR("AMF_BindY", "Y");
-			default:     return TR("AMF_BindUnbound", "unbound");
+			// The triggers (2.4.2): Skyrim's ButtonEvent ids, not XInput bits. A capture could already take them, and
+			// the row then read "unbound"; the on-screen keyboard's Shift is on RT by default now.
+			case 0x0009: return TR("AMF_BindLT", "LT");
+			case 0x000A: return TR("AMF_BindRT", "RT");
+			default:    return TR("AMF_BindUnbound", "unbound");
 			}
 		}
 	}
@@ -199,6 +207,7 @@ namespace bindings
 		case Action::kPaneLeft:     return TR("AMF_ActPaneLeft", "Back to the mod list");
 		case Action::kPaneRight:    return TR("AMF_ActPaneRight", "Into the page");
 		case Action::kOskShift:     return TR("AMF_ActOskShift", "On-screen keyboard: shift");
+		case Action::kOskSpace:     return TR("AMF_ActOskSpace", "On-screen keyboard: space");
 		case Action::kOskBackspace: return TR("AMF_ActOskBackspace", "On-screen keyboard: backspace");
 		case Action::kOskDone:      return TR("AMF_ActOskDone", "On-screen keyboard: done");
 		case Action::kTabPrev:      return TR("AMF_ActTabPrev", "Previous tab");
@@ -505,7 +514,7 @@ namespace bindings
 	{
 		const char* kKeys[] = {
 			"ToggleMenu", "Close", "Up", "Down", "Left", "Right", "Activate", "Back",
-			"PaneLeft", "PaneRight", "OskShift", "OskBackspace", "OskDone",
+			"PaneLeft", "PaneRight", "OskShift", "OskSpace", "OskBackspace", "OskDone",
 			"TabPrev", "TabNext", "ContextMenu", "Favourite", "GrabMod", "GrabUp", "GrabDown"
 		};
 		static_assert(sizeof(kKeys) / sizeof(kKeys[0]) == static_cast<std::size_t>(Action::kCount));
@@ -516,6 +525,7 @@ namespace bindings
 		std::scoped_lock lock(g_lock);
 		SetDefaultsLocked();
 		std::size_t read = 0;
+		std::array<bool, static_cast<std::size_t>(Action::kCount)> fromIni{};
 		for (std::size_t i = 0; i < g_bindings.size(); ++i)
 		{
 			// One line per action: "<keyKind>,<keyCode>,<padKind>,<padCode>". A line that is
@@ -529,10 +539,63 @@ namespace bindings
 			while (n < 4 && std::getline(stream, part, ',')) { v[n++] = std::atoi(part.c_str()); }
 			if (n != 4) { continue; }
 			g_bindings[i] = Binding{ static_cast<KeyKind>(v[0]), v[1], static_cast<PadKind>(v[2]), v[3] };
+			fromIni[i] = true;
 			++read;
 		}
 		logger::info("bindings: {} of {} read from the INI; the rest are the shipped defaults",
 					 read, g_bindings.size());
+
+		// A SAVED BINDING WINS OVER A NEW DEFAULT (2.4.2). A player's User.ini holds only the bindings they changed, so
+		// a changed default reaches everyone else - but a binding they DID save can now sit on the control a new
+		// default takes: a User.ini that still says the keyboard's Shift is X, beside 2.4.2's Space on X. The saved one
+		// is kept (it is the player's choice) and the default that collides with it moves aside: Space goes back to
+		// RT, where it was before 2.4.2, when nothing holds RT; any other collision leaves that default unbound on that
+		// device, with a warning - never two simultaneously-live functions on one control.
+		const auto padHeld = [](std::size_t a_self, PadKind a_kind, std::int32_t a_code) {
+			for (std::size_t j = 0; j < g_bindings.size(); ++j)
+			{
+				if (j == a_self || !ExclusiveTogether(static_cast<Action>(a_self), static_cast<Action>(j))) { continue; }
+				if (g_bindings[j].padKind == a_kind && g_bindings[j].padCode == a_code) { return true; }
+			}
+			return false;
+		};
+		for (std::size_t i = 0; i < g_bindings.size(); ++i)
+		{
+			if (fromIni[i]) { continue; }
+			Binding& mine = g_bindings[i];
+			for (std::size_t j = 0; j < g_bindings.size(); ++j)
+			{
+				if (!fromIni[j] || !ExclusiveTogether(static_cast<Action>(i), static_cast<Action>(j))) { continue; }
+				const Binding& saved = g_bindings[j];
+				if (mine.padKind != PadKind::kNone && saved.padKind == mine.padKind && saved.padCode == mine.padCode)
+				{
+					const auto action = static_cast<Action>(i);
+					if (action == Action::kOskSpace && !padHeld(i, PadKind::kButton, 0x000A))
+					{
+						mine.padKind = PadKind::kButton;
+						mine.padCode = 0x000A;
+						logger::info("bindings: your saved \"{}\" holds the button \"{}\" now has by default; it stays yours, "
+									 "and \"{}\" is on RT, as before 2.4.2", Label(static_cast<Action>(j)), Label(action), Label(action));
+					}
+					else
+					{
+						logger::warn("bindings: your saved \"{}\" holds the controller button \"{}\" has by default; \"{}\" is "
+									 "unbound on the controller - bind it on the Controls page", Label(static_cast<Action>(j)),
+									 Label(action), Label(action));
+						mine.padKind = PadKind::kNone;
+						mine.padCode = -1;
+					}
+				}
+				if (mine.keyKind != KeyKind::kNone && saved.keyKind == mine.keyKind && saved.keyCode == mine.keyCode)
+				{
+					logger::warn("bindings: your saved \"{}\" holds the key \"{}\" has by default; \"{}\" is unbound on the "
+								 "keyboard - bind it on the Controls page", Label(static_cast<Action>(j)),
+								 Label(static_cast<Action>(i)), Label(static_cast<Action>(i)));
+					mine.keyKind = KeyKind::kNone;
+					mine.keyCode = -1;
+				}
+			}
+		}
 	}
 
 	namespace

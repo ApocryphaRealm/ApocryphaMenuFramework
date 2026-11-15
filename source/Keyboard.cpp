@@ -5,6 +5,7 @@
 #include "KeyboardLayouts.h"
 
 #include "ArtHooks.h"
+#include "Bindings.h"
 
 #include "GameField.h"
 #include "Input.h"
@@ -468,11 +469,40 @@ namespace keyboard
 					if (GImGui) { ImGui::SetNavID(g_target, GImGui->NavLayer, 0, ImRect()); }
 				}
 				return true;
-			case 0x4000: if (a_down) { g_shift = !g_shift; } return true;   // X = shift
-			case 0x8000: if (a_down) { Backspace(); } return true;          // Y = backspace
-			// 2.3.0 (owner decision D5): LT = Backspace, RT = Space, LB / RB = previous / next layout
+			default:
+				break;
+			}
+			// SHIFT, SPACE AND BACKSPACE ARE THE CONTROLS PAGE'S ROWS (2.4.2). Until now X, Y and RT were fixed here and the
+			// "On-screen keyboard: shift / backspace" rows on Controls changed nothing. They are read from the bindings now,
+			// after the D-pad, A and B above (which a keyboard row may share - the keyboard's rows only act while it is up -
+			// but must not take over) and before the fixed LT / LB / RB below, so a row bound there wins. Defaults: X space
+			// (the owner, 2026-11-15: "Change the X button from shift to space"), RT shift, Y backspace.
+			{
+				const auto boundTo = [a_mask](bindings::Action a_action) {
+					const bindings::Binding b = bindings::Get(a_action);
+					return b.padKind == bindings::PadKind::kButton && b.padCode == static_cast<std::int32_t>(a_mask);
+				};
+				if (boundTo(bindings::Action::kOskSpace))
+				{
+					if (a_down) { g_hangul.Reset(); Apply({ 0, " " }); logger::debug("keyboard: pad 0x{:04X} = space", a_mask); }
+					return true;
+				}
+				if (boundTo(bindings::Action::kOskShift))
+				{
+					if (a_down) { g_shift = !g_shift; logger::debug("keyboard: pad 0x{:04X} = shift ({})", a_mask, g_shift ? "on" : "off"); }
+					return true;
+				}
+				if (boundTo(bindings::Action::kOskBackspace))
+				{
+					if (a_down) { Backspace(); }
+					return true;
+				}
+			}
+			switch (a_mask)
+			{
+			// 2.3.0 (owner decision D5): LT = Backspace, LB / RB = previous / next layout (RT's Space became the Space row,
+			// and X's Shift moved onto RT, in 2.4.2)
 			case 0x0009: if (a_down) { Backspace(); } return true;
-			case 0x000A: if (a_down) { g_hangul.Reset(); Apply({ 0, " " }); } return true;
 			case 0x0100: if (a_down) { StepLayout(-1); } return true;
 			case 0x0200: if (a_down) { StepLayout(+1); } return true;
 			case 0x0010:   // Start: Done on a game field (in AMF's window Start closes the menu before it reaches here)
@@ -749,13 +779,13 @@ namespace keyboard
 		ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
 		if (g_kind == TargetKind::kGame)
 		{
-			ImGui::TextWrapped("%s", TR("AMF_OskHintGame", "D-pad moves, A types, B goes back to the box (twice: done), X shift, Y backspace, Start done"));
+			ImGui::TextWrapped("%s", TR("AMF_OskHintGame", "D-pad moves, A types, B goes back to the box (twice: done), X space, Y backspace, Start done"));
 		}
 		else
 		{
-			ImGui::TextWrapped("%s", TR("AMF_OskHint", "D-pad moves, A types, B goes back to the box, X shift, Y backspace"));
+			ImGui::TextWrapped("%s", TR("AMF_OskHint", "D-pad moves, A types, B goes back to the box, X space, Y backspace"));
 		}
-		ImGui::TextWrapped("%s  |  %s: %s", TR("AMF_OskHintMore", "LT backspace, RT space, LB / RB layout"), TR("AMF_OskLayout", "Layout"),
+		ImGui::TextWrapped("%s  |  %s: %s", TR("AMF_OskHintMore", "LT backspace, RT shift, LB / RB layout"), TR("AMF_OskLayout", "Layout"),
 						   CurrentLayout().label);
 		if (ShowCjkNote())
 		{

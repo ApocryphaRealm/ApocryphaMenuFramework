@@ -45,7 +45,8 @@ namespace bindings
 		kBack,
 		kPaneLeft,         // cross from the page back to the mod list
 		kPaneRight,        // cross from the mod list into the page
-		kOskShift,         // on-screen keyboard: shift
+		kOskShift,         // on-screen keyboard: shift (RT since 2.4.2; X before)
+		kOskSpace,         // on-screen keyboard: space (2.4.2, X - the owner: "change the X button from shift to space")
 		kOskBackspace,     // on-screen keyboard: backspace
 		kOskDone,          // on-screen keyboard: finish
 		kTabPrev,          // previous tab on whichever tab bar is innermost

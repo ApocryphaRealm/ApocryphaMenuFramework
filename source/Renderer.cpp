@@ -2406,7 +2406,7 @@ namespace renderer
 				}
 				ImGui::TextWrapped("%s", TR("AMF_OnScreenKeyboardHelp", "On: highlight any text box on a mod's page with the D-pad and press A, "
 								   "and a key grid appears across the bottom of the screen. The D-pad walks the keys, A types one, B puts "
-								   "the highlight back on the box, X is shift and Y is backspace. It works in every mod's page. Off: text "
+								   "the highlight back on the box, X is space, Y is backspace and RT is shift. It works in every mod's page. Off: text "
 								   "boxes take a real keyboard only."));
 
 				// 2.3.0 THE UNIVERSAL KEYBOARD (the owner, 2026-10-23): the same keyboard in the GAME's own text boxes (GameField.h)
@@ -4173,7 +4173,7 @@ namespace renderer
 						"Ctrl+V and Ctrl+Z work as they do anywhere."));
 				para(TR("AMF_ManTyping2", "On a controller, put the highlight on a text box and press A: a key grid appears "
 						"across the bottom of the screen. The D-pad walks it, A types, B puts the highlight back "
-						"on the box, X is shift and Y is backspace. It works on every mod's page, and it can be "
+						"on the box, X is space, Y is backspace and RT is shift. It works on every mod's page, and it can be "
 						"turned off under Settings."));
 				para(TR("AMF_ManTyping3", "Chinese, Japanese and Korean can be typed with a Windows input method (IME) in every "
 						"text box AMF draws, with its candidate list at the text cursor. Accented and Cyrillic letters type "

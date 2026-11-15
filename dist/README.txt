@@ -79,8 +79,9 @@ reading.
   * The on-screen keyboard types into the game's own text boxes too: SkyUI's item and spell
     search, the map's location finder, the enchanting name box, SkyUI's MCM text boxes and
     other menus' prompts. In an item or spell list press Up on the first item (or L3) to reach
-    the search box. D-pad and A type, LT backspace, RT space, LB / RB change the layout (eleven,
-    Korean and Japanese included), B once gives the box back, B twice ends, Start is Done.
+    the search box. D-pad and A type, X space, Y and LT backspace, RT shift, LB / RB change the
+    layout (eleven, Korean and Japanese included), B once gives the box back, B twice ends, Start
+    is Done. Space, Shift and Y's backspace can be rebound under Controls > Controller.
     In the game's own boxes Korean and Japanese use the Latin layout, because the game's font
     has no Hangul or kana; a toggle brings them back for players with a CJK font mod.
 
@@ -91,6 +92,7 @@ Version 2.4.2
 Loading a save or starting a new game no longer stutters while AMF looks for the mods' configuration menus; after the first look, the later ones check only the quests that carry a menu.
 Shows a Beyond VirtualKey key on an MCM key row by that mod's own label (VK001, VK002 ...) instead of "Pad 100001", or as "Virtual key 100001" without it.
 NPC Preset Applier's window closes again after you make a preset (reported by HorstiIator). Since 2.4.0 a mod's window that asks to pause the game paused it completely, which also stopped the work NPC Preset Applier waits for before it closes its window, so the game looked stuck. Such a window now pauses the way SKSE Menu Framework does: time stops while it is open, but the game and its scripts keep running. AMF's own menu pauses exactly as before.
+On a controller, X on the on-screen keyboard now types a space, and Shift moves to RT (the button that typed a space before). Shift, Space and Backspace on Controls > Controller now really change the keyboard's buttons; a Shift you had already bound there yourself is kept.
 
 Version 2.4.1
 Opening the ImGui menus section of the settings (Other menus) no longer crashes the game. Since 2.3.0 three of its menu names - Open Animation Replacer, Community Shaders and Immersive Equipment Displays - had gone missing from the list, and drawing an unnamed row crashed. All five rows are back.

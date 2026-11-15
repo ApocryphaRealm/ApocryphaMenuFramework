@@ -316,7 +316,7 @@ namespace
 									   ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoFocusOnAppearing |
 									   ImGuiWindowFlags_NoSavedSettings;
 		ImGui::Begin("###amf-keyboard", nullptr, flags);
-		ImGui::TextDisabled("%s", "D-pad moves, A types, B goes back to the box, X shift, Y backspace");
+		ImGui::TextDisabled("%s", "D-pad moves, A types, B goes back to the box, X space, Y backspace");
 		g_keyRects.clear();
 		if (a_after)
 		{
