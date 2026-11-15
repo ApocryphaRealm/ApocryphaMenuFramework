@@ -73,6 +73,9 @@ namespace renderer
 
 	// 2.1.7: whether the game is paused by this menu right now (our own pause count is held), for the DevBench state.
 	bool PauseHeld();
+	// 2.4.2: whether AMF has set Main's freezeTime for a mod's pausing window right now (SKSE Menu Framework's pause for a
+	// mod's window), for the DevBench state.
+	bool FreezeTimeHeld();
 
 	// TRUE while an ImGui text field has the keyboard (io.WantTextInput), sampled once per frame.
 	// The input hook reads it on the game thread to turn the engine's own text entry on and off -

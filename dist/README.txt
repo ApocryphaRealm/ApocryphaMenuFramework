@@ -90,13 +90,14 @@ WHAT CHANGED
 Version 2.4.2
 Loading a save or starting a new game no longer stutters while AMF looks for the mods' configuration menus; after the first look, the later ones check only the quests that carry a menu.
 Shows a Beyond VirtualKey key on an MCM key row by that mod's own label (VK001, VK002 ...) instead of "Pad 100001", or as "Virtual key 100001" without it.
+NPC Preset Applier's window closes again after you make a preset (reported by HorstiIator). Since 2.4.0 a mod's window that asks to pause the game paused it completely, which also stopped the work NPC Preset Applier waits for before it closes its window, so the game looked stuck. Such a window now pauses the way SKSE Menu Framework does: time stops while it is open, but the game and its scripts keep running. AMF's own menu pauses exactly as before.
 
 Version 2.4.1
 Opening the ImGui menus section of the settings (Other menus) no longer crashes the game. Since 2.3.0 three of its menu names - Open Animation Replacer, Community Shaders and Immersive Equipment Displays - had gone missing from the list, and drawing an unnamed row crashed. All five rows are back.
 
 Version 2.4.0
 With SKSE Menu Framework installed as well, mods made for it now use it, not this menu - before, a mod could end up half on each and crash the game at load. The small name file below steps aside then too.
-Other mods' windows can pause the game, the way SKSE Menu Framework does: with "Pause the game while this menu is open" on (Settings > General), a mod's window that asks to pause the game - OBody NG's preset window, for one - stops time while it is open, and time runs again when it closes. Windows that only show information and take no mouse input never pause. AMF's own menu pauses exactly as before. For mod authors: SetWindowsPauseGame(bool) now works and sets whether your own mod's windows pause the game.
+Other mods' windows can pause the game, the way SKSE Menu Framework does: with "Pause the game while this menu is open" on (Settings > General), a mod's window that asks to pause the game - OBody NG's preset window, for one - stops time while it is open, and time runs again when it closes (from 2.4.2 this is SKSE Menu Framework's time freeze, so the game and its scripts keep running behind it). Windows that only show information and take no mouse input never pause. AMF's own menu pauses exactly as before. For mod authors: SetWindowsPauseGame(bool) now works and sets whether your own mod's windows pause the game.
 
 Version 2.3.1
 Saving a setting on a converted MCM Helper page no longer crashes the game when a script named MCM is present but MCM Helper itself is not working (reported on Skyrim 1.7.104 with TrueHUD and Achievement Injector). AMF now checks that the call can be made first; when it cannot, the value stays in this menu and the log says why.

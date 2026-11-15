@@ -78,7 +78,8 @@ namespace consumer
 	// writes that argument into BlockUserInput, and that one flag is both its pause and its input hold. AMF now pauses for
 	// the same windows: exactly those AnyWindowOwnsInput() counts (open, BlockUserInput, drew a window last frame that takes
 	// the mouse - so a passive overlay never pauses), less the windows of any module that has called
-	// SetWindowsPauseGame(false). The renderer applies it only while [Menu] bPauseGame is on. Render thread.
+	// SetWindowsPauseGame(false). The renderer applies it only while [Menu] bPauseGame is on, and (2.4.2) as SKSE Menu
+	// Framework does: by setting Main's freezeTime, not a full pause - see Renderer.cpp SyncFreezeTime. Render thread.
 	bool AnyWindowPausesGame();
 	// The ImGui name of the first window that makes AnyWindowPausesGame() true, for the transition log.
 	std::string PauseOwnerName();

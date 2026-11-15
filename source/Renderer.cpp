@@ -164,7 +164,7 @@ namespace renderer
 					++ui->numPausesGame;
 					g_pauseHeld = true;
 					g_pauseHeldMirror.store(true, std::memory_order_relaxed);
-					logger::info("pause: game paused while the menu or a mod's pausing window is open (pause count now {})", ui->numPausesGame);
+					logger::info("pause: game paused while the menu is open (pause count now {})", ui->numPausesGame);
 				}
 				else if (!own && g_pauseHeld)
 				{
@@ -174,7 +174,79 @@ namespace renderer
 					}
 					g_pauseHeld = false;
 					g_pauseHeldMirror.store(false, std::memory_order_relaxed);
-					logger::info("pause: released (menu and mods' pausing windows closed, setting off, or a menu's scripts running) - game resumed (pause count now {})", ui->numPausesGame);
+					logger::info("pause: released (menu closed, setting off, or a menu's scripts running) - game resumed (pause count now {})", ui->numPausesGame);
+				}
+			});
+		}
+
+		// A MOD'S PAUSING WINDOW FREEZES TIME (2.4.2; HorstiIator, Nexus 2026-11-13: NPC Preset Applier 3.0.1 under AMF
+		// "can't close NPA window after making a preset so basically freezes the game"). 2.4.0 paused the game for a mod's
+		// window with a full pause (a count on UI::numPausesGame, the same as our own menu), which stops the game's own work
+		// too - and NPA's save-look waits for game work (removing its stand-in NPC) before it closes its window, so it waited
+		// for ever. SKSE Menu Framework pauses for a mod's window only by setting Main's freezeTime (true on lock, false on
+		// unlock), never the pause count: world time stops, the game and its scripts keep running. AMF now does the same for
+		// a mod's window; our own menu keeps its full pause (SyncGamePause). Main thread only, once on each edge, like
+		// SyncGamePause. g_freezeHeld says whether WE set freezeTime: if it was already set (someone else holds it) we neither
+		// set it nor clear it, so a freeze another mod or the game holds is never taken away.
+		bool g_freezeHeld = false;   // main thread only
+		std::atomic<bool> g_freezeHeldMirror{ false };   // g_freezeHeld for the DevBench state (listener thread)
+
+		bool& FreezeTimeFlag(RE::Main& a_main)
+		{
+#if AMF_RUNTIME_LINE == 17
+			return a_main.GetRuntimeData().freezeTime;
+#else
+			return a_main.freezeTime;
+#endif
+		}
+
+		void SyncFreezeTime(bool a_want)
+		{
+			static bool last = false;   // render thread only
+			if (a_want == last)
+			{
+				return;
+			}
+			// as SyncGamePause: no SKSE task while the game is loading or before its main menu (LoadGuard.h) - the edge waits,
+			// unconsumed, and is queued on the first frame after the guard lifts
+			if (loadguard::Blocked())
+			{
+				return;
+			}
+			last = a_want;
+			auto* tasks = SKSE::GetTaskInterface();
+			if (!tasks)
+			{
+				logger::warn("pause: no SKSE task interface - time is not {} for a mod's window", a_want ? "frozen" : "released");
+				return;
+			}
+			tasks->AddTask([a_want]() {
+				auto* main = RE::Main::GetSingleton();
+				if (!main)
+				{
+					logger::warn("pause: Main singleton not ready - freezeTime {} skipped", a_want ? "on" : "off");
+					return;
+				}
+				bool& freeze = FreezeTimeFlag(*main);
+				if (a_want && !g_freezeHeld)
+				{
+					if (freeze)
+					{
+						// someone else already froze time: leave it to them, and do not clear it on the way out
+						logger::info("pause: a mod's window wants time frozen - freezeTime is already set by something else; left as it is");
+						return;
+					}
+					freeze = true;
+					g_freezeHeld = true;
+					g_freezeHeldMirror.store(true, std::memory_order_relaxed);
+					logger::info("pause: time frozen (Main freezeTime on) for a mod's pausing window - the game and its scripts keep running, as in SKSE Menu Framework");
+				}
+				else if (!a_want && g_freezeHeld)
+				{
+					freeze = false;
+					g_freezeHeld = false;
+					g_freezeHeldMirror.store(false, std::memory_order_relaxed);
+					logger::info("pause: time released (Main freezeTime off) - no mod's pausing window open, setting off, or a load");
 				}
 			});
 		}
@@ -2271,7 +2343,8 @@ namespace renderer
 				}
 				ImGui::TextWrapped("%s", TR("AMF_PauseGameHelp", "On: time stops while this menu is open, the way it does in the game's own "
 								   "menus - nothing moves, fights or ticks down behind it. Off: the game keeps running while you change settings. "
-								   "Another mod's window that asks to pause the game (as in SKSE Menu Framework) pauses it too while it is open."));
+								   "Another mod's window that asks to pause the game stops time while it is open (as in SKSE Menu Framework): "
+								   "the world stands still, but scripts keep running so that mod can finish its work."));
 				ImGui::Spacing();
 
 				// next after 2.1.9 (the owner, 2026-10-12): the Oblivion version's [Menu] bKeepCameraAwake, as a switch
@@ -5908,11 +5981,13 @@ namespace renderer
 					const bool nestedNow = g_nested.load(std::memory_order_acquire);
 					const bool ownPause = visible && settings::Get().pauseGameWhileOpen && !nestedNow;
 					// 2.4.0: a mod's window that pauses (consumer::AnyWindowPausesGame - the input gate's test, less mods that
-					// called SetWindowsPauseGame(false)) holds the same single count while [Menu] bPauseGame is on. It is
-					// the same count, not a second one: our menu opening or closing over such a window changes nothing, and
-					// the count goes when the last reason goes - the window closes (IsOpen read this frame) or stops drawing
-					// (its submitted windows are a frame old), the setting goes off, or a load closes the window (the edge
-					// waits out the loading guard in SyncGamePause, as our menu's does).
+					// called SetWindowsPauseGame(false)) pauses while [Menu] bPauseGame is on. 2.4.2 (HorstiIator, NPC Preset
+					// Applier): it freezes time the SKSE Menu Framework way (Main freezeTime, SyncFreezeTime), no longer a count
+					// on numPausesGame - a full pause stopped the game work NPA's save-look waits for, and its window never
+					// closed. Our own menu keeps the full pause; with both open, both hold. The freeze goes when its reason
+					// goes - the window closes (IsOpen read this frame) or stops drawing (its submitted windows are a frame
+					// old), the setting goes off, or a load closes the window (the edge waits out the loading guard in
+					// SyncFreezeTime, as our menu's does in SyncGamePause).
 					// Not while the game is loading (LoadGuard.h): a window a mod leaves open through a load pauses again only
 					// once the loaded game is running and the window is still drawn.
 					const bool consumerPause = settings::Get().pauseGameWhileOpen && consumerOwnsInput && !loadguard::Blocked() &&
@@ -5924,16 +5999,17 @@ namespace renderer
 							s_lastConsumerPause = consumerPause;
 							if (consumerPause)
 							{
-								logger::info("pause: a mod's window \"{}\" pauses the game ([Menu] bPauseGame on, as in SKSE Menu Framework){}",
-											 consumer::PauseOwnerName(), ownPause ? " - the framework menu already holds the pause" : "");
+								logger::info("pause: a mod's window \"{}\" freezes time ([Menu] bPauseGame on, freezeTime as in SKSE Menu Framework){}",
+											 consumer::PauseOwnerName(), ownPause ? " - the framework menu also holds its own pause" : "");
 							}
 							else
 							{
-								logger::info("pause: no mod's window pauses the game any more{}", ownPause ? " - the framework menu still holds the pause" : "");
+								logger::info("pause: no mod's window freezes time any more{}", ownPause ? " - the framework menu still holds its own pause" : "");
 							}
 						}
 					}
-					SyncGamePause(ownPause || consumerPause, visible && s_lifted);
+					SyncGamePause(ownPause, visible && s_lifted);
+					SyncFreezeTime(consumerPause);
 					// the idle camera only matters while time runs behind the menu: not under our own pause (lifted for a
 					// page's scripts, time runs, so it is held again)
 					SyncIdleCamera(visible && settings::Get().keepCameraAwake && !(ownPause && !s_lifted));
@@ -6424,6 +6500,11 @@ namespace renderer
 	bool PauseHeld()
 	{
 		return g_pauseHeldMirror.load(std::memory_order_relaxed);
+	}
+
+	bool FreezeTimeHeld()
+	{
+		return g_freezeHeldMirror.load(std::memory_order_relaxed);
 	}
 
 	bool WheelStepsModTabs(float a_x, float a_y, int a_step)
@@ -6919,6 +7000,7 @@ namespace renderer
 			   ",\"tabBars\":[" + TabBarsJson() + "]" +   // 2.1.9: every tab bar drawn last frame, outer first (aim op=cursor at one)
 			   ",\"pauseGame\":" + (settings::Get().pauseGameWhileOpen ? "true" : "false") +
 			   ",\"pauseHeld\":" + (PauseHeld() ? "true" : "false") +
+			   ",\"freezeTimeHeld\":" + (FreezeTimeHeld() ? "true" : "false") +   // 2.4.2: Main freezeTime set by AMF for a mod's pausing window
 			   ",\"idleCamera\":" + IdleCameraJson() +   // next after 2.1.9: [Menu] bKeepCameraAwake and the camera's vanity state
 			   ",\"loadGuard\":" + (loadguard::Blocked() ? "true" : "false") +   // 2.2.0: the game is loading or not at its main menu (LoadGuard.h)
 			   ",\"lastDevice\":\"" + (input::LastDevice() == input::Device::kGamepad ? "gamepad" :
