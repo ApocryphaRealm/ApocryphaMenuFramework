@@ -21,7 +21,7 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
-## 2.4.2 - 2026-11-08 - untested
+## 2.4.2 - 2026-11-08 - working
 
 ### Fixed
 - The on-screen keyboard's rows on Controls > Controller ('shift', 'backspace') changed nothing: the keyboard read X, Y and RT as fixed buttons. Shift, Space and Backspace now come from those rows (after the D-pad, A and B, before the fixed LT / LB / RB). A Shift a player had saved in User.ini is kept: when it sits on X, Space goes back to RT, as before 2.4.2; any other default that lands on a saved binding is left unbound on that device with a warning in the log. 'On-screen keyboard: done' is still not read by the keyboard (Start ends a game field's input, B the menu's).
