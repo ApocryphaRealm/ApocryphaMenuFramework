@@ -1,6 +1,6 @@
 ApocryphaRealm Menu Framework
 =============================
-Version 2.4.2
+Version 2.4.3
 
 An original, GPL-3.0-or-later in-game menu framework (embedding Dear ImGui) - a one-for-one
 replacement for SKSE Menu Framework's consumer surface, plus user-friendly features that do
@@ -87,6 +87,9 @@ reading.
 
 WHAT CHANGED
 ------------
+
+Version 2.4.3
+Soulsy HUD's equipment sets can be picked, updated, renamed and removed on its AMF page. Lists a mod fills while its menu is open (Soulsy's equipment sets, the items for a set's icon, the cycle preview) now show their real entries instead of the placeholder, a mod's confirmation boxes ("set created") now appear on MCM Helper pages so the button finishes its work, and a text field with no value type of its own (Soulsy's selected set's name) can be typed in.
 
 Version 2.4.2
 Loading a save or starting a new game no longer stutters while AMF looks for the mods' configuration menus; after the first look, the later ones check only the quests that carry a menu.

@@ -21,6 +21,14 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## 2.4.3 - 2026-11-23 - untested
+
+### Fixed
+- Soulsy HUD's equipment sets (loadouts) could not be picked, updated, renamed or removed on its AMF page (Nexus comment 2026-11-23). Three gaps in AMF's MCM Helper pages, all on that page:
+  - A menu whose list the mod builds at run time (MCM Helper's `SetMenuOptions`, called from the mod's OnConfigOpen / OnSettingChange / buttons) showed only config.json's placeholder ("No equipment sets"). MCM Helper keeps such a list only while its own menu shows that mod, so on an AMF page the call was dropped. AMF now forwards `MCM_ConfigBase.SetMenuOptions` through a recorder that keeps the list per menu and always runs MCM Helper's own function afterwards (SkyUI's MCM is unchanged). Soulsy's equipment-set list, its item-for-icon list and the cycle preview list now fill.
+  - A message box a mod's script shows from an MCM Helper page (`ShowMessage` - Soulsy's "set created / updated / removed") had nowhere to appear, so the script waited for an answer for ever and the rest of the button's work (refilling the list) never ran. The question popup the SkyUI script pages already had is now drawn on MCM Helper pages too, and it works with the SkyUI-script-menu switch off.
+  - A menu or text field with no `sourceType` (Soulsy's "selected set's name", read by its Rename button) was greyed out as "no value source". It now holds text the way MCM Helper does: the named property's string, else the MCM Helper setting its id names.
+
 ## 2.4.2 - 2026-11-08 - working
 
 ### Fixed

@@ -10,6 +10,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <vector>
 
 namespace mcmloader::detail
 {
@@ -40,6 +41,9 @@ namespace mcmloader::detail
 
 	// A script variable by name through the type chain (MCM Helper's ScriptObject::GetVariable). Null when absent.
 	RE::BSScript::Variable* ScriptVar(const RE::BSTSmartPointer<RE::BSScript::Object>& a_object, std::string_view a_name);
+
+	// 2.4.3: a string[] slot's strings (empty when the slot is not an array or is not settled yet - SlotGuard.h).
+	std::vector<std::string> ScriptStringArray(const RE::BSScript::Variable* a_var);
 
 	// 2.2.2: the object a slot holds, or empty when it holds none OR holds something that cannot be an object. Variable::GetObject()
 	// raises the target's reference count - a write through whatever pointer the slot holds - so a slot the VM has not finished

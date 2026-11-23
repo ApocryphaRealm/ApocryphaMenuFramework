@@ -46,6 +46,14 @@ namespace mcmloader::scripts
 	// recorder taken out again.
 	void SetEnabled(bool a_on);
 
+	// 2.4.3: MCM Helper pages (McmLoader) share the question recorder and its popup. A ShowMessage run by an action or an
+	// OnSettingChange there waited for an answer that had nowhere to show, and the rest of that script never ran (Soulsy
+	// HUD's equipment-set buttons: the set was made, its list never refilled).
+	void HostedCallBegin();      // any thread: one of AMF's calls into a config script has started
+	void HostedCallEnd();        // any thread: that call finished, or the VM dropped it
+	void EnsureRecorder();       // main thread: UI.InvokeStringA's recorder in place, whatever bLoadSkyUIScriptMenus says
+	void DrawPendingQuestion();  // render thread, inside the page being drawn: the question popup, when one waits
+
 	// For the SkyUI-list switch (McmLoader's SyncSkyUI, main thread): every config found in this game.
 	struct HideTarget
 	{

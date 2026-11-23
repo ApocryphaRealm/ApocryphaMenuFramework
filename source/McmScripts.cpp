@@ -2100,6 +2100,11 @@ namespace mcmloader::scripts
 		return static_cast<int>(std::count_if(g_mods.begin(), g_mods.end(), [](const auto& m) { return m->hidden; }));
 	}
 
+	void HostedCallBegin() { g_callsInFlight.fetch_add(1); }
+	void HostedCallEnd() { g_callsInFlight.fetch_sub(1); }
+	void EnsureRecorder() { InstallRecorder(); }
+	void DrawPendingQuestion() { DrawQuestion(); }
+
 	int Count()
 	{
 		if (!settings::Get().loadSkyUIScriptMenus) { return 0; }
@@ -2623,5 +2628,10 @@ namespace mcmloader::detail
 	RE::BSScript::Variable* ScriptVar(const RE::BSTSmartPointer<RE::BSScript::Object>& a_object, std::string_view a_name)
 	{
 		return ::mcmloader::scripts::Var(a_object, a_name);
+	}
+
+	std::vector<std::string> ScriptStringArray(const RE::BSScript::Variable* a_var)
+	{
+		return ::mcmloader::scripts::ReadStringArray(a_var);
 	}
 }

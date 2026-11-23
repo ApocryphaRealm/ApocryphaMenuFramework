@@ -601,6 +601,14 @@ namespace mcmloader
 			{
 				c.format = ToPrintf({}, c.step);
 			}
+			// 2.4.3: a menu or input with no sourceType still holds text in MCM Helper (Json/ContentHandler.cpp): the
+			// propertyName's string property when one is named, else the ModSetting string its id names. AMF drew those
+			// greyed out as "no value source" (Soulsy HUD's "selected set's name" field, which its Rename button reads).
+			if ((c.kind == Kind::kMenu || c.kind == Kind::kInput) && c.source == Source::kNone)
+			{
+				if (!c.propertyName.empty()) { c.source = Source::kPropString; c.sourceTypeName = "PropertyValueString"; }
+				else if (!c.id.empty()) { c.source = Source::kString; c.sourceTypeName = "ModSettingString"; }
+			}
 			return c;
 		}
 
@@ -609,14 +617,151 @@ namespace mcmloader
 		class Then : public RE::BSScript::IStackCallbackFunctor
 		{
 		public:
-			explicit Then(std::function<void()> a_fn) : _fn(std::move(a_fn)) {}
-			void operator()(RE::BSScript::Variable) override { if (_fn) { _fn(); } }
+			// 2.4.3: counted as AMF's call from here until it finishes (or the VM drops it unrun), so the question recorder
+			// takes a ShowMessage the script asks meanwhile even with the Journal open under AMF
+			explicit Then(std::function<void()> a_fn) : _fn(std::move(a_fn)) { scripts::HostedCallBegin(); }
+			~Then() override { Release(); }
+			void operator()(RE::BSScript::Variable) override
+			{
+				Release();
+				if (_fn) { _fn(); }
+			}
 			bool CanSave() const override { return false; }
 			void SetObject(const RE::BSTSmartPointer<RE::BSScript::Object>&) override {}
 
 		private:
+			void Release()
+			{
+				if (!_released.exchange(true)) { scripts::HostedCallEnd(); }
+			}
 			std::function<void()> _fn;
+			std::atomic<bool> _released{ false };
 		};
+
+		// ------------------------------------------------------- MCM_ConfigBase.SetMenuOptions (2.4.3)
+		//
+		// A menu control whose list a mod builds at run time (Soulsy HUD's equipment sets and cycle entries) gets it from
+		// SetMenuOptions(id, options, shortNames) in the mod's OnConfigOpen / OnSettingChange / actions. MCM Helper keeps the
+		// list only while ITS menu shows that mod (MCM_ConfigBase.cpp: a_self != configPageCache.GetCurrentForm() returns),
+		// so on an AMF page the call was dropped and the menu offered only config.json's placeholder ("No equipment sets").
+		// AMF puts a forwarder in that native's slot on MCM_ConfigBase: it records the list per (config quest, control id)
+		// and ALWAYS runs MCM Helper's original afterwards, so SkyUI's own MCM is unchanged.
+		struct MenuList
+		{
+			std::vector<std::string> options;
+			std::vector<std::string> shortNames;
+		};
+		std::mutex g_menuListMutex;
+		std::map<std::pair<RE::FormID, std::string>, MenuList> g_menuLists;   // (config quest form id, control id) -> list
+
+		void RecordMenuOptions(const RE::BSTSmartPointer<RE::BSScript::Stack>& a_stack)
+		{
+			const auto stack = a_stack.get();
+			const auto frame = stack ? stack->top : nullptr;
+			if (!frame) { return; }
+			const auto self = detail::SafeObject(frame->self);
+			if (!self) { return; }
+			const auto page = frame->GetPageForFrame();
+			const auto& idVar = frame->GetStackFrameVariable(0, page);
+			if (!idVar.IsString()) { return; }
+			const std::string id(idVar.GetString());
+			MenuList list;
+			list.options = detail::ScriptStringArray(&frame->GetStackFrameVariable(1, page));
+			list.shortNames = detail::ScriptStringArray(&frame->GetStackFrameVariable(2, page));   // None (the default) reads as empty
+			const auto formId = static_cast<RE::FormID>(self->GetHandle() & 0xFFFFFFFFull);   // a form's handle carries its form id
+			logger::info("MCM loader: SetMenuOptions {} on {:08X} - {} option(s) recorded", id, formId, list.options.size());
+			std::scoped_lock lock(g_menuListMutex);
+			g_menuLists[{ formId, id }] = std::move(list);
+		}
+
+		// The list the mod set for a control at run time, if it set one.
+		std::optional<std::vector<std::string>> RecordedMenu(RE::FormID a_quest, const std::string& a_id)
+		{
+			if (!a_quest || a_id.empty()) { return std::nullopt; }
+			std::scoped_lock lock(g_menuListMutex);
+			const auto it = g_menuLists.find({ a_quest, a_id });
+			if (it == g_menuLists.end()) { return std::nullopt; }
+			return it->second.options;
+		}
+
+		class SetMenuOptionsForwarder : public RE::BSScript::IFunction
+		{
+		public:
+			explicit SetMenuOptionsForwarder(RE::BSTSmartPointer<RE::BSScript::IFunction> a_original) : _original(std::move(a_original)) {}
+
+			const RE::BSFixedString& GetName() const override { return _original->GetName(); }
+			const RE::BSFixedString& GetObjectTypeName() const override { return _original->GetObjectTypeName(); }
+			const RE::BSFixedString& GetStateName() const override { return _original->GetStateName(); }
+			RE::BSScript::TypeInfo GetReturnType() const override { return _original->GetReturnType(); }
+			std::uint32_t GetParamCount() const override { return _original->GetParamCount(); }
+			void GetParam(std::uint32_t a_idx, RE::BSFixedString& a_name, RE::BSScript::TypeInfo& a_type) const override { _original->GetParam(a_idx, a_name, a_type); }
+			std::uint32_t GetStackFrameSize() const override { return _original->GetStackFrameSize(); }
+			bool GetIsNative() const override { return _original->GetIsNative(); }
+			bool GetIsStatic() const override { return _original->GetIsStatic(); }
+			bool GetIsEmpty() const override { return _original->GetIsEmpty(); }
+			FunctionType GetFunctionType() const override { return _original->GetFunctionType(); }
+			std::uint32_t GetUserFlags() const override { return _original->GetUserFlags(); }
+			const RE::BSFixedString& GetDocString() const override { return _original->GetDocString(); }
+			void InsertLocals(RE::BSScript::StackFrame* a_frame) override { _original->InsertLocals(a_frame); }
+			CallResult Call(const RE::BSTSmartPointer<RE::BSScript::Stack>& a_stack, RE::BSScript::ErrorLogger* a_logger,
+				RE::BSScript::Internal::VirtualMachine* a_vm, bool a_arg4) override
+			{
+				try { RecordMenuOptions(a_stack); }
+				catch (...) {}  // recording must never stand in the original's way
+				return _original->Call(a_stack, a_logger, a_vm, a_arg4);
+			}
+			const RE::BSFixedString& GetSourceFilename() const override { return _original->GetSourceFilename(); }
+			bool TranslateIPToLineNumber(std::uint32_t a_ip, std::uint32_t& a_line) const override { return _original->TranslateIPToLineNumber(a_ip, a_line); }
+			bool GetVarNameForStackIndex(std::uint32_t a_idx, RE::BSFixedString& a_name) const override { return _original->GetVarNameForStackIndex(a_idx, a_name); }
+			bool CanBeCalledFromTasklets() const override { return _original->CanBeCalledFromTasklets(); }
+			void SetCallableFromTasklets(bool a_callable) override { _original->SetCallableFromTasklets(a_callable); }
+
+		private:
+			// nonnull: InstallMenuOptionsRecorder refuses a null slot before making a forwarder, and const means nothing reassigns it
+			const RE::BSTSmartPointer<RE::BSScript::IFunction> _original;
+		};
+
+		RE::BSTSmartPointer<RE::BSScript::IFunction> g_menuOptionsForwarder;   // main thread
+		bool g_menuOptionsMissingLogged = false;
+
+		// Main thread, before AMF calls into a config script. Re-checked each time: if anything put a different function in
+		// the slot since, ours goes back over IT (and forwards to it).
+		void InstallMenuOptionsRecorder()
+		{
+			const auto vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
+			if (!vm) { return; }
+			RE::BSTSmartPointer<RE::BSScript::ObjectTypeInfo> type;
+			if (!vm->GetScriptObjectType("MCM_ConfigBase", type) || !type) { return; }   // no MCM Helper config loaded yet
+			const auto funcs = type->GetMemberFuncIter();
+			RE::BSScript::ObjectTypeInfo::MemberFuncInfo* slot = nullptr;
+			for (std::uint32_t i = 0; funcs && i < type->GetNumMemberFuncs(); ++i)
+			{
+				if (funcs[i].func && _stricmp(funcs[i].func->GetName().c_str(), "SetMenuOptions") == 0) { slot = &funcs[i]; break; }
+			}
+			if (!slot || !slot->func)
+			{
+				if (!g_menuOptionsMissingLogged)
+				{
+					g_menuOptionsMissingLogged = true;
+					logger::warn("MCM loader: MCM_ConfigBase.SetMenuOptions not found - menus a mod fills at run time keep config.json's list");
+				}
+				return;
+			}
+			if (g_menuOptionsForwarder && slot->func.get() == g_menuOptionsForwarder.get()) { return; }
+			const auto original = slot->func;
+			if (!original) { return; }
+			g_menuOptionsForwarder.reset(new SetMenuOptionsForwarder(original));
+			slot->func = g_menuOptionsForwarder;
+			logger::info("MCM loader: MCM_ConfigBase.SetMenuOptions forwarded through the recorder (original {:X}, native {})",
+				reinterpret_cast<std::uintptr_t>(original.get()), original->GetIsNative());
+		}
+
+		// Main thread: both recorders in place before a call into a config script.
+		void EnsureRecorders()
+		{
+			InstallMenuOptionsRecorder();
+			scripts::EnsureRecorder();
+		}
 
 		// 2.3.1: may a_script.a_function be called with DispatchStaticCall? The engine's DispatchStaticCall returns false
 		// only when the script TYPE is missing. When the type exists but is not linked, or has no global function of that
@@ -728,8 +873,8 @@ namespace mcmloader
 				if (a_then) { a_then(); }
 				return false;
 			}
-			RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> none;
-			if (a_then) { none.reset(new Then(a_then)); }
+			EnsureRecorders();
+			RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> none{ new Then(a_then) };   // 2.4.3: always - it counts the call
 			std::unique_ptr<RE::BSScript::IFunctionArguments> args{ a_arg ? RE::MakeFunctionArguments(std::string(*a_arg)) : RE::MakeFunctionArguments() };
 			const bool sent = vm->DispatchMethodCall(script, a_event, args.get(), none);
 			if (!sent && a_then) { a_then(); }
@@ -987,8 +1132,8 @@ namespace mcmloader
 				else { var.SetString(p); }
 			}
 
-			RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> none;
-			if (a_then) { none.reset(new Then(std::move(a_then))); }
+			EnsureRecorders();
+			RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> none{ new Then(std::move(a_then)) };   // 2.4.3: always - it counts the call
 			bool sent = false;
 			if (action.global)
 			{
@@ -1765,6 +1910,8 @@ namespace mcmloader
 			return fit.stacked ? mcmstyle::HiddenLabel(a_imguiId) : a_imguiId;
 		}
 
+		RE::FormID g_drawQuest = 0;   // render thread: the config quest of the page being drawn (DrawPage sets it)
+
 		void DrawControl(std::size_t a_mod, const Control& a_c, const std::string& a_value)
 		{
 			const std::string label = Translate(a_c.text);
@@ -1868,12 +2015,15 @@ namespace mcmloader
 			case Kind::kMenu:
 			{
 				const std::string current = Translate(a_value);
+				// 2.4.3: the list the mod set at run time (SetMenuOptions) over config.json's placeholder
+				const auto recorded = RecordedMenu(g_drawQuest, a_c.id);
+				const std::vector<std::string>& options = recorded ? *recorded : a_c.options;
 				if (theme::BeginComboTight(FitControl(label, imguiId, 6.0f, 0.0f).c_str(), current.c_str()))
 				{
-					for (std::size_t i = 0; i < a_c.options.size(); ++i)
+					for (std::size_t i = 0; i < options.size(); ++i)
 					{
-						const std::string opt = Translate(a_c.options[i]) + "##" + std::to_string(i);
-						if (ImGui::Selectable(opt.c_str(), a_c.options[i] == a_value) && a_c.options[i] != a_value) { Apply(a_mod, a_c, a_c.options[i]); }
+						const std::string opt = Translate(options[i]) + "##" + std::to_string(i);
+						if (ImGui::Selectable(opt.c_str(), options[i] == a_value) && options[i] != a_value) { Apply(a_mod, a_c, options[i]); }
 					}
 					ImGui::EndCombo();
 				}
@@ -2101,6 +2251,7 @@ namespace mcmloader
 					owned.translationsLanguage = TextLanguage();
 				}
 				values = g_mods[a_mod]->values;  // a copy: the page draws from a stable view while a set lands from another thread
+				g_drawQuest = g_mods[a_mod]->questId;
 			}
 			AMF_REQUIRE_VOID(mod);
 			const Page& page = mod->pages[a_page];
@@ -2139,6 +2290,7 @@ namespace mcmloader
 				ImGui::PopID();
 				if (!active) { ImGui::EndDisabled(); }
 			}
+			scripts::DrawPendingQuestion();   // 2.4.3: a ShowMessage from this mod's script waits for the player's answer here
 		}
 
 		// ------------------------------------------------------------------------------------------- loading
@@ -2815,8 +2967,16 @@ namespace mcmloader
 			std::scoped_lock lock(g_mutex);
 			const auto& values = g_mods[*index]->values;
 			const auto it = values.find(control->key);
-			return json{ { "ok", true }, { "id", id }, { "type", control->typeName }, { "source", control->sourceTypeName },
-				{ "value", it != values.end() ? it->second : "" } }.dump();
+			json out{ { "ok", true }, { "id", id }, { "type", control->typeName }, { "source", control->sourceTypeName },
+				{ "value", it != values.end() ? it->second : "" } };
+			// 2.4.3: a menu's list as the page offers it - the mod's run-time SetMenuOptions list when it set one
+			if (control->kind == Kind::kMenu)
+			{
+				const auto recorded = RecordedMenu(g_mods[*index]->questId, control->id);
+				out["options"] = recorded ? *recorded : control->options;
+				out["optionsFrom"] = recorded ? "SetMenuOptions" : "config.json";
+			}
+			return out.dump();
 		}
 		if (op == "set" || op == "press")
 		{
