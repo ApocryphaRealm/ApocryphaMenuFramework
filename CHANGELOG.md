@@ -24,6 +24,8 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 ## 2.4.3 - 2026-11-23 - untested
 
 ### Fixed
+- MCM Helper pages now show settings the mod's own script changes (for example Soulsy HUD's selected-set name after picking or updating a set) instead of the value from when the page was opened
+- MCM Helper pages with 'apply changes straight away' on: a value you have just typed or set is no longer undone when the menu replays the mod's page open to apply it - Soulsy HUD's Rename now takes the new name instead of the old one
 - Soulsy HUD's equipment sets (loadouts) could not be picked, updated, renamed or removed on its AMF page (Nexus comment 2026-11-23). Three gaps in AMF's MCM Helper pages, all on that page:
   - A menu whose list the mod builds at run time (MCM Helper's `SetMenuOptions`, called from the mod's OnConfigOpen / OnSettingChange / buttons) showed only config.json's placeholder ("No equipment sets"). MCM Helper keeps such a list only while its own menu shows that mod, so on an AMF page the call was dropped. AMF now forwards `MCM_ConfigBase.SetMenuOptions` through a recorder that keeps the list per menu and always runs MCM Helper's own function afterwards (SkyUI's MCM is unchanged). Soulsy's equipment-set list, its item-for-icon list and the cycle preview list now fill.
   - A message box a mod's script shows from an MCM Helper page (`ShowMessage` - Soulsy's "set created / updated / removed") had nowhere to appear, so the script waited for an answer for ever and the rest of the button's work (refilling the list) never ran. The question popup the SkyUI script pages already had is now drawn on MCM Helper pages too, and it works with the SkyUI-script-menu switch off.

@@ -135,6 +135,9 @@ namespace mcmloader
 			std::string scriptState = "not looked up yet";
 			// 2.2.1 live apply, main thread: whether the config script has an OnConfigClose of its own (OwnConfigClose).
 			int ownClose = kCloseNotRead;
+			// 2.4.3, under g_mutex: MCM Helper settings whose MCM.SetModSetting* this menu has sent and not yet seen finish
+			// (key -> count). RefreshLive does not read these back from the INI, which still holds the old value.
+			std::map<std::string, int> storing;
 		};
 
 		std::mutex g_mutex;                      // guards every Mod's values/script fields read off the main thread
@@ -917,6 +920,14 @@ namespace mcmloader
 		std::atomic<int> g_liveOpens{ 0 };
 		std::atomic<int> g_liveSkipped{ 0 };    // settled changes with nothing more to send (no OnConfigClose of its own, ...)
 		std::atomic<int> g_liveDropped{ 0 };    // pending changes dropped: the page was left (its close applies) or the setting is off
+		std::atomic<int> g_livePutBack{ 0 };    // 2.4.3: values the replayed OnConfigOpen overwrote, put back to the player's
+		// 2.4.3: the values-map keys the player changed since the last apply, on the page g_liveKeysMod (guarded by
+		// g_liveMutex). The replayed OnConfigOpen is a visit this menu adds, not one the player made: a mod whose
+		// OnConfigOpen fills fields from its own state (Soulsy HUD's UpdateEquipSetMenu writes the selected set's name
+		// into sLastEditedSetName:Equipsets) would otherwise undo what was just typed - "Renaming equipment set 'IRON'
+		// to 'IRON'". MCM Helper's own menu never reopens a page after a change; it sends OnSettingChange only.
+		std::set<std::string> g_liveKeys;
+		int g_liveKeysMod = -1;
 
 		// Held by every step of one change; the last one to finish (or to be thrown away unrun) ends it.
 		struct LiveInFlight
@@ -1158,20 +1169,135 @@ namespace mcmloader
 
 		// Main thread: re-read every GlobalValue / PropertyValue* control of a mod, so the page shows what the mod's own
 		// scripts set (several set properties in OnConfigOpen / OnSettingChange that drive hiddenToggle groups).
-		void RefreshLive(std::size_t a_mod)
+		// 2.4.3: MCM Helper's own store (ModSetting*), which a mod's script also writes (MCM.SetModSetting*)
+		bool IsHelperStore(Source a_source)
 		{
-			if (a_mod >= g_mods.size()) { return; }
-			std::vector<std::pair<std::string, std::string>> read;
+			return a_source == Source::kBool || a_source == Source::kInt || a_source == Source::kFloat || a_source == Source::kString;
+		}
+
+		// 2.4.3: MCM Helper's stored settings of a mod as they are now - its settings.ini with the user INI over it. MCM
+		// Helper writes the user INI on every MCM.SetModSetting* (SettingStore::CommitModSetting), so this is its store.
+		std::map<std::string, std::string> ReadHelperStore(std::size_t a_mod)
+		{
+			std::map<std::string, std::string> out;
+			std::string modName;
+			{
+				std::scoped_lock lock(g_mutex);
+				out = g_mods[a_mod]->defaults;
+				modName = g_mods[a_mod]->modName;
+			}
+			for (auto& [k, v] : ReadIni(fs::path("Data/MCM/Settings") / (modName + ".ini"))) { out[k] = std::move(v); }
+			return out;
+		}
+
+		// 2.4.3: the stored value of one control - a global or script property read live, an MCM Helper setting from its store
+		std::optional<std::string> ReadStored(std::size_t a_mod, const Control& a_c, const std::map<std::string, std::string>& a_store)
+		{
+			if (IsLive(a_c.source)) { return ReadLive(a_mod, a_c); }
+			if (IsHelperStore(a_c.source) && !a_c.id.empty())
+			{
+				if (const auto it = a_store.find(a_c.id); it != a_store.end()) { return it->second; }
+			}
+			return std::nullopt;
+		}
+
+		const Control* FindControl(std::size_t a_mod, const std::string& a_key)
+		{
 			for (const Page& page : g_mods[a_mod]->pages)
 			{
 				for (const Control& c : page.controls)
 				{
-					if (!IsLive(c.source)) { continue; }
-					if (auto v = ReadLive(a_mod, c)) { read.emplace_back(c.key, std::move(*v)); }
+					if (c.key == a_key) { return &c; }
+				}
+			}
+			return nullptr;
+		}
+
+		// Main thread: re-read every GlobalValue / PropertyValue* control of a mod, and (2.4.3) every MCM Helper setting
+		// from its store, so the page shows what the mod's own scripts set - Soulsy HUD fills its selected-set name field
+		// with MCM.SetModSettingString when a set is picked or updated. A setting whose write from this menu has not
+		// finished yet keeps the value the menu shows (the INI still holds the old one).
+		void RefreshLive(std::size_t a_mod)
+		{
+			if (a_mod >= g_mods.size()) { return; }
+			std::vector<std::pair<std::string, std::string>> read;
+			std::map<std::string, std::string> store;
+			bool storeRead = false;
+			for (const Page& page : g_mods[a_mod]->pages)
+			{
+				for (const Control& c : page.controls)
+				{
+					if (IsLive(c.source))
+					{
+						if (auto v = ReadLive(a_mod, c)) { read.emplace_back(c.key, std::move(*v)); }
+					}
+					else if (IsHelperStore(c.source) && !c.id.empty())
+					{
+						if (!storeRead)
+						{
+							store = ReadHelperStore(a_mod);
+							storeRead = true;
+						}
+						if (auto v = ReadStored(a_mod, c, store)) { read.emplace_back(c.key, std::move(*v)); }
+					}
 				}
 			}
 			std::scoped_lock lock(g_mutex);
-			for (auto& [k, v] : read) { g_mods[a_mod]->values[k] = std::move(v); }
+			Mod& mod = *g_mods[a_mod];
+			for (auto& [k, v] : read)
+			{
+				if (const auto it = mod.storing.find(k); it != mod.storing.end() && it->second > 0) { continue; }
+				mod.values[k] = std::move(v);
+			}
+		}
+
+		// Any thread: send MCM.SetModSetting<type>(modName, id, value) for an MCM Helper control; a_then runs once MCM Helper
+		// has stored it. The control's key counts as being stored (RefreshLive leaves it alone) until then, or until the
+		// call is dropped unrun. False: not sent.
+		struct StoringMark
+		{
+			StoringMark(std::size_t a_mod, std::string a_key) : mod(a_mod), key(std::move(a_key))
+			{
+				std::scoped_lock lock(g_mutex);
+				++g_mods[mod]->storing[key];
+			}
+			~StoringMark() { Done(); }
+			void Done()
+			{
+				if (done.exchange(true)) { return; }
+				std::scoped_lock lock(g_mutex);
+				auto& storing = g_mods[mod]->storing;
+				if (const auto it = storing.find(key); it != storing.end() && --it->second <= 0) { storing.erase(it); }
+			}
+			std::size_t mod;
+			std::string key;
+			std::atomic<bool> done{ false };
+		};
+
+		bool StoreHelperSetting(std::size_t a_mod, const std::string& a_modName, const Control& a_c, const std::string& a_value,
+			std::function<void()> a_then, std::string* a_why, std::shared_ptr<StoringMark> a_mark = nullptr)
+		{
+			const auto vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
+			if (!vm) { return false; }
+			const Source source = a_c.source;
+			const char* fn = source == Source::kBool ? "SetModSettingBool" : source == Source::kInt ? "SetModSettingInt" :
+			                 source == Source::kFloat ? "SetModSettingFloat" : "SetModSettingString";
+			auto mark = a_mark ? std::move(a_mark) : std::make_shared<StoringMark>(a_mod, a_c.key);
+			auto done = [mark, then = std::move(a_then)]() {
+				if (mark) { mark->Done(); }
+				if (then) { then(); }
+			};
+			RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> cb{ new Then(std::move(done)) };
+			std::unique_ptr<RE::BSScript::IFunctionArguments> args;
+			switch (source)
+			{
+			case Source::kBool: args.reset(RE::MakeFunctionArguments(std::string(a_modName), std::string(a_c.id), ParseBool(a_value))); break;
+			case Source::kInt: args.reset(RE::MakeFunctionArguments(std::string(a_modName), std::string(a_c.id), static_cast<std::int32_t>(ParseInt(a_value)))); break;
+			case Source::kFloat: args.reset(RE::MakeFunctionArguments(std::string(a_modName), std::string(a_c.id), ParseFloat(a_value))); break;
+			default: args.reset(RE::MakeFunctionArguments(std::string(a_modName), std::string(a_c.id), std::string(a_value))); break;
+			}
+			// 2.3.1: ask first - a loaded "MCM" script without MCM Helper's DLL behind it crashed the engine's dispatch
+			return StaticCallable(vm, "MCM", fn, a_why) && vm->DispatchStaticCall("MCM"sv, fn, args.get(), cb);
 		}
 
 		void QueueRefresh(std::size_t a_mod)
@@ -1195,6 +1321,13 @@ namespace mcmloader
 			{
 				std::scoped_lock lock(g_mutex);
 				if (a_mod >= g_mods.size()) { return; }
+			}
+			// 2.4.3: counted as being stored from the moment the menu shows it, so a re-read of the INI queued before the
+			// write cannot put the old value back on the page
+			std::shared_ptr<StoringMark> storing = IsHelperStore(a_control.source) && !a_control.id.empty() ?
+				std::make_shared<StoringMark>(a_mod, a_control.key) : nullptr;
+			{
+				std::scoped_lock lock(g_mutex);
 				if (a_control.source != Source::kNone) { g_mods[a_mod]->values[a_control.key] = a_value; }
 				modName = g_mods[a_mod]->modName;
 				entryName = g_mods[a_mod]->entryName;
@@ -1226,9 +1359,15 @@ namespace mcmloader
 			{
 				std::scoped_lock lock(g_liveMutex);
 				g_liveGate.Change(static_cast<int>(a_mod), LiveNow());
+				if (g_liveKeysMod != static_cast<int>(a_mod))
+				{
+					g_liveKeys.clear();
+					g_liveKeysMod = static_cast<int>(a_mod);
+				}
+				if (a_control.source != Source::kNone) { g_liveKeys.insert(a_control.key); }   // 2.4.3: kept over the reopen
 			}
 
-			tasks->AddTask([a_mod, modName, control, a_value, a_closeAfter, token]() {
+			tasks->AddTask([a_mod, modName, control, a_value, a_closeAfter, token, storing]() {
 				const auto vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
 				if (!vm)
 				{
@@ -1237,8 +1376,9 @@ namespace mcmloader
 				}
 				// 2. after the value is stored: OnSettingChange, the action, and (no page open) OnConfigClose
 				auto after = [a_mod, control, a_value, a_closeAfter, token]() {
-					if (!control->id.empty() && DispatchEvent(a_mod, "OnSettingChange", &control->id, [token]() {})) { ++g_liveSettingChange; }
-					RunAction(a_mod, *control, a_value, [token]() {});
+					// 2.4.3: and re-read once each has finished, for what the script set in it (Soulsy HUD's selected-set name)
+					if (!control->id.empty() && DispatchEvent(a_mod, "OnSettingChange", &control->id, [token, a_mod]() { QueueRefresh(a_mod); })) { ++g_liveSettingChange; }
+					RunAction(a_mod, *control, a_value, [token, a_mod]() { QueueRefresh(a_mod); });
 					if (a_closeAfter) { DispatchEvent(a_mod, "OnConfigClose", nullptr); }
 					QueueRefresh(a_mod);
 				};
@@ -1263,19 +1403,8 @@ namespace mcmloader
 				};
 				const char* fn = source == Source::kBool ? "SetModSettingBool" : source == Source::kInt ? "SetModSettingInt" :
 				                 source == Source::kFloat ? "SetModSettingFloat" : "SetModSettingString";
-				RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> then{ new Then(std::move(notify)) };
-				std::unique_ptr<RE::BSScript::IFunctionArguments> args;
-				const std::string id = control->id;
-				switch (source)
-				{
-				case Source::kBool: args.reset(RE::MakeFunctionArguments(std::string(modName), std::string(id), ParseBool(a_value))); break;
-				case Source::kInt: args.reset(RE::MakeFunctionArguments(std::string(modName), std::string(id), static_cast<std::int32_t>(ParseInt(a_value)))); break;
-				case Source::kFloat: args.reset(RE::MakeFunctionArguments(std::string(modName), std::string(id), ParseFloat(a_value))); break;
-				default: args.reset(RE::MakeFunctionArguments(std::string(modName), std::string(id), std::string(a_value))); break;
-				}
-				// 2.3.1: ask first - a loaded "MCM" script without MCM Helper's DLL behind it crashed the engine's dispatch
 				std::string why;
-				if (!StaticCallable(vm, "MCM", fn, &why) || !vm->DispatchStaticCall("MCM"sv, fn, args.get(), then))
+				if (!StoreHelperSetting(a_mod, modName, *control, a_value, std::move(notify), &why, storing))
 				{
 					static bool warned = false;
 					if (!warned)
@@ -2122,7 +2251,40 @@ namespace mcmloader
 		}
 
 		// Main thread: live apply's close-and-reopen for one mod whose change has settled (see the live apply block above).
-		void LiveReapply(std::size_t a_mod)
+		// 2.4.3, main thread: after the replayed OnConfigOpen has finished - any of the values the player just changed that
+		// it rewrote are put back (the player's value, as stored after its OnSettingChange and action), without another
+		// OnSettingChange: the mod was told of that value already, and MCM Helper's menu would not have reopened the page.
+		void LivePutBack(std::size_t a_mod, const std::string& a_modName, const std::map<std::string, std::string>& a_before)
+		{
+			if (a_before.empty()) { return; }
+			const auto store = ReadHelperStore(a_mod);
+			for (const auto& [key, before] : a_before)
+			{
+				const Control* c = FindControl(a_mod, key);
+				if (!c) { continue; }
+				const auto now = ReadStored(a_mod, *c, store);
+				if (!now || *now == before) { continue; }
+				logger::info("MCM loader: live apply - {}: its OnConfigOpen changed {} from the player's '{}' to '{}'; put back", a_modName, key, before, *now);
+				++g_livePutBack;
+				{
+					std::scoped_lock lock(g_mutex);
+					g_mods[a_mod]->values[key] = before;
+				}
+				if (IsLive(c->source))
+				{
+					WriteLive(a_mod, *c, before);
+					continue;
+				}
+				std::string why;
+				if (!StoreHelperSetting(a_mod, a_modName, *c, before, [a_mod]() { QueueRefresh(a_mod); }, &why))
+				{
+					logger::warn("MCM loader: live apply - {} {} not put back ({})", a_modName, key, why.empty() ? std::string("dispatch failed") : why);
+				}
+			}
+			QueueRefresh(a_mod);
+		}
+
+		void LiveReapply(std::size_t a_mod, const std::set<std::string>& a_changed = {})
 		{
 			std::string modName;
 			{
@@ -2176,18 +2338,34 @@ namespace mcmloader
 			}
 			// unreadable type info counts as "has one": the replay is the visit this menu plays on every page switch anyway
 			logger::info("MCM loader: live apply - {}: OnConfigClose then OnConfigOpen, the page stays open ({} OnConfigClose)", modName, CloseKindName(own));
+			// 2.4.3: the values the player changed, as stored now (after their OnSettingChange and action), kept over the reopen
+			std::map<std::string, std::string> before;
+			if (!a_changed.empty())
+			{
+				const auto store = ReadHelperStore(a_mod);
+				for (const auto& key : a_changed)
+				{
+					if (const Control* c = FindControl(a_mod, key))
+					{
+						if (auto v = ReadStored(a_mod, *c, store)) { before.emplace(key, std::move(*v)); }
+					}
+				}
+			}
 			LiveRecord(modName, "OnConfigClose");
-			if (!DispatchEvent(a_mod, "OnConfigClose", nullptr, [a_mod, modName]() {
+			if (!DispatchEvent(a_mod, "OnConfigClose", nullptr, [a_mod, modName, before]() {
 					// on a VM thread once the close has finished: the reopen goes back to the main thread
 					const auto tasks = SKSE::GetTaskInterface();
 					if (!tasks) { return; }
-					tasks->AddTask([a_mod, modName]() {
+					tasks->AddTask([a_mod, modName, before]() {
 						if (g_openMod.load() != static_cast<int>(a_mod))
 						{
 							logger::debug("MCM loader: live apply - {} page was left during the close; not reopened", modName);
 							return;
 						}
-						if (DispatchEvent(a_mod, "OnConfigOpen", nullptr))
+						if (DispatchEvent(a_mod, "OnConfigOpen", nullptr, [a_mod, modName, before]() {
+								// on a VM thread once the reopen has finished: the put-back goes to the main thread
+								if (const auto t = SKSE::GetTaskInterface()) { t->AddTask([a_mod, modName, before]() { LivePutBack(a_mod, modName, before); }); }
+							}))
 						{
 							++g_liveOpens;
 							LiveRecord(modName, "OnConfigClose + OnConfigOpen");
@@ -2207,6 +2385,7 @@ namespace mcmloader
 		{
 			liveapply::Decision decision = liveapply::Decision::kIdle;
 			int key = -1;
+			std::set<std::string> changed;
 			{
 				std::scoped_lock lock(g_liveMutex);
 				if (!g_liveGate.Pending()) { return; }
@@ -2214,6 +2393,8 @@ namespace mcmloader
 				decision = g_liveGate.Tick(LiveNow(), settings::Get().liveApplyConverted, g_openMod.load(), ImGui::IsAnyItemActive(), g_liveInFlight.load());
 				if (decision == liveapply::Decision::kWait) { return; }
 				g_liveLastDecision = liveapply::Name(decision);
+				if (g_liveKeysMod == key) { changed.swap(g_liveKeys); }   // 2.4.3: fired or dropped, these are taken
+				g_liveKeys.clear();
 			}
 			std::string modName = "?";
 			{
@@ -2229,7 +2410,7 @@ namespace mcmloader
 			logger::debug("MCM loader: live apply - {} change settled; queued", modName);
 			if (const auto tasks = SKSE::GetTaskInterface())
 			{
-				tasks->AddTask([mod = static_cast<std::size_t>(key)]() { LiveReapply(mod); });
+				tasks->AddTask([mod = static_cast<std::size_t>(key), changed = std::move(changed)]() { LiveReapply(mod, changed); });
 			}
 		}
 
@@ -2525,6 +2706,7 @@ namespace mcmloader
 		{
 			std::scoped_lock lock(g_liveMutex);
 			g_liveGate.Reset();   // a change pending from the game before belongs to its script objects
+			g_liveKeys.clear();
 		}
 		// No early return when both loaders are off: the give-back below still returns whatever the ledger says AMF hid.
 		if (settings::Get().hideMcmInSkyUI && (settings::Get().loadMcmHelperConfigs || settings::Get().loadSkyUIScriptMenus))
@@ -2680,6 +2862,7 @@ namespace mcmloader
 		out["liveOpensSent"] = g_liveOpens.load();
 		out["skipped"] = g_liveSkipped.load();
 		out["dropped"] = g_liveDropped.load();
+		out["putBack"] = g_livePutBack.load();   // 2.4.3: values a replayed OnConfigOpen rewrote, put back to the player's
 		out["quietSeconds"] = liveapply::Timing{}.quiet;
 		out["stuckSeconds"] = liveapply::Timing{}.stuck;
 		json never = json::array();
