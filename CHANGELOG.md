@@ -21,7 +21,7 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
-## 2.4.3 - 2026-11-23 - untested
+## 2.4.3 - 2026-11-23 - working
 
 ### Fixed
 - MCM Helper pages now show settings the mod's own script changes (for example Soulsy HUD's selected-set name after picking or updating a set) instead of the value from when the page was opened
