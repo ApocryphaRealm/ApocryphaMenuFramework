@@ -121,6 +121,9 @@ namespace mcmloader
 			std::vector<Page> pages;
 			std::map<std::string, std::string> defaults;   // id -> value (settings.ini)
 			std::map<std::string, std::string> values;     // id -> value (defaults with the user INI over them)
+			// 2.5.0 (polish B5): one more whenever `values` changes (under g_mutex, like the map). The page being drawn keeps
+			// its copy of the map until this moves, where it used to copy the whole map on every frame.
+			std::uint64_t valuesRevision = 0;
 			std::unordered_map<std::string, std::string> translations;  // $KEY -> text, from the mod's own file
 			std::string translationsLanguage;  // the TextLanguage() they were read in; another means read them again
 			int controlCount = 0;
@@ -1248,6 +1251,7 @@ namespace mcmloader
 			{
 				if (const auto it = mod.storing.find(k); it != mod.storing.end() && it->second > 0) { continue; }
 				mod.values[k] = std::move(v);
+				++mod.valuesRevision;
 			}
 		}
 
@@ -1328,7 +1332,11 @@ namespace mcmloader
 				std::make_shared<StoringMark>(a_mod, a_control.key) : nullptr;
 			{
 				std::scoped_lock lock(g_mutex);
-				if (a_control.source != Source::kNone) { g_mods[a_mod]->values[a_control.key] = a_value; }
+				if (a_control.source != Source::kNone)
+				{
+					g_mods[a_mod]->values[a_control.key] = a_value;
+					++g_mods[a_mod]->valuesRevision;
+				}
 				modName = g_mods[a_mod]->modName;
 				entryName = g_mods[a_mod]->entryName;
 			}
@@ -2041,6 +2049,43 @@ namespace mcmloader
 
 		RE::FormID g_drawQuest = 0;   // render thread: the config quest of the page being drawn (DrawPage sets it)
 
+		// 2.5.0 (polish B4) A SLIDER DRAGGED WITH THE MOUSE SENDS ITS VALUE AT A STEADY PACE, NOT EVERY FRAME. Each value sent
+		// makes MCM Helper write the mod's INI, runs the mod's OnSettingChange and re-reads the page; a drag across a
+		// slider sent one for every frame the value moved - sixty a second. While the mouse holds the slider the newest
+		// value is kept here and sent at most every 120 ms, so the mod still follows the drag (live apply keeps working),
+		// and the two promises of 2.4.0 hold: the LAST value always lands - on the frame the slider is let go - and a value
+		// still waiting is sent when its row stops being drawn (the page left, the menu closed), before OnConfigClose.
+		// A keyboard or controller nudge, the wheel and a typed number are sent at once, as before. Render thread only.
+		struct SliderHold
+		{
+			std::size_t mod = static_cast<std::size_t>(-1);
+			const Control* control = nullptr;   // pages never change after Load (see Apply)
+			float value = 0.0f;
+			bool whole = false;
+			bool dirty = false;     // value differs from the last one sent
+			double sentAt = -1.0;   // ImGui time of the last send
+			int frame = -10;        // the last frame its row was drawn in
+		};
+		SliderHold g_sliderHold;
+		constexpr double kSliderSendEvery = 0.12;
+
+		std::string SliderText(float a_value, bool a_whole)
+		{
+			return a_whole ? std::to_string(static_cast<long long>(std::lround(a_value))) : FormatFloat(a_value);
+		}
+
+		// Sends the held value if it has not been sent, and lets the slider go.
+		void FlushSliderHold(const char* a_why)
+		{
+			if (g_sliderHold.control && g_sliderHold.dirty)
+			{
+				logger::debug("MCM loader: slider {} let go ({}) - its last value {} is sent", g_sliderHold.control->key, a_why,
+							  SliderText(g_sliderHold.value, g_sliderHold.whole));
+				Apply(g_sliderHold.mod, *g_sliderHold.control, SliderText(g_sliderHold.value, g_sliderHold.whole), false);
+			}
+			g_sliderHold = SliderHold{};
+		}
+
 		void DrawControl(std::size_t a_mod, const Control& a_c, const std::string& a_value)
 		{
 			const std::string label = Translate(a_c.text);
@@ -2107,8 +2152,11 @@ namespace mcmloader
 			case Kind::kSlider:
 			{
 				const bool whole = a_c.source == Source::kInt || a_c.source == Source::kPropInt;
-				float v = whole ? static_cast<float>(ParseInt(a_value)) : ParseFloat(a_value);
+				// 2.5.0 (polish B4): while the mouse holds this slider it shows the held value (g_sliderHold above)
+				bool held = g_sliderHold.control == &a_c && g_sliderHold.mod == a_mod;
+				float v = held ? g_sliderHold.value : (whole ? static_cast<float>(ParseInt(a_value)) : ParseFloat(a_value));
 				const float before = v;
+				bool moved = false;
 				if (precise::SliderFloat(FitControl(label, imguiId, 7.0f, 0.0f).c_str(), &v, a_c.min, a_c.max, a_c.format.c_str()))
 				{
 					// MCM's step can be coarser than the shown digit (step 5 on "{0}"): a one-digit nudge then moves a
@@ -2116,9 +2164,39 @@ namespace mcmloader
 					if (v != before && std::fabs(v - before) < a_c.step * 0.5f) { v = before + (v > before ? a_c.step : -a_c.step); }
 					v = a_c.min + std::round((v - a_c.min) / a_c.step) * a_c.step;
 					v = std::clamp(v, a_c.min, a_c.max);
-					if (v != before)
+					moved = v != before;
+				}
+				{
+					const bool active = ImGui::IsItemActive();
+					const bool mouseDrag = active && GImGui && GImGui->ActiveIdSource == ImGuiInputSource_Mouse && !ImGui::TempInputIsActive(ImGui::GetItemID());
+					if (moved && mouseDrag)
 					{
-						Apply(a_mod, a_c, whole ? std::to_string(static_cast<long long>(std::lround(v))) : FormatFloat(v));
+						if (!held)
+						{
+							FlushSliderHold("another slider was taken");
+							g_sliderHold.mod = a_mod;
+							g_sliderHold.control = &a_c;
+							g_sliderHold.whole = whole;
+							held = true;
+						}
+						g_sliderHold.value = v;
+						g_sliderHold.dirty = true;
+						if (g_sliderHold.sentAt < 0.0 || ImGui::GetTime() - g_sliderHold.sentAt >= kSliderSendEvery)
+						{
+							Apply(a_mod, a_c, SliderText(v, whole));
+							g_sliderHold.sentAt = ImGui::GetTime();
+							g_sliderHold.dirty = false;
+						}
+					}
+					else if (moved)
+					{
+						if (held) { g_sliderHold = SliderHold{}; held = false; }   // this change replaces whatever was held
+						Apply(a_mod, a_c, SliderText(v, whole));
+					}
+					if (held)
+					{
+						g_sliderHold.frame = ImGui::GetFrameCount();
+						if (!active) { FlushSliderHold("the mouse let go"); }
 					}
 				}
 				Tooltip(a_c, a_value);
@@ -2269,6 +2347,7 @@ namespace mcmloader
 				{
 					std::scoped_lock lock(g_mutex);
 					g_mods[a_mod]->values[key] = before;
+					++g_mods[a_mod]->valuesRevision;
 				}
 				if (IsLive(c->source))
 				{
@@ -2418,7 +2497,12 @@ namespace mcmloader
 		{
 			NoteDrawn(a_mod);
 			const Mod* mod = nullptr;
-			std::map<std::string, std::string> values;
+			// 2.5.0 (polish B5): the page's stable view of its values, copied again only when they changed or another mod's
+			// page is drawn. It was a fresh copy of the whole map - every key and value - on every frame.
+			static std::map<std::string, std::string> s_values;
+			static const Mod* s_valuesMod = nullptr;
+			static std::uint64_t s_valuesRevision = 0;
+			const std::map<std::string, std::string>& values = s_values;
 			{
 				std::scoped_lock lock(g_mutex);
 				if (a_mod >= g_mods.size() || a_page >= g_mods[a_mod]->pages.size()) { return; }
@@ -2431,7 +2515,13 @@ namespace mcmloader
 					owned.translations = LoadTranslations(owned.modName);
 					owned.translationsLanguage = TextLanguage();
 				}
-				values = g_mods[a_mod]->values;  // a copy: the page draws from a stable view while a set lands from another thread
+				// a copy: the page draws from a stable view while a set lands from another thread
+				if (s_valuesMod != mod || s_valuesRevision != mod->valuesRevision)
+				{
+					s_values = mod->values;
+					s_valuesMod = mod;
+					s_valuesRevision = mod->valuesRevision;
+				}
 				g_drawQuest = g_mods[a_mod]->questId;
 			}
 			AMF_REQUIRE_VOID(mod);
@@ -2588,6 +2678,7 @@ namespace mcmloader
 			const fs::path userIni = fs::path("Data/MCM/Settings") / (modName + ".ini");
 			const auto user = ReadIni(userIni);
 			for (const auto& [k, v] : user) { mod->values[k] = v; }
+			++mod->valuesRevision;
 
 			logger::debug("MCM loader: {} - {} page(s), {} control(s) ({} phase 2), {} default(s), {} user value(s)",
 				modName, mod->pages.size(), mod->controlCount, mod->phase2Count, mod->defaults.size(), user.size());
@@ -2680,6 +2771,9 @@ namespace mcmloader
 	void Frame()
 	{
 		scripts::Frame();
+		// 2.5.0 (polish B4): a slider value still held back when its row stopped being drawn goes out now, before the
+		// page's OnConfigClose below
+		if (g_sliderHold.control && g_sliderHold.frame < ImGui::GetFrameCount() - 1) { FlushSliderHold("its row is no longer drawn"); }
 		const int open = g_openMod.load();
 		if (open >= 0 && g_lastDrawFrame < ImGui::GetFrameCount() - 1)
 		{
