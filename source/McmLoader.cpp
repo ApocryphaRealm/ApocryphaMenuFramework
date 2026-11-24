@@ -2189,7 +2189,7 @@ namespace mcmloader
 				ImGui::PushTextWrapPos(0.0f);
 				ImGui::TextUnformatted(label.c_str());
 				ImGui::PopTextWrapPos();
-				const std::string button = std::string(icons::kKeyboard) + "  " + (waiting ? std::string(strings::TR("AMF_McmPressKey", "Press a key...")) : KeyName(static_cast<std::int32_t>(ParseInt(a_value)))) + "###key" + a_c.id;
+				const std::string button = std::string(icons::kKeyboard) + "  " + (waiting ? std::string(strings::TR("AMF_McmPressKey", "Press a key or button (Esc cancels)")) : KeyName(static_cast<std::int32_t>(ParseInt(a_value)))) + "###key" + a_c.id;
 				const std::string clear = std::string(icons::kClear) + "  " + strings::TR("AMF_McmClear", "Clear") + "##clr" + a_c.id;
 				const float framePad = ImGui::GetStyle().FramePadding.x * 2.0f;
 				mcmstyle::SameLineIfFits(mcmstyle::LabelWidth(button) + framePad);

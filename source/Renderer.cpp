@@ -2336,6 +2336,15 @@ namespace renderer
 			// GENERAL: how the menu starts, opens, pauses and exits, and how it is driven
 			if (tab(icons::Label(icons::kSliders, TR("AMF_TabGeneral", "General")).c_str()))
 			{
+				// 2.5.0 (polish C3): General is two sub-tabs. The on-screen keyboard's fourteen controls made this the longest
+				// page of the menu and sat between settings that have nothing to do with a keyboard; they have their own
+				// sub-tab now (sub-tabs rather than collapsible sections - the owner, 2026-10-05, on Appearance). The bodies
+				// keep their old indentation, as the Appearance sub-tabs do.
+				{
+					static int s_generalSub = 0;
+					SubTabs sub("##generalsub", 2, s_generalSub);
+					if (sub.Tab(icons::Label(icons::kSliders, TR("AMF_SubGeneralMenu", "Menu")).c_str()))
+					{
 				// 2.3.0 SETTINGS PRESETS (the owner, 2026-10-25: at the top of General, so they are easy to find - picking one,
 				// Save current as..., Load with the comparison, Delete; Presets.h). The one place presets are picked.
 				presets::DrawGeneralSection();
@@ -2434,6 +2443,71 @@ namespace renderer
 				ImGui::TextDisabled("%s", TR("AMF_TakesEffectJournal", "Takes effect the next time the journal is opened."));
 				ImGui::Spacing();
 
+				ImGui::Spacing();
+
+				// INPUT MODE IS DETECTED, AND IS NOT A SETTING (author, 2026-09-04: "I want the auto
+				// detection feature built-in with no toggle and there doesn't need to be a controller
+				// toggle anymore"). There were two switches here - one holding the mode, one deciding
+				// whether the detector was allowed to write it - which is two controls describing one
+				// fact the game already knows, and they could be left disagreeing with reality. The
+				// detector's reading is now simply used, and shown, so it can still be judged while
+				// playing rather than taken on trust.
+				ImGui::TextUnformatted(TR("AMF_Navigation", "Navigation"));
+				widgets::HelpPara(TR("AMF_NavigationHelp", "Follows whatever you last used: press a key or move the mouse for "
+								   "keyboard navigation (arrow keys, Enter, Escape), touch the pad for "
+								   "controller navigation (D-pad moves, A activates, B cancels)."));
+				{
+					const input::Device device = input::LastDevice();
+					const float since = input::SecondsSinceLastDevice();
+					const char* name = device == input::Device::kGamepad ? TR("AMF_DevController", "controller")
+									 : device == input::Device::kKeyboardMouse ? TR("AMF_DevKeyboard", "keyboard and mouse")
+									 : TR("AMF_DevNone", "nothing yet");
+					if (since < 0.0f) { ImGui::TextDisabled(TR("AMF_Detected", "Detected: %s"), name); }
+					else { ImGui::TextDisabled(TR("AMF_DetectedAgo", "Detected: %s (%.1fs ago)"), name, since); }
+				}
+				ImGui::Spacing();
+				ImGui::Spacing();
+
+				// The menu key is set in ONE place, Controls > Open and close the menu (the owner, 2026-10-05: "there's duplicate
+				// entries for the menus toggle key ... There should just be one"). The Rebind that sat here went in 2.1.1, with
+				// the "Window position: Centre" line beside it, a stub that offered nothing to set.
+
+				// WINDOW SIZE (2026-10-02: one centred window for both ways of opening - see the window code). The size is all
+				// that is remembered now; this is the way back to the default.
+				{
+					auto& v = settings::Get();
+					const bool anySet = v.nestedWindow.IsSet() || v.hotkeyWindow.IsSet();
+					ImGui::TextUnformatted(TR("AMF_WindowSize", "Window size"));
+					widgets::HelpPara(TR("AMF_WindowSizeHelp", "The first time, the menu opens in the middle of the screen, wide enough to "
+									   "show the menu names and the page in full - the same from its key and from the System menu row. "
+									   "The size you drag it to is kept."));
+					ImGui::BeginDisabled(!anySet);
+					if (ImGui::Button(icons::Label(icons::kReset, TR("AMF_ResetSize", "Reset to the default size")).c_str()))
+					{
+						v.nestedWindow.Clear();
+						v.hotkeyWindow.Clear();
+						settings::Save();
+						g_applyGeometry.store(true, std::memory_order_release);
+						logger::info("settings page: window size reset to the default");
+					}
+					ImGui::EndDisabled();
+					if (!anySet)
+					{
+						ImGui::SameLine();
+						ImGui::TextDisabled("%s", TR("AMF_SizeDefault", "(at the default size)"));
+					}
+				}
+				ImGui::Spacing();
+				ImGui::Spacing();
+
+				// The persistence-channel test harness (decisions doc S10) that sat here at trace level is gone (the owner,
+				// 2026-10-07: "get rid of the persistence test at the bottom of the settings page"); the channel itself
+				// (Persistence.h) is unchanged.
+
+					ImGui::EndTabItem();
+					}
+					if (sub.Tab(icons::Label(icons::kKeyboard, TR("AMF_SubGeneralKeyboard", "On-screen keyboard")).c_str()))
+					{
 				// THE ON-SCREEN KEYBOARD (1.8.9, the owner, 2026-09-18): a framework feature, so every mod's
 				// search box gets it; a toggle here, drawn at the bottom of the screen, never over the page.
 				if (widgets::Toggle(TR("AMF_OnScreenKeyboard", "On-screen keyboard for controllers"), &values.onScreenKeyboard))
@@ -2594,67 +2668,9 @@ namespace renderer
 					}
 					ImGui::Unindent();
 				}
-				ImGui::Spacing();
-
-				// INPUT MODE IS DETECTED, AND IS NOT A SETTING (author, 2026-09-04: "I want the auto
-				// detection feature built-in with no toggle and there doesn't need to be a controller
-				// toggle anymore"). There were two switches here - one holding the mode, one deciding
-				// whether the detector was allowed to write it - which is two controls describing one
-				// fact the game already knows, and they could be left disagreeing with reality. The
-				// detector's reading is now simply used, and shown, so it can still be judged while
-				// playing rather than taken on trust.
-				ImGui::TextUnformatted(TR("AMF_Navigation", "Navigation"));
-				widgets::HelpPara(TR("AMF_NavigationHelp", "Follows whatever you last used: press a key or move the mouse for "
-								   "keyboard navigation (arrow keys, Enter, Escape), touch the pad for "
-								   "controller navigation (D-pad moves, A activates, B cancels)."));
-				{
-					const input::Device device = input::LastDevice();
-					const float since = input::SecondsSinceLastDevice();
-					const char* name = device == input::Device::kGamepad ? TR("AMF_DevController", "controller")
-									 : device == input::Device::kKeyboardMouse ? TR("AMF_DevKeyboard", "keyboard and mouse")
-									 : TR("AMF_DevNone", "nothing yet");
-					if (since < 0.0f) { ImGui::TextDisabled(TR("AMF_Detected", "Detected: %s"), name); }
-					else { ImGui::TextDisabled(TR("AMF_DetectedAgo", "Detected: %s (%.1fs ago)"), name, since); }
-				}
-				ImGui::Spacing();
-				ImGui::Spacing();
-
-				// The menu key is set in ONE place, Controls > Open and close the menu (the owner, 2026-10-05: "there's duplicate
-				// entries for the menus toggle key ... There should just be one"). The Rebind that sat here went in 2.1.1, with
-				// the "Window position: Centre" line beside it, a stub that offered nothing to set.
-
-				// WINDOW SIZE (2026-10-02: one centred window for both ways of opening - see the window code). The size is all
-				// that is remembered now; this is the way back to the default.
-				{
-					auto& v = settings::Get();
-					const bool anySet = v.nestedWindow.IsSet() || v.hotkeyWindow.IsSet();
-					ImGui::TextUnformatted(TR("AMF_WindowSize", "Window size"));
-					widgets::HelpPara(TR("AMF_WindowSizeHelp", "The first time, the menu opens in the middle of the screen, wide enough to "
-									   "show the menu names and the page in full - the same from its key and from the System menu row. "
-									   "The size you drag it to is kept."));
-					ImGui::BeginDisabled(!anySet);
-					if (ImGui::Button(icons::Label(icons::kReset, TR("AMF_ResetSize", "Reset to the default size")).c_str()))
-					{
-						v.nestedWindow.Clear();
-						v.hotkeyWindow.Clear();
-						settings::Save();
-						g_applyGeometry.store(true, std::memory_order_release);
-						logger::info("settings page: window size reset to the default");
-					}
-					ImGui::EndDisabled();
-					if (!anySet)
-					{
-						ImGui::SameLine();
-						ImGui::TextDisabled("%s", TR("AMF_SizeDefault", "(at the default size)"));
+					ImGui::EndTabItem();
 					}
 				}
-				ImGui::Spacing();
-				ImGui::Spacing();
-
-				// The persistence-channel test harness (decisions doc S10) that sat here at trace level is gone (the owner,
-				// 2026-10-07: "get rid of the persistence test at the bottom of the settings page"); the channel itself
-				// (Persistence.h) is unchanged.
-
 				ImGui::EndTabItem();
 			}
 

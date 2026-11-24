@@ -573,7 +573,7 @@ namespace prisma
 				ImGui::TextUnformatted(label.c_str());
 				ImGui::SameLine();
 				const std::string button = std::string(icons::kKeyboard) + "  " +
-					(waiting ? std::string(strings::TR("AMF_McmPressKey", "Press a key...")) : mcmloader::detail::KeyName(code)) + "###key" + a_s.id;
+					(waiting ? std::string(strings::TR("AMF_McmPressKey", "Press a key or button (Esc cancels)")) : mcmloader::detail::KeyName(code)) + "###key" + a_s.id;
 				if (ImGui::Button(button.c_str()) && !waiting)
 				{
 					g_capturing = std::make_pair(a_index, a_s.id);

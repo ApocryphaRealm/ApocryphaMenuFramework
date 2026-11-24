@@ -88,6 +88,31 @@ SET = {
         'korean': '저장되지 않음 - 로그를 확인하세요',
         'chinese': '未保存 - 请查看日志',
     },
+    # B12: the key row's prompt while it waits says how to cancel (Escape, or the pad's close button)
+    'AMF_McmPressKey': {
+        'english': 'Press a key or button (Esc cancels)',
+        'german': 'Taste oder Knopf drücken (Esc bricht ab)',
+        'french': 'Appuyez sur une touche ou un bouton (Échap annule)',
+        'spanish': 'Pulsa una tecla o un botón (Esc cancela)',
+        'italian': 'Premi un tasto o un pulsante (Esc annulla)',
+        'polish': 'Naciśnij klawisz lub przycisk (Esc anuluje)',
+        'czech': 'Stiskněte klávesu nebo tlačítko (Esc ruší)',
+        'russian': 'Нажмите клавишу или кнопку (Esc - отмена)',
+        'japanese': 'キーかボタンを押してください (Escでキャンセル)',
+        'korean': '키나 버튼을 누르세요 (Esc: 취소)',
+        'chinese': '请按下按键或按钮（Esc 取消）',
+    },
+    # C3: Settings > General's two sub-tabs
+    'AMF_SubGeneralMenu': {
+        'english': 'Menu', 'german': 'Menü', 'french': 'Menu', 'spanish': 'Menú', 'italian': 'Menu', 'polish': 'Menu',
+        'czech': 'Nabídka', 'russian': 'Меню', 'japanese': 'メニュー', 'korean': '메뉴', 'chinese': '菜单',
+    },
+    'AMF_SubGeneralKeyboard': {
+        'english': 'On-screen keyboard', 'german': 'Bildschirmtastatur', 'french': "Clavier à l'écran",
+        'spanish': 'Teclado en pantalla', 'italian': 'Tastiera su schermo', 'polish': 'Klawiatura ekranowa',
+        'czech': 'Klávesnice na obrazovce', 'russian': 'Экранная клавиатура', 'japanese': 'スクリーンキーボード',
+        'korean': '화면 키보드', 'chinese': '屏幕键盘',
+    },
     # B8: a button that destroys something asks for a second press
     'AMF_ConfirmAgain': {
         'english': 'Press again to confirm',

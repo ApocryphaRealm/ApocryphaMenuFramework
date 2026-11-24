@@ -32,6 +32,8 @@ numbers (A1, B1 ...) are that report's.
 - A click on a switch's label flips the switch, as a click on a tick box's label does (B9)
 - A switch's knob slides to its side and the track's colour goes with it, over about a tenth of a second, instead of jumping (C7)
 - A switch that is off is a neutral tone of the theme instead of red. Red read as a warning on a page of settings that were simply off. On stays green; Appearance > Colours > Switch off brings the red back (C9)
+- Settings > General is two sub-tabs, Menu and On-screen keyboard. The keyboard's fourteen controls made General the longest page of the menu; they are on their own sub-tab, as Appearance and Converted menus already had theirs. Nothing was removed (C3)
+- A key row on a converted page that is waiting for a press says "Press a key or button (Esc cancels)" on every kind of page. Script pages showed only "..." (B12)
 
 ### Fixed
 - A greyed-out switch now fades with its label. Its pill kept its full green or red, so a setting that was switched off by another one still looked live - on AMF's own pages and on converted pages alike (True Directional Movement's gated rows) (A1)

@@ -1415,7 +1415,10 @@ namespace mcmloader::scripts
 			{
 				const int code = static_cast<int>(o.num);
 				const bool waiting = g_capturing && *g_capturing == a_slot;
-				const std::string button = std::string(icons::kKeyboard) + "  " + (waiting ? std::string("...") : KeyName(code)) + "###key";
+				// 2.5.0 (polish B12): while waiting the button says what to do and how to back out, as the MCM Helper and Prisma
+				// rows do - it showed only "..." here
+				const std::string button = std::string(icons::kKeyboard) + "  " +
+					(waiting ? std::string(TR("AMF_McmPressKey", "Press a key or button (Esc cancels)")) : KeyName(code)) + "###key";
 				if (ImGui::Button(button.c_str()) && !waiting)
 				{
 					g_capturing = a_slot;
