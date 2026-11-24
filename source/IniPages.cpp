@@ -766,11 +766,18 @@ namespace inipages
 				case Kind::kText:
 				{
 					ImGui::SetNextItemWidth(ImGui::GetFontSize() * 14.0f);
-					ImGui::InputText(label.c_str(), s.text, sizeof(s.text), s.readOnly ? ImGuiInputTextFlags_ReadOnly : 0);
+					const bool typed = ImGui::InputText(label.c_str(), s.text, sizeof(s.text), s.readOnly ? ImGuiInputTextFlags_ReadOnly : 0);
 					// 2.5.0 (polish A6): known to the on-screen keyboard, so a controller player can type here - every other
 					// text field of the menu already was
 					if (!s.readOnly) { keyboard::NoteTextField(ImGui::GetItemID()); }
-					if (!s.readOnly && ImGui::IsItemDeactivatedAfterEdit() && s.value != s.text) { SetValue(mod, *sec, s, s.text, error); }
+					// 2.5.0 (test round 2, T6): written once the field is let go, by any way out of it - B, Done, Enter, a click
+					// elsewhere. It waited for ImGui's "deactivated after edit", which never came for text typed with the pad.
+					if (!s.readOnly && typed) { s.pending = true; }
+					if (!s.readOnly && s.pending && !ImGui::IsItemActive())
+					{
+						s.pending = false;
+						if (s.value != s.text) { SetValue(mod, *sec, s, s.text, error); }
+					}
 					break;
 				}
 				}

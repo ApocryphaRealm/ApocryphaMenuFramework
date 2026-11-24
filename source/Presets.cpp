@@ -1018,13 +1018,9 @@ namespace presets
 			}
 		}
 
-		ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
-		ImGui::PushTextWrapPos(0.0f);
-		ImGui::TextUnformatted(TR("AMF_SetPresetFolders", "Your presets are files in Data\\SKSE\\Plugins\\ApocryphaMenuFramework\\RememberedSettings "
+		widgets::HelpPara(TR("AMF_SetPresetFolders", "Your presets are files in Data\\SKSE\\Plugins\\ApocryphaMenuFramework\\RememberedSettings "
 			"(under Mod Organizer, in Overwrite). Presets that come with a modlist are in Data\\SKSE\\Plugins\\ApocryphaMenuFramework\\Presets "
-			"and are read only. FLICK pages keep their own values and are not in presets."));
-		ImGui::PopTextWrapPos();
-		ImGui::PopStyleColor();
+			"and are read only. FLICK pages keep their own values and are not in presets."));   // 2.5.0: fades like every help paragraph
 		ImGui::Spacing();
 	}
 

@@ -246,6 +246,20 @@ SET = {
         'korean': '이 목록(순서, 구분선, 즐겨찾기, 이름)을 이름을 붙여 저장하고 언제든 다시 불러올 수 있습니다.',
         'chinese': '将此列表（顺序、分隔符、收藏和名称）以一个名称保存，随时可以重新载入。',
     },
+    # test round 2, T12: the hint's second line without the fixed LT backspace, for when LT is bound to something
+    'AMF_OskHintMoreNoLt': {
+        'english': '%s shift, LB / RB layout',
+        'german': '%s Umschalt, LB / RB Belegung',
+        'french': '%s majuscule, LB / RB disposition',
+        'spanish': '%s mayúsculas, LB / RB distribución',
+        'italian': '%s maiuscolo, LB / RB layout',
+        'polish': '%s shift, LB / RB układ',
+        'czech': '%s shift, LB / RB rozložení',
+        'russian': '%s - регистр, LB / RB - раскладка',
+        'japanese': '%s: シフト、LB / RB: 配列',
+        'korean': '%s 시프트, LB / RB 자판',
+        'chinese': '%s大写，LB / RB切换布局',
+    },
     # B21: a switch's state, where a mod's help text shows it
     'AMF_On': {
         'english': 'on', 'german': 'an', 'french': 'activé', 'spanish': 'activado', 'italian': 'attivo', 'polish': 'wł.',

@@ -5437,6 +5437,10 @@ namespace renderer
 					ImGui::Spacing();
 					ImGui::SetNextItemWidth(ImGui::GetFontSize() * 18.0f);
 					if (ImGui::IsWindowAppearing()) { ImGui::SetKeyboardFocusHere(); }
+					// 2.5.0 (test round 2, T7): whether the field was being typed in when this frame began. Read BEFORE the
+					// field is drawn: on Escape the field ends its own typing inside the call below, so asked afterwards
+					// nothing looked active and the same Escape went on to close the whole box.
+					const bool typingAtFrameStart = ImGui::IsAnyItemActive() || keyboard::Capturing();
 					const bool entered = ImGui::InputTextWithHint("##renamefield",
 																  renamingSeparator ? TR("AMF_SeparatorDefaultName", "New separator") : g_renameTarget.c_str(),
 																  g_renameBuffer, sizeof(g_renameBuffer),
@@ -5449,7 +5453,7 @@ namespace renderer
 					ImGui::SameLine();
 					// 2.5.0 (polish A7): Escape and B cancel the box - but not while its field is being typed in or the on-screen
 					// keyboard is up, where the same press only ends the typing
-					const bool typing = ImGui::IsAnyItemActive() || keyboard::Capturing();
+					const bool typing = typingAtFrameStart || ImGui::IsAnyItemActive() || keyboard::Capturing();
 					const bool cancel = ImGui::Button(icons::Label(icons::kClear, TR("AMF_RenameCancel", "Cancel")).c_str()) ||
 										(!entered && modalbox::CancelPressed(typing));
 					if (ok && !(renamingSeparator && g_renameBuffer[0] == '\0'))   // a separator keeps a name
@@ -5603,7 +5607,9 @@ namespace renderer
 					const registry::Entry& entry = entries[selMod];
 					{
 						const std::string alias = personalization::GetAlias(entry.modName);
-						ImGui::TextUnformatted(alias.empty() ? entry.modName.c_str() : alias.c_str());
+						// 2.5.0 (test round 2, T25): the title shows the name the list shows - the source ending in the language
+						// picked, or no ending with "Show where a converted menu comes from" off. It drew the stored name.
+						ImGui::TextUnformatted(alias.empty() ? personalization::ShownEntryName(entry.modName).c_str() : alias.c_str());
 					}
 					ImGui::Separator();
 					// Pages a mod hid with AMF_SetPageVisible (1.8.3) are left out; the rest keep their order.
@@ -6293,24 +6299,6 @@ namespace renderer
 					s_lastAliveFrame = (GImGui && GImGui->ActiveIdIsAlive == GImGui->ActiveId) ? frame : s_lastAliveFrame;
 				}
 
-				// B / CIRCLE LETS GO OF A TEXT BOX (the owner, 2026-09-19: "the text is still
-				// highlighted in yellow, which requires me to press Y on controller to exit before I
-				// can move out of the box with the D-pad ... we need to make it so that it doesn't
-				// default to having the text highlighted after exiting the keyboard or search").
-				//
-				// This is the other half of a text field owning the D-pad while it is active: with
-				// the D-pad no longer able to navigate away, there has to be a deliberate way OUT of
-				// the box, and B is the one the whole menu already uses for "back". Done here rather
-				// than inside the field so it works for every mod's text box as well as ours.
-				// Asked of the input layer, not of ImGui: the B press never reaches ImGui while a text
-				// field is active, precisely so ImGui cannot revert the text with it.
-				if (interactive && GImGui && GImGui->ActiveId != 0 && keyboard::IsTextField(GImGui->ActiveId) &&
-					input::TakeTextFieldCancel())
-				{
-					logger::debug("input: B released text field {} - navigation is free again", GImGui->ActiveId);
-					ImGui::ClearActiveID();
-					keyboard::Hide();
-				}
 
 				watchdog::Tick();  // liveness signal for the hang watchdog
 				backMark(8);
@@ -6335,6 +6323,41 @@ namespace renderer
 				const bool escForModal = navside::EscapeIsForAModal();
 				const bool escEndsTyping = navside::TextBeingTyped();
 				ImGui::NewFrame();
+				// B / CIRCLE LETS GO OF A TEXT BOX (the owner, 2026-09-19: "the text is still
+				// highlighted in yellow, which requires me to press Y on controller to exit before I
+				// can move out of the box with the D-pad ... we need to make it so that it doesn't
+				// default to having the text highlighted after exiting the keyboard or search").
+				//
+				// This is the other half of a text field owning the D-pad while it is active: with
+				// the D-pad no longer able to navigate away, there has to be a deliberate way OUT of
+				// the box, and B is the one the whole menu already uses for "back". Done here rather
+				// than inside the field so it works for every mod's text box as well as ours.
+				// Asked of the input layer, not of ImGui: the B press never reaches ImGui while a text
+				// field is active, precisely so ImGui cannot revert the text with it.
+				//
+				// 2.5.0 (test round 2, T6): done right AFTER NewFrame, and for Done on the on-screen keyboard as well as B.
+				// It ran before NewFrame until now, so the field was already inactive when the frame began: the frame never
+				// saw it go from active to not, IsItemDeactivatedAfterEdit never fired, and a page that writes its text on
+				// that (INI, MCM Helper and script pages) kept what was typed with the pad in the box and never stored it.
+				// And Done only closed the keyboard, leaving the field active with nothing written until B.
+				const bool doneLetsGo = keyboard::TakeDoneRelease();
+				if (interactive && GImGui && GImGui->ActiveId != 0 && keyboard::IsTextField(GImGui->ActiveId) &&
+					(doneLetsGo || input::TakeTextFieldCancel()))
+				{
+					logger::debug("input: {} released text field {} - navigation is free again", doneLetsGo ? "Done" : "B", GImGui->ActiveId);
+					ImGui::ClearActiveID();
+					keyboard::Hide();
+				}
+				// 2.5.0 (test round 2, T28): one A press after a mouse move did nothing, once, with the pointer resting on another
+				// button of the highlighted row; the input layer had passed the press on (its "gamepad event" line is there),
+				// so what ImGui made of it is what was missing from the log. One debug line per A press - a press, not a
+				// frame - with the state that decides whether it activates anything.
+				if (interactive && GImGui && ImGui::IsKeyPressed(ImGuiKey_GamepadFaceDown, false))
+				{
+					const ImGuiContext& g = *GImGui;
+					logger::debug("nav: A pressed - highlight on {:#x}, activating {:#x}, highlight hidden {}, mouse hover held off {}, pointer over {:#x}, active item {:#x}",
+								  g.NavId, g.NavActivateId, g.NavDisableHighlight, g.NavDisableMouseHover, g.HoveredIdPreviousFrame, g.ActiveId);
+				}
 				// 2.3.0 (combined run 3266): the first Enter / Space / A after a mouse click on a slider or drag activates it - ImGui
 				// spent that press on showing the hidden highlight (NavSide.h ActivateAfterClick)
 				if (navside::ActivateAfterClick())

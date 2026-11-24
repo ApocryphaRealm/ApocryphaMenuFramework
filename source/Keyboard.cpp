@@ -51,6 +51,7 @@ namespace keyboard
 		// ... instead of having to press it over and over"): the D-pad direction being held, when it went down and when the
 		// highlight last stepped for it. A press steps once at once; held past kPadHoldDelayMs it steps again every
 		// kPadHoldRepeatMs until it is let go (Draw, below). The left stick already repeated; the D-pad did not.
+		bool g_doneRelease = false;   // 2.5.0: Done was pressed on a page's text field; the renderer lets go of the field
 		int g_padDirX = 0, g_padDirY = 0;
 		std::chrono::steady_clock::time_point g_padHeldSince{}, g_padStepAt{};
 		constexpr double kPadHoldDelayMs = 350.0;    // how long a direction is held before it starts repeating
@@ -426,6 +427,7 @@ namespace keyboard
 				Close("Done (game field)");
 				return;
 			}
+			g_doneRelease = true;   // 2.5.0: Done also lets go of the text field, so the page stores what was typed (Renderer.cpp)
 			Close("Done / AMF_HideKeyboard");
 		}
 
@@ -618,6 +620,13 @@ namespace keyboard
 		if (g_target == 0) { g_target = GImGui ? GImGui->NavId : 0; }
 	}
 	void Hide() { Close("Done / AMF_HideKeyboard"); }
+
+	bool TakeDoneRelease()
+	{
+		const bool was = g_doneRelease;
+		g_doneRelease = false;
+		return was;
+	}
 
 	bool HandleGamepad(std::uint32_t a_mask, bool a_down)
 	{
@@ -837,8 +846,18 @@ namespace keyboard
 		{
 			ImGui::TextWrapped("%s", strings::Fill(TR("AMF_OskHint", "D-pad moves, A types, B goes back to the box, %s space, %s backspace"), { spacePad, backPad }).c_str());
 		}
-		ImGui::TextWrapped("%s  |  %s: %s", strings::Fill(TR("AMF_OskHintMore", "LT backspace, %s shift, LB / RB layout"), { shiftPad }).c_str(),
-						   TR("AMF_OskLayout", "Layout"), CurrentLayout().label);
+		// 2.5.0 (test round 2, T12): LT is a second backspace only while nothing is bound to it. With space bound to LT the
+		// first line said "LT space" and this one went on saying "LT backspace" - a row bound to a button wins over the
+		// fixed ones (HandleOpenPad), so the fixed LT is left out of the hint when LT is taken.
+		const auto boundToLt = [](bindings::Action a_action) {
+			const bindings::Binding b = bindings::Get(a_action);
+			return b.padKind == bindings::PadKind::kButton && b.padCode == 0x0009;
+		};
+		const bool ltTaken = boundToLt(bindings::Action::kOskSpace) || boundToLt(bindings::Action::kOskShift) ||
+							 boundToLt(bindings::Action::kOskBackspace) || boundToLt(bindings::Action::kOskDone);
+		const std::string more = ltTaken ? strings::Fill(TR("AMF_OskHintMoreNoLt", "%s shift, LB / RB layout"), { shiftPad })
+										 : strings::Fill(TR("AMF_OskHintMore", "LT backspace, %s shift, LB / RB layout"), { shiftPad });
+		ImGui::TextWrapped("%s  |  %s: %s", more.c_str(), TR("AMF_OskLayout", "Layout"), CurrentLayout().label);
 		if (ShowCjkNote())
 		{
 			ImGui::TextWrapped("%s", TR("AMF_OskCjkLatin", "The game's own font has no Korean, Japanese or Chinese letters, so its text boxes "

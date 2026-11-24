@@ -49,6 +49,10 @@ namespace keyboard
 	// records here instead of into ImGui's navigation.
 	bool Capturing();
 
+	// 2.5.0 (test round 2, T6): true once after Done was pressed on a page's text field. Done used to close the keyboard
+	// and leave the field active, so nothing was stored until B; the renderer now lets go of the field on it.
+	bool TakeDoneRelease();
+
 	// Render thread (the translation step runs there, before NewFrame). Return true = consumed.
 	bool HandleGamepad(std::uint32_t a_xinputMask, bool a_down);
 	bool HandleStick(std::uint32_t a_stick, float a_x, float a_y);   // 0 = left (moves the cursor), 1 = right (swallowed while open)
