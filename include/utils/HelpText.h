@@ -21,7 +21,13 @@ namespace widgets
 	inline void HelpPara(const char* a_text)
 	{
 		if (!a_text) { return; }
-		ImGui::PushStyleColor(ImGuiCol_Text, static_cast<ImU32>(theme::HelpTextColor()));
+		// The Help colour, a quarter fainter. Round 1's frame of Settings > General on the Skyrim theme (2026-11-23,
+		// logs\amf250-r1-20261123\T15-after-general-menu-subtab.jpg) showed why: that theme's Help colour is a pale
+		// blue-grey close to its white text, so in the Help colour alone the paragraphs were still nearly as loud as the
+		// labels. The fade keeps whatever Help colour the theme or the player picked and only sets it back a step.
+		ImVec4 help = ImGui::ColorConvertU32ToFloat4(static_cast<ImU32>(theme::HelpTextColor()));
+		help.w *= 0.75f;
+		ImGui::PushStyleColor(ImGuiCol_Text, help);
 		ImGui::TextWrapped("%s", a_text);
 		ImGui::PopStyleColor();
 	}

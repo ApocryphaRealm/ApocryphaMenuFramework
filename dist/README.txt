@@ -1,6 +1,6 @@
 ApocryphaRealm Menu Framework
 =============================
-Version 2.4.3
+Version 2.5.0
 
 An original, GPL-3.0-or-later in-game menu framework (embedding Dear ImGui) - a one-for-one
 replacement for SKSE Menu Framework's consumer surface, plus user-friendly features that do
@@ -87,6 +87,21 @@ reading.
 
 WHAT CHANGED
 ------------
+
+Version 2.5.0
+A polish pass: no new systems, a long list of rough edges.
+A greyed-out switch now fades with its label; it kept its bright colour, so a setting that was switched off by another one still looked live.
+A mod's message box opens centred on the menu every time, under the mod's name, with the mod's own sentence (on MCM Helper pages it showed a tidied key), and Escape or B answers "no". A box left unanswered no longer follows you to another mod's page.
+Help paragraphs on the settings pages are drawn fainter than the labels, and the twelve longest are shorter.
+Buttons that throw work away - reset every control, all colours back to the theme, delete a layout preset, forget a mod's remembered settings - ask for a second press.
+Switches: a click on the label flips the switch, the knob slides, and "off" is a neutral tone of the theme where it was red (Appearance > Colours > Switch off brings the red back).
+Settings > General is two sub-tabs; the on-screen keyboard's settings have their own.
+Controller: the first press after using the keyboard or mouse is no longer lost; a D-pad direction held on the on-screen keyboard keeps moving; text fields on INI and TOML pages open the on-screen keyboard; the keyboard's hint line names the buttons you bound; the last tab under Converted menus can be reached with the bumpers; Sort says what it did.
+Escape while you are typing only ends the typing, and Escape with a box on screen goes to the box; both closed the whole menu.
+Faster with the menu open: the list of mods is no longer copied on every frame, a slider dragged on an MCM Helper page sends its value at a steady pace where it sent one every frame, and opening the menu no longer walks every quest each time. Opening it with its key now also finds menus that registered late.
+Right-click a setting on an MCM Helper page for Reset to default. A number on an INI page is written once, when you let go of the box. Your own settings file is written safely, so a crash part-way cannot empty it.
+New switch, Settings > Converted menus > Spacing: hide the (MCM), (INI), (FLICK) endings on converted menus' names. They stay on unless you switch them off.
+The start-up log is much shorter at the default level.
 
 Version 2.4.3
 Soulsy HUD's equipment sets can be picked, updated, renamed and removed on its AMF page. Lists a mod fills while its menu is open (Soulsy's equipment sets, the items for a set's icon, the cycle preview) now show their real entries instead of the placeholder, a mod's confirmation boxes ("set created") now appear on MCM Helper pages so the button finishes its work, and a text field with no value type of its own (Soulsy's selected set's name) can be typed in.
