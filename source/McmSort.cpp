@@ -296,6 +296,17 @@ namespace mcmloader
 			};
 			constexpr std::string_view kSuffix = " (MCM)";
 			constexpr std::string_view kFlick = " (FLICK)";
+			// 2.5.0 (polish C5): with "Show where a converted menu comes from" switched off, every source ending is left off
+			// what is SHOWN. The entry keeps its stored name, which is what the order, renames and favourites are keyed on.
+			if (!settings::Get().showSourceTags)
+			{
+				for (const std::string_view tag : { kSuffix, kFlick, std::string_view(" (INI, game settings)"), std::string_view(" (INI)"),
+													std::string_view(" (TOML)"), std::string_view(" (Prisma)") })
+				{
+					if (ends(tag)) { return a_entry.substr(0, a_entry.size() - tag.size()); }
+				}
+				return a_entry;
+			}
 			if (ends(kSuffix)) { return a_entry.substr(0, a_entry.size() - kSuffix.size()) + " " + TR("AMF_McmSuffix", "(MCM)"); }
 			if (ends(kFlick)) { return a_entry.substr(0, a_entry.size() - kFlick.size()) + " " + TR("AMF_FlickSuffix", "(FLICK)"); }
 			return a_entry;

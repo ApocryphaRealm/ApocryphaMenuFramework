@@ -1043,11 +1043,9 @@ namespace imguihost
 			"no such interface (or its version is not one AMF knows), AMF presses its key instead."));
 		ImGui::TextUnformatted(TR("AMF_OtherMenusOwnKey", "A mod's own key pressed while this menu is open closes this menu too, so "
 			"that mod's menu is shown alone."));
-		ImGui::TextUnformatted(TR("AMF_HoldHelp", "AMF holds this key (off until you turn it on, for each mod): AMF writes a key no "
-			"keyboard has (F13 or above, one not already bound in these mods' configs) into that mod's own config file in place of "
-			"its menu key - only that value changes, and the file as it was is kept as .amf-key-backup beside it while AMF holds "
-			"the key - and Open presses that key, so the mod's own key is free for anything else. Turning it off writes the original "
-			"key back and removes the backup. Mods read their config when the game starts, so a change takes effect next launch."));
+		ImGui::TextUnformatted(TR("AMF_HoldHelp", "On, AMF opens this mod's menu for you, so the mod's own key is free for anything else. AMF writes a key "
+				"no keyboard has into the mod's config file and keeps the file as it was as .amf-key-backup; turning this "
+				"off puts the original key back. A change takes effect the next time the game starts."));
 		ImGui::PopTextWrapPos();
 		ImGui::PopStyleColor();
 		ImGui::Spacing();

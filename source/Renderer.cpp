@@ -2376,10 +2376,8 @@ namespace renderer
 					logger::info("settings page: delete orphaned save state -> {}", values.cleanOrphanedState);
 					settings::Save();
 				}
-				widgets::HelpPara(TR("AMF_CleanStateHelp", "On: each time the game starts, every .amf-state.ini file whose save has been "
-								   "deleted is deleted too - with its save gone it is of no use. A file whose save is still there is never "
-								   "touched, and nothing is deleted if no saves are found. Each file is named in the log. Off: they stay "
-								   "beside the saves."));
+				widgets::HelpPara(TR("AMF_CleanStateHelp", "Each time the game starts, deletes the .amf-state.ini files of saves you have deleted. A file whose save "
+						"is still there is never touched, and each deleted file is named in the log."));
 				ImGui::Spacing();
 
 				if (widgets::Toggle(TR("AMF_PauseGame", "Pause the game while this menu is open"), &values.pauseGameWhileOpen))
@@ -2387,10 +2385,8 @@ namespace renderer
 					logger::info("settings page: pause the game while open -> {}", values.pauseGameWhileOpen);
 					settings::Save();
 				}
-				widgets::HelpPara(TR("AMF_PauseGameHelp", "On: time stops while this menu is open, the way it does in the game's own "
-								   "menus - nothing moves, fights or ticks down behind it. Off: the game keeps running while you change settings. "
-								   "Another mod's window that asks to pause the game stops time while it is open (as in SKSE Menu Framework): "
-								   "the world stands still, but scripts keep running so that mod can finish its work."));
+				widgets::HelpPara(TR("AMF_PauseGameHelp", "Stops game time while this menu is open, as the game's own menus do. Off: the game keeps running while "
+						"you change settings. Another mod's window that asks to pause the game still stops time while it is open."));
 				ImGui::Spacing();
 
 				// next after 2.1.9 (the owner, 2026-10-12): the Oblivion version's [Menu] bKeepCameraAwake, as a switch
@@ -2399,10 +2395,8 @@ namespace renderer
 					logger::info("settings page: keep the camera awake -> {}", values.keepCameraAwake);
 					settings::Save();
 				}
-				widgets::HelpPara(TR("AMF_KeepCameraAwakeHelp", "On: with the game running behind this menu, the idle camera never starts "
-								   "circling your character, however long the menu is left open. When the menu closes the camera behaves as "
-								   "before. Off: after a while left alone, the camera starts circling as usual. With the game paused by this "
-								   "menu it changes nothing."));
+				widgets::HelpPara(TR("AMF_KeepCameraAwakeHelp", "Stops the idle camera circling your character while this menu is open with the game running behind it. "
+						"With the game paused by this menu it changes nothing."));
 				ImGui::Spacing();
 
 				// 2.1.7: Pointer speed (Apparerus) and the wheel over the tabs (HadToRegister) - the owner, 2026-10-08
@@ -2434,12 +2428,8 @@ namespace renderer
 					logger::info("settings page: system menu row -> {}", values.systemMenuRow);
 					settings::Save();
 				}
-				widgets::HelpPara(TR("AMF_SystemRowHelp2", "On: a SKSE MENUS row is added to the journal's System tab, beside SAVE, "
-								   "LOAD and SETTINGS, and opens this menu in the middle of the screen. "
-								   "The row is added to the menu as it opens rather than by replacing any "
-								   "game file, so it works with whatever menu artwork you have installed. "
-								   "Off: the game's menu is left completely untouched and this menu is "
-								   "reached by its key alone."));
+				widgets::HelpPara(TR("AMF_SystemRowHelp2", "Adds a SKSE MENUS row to the journal's System tab, beside SAVE, LOAD and SETTINGS, which opens this menu. "
+						"No game file is replaced, so it works with any menu artwork. Off: this menu is reached by its key alone."));
 				ImGui::TextDisabled("%s", TR("AMF_TakesEffectJournal", "Takes effect the next time the journal is opened."));
 				ImGui::Spacing();
 
@@ -2452,7 +2442,9 @@ namespace renderer
 				// fact the game already knows, and they could be left disagreeing with reality. The
 				// detector's reading is now simply used, and shown, so it can still be judged while
 				// playing rather than taken on trust.
-				ImGui::TextUnformatted(TR("AMF_Navigation", "Navigation"));
+				// 2.5.0 (polish B6): a section heading like every other on the settings pages - a rule with the heading in
+				// it - where this one, Window size and Layout presets were plain lines that read as ordinary labels
+				ImGui::SeparatorText(icons::Label(icons::kArrows, TR("AMF_Navigation", "Navigation")).c_str());
 				widgets::HelpPara(TR("AMF_NavigationHelp", "Follows whatever you last used: press a key or move the mouse for "
 								   "keyboard navigation (arrow keys, Enter, Escape), touch the pad for "
 								   "controller navigation (D-pad moves, A activates, B cancels)."));
@@ -2477,7 +2469,7 @@ namespace renderer
 				{
 					auto& v = settings::Get();
 					const bool anySet = v.nestedWindow.IsSet() || v.hotkeyWindow.IsSet();
-					ImGui::TextUnformatted(TR("AMF_WindowSize", "Window size"));
+					ImGui::SeparatorText(icons::Label(icons::kWindowMax, TR("AMF_WindowSize", "Window size")).c_str());   // 2.5.0 (B6)
 					widgets::HelpPara(TR("AMF_WindowSizeHelp", "The first time, the menu opens in the middle of the screen, wide enough to "
 									   "show the menu names and the page in full - the same from its key and from the System menu row. "
 									   "The size you drag it to is kept."));
@@ -2969,8 +2961,8 @@ namespace renderer
 						settings::Save();
 						mcmloader::SetHideInSkyUI(values.hideMcmInSkyUI);
 					}
-					widgets::HelpPara(TR("AMF_McmHideSkyUIHelp", "On: a mod whose whole menu is drawn here is set in one place - "
-									   "here. A mod with anything this menu cannot draw stays in SkyUI's list. Off puts them all back."));
+					widgets::HelpPara(TR("AMF_McmHideSkyUIHelp", "Takes a mod out of SkyUI's list when its whole menu is drawn here, so it is set in one place. A mod with "
+							"anything this menu cannot draw stays in SkyUI's list. Off puts them all back."));
 					ImGui::TextDisabled(TR("AMF_McmHideSkyUICount", "%d of %d hidden from SkyUI's list now"),
 						mcmloader::HiddenInSkyUI(), mcmloader::HideableInSkyUI());
 					if (mcmloader::SkyUIListUnreadable())
@@ -3019,8 +3011,7 @@ namespace renderer
 						}
 						ImGui::TextUnformatted(header);
 						{
-							widgets::HelpPara(TR("AMF_McmImportHelp", "Switch off a menu to keep it in SkyUI's menu only: it leaves this menu, "
-											   "and taking menus out of SkyUI's list leaves it alone."));
+							widgets::HelpPara(TR("AMF_McmImportHelp", "Switch a menu off to keep it in SkyUI's menu only. It is then never taken out of SkyUI's list."));
 							if (widgets::Toggle(TR("AMF_McmImportNew", "Bring in MCM menus not switched below"), &values.importNewMcmMenus))
 							{
 								logger::info("settings page: bring in MCM menus not chosen by hand -> {}", values.importNewMcmMenus);
@@ -3110,8 +3101,8 @@ namespace renderer
 							g_memStatus = rememberedsettings::RestoreNow() ? "" : TR("AMF_McmMemWait", "Close the MCM page that is open, or wait for the backup or restore that is running.");
 						}
 						if (memBusy) { ImGui::EndDisabled(); }
-						widgets::HelpPara(TR("AMF_McmMemButtonsHelp", "Back up all now reads every menu this menu can read - also what you "
-										   "set in SkyUI's own menu. Restore now sets this game's menus to the profile."));
+						widgets::HelpPara(TR("AMF_McmMemButtonsHelp", "Back up all now saves the current values of every MCM menu that can be read, including what you set in "
+								"SkyUI's own menu. Restore now sets this game's menus to the profile."));
 
 						// IMPORT FROM MCM MEMORY (2.1.5, the owner: "the whole point ... is so that they can import their settings and
 						// then deactivate MCM memory"). Shown when that mod has a saved profile; merged into the active profile (his
@@ -3435,11 +3426,10 @@ namespace renderer
 							inipages::ApplyVisibility();
 						}
 						// next after 2.1.9 (the owner, 2026-10-12: "any surface level ini file to have a menu" ... "add the data folder")
-						widgets::HelpPara(TR("AMF_IniLoadHelp2", "On: every INI file directly in Data/SKSE/Plugins and in Data gets a page "
-							"here, \"<name> (INI)\" - a tab per section, a control per key, the file's own comments as the help - unless its mod "
-							"already has a page here. A change is written to the file itself, only the value you change (or to its _custom.ini "
-							"when it has one), and the file as it first was is kept as .amf-backup. Mods and the game read these files when the "
-							"game starts, so a change takes effect next time. Each page has its own switch below."));
+						widgets::HelpPara(TR("AMF_IniLoadHelp2", "Shows INI settings files as pages, each named \"<name> (INI)\", unless the mod already has a page here. A "
+								"change is written to the file itself, and the file as it first was is kept as .amf-backup. Mods and the "
+								"game read these files when the game starts, so a change takes effect next time. Each page has its own "
+								"switch below."));
 						// 2.2.0 (the owner, 2026-10-13): each INI file's page starts off - the player turns on the ones wanted
 						ImGui::Spacing();
 						widgets::HelpPara(TR("AMF_IniPickHelp", "Each INI file's page starts off: turn on the INI files you want below, "
@@ -3474,13 +3464,10 @@ namespace renderer
 							settings::Save();
 							tomlpages::ApplyVisibility();
 						}
-						widgets::HelpPara(TR("AMF_TomlLoadHelp", "On: every TOML file directly in Data/SKSE/Plugins, and in its folders, can "
-							"be a page here - \"<name> (TOML)\", a tab per table (a folder's files: a tab per file), a control per value, the "
-							"file's own comments as the help; Game Settings Override's folder is the \"Game Settings Override\" page, with the "
-							"game's current value beside each setting. Each page starts off: turn on the ones you want below. A change is "
-							"written into the file itself, only that value (the file as it first was is kept as .amf-backup). A mod that "
-							"declares a reload (a Mod Function Menu Config entry) reloads in game after each save; otherwise the change "
-							"applies the next time the game starts. Each page says which."));
+						widgets::HelpPara(TR("AMF_TomlLoadHelp", "Shows TOML settings files as pages, each named \"<name> (TOML)\"; Game Settings Override gets its own page. "
+								"Every page starts off: turn on the ones you want below. A change is written into the file itself, and the "
+								"file as it first was is kept as .amf-backup. A mod that can reload in game does so after each save; for "
+								"the others the change applies the next time the game starts. Each page says which."));
 						ImGui::Spacing();
 						tomlpages::DrawSettingsList();
 						ImGui::EndTabItem();
@@ -3497,6 +3484,15 @@ namespace renderer
 					// for some of them like Atlas map markers which are very close together"). Their colours are framework-wide, on
 					// Appearance > Colours (the owner: "some of these features may be redundant ... if we just move them over").
 					{
+						// 2.5.0 (polish C5): the source endings can be switched off. On by default - they were asked for.
+						if (widgets::Toggle(TR("AMF_ShowSourceTags", "Show where a converted menu comes from: (MCM), (INI), (FLICK)"), &values.showSourceTags))
+						{
+							logger::info("settings page: source tags on converted menus -> {}", values.showSourceTags);
+							settings::Save();
+						}
+						widgets::HelpPara(TR("AMF_ShowSourceTagsHelp", "Off: the list and the page title show the mod's name alone. A mod with its own page and a converted one "
+								"then shows twice under one name."));
+						ImGui::Spacing();
 						widgets::HelpPara(TR("AMF_McmLookHelp", "The room between the columns and rows of the pages built from MCM "
 										   "menus. Their colours are on Appearance > Colours."));
 						ImGui::Spacing();
@@ -3693,7 +3689,9 @@ namespace renderer
 			{
 				const float top = rowTopLeft.y + (ImGui::GetTextLineHeight() - boxSide) * 0.5f;
 				const float left = rowTopLeft.x + ImGui::GetStyle().ItemInnerSpacing.x * 0.5f;
-				ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(left, top), ImVec2(left + boxSide, top + boxSide), IM_COL32(255, 255, 255, 255));
+				// 2.5.0 (polish B10): the favourite's box takes the theme's text colour. It was always white, and on a light
+				// theme (Dear Diary) a white box on a pale pane could not be seen.
+				ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(left, top), ImVec2(left + boxSide, top + boxSide), ImGui::GetColorU32(ImGuiCol_Text));
 			}
 			if (picked)
 			{
@@ -3784,10 +3782,8 @@ namespace renderer
 			// renames saved under a name, to load back later or keep a second arrangement. Every preset can be deleted
 			// (the owner's standing rule for presets).
 			ImGui::Spacing();
-			ImGui::TextUnformatted(TR("AMF_LayoutPresets", "Layout presets"));
-			widgets::HelpPara(TR("AMF_LayoutPresetsHelp", "Save this list - its order, separators, favourites and names - "
-							   "under a name, and load it back any time. Your settings are kept in a file the download never "
-							   "contains, so an update does not reset them."));
+			ImGui::SeparatorText(icons::Label(icons::kSave, TR("AMF_LayoutPresets", "Layout presets")).c_str());   // 2.5.0 (B6)
+			widgets::HelpPara(TR("AMF_LayoutPresetsHelp", "Save this list - its order, separators, favourites and names - under a name, and load it back any time."));
 			ImGui::SetNextItemWidth(ImGui::GetFontSize() * 14.0f);
 			ImGui::InputTextWithHint("##presetName", TR("AMF_PresetNameHint", "Preset name"), g_presetName, sizeof(g_presetName));
 			keyboard::NoteTextField(ImGui::GetItemID());
@@ -4929,7 +4925,7 @@ namespace renderer
 						ImGui::EndDisabled();
 						if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
 						{
-							ImGui::SetTooltip("%s", TR("AMF_FoldAllTip", "On: every separator folded. Off: every one open. Folding or opening one by hand afterwards leaves this switch as it is."));
+							ImGui::SetTooltip("%s", TR("AMF_FoldAllTip", "Folds or unfolds every separator at once. One you fold or open by hand afterwards stays as you left it."));
 						}
 					// FILTER, just before Sort (Sort stays at the far right): the saved words, each with its +/- button.
 					{
@@ -5217,7 +5213,7 @@ namespace renderer
 					{
 						const ImVec2 mn = ImGui::GetItemRectMin(), mx = ImGui::GetItemRectMax();
 						ImDrawList* dl = ImGui::GetWindowDrawList();
-						dl->AddRectFilled(mn, mx, IM_COL32(255, 255, 255, 40));
+						dl->AddRectFilled(mn, mx, ImGui::GetColorU32(ImGuiCol_Text, 0.16f));   // 2.5.0 (B10): the theme's text colour, where it was white
 						dl->AddRect(mn, mx, ImGui::GetColorU32(ImGuiCol_Text), 0.0f, 0, 2.0f);
 					}
 
@@ -5227,7 +5223,7 @@ namespace renderer
 						const float left = rowTopLeft.x + ImGui::GetStyle().ItemInnerSpacing.x * 0.5f;
 						ImGui::GetWindowDrawList()->AddRectFilled(
 							ImVec2(left, top), ImVec2(left + boxSide, top + boxSide),
-							IM_COL32(255, 255, 255, 255));
+							ImGui::GetColorU32(ImGuiCol_Text));   // 2.5.0 (B10): see the Menu list table's box
 					}
 
 					if (picked)

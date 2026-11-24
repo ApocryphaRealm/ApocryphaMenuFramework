@@ -2146,7 +2146,9 @@ namespace mcmloader
 			{
 				bool v = ParseBool(a_value);
 				if (widgets::Toggle(imguiId.c_str(), &v)) { Apply(a_mod, a_c, v ? "1" : "0"); }
-				Tooltip(a_c, v ? "on" : "off");
+				// 2.5.0 (polish B21): the switch's state inside a mod's help text ("{value}") in the language picked - it was
+				// always the English "on" / "off"
+				Tooltip(a_c, v ? strings::TR("AMF_On", "on") : strings::TR("AMF_Off", "off"));
 				break;
 			}
 			case Kind::kSlider:
@@ -2516,11 +2518,12 @@ namespace mcmloader
 					owned.translationsLanguage = TextLanguage();
 				}
 				// a copy: the page draws from a stable view while a set lands from another thread
-				if (s_valuesMod != mod || s_valuesRevision != mod->valuesRevision)
+				// (mod is checked again below, after the lock; a null one copies nothing here)
+				if (const Mod* const owner = mod; owner && (s_valuesMod != owner || s_valuesRevision != owner->valuesRevision))
 				{
-					s_values = mod->values;
-					s_valuesMod = mod;
-					s_valuesRevision = mod->valuesRevision;
+					s_values = owner->values;
+					s_valuesMod = owner;
+					s_valuesRevision = owner->valuesRevision;
 				}
 				g_drawQuest = g_mods[a_mod]->questId;
 			}
@@ -2557,7 +2560,29 @@ namespace mcmloader
 				const std::string value = it != values.end() ? it->second : std::string{};
 				if (!active) { ImGui::BeginDisabled(); }
 				ImGui::PushID(&c);
+				// 2.5.0 (polish B14): the row is one group, so a right-click anywhere on it - the control or its label - opens
+				// "Reset to default", as on script pages. MCM Helper pages loaded every setting's default (the mod's
+				// settings.ini) and offered no way back to it. Offered for the settings MCM Helper stores itself, and greyed
+				// while the setting is at its default already.
+				ImGui::BeginGroup();
 				DrawControl(a_mod, c, value);
+				ImGui::EndGroup();
+				if (active && (c.source == Source::kBool || c.source == Source::kInt || c.source == Source::kFloat || c.source == Source::kString))
+				{
+					if (const auto def = mod->defaults.find(c.key); def != mod->defaults.end() && ImGui::BeginPopupContextItem("##default"))
+					{
+						bool same = value == def->second;
+						if (c.source == Source::kBool) { same = ParseBool(value) == ParseBool(def->second); }
+						else if (c.source == Source::kInt) { same = ParseInt(value) == ParseInt(def->second); }
+						else if (c.source == Source::kFloat) { same = std::fabs(ParseFloat(value) - ParseFloat(def->second)) < 1e-4f; }
+						if (ImGui::MenuItem((std::string(icons::kReset) + "  " + strings::TR("AMF_McmScriptDefault", "Reset to default")).c_str(), nullptr, false, !same))
+						{
+							logger::info("MCM loader: {} {} reset to its default {}", mod->modName, c.key, def->second);
+							Apply(a_mod, c, def->second);
+						}
+						ImGui::EndPopup();
+					}
+				}
 				ImGui::PopID();
 				if (!active) { ImGui::EndDisabled(); }
 			}

@@ -39,8 +39,18 @@ numbers (A1, B1 ...) are that report's.
 - A quieter log at the default level: a page AMF builds itself (an INI section, a TOML table, an MCM page) logs its registration and its hiding at debug. One mod with 150 INI sections wrote 300 lines at every start. Each mod's first page, and every page another mod registers, still logs at info (B16)
 - A slider on an MCM Helper page that is dragged with the mouse sends its value to the mod at most every 120 ms while it is held, and its last value on the frame it is let go. It sent one for every frame the value moved - sixty a second, each an INI write and a run of the mod's change handler. The mod still follows the drag; a nudge, the wheel and a typed number are sent at once as before; a value still waiting when the page is left or the menu closes is sent first (B4)
 - An MCM Helper page keeps its copy of the mod's values until they change, where it copied the whole set on every frame (B5, MCM Helper pages; script pages unchanged)
+- The twelve longest help texts on the settings pages are shorter: they said how each feature is built, and now say what it does and what a player needs to know (fold all, TOML pages, INI pages, AMF holds this key, the System-menu row, pause, the camera, SkyUI's list, remembered settings, save-state tidy-up, layout presets). In all eleven languages (B2, first part)
+- Right-click a setting on an MCM Helper page for "Reset to default", as script pages already had. It is greyed while the setting is at its default (B14, MCM Helper pages; mouse only for now)
+- Navigation, Window size and Layout presets are drawn as section headings like every other on the settings pages. They were plain lines that read as ordinary labels (B6)
+- A switch's state inside a mod's help text is shown in the language picked; it was always the English "on" / "off" (B21)
+
+### Added
+- On-screen keyboard: a D-pad direction held down keeps the highlight moving - after a third of a second, about eleven keys a second - where each key needed its own press. The left stick already repeated (the author, 2026-11-23)
+- Settings > Converted menus > Spacing: "Show where a converted menu comes from: (MCM), (INI), (FLICK)". On by default, as before. Off shows the mod's name alone in the list and the page title (C5)
 
 ### Fixed
+- The first controller press after using the keyboard or mouse is no longer lost. The menu read which device was in use once per batch of input, so the press that switched to the controller was still treated as keyboard input and did nothing, in the menu and in every mod's window drawn by it
+- A favourite's box and the wash on a picked-up row take the theme's text colour. Both were always white, so on a light theme the favourite's box could not be seen (B10)
 - A greyed-out switch now fades with its label. Its pill kept its full green or red, so a setting that was switched off by another one still looked live - on AMF's own pages and on converted pages alike (True Directional Movement's gated rows) (A1)
 - A mod's message box, the Mod Function Menu reply, the rename box and the FLICK crash notice open centred on the menu every time. They used to open wherever one had first appeared, which for many players was a corner of the screen; their place is no longer written to the layout file (A2)
 - A message box from a mod on an MCM Helper page shows the mod's own sentence. It was looked up in another mod's translations and came out as a tidied key ("Soulsy HUD Set Created Msg") (A3)

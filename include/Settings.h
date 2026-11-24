@@ -69,6 +69,10 @@ namespace settings
 		// the right pane, inside the menu, like SkyUI's info line - "a toggle just in case anybody doesn't like" it: off
 		// shows it as a popup instead, wrapped to the right pane and kept inside the window. ON by default, as shipped.
 		bool helpBar = true;          // [Display] bHelpBar
+		// 2.5.0 (polish C5): the "(MCM)", "(INI)", "(FLICK)", "(TOML)" and "(Prisma)" endings on converted menus' names, which
+		// say where a page comes from (the owner asked for them, 2026-10-07 and 2026-10-08). ON by default, as shipped.
+		// Off leaves the name alone in the list and the page title; the entry itself keeps its full name underneath.
+		bool showSourceTags = true;   // [Display] bShowSourceTags
 		bool colorsApplyNow = false;  // [Display] bColorsApplyNow - Appearance > Colours: on, picks change the whole menu at once; off (default), the preview only until Apply
 		// 2.1.5: the Mods row's Fold switch - on folds every separator, off opens them; it acts when switched only.
 		bool foldAllSeparators = false;   // [Display] bFoldAllSeparators

@@ -47,6 +47,15 @@ namespace keyboard
 		int g_row = 1, g_col = 0;
 		std::chrono::steady_clock::time_point g_stickAt{};
 		int g_stickDirX = 0, g_stickDirY = 0;
+		// 2.5.0 (the owner, 2026-11-23: "hold D-pad down in one direction on the keyboard, and it'll automatically keep moving
+		// ... instead of having to press it over and over"): the D-pad direction being held, when it went down and when the
+		// highlight last stepped for it. A press steps once at once; held past kPadHoldDelayMs it steps again every
+		// kPadHoldRepeatMs until it is let go (Draw, below). The left stick already repeated; the D-pad did not.
+		int g_padDirX = 0, g_padDirY = 0;
+		std::chrono::steady_clock::time_point g_padHeldSince{}, g_padStepAt{};
+		constexpr double kPadHoldDelayMs = 350.0;    // how long a direction is held before it starts repeating
+		constexpr double kPadHoldRepeatMs = 90.0;    // then one step this often - about eleven keys a second
+		constexpr double kPadHoldLongestMs = 8000.0; // a hold never repeats for longer: a release that never reached us cannot run on
 		std::uint32_t g_typed = 0, g_activations = 0;
 
 		// ---- 2.3.0: the universal keyboard - a GAME text field as the target (GameField.h) ---------
@@ -189,6 +198,24 @@ namespace keyboard
 			const int len = g_row == kActionRow ? kActionCount : static_cast<int>(Grid().rows[g_row].size());
 			if (g_col >= len) { g_col = len - 1; }
 			logger::debug("keyboard: layout -> {}", kblayout::kLayouts[g_layout].id);
+		}
+
+		void Move(int a_dx, int a_dy);
+
+		// A D-pad direction went down or came up while the keyboard has the pad.
+		void PadDirection(int a_dx, int a_dy, bool a_down)
+		{
+			if (a_down)
+			{
+				Move(a_dx, a_dy);
+				g_padDirX = a_dx;
+				g_padDirY = a_dy;
+				g_padHeldSince = g_padStepAt = std::chrono::steady_clock::now();
+			}
+			else if (g_padDirX == a_dx && g_padDirY == a_dy)
+			{
+				g_padDirX = g_padDirY = 0;   // the held direction was let go (another direction's release changes nothing)
+			}
 		}
 
 		void Move(int a_dx, int a_dy)
@@ -376,6 +403,7 @@ namespace keyboard
 			g_forced = false;
 			g_capturing = false;
 			g_parked = false;
+			g_padDirX = g_padDirY = 0;   // 2.5.0: a direction still held when the keyboard closes stops repeating
 			g_windowValid = false;   // a held press stays ours until its release (g_mouseHeld), so ImGui never sees half a click
 			g_hangul.Reset();
 			g_steps.clear();
@@ -445,10 +473,11 @@ namespace keyboard
 			}
 			switch (a_mask)
 			{
-			case 0x0001: if (a_down) { Move(0, -1); } return true;   // D-pad up
-			case 0x0002: if (a_down) { Move(0, +1); } return true;   // down
-			case 0x0004: if (a_down) { Move(-1, 0); } return true;   // left
-			case 0x0008: if (a_down) { Move(+1, 0); } return true;   // right
+			// 2.5.0: a direction held keeps moving (PadDirection, and the repeat in Draw)
+			case 0x0001: PadDirection(0, -1, a_down); return true;   // D-pad up
+			case 0x0002: PadDirection(0, +1, a_down); return true;   // down
+			case 0x0004: PadDirection(-1, 0, a_down); return true;   // left
+			case 0x0008: PadDirection(+1, 0, a_down); return true;   // right
 			case 0x1000: if (a_down) { Press(); } return true;       // A = press the key
 			case 0x2000:                                              // B = back to the box
 				if (a_down)
@@ -698,6 +727,23 @@ namespace keyboard
 				if (e.kind == 0) { HandleOpenPad(e.code, e.down); }
 				else if (e.kind == 1) { HandleStick(e.code, e.x, e.y); }
 				else if (e.kind == 2) { HandleMouseButton(0, e.down, e.x, e.y); }
+			}
+		}
+
+		// 2.5.0: a held D-pad direction keeps the highlight moving (see g_padDirX). Here, once a frame, after this frame's
+		// presses and releases have been taken in - so a release always stops it before another step.
+		if (g_padDirX != 0 || g_padDirY != 0)
+		{
+			const auto now = std::chrono::steady_clock::now();
+			const double held = std::chrono::duration<double, std::milli>(now - g_padHeldSince).count();
+			if (!g_open || g_parked || held > kPadHoldLongestMs)
+			{
+				g_padDirX = g_padDirY = 0;
+			}
+			else if (held > kPadHoldDelayMs && std::chrono::duration<double, std::milli>(now - g_padStepAt).count() >= kPadHoldRepeatMs)
+			{
+				Move(g_padDirX, g_padDirY);
+				g_padStepAt = now;
 			}
 		}
 

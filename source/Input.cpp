@@ -1400,7 +1400,11 @@ namespace input
 
 		ImGuiIO& io = ImGui::GetIO();
 		const ImVec2 display = io.DisplaySize;
-		const bool controllerMode = UsingController();
+		// 2.5.0: not a copy taken once any more. The press that SWITCHES the device (the first pad press after the keyboard
+		// or mouse) is itself a pad press: read once at the top, this still said "keyboard" for it, so it was never given
+		// to ImGui, the on-screen keyboard or the stick path - the first press after a switch did nothing. It is read
+		// again after every event that notes a device (below).
+		bool controllerMode = UsingController();
 		ReleaseStuckKeys(io);
 		const std::uint64_t nowMs = SteadyMs();
 		std::vector<std::uint16_t> typed;   // UTF-16 units the arbiter decided to type, fed in arrival order
@@ -1427,7 +1431,7 @@ namespace input
 			case Record::Kind::kMouseMove:
 				if (std::fabs(record.x) > kMouseMoveThreshold || std::fabs(record.y) > kMouseMoveThreshold)
 				{
-					NoteDevice(Device::kKeyboardMouse);
+					NoteDevice(Device::kKeyboardMouse); controllerMode = UsingController();   // 2.5.0
 				}
 			{
 				// 2.1.7: the raw counts move the pointer as far as they move the game's own menu cursor (see
@@ -1443,7 +1447,7 @@ namespace input
 			case Record::Kind::kCursorSet:
 				// Absolute placement from a driver (DevBench). Counts as mouse use so the shell
 				// switches to keyboard/mouse presentation, exactly as a real move would.
-				NoteDevice(Device::kKeyboardMouse);
+				NoteDevice(Device::kKeyboardMouse); controllerMode = UsingController();   // 2.5.0
 				g_cursorX = record.x < 0.0f ? 0.0f : (record.x > display.x - 1.0f ? display.x - 1.0f : record.x);
 				g_cursorY = record.y < 0.0f ? 0.0f : (record.y > display.y - 1.0f ? display.y - 1.0f : record.y);
 				// Publish the position NOW, ahead of any button record queued behind it in this
@@ -1452,7 +1456,7 @@ namespace input
 				io.AddMousePosEvent(g_cursorX, g_cursorY);
 				break;
 			case Record::Kind::kMouseButton:
-				if (record.down) { NoteDevice(Device::kKeyboardMouse); }
+				if (record.down) { NoteDevice(Device::kKeyboardMouse); controllerMode = UsingController(); }
 				// every click that reaches the menu, so a test can tell "never arrived" from "arrived and was lost"
 				logger::debug("input: mouse button {} {}", record.code, record.down ? "press" : "release");
 				// 2.3.0: a left press over the on-screen keyboard is the keyboard's - given to ImGui it would make the
@@ -1479,7 +1483,7 @@ namespace input
 				break;
 			case Record::Kind::kKeyboard:
 				{
-					if (record.down) { NoteDevice(Device::kKeyboardMouse); }
+					if (record.down) { NoteDevice(Device::kKeyboardMouse); controllerMode = UsingController(); }
 					// 2.2.1: a key the IME took (composing, or VK_PROCESSKEY for this scan code moments ago) is the IME's -
 					// Enter commits the composition, Backspace edits it - so ImGui must not also act on it. Releases still
 					// pass, so nothing is left held.
@@ -1529,7 +1533,7 @@ namespace input
 					const ImGuiKey key = GamepadMaskToImGuiKey(record.code);
 					logger::debug("gamepad event: code=0x{:04X} down={} controllerMode={} -> imguiKey={}",
 								  record.code, record.down, controllerMode, static_cast<int>(key));
-					if (record.down) { NoteDevice(Device::kGamepad); }
+					if (record.down) { NoteDevice(Device::kGamepad); controllerMode = UsingController(); }
 					// A binding whose action has no ImGui key of its own raises a flag the renderer
 					// consumes: the tab steps, the context menu and the favourite command are the
 					// framework's own commands, not navigation.
@@ -1575,7 +1579,7 @@ namespace input
 			case Record::Kind::kThumbstick:
 				if (std::fabs(record.x) > kStickThreshold || std::fabs(record.y) > kStickThreshold)
 				{
-					NoteDevice(Device::kGamepad);
+					NoteDevice(Device::kGamepad); controllerMode = UsingController();   // 2.5.0
 				}
 				// Kept raw for GetStick() before anything is decided about navigation.
 				if (record.code < 2)
