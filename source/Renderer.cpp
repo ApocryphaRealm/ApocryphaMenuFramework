@@ -4669,7 +4669,22 @@ namespace renderer
 				// has asked for a frame, and it replaces the knotwork rather than adding to it.
 				const bool knot = skin::DrawsFrame();   // 2.1.6: also off when the player picked no frame
 
-				const std::vector<registry::Entry> entries = registry::Snapshot();
+				const auto listClockStart = std::chrono::steady_clock::now();   // 2.5.0: the mod list's own share of a frame, below
+				// 2.5.0 (polish B3): the registry is copied when it CHANGED, not on every frame. A copy is every mod's name and
+				// every page's callback - with a few hundred converted pages, thousands of small allocations a frame for a
+				// list that changes a handful of times in a session. The revision is read before the copy, so a change that
+				// lands in between is picked up on the next frame at the latest.
+				static std::vector<registry::Entry> s_entriesKept;
+				static std::uint64_t s_entriesRevision = ~0ull;
+				if (const std::uint64_t revision = registry::Revision(); revision != s_entriesRevision)
+				{
+					s_entriesRevision = revision;
+					s_entriesKept = registry::Snapshot();
+				}
+				const std::vector<registry::Entry>& entries = s_entriesKept;
+				// ... and the list's display order is worked out ONCE a frame: for the pane's width here, then handed to the
+				// side list below, which used to work it out a second time.
+				std::vector<personalization::DisplayEntry> orderedRows = personalization::Order(entries);
 				// THE SIDE PANE FITS ITS NAMES (the owner, 2026-10-02: "make it so that the names are always fully visible
 				// ... by making the left pane auto adjust its width to fit the names of the menus"). It used to be a flat
 				// 30% of the window, which clipped "ApocryphaRealm Lock Interaction Overhaul" to "ApocryphaR". Now it is the
@@ -4686,7 +4701,7 @@ namespace renderer
 					{
 						widest = std::max(widest, ImGui::CalcTextSize(icons::Label(icons::kGear, own).c_str()).x);
 					}
-					for (const personalization::DisplayEntry& row : personalization::Order(entries))
+					for (const personalization::DisplayEntry& row : orderedRows)
 					{
 						float w = ImGui::CalcTextSize(row.displayName.c_str()).x;
 						if (row.separator) { w += ImGui::GetFontSize() * 1.1f + ImGui::CalcTextSize("  (000)").x; }
@@ -5120,7 +5135,7 @@ namespace renderer
 				bool grabbedFocused = false;
 
 				int shown = 0;
-				std::vector<personalization::DisplayEntry> displayRows = personalization::Order(entries);
+				std::vector<personalization::DisplayEntry> displayRows = std::move(orderedRows);   // 2.5.0: this frame's, from above
 
 				// MCM loader: an entry whose every page is hidden draws no row (below). It KEEPS its
 				// place in the saved order and under its separator - only the drawing skips it, so it returns to the same
@@ -5383,6 +5398,21 @@ namespace renderer
 				else if (shown == 0) { ImGui::TextDisabled("%s", TR("AMF_NoMatch", "no mod matches that")); }
 				const bool sideHasNav = ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows);
 				ImGui::EndChild();
+				// 2.5.0 (polish B3): what the mod list costs, apart from the page beside it. The frame profile counts both as
+				// "menu", so whether the list was the larger part could only be guessed. One debug line per opening: the
+				// average over the first 120 frames the list was drawn in a row.
+				{
+					static double s_listMs = 0.0;
+					static int s_listFrames = 0, s_listLastFrame = -10;
+					const int frame = ImGui::GetFrameCount();
+					if (frame != s_listLastFrame + 1) { s_listMs = 0.0; s_listFrames = 0; }
+					s_listLastFrame = frame;
+					s_listMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - listClockStart).count();
+					if (++s_listFrames == 120)
+					{
+						logger::debug("frame profile: the mod list took {:.2f} ms a frame on average over 120 frames ({} entries)", s_listMs / 120.0, entries.size());
+					}
+				}
 				// Captured BEFORE the rename popup below: the knotwork is drawn around the side
 				// PANE, and a popup submitted in between would leave GetItemRect* describing the
 				// popup instead (the frame would jump to wherever the modal sat).
@@ -6555,6 +6585,9 @@ namespace renderer
 		{
 			g_justOpened.store(true, std::memory_order_release);
 			g_applyGeometry.store(true, std::memory_order_release);
+			// 2.5.0 (polish B17): the menu KEY looks for script menus set up since the last pass too. Only the System-menu row
+			// and the tools did (SetMenuVisible), so a menu that registered late showed from the journal and not from the key.
+			mcmloader::scripts::RequestDiscovery();
 		}
 
 		logger::info("Framework window {}", now ? "shown" : "hidden");

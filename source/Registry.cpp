@@ -15,6 +15,11 @@ namespace registry
 		std::mutex g_lock;
 		std::vector<Entry> g_entries;
 		std::atomic<std::uint64_t> g_generation{ 0 };
+		// 2.5.0 (polish B3): one more on EVERY change to the registry - a registration, a removal, a rename, a page shown or
+		// hidden. The renderer copies the registry only when this has moved (Renderer.cpp), where it used to copy all of
+		// it - every name, every page's callback - on every frame the menu was open. g_generation above is narrower on
+		// purpose (it wakes the INI and TOML page scans) and does not move on a removal or a visibility change.
+		std::atomic<std::uint64_t> g_revision{ 0 };
 
 		// the file name without .dll, lower case, of the module holding a_address ("" when none holds it)
 		std::string ModuleAt(const void* a_address)
@@ -39,6 +44,7 @@ namespace registry
 	}
 
 	std::uint64_t Generation() { return g_generation.load(std::memory_order_acquire); }
+	std::uint64_t Revision() { return g_revision.load(std::memory_order_acquire); }
 
 	bool Register(const char* a_modName, const char* a_pageName, AMF_RenderCallback a_render)
 	{
@@ -65,7 +71,7 @@ namespace registry
 				}
 			}
 		}
-		g_generation.fetch_add(1, std::memory_order_acq_rel);
+		g_generation.fetch_add(1, std::memory_order_acq_rel); g_revision.fetch_add(1, std::memory_order_acq_rel);
 		return true;
 	}
 
@@ -95,15 +101,26 @@ namespace registry
 				}
 
 				entry.pages.push_back({ a_pageName, std::move(a_render), false, a_converted });
-				g_generation.fetch_add(1, std::memory_order_acq_rel);
-				logger::info("page registered: \"{}\" -> \"{}\" (mod now has {} page(s), rendered as tabs - one menu per mod)",
-							 a_modName, a_pageName, entry.pages.size());
+				g_generation.fetch_add(1, std::memory_order_acq_rel); g_revision.fetch_add(1, std::memory_order_acq_rel);
+				// 2.5.0 (polish B16): a page AMF builds itself (an INI section, a TOML table, an MCM page) is one of many - one
+				// mod with 150 INI sections wrote 150 of these lines and 150 "hidden" lines at every start, three quarters of
+				// the log at the default level. Its first page still logs at info (below); the rest are debug. A page
+				// another mod's DLL registers is logged at info as before.
+				if (a_converted)
+				{
+					logger::debug("page registered: \"{}\" -> \"{}\" (mod now has {} page(s))", a_modName, a_pageName, entry.pages.size());
+				}
+				else
+				{
+					logger::info("page registered: \"{}\" -> \"{}\" (mod now has {} page(s), rendered as tabs - one menu per mod)",
+								 a_modName, a_pageName, entry.pages.size());
+				}
 				return true;
 			}
 		}
 
 		g_entries.push_back({ a_modName, { { a_pageName, std::move(a_render), false, a_converted } }, {} });
-		g_generation.fetch_add(1, std::memory_order_acq_rel);
+		g_generation.fetch_add(1, std::memory_order_acq_rel); g_revision.fetch_add(1, std::memory_order_acq_rel);
 		logger::info("first page registered for \"{}\": \"{}\" ({} mod(s) in the registry)",
 					 a_modName, a_pageName, g_entries.size());
 		return true;
@@ -127,7 +144,10 @@ namespace registry
 				if (page.pageName != a_pageName) { continue; }
 				if (page.hidden == !a_visible) { return true; }  // already so; the consumer may call every frame
 				page.hidden = !a_visible;
-				logger::info("page {}: \"{}\" -> \"{}\"", a_visible ? "shown" : "hidden", a_modName, a_pageName);
+				g_revision.fetch_add(1, std::memory_order_acq_rel);
+				// 2.5.0 (polish B16): debug for a page AMF builds itself - see RegisterFn
+				if (page.converted) { logger::debug("page {}: \"{}\" -> \"{}\"", a_visible ? "shown" : "hidden", a_modName, a_pageName); }
+				else { logger::info("page {}: \"{}\" -> \"{}\"", a_visible ? "shown" : "hidden", a_modName, a_pageName); }
 				return true;
 			}
 		}
@@ -143,6 +163,7 @@ namespace registry
 			return false;
 		}
 		std::scoped_lock lock(g_lock);
+		g_revision.fetch_add(1, std::memory_order_acq_rel);   // 2.5.0: see g_revision
 		const auto mod = std::ranges::find(g_entries, a_modName, &Entry::modName);
 		if (mod == g_entries.end())
 		{
@@ -157,7 +178,7 @@ namespace registry
 				return false;
 			}
 			mod->modName = a_newName;
-			g_generation.fetch_add(1, std::memory_order_acq_rel);   // a new title may match an INI page's mod
+			g_generation.fetch_add(1, std::memory_order_acq_rel); g_revision.fetch_add(1, std::memory_order_acq_rel);   // a new title may match an INI page's mod
 			logger::info("RenameSection (SMF-compat): menu \"{}\" -> \"{}\"", a_modName, a_newName);
 			return true;
 		}
@@ -192,6 +213,7 @@ namespace registry
 	bool Remove(const std::string& a_modName, const std::string& a_pageName)
 	{
 		std::scoped_lock lock(g_lock);
+		g_revision.fetch_add(1, std::memory_order_acq_rel);   // 2.5.0: see g_revision
 		const auto mod = std::ranges::find(g_entries, a_modName, &Entry::modName);
 		if (a_modName.empty() || mod == g_entries.end())
 		{

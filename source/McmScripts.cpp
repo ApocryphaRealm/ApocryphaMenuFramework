@@ -2056,10 +2056,17 @@ namespace mcmloader::scripts
 		const long long now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
 		if (now - last.load() < 2000 || !settings::Get().loadSkyUIScriptMenus) { return; }
 		last = now;
-		logger::info("MCM scripts: the menu opened - one more discovery pass queued");
+		logger::debug("MCM scripts: the menu opened - one more discovery pass queued");
 		if (const auto tasks = SKSE::GetTaskInterface()) {
 			tasks->AddTask([]() {
-				try { DiscoverNow(true); }   // the player opened the menu: a full walk
+				// 2.5.0 (polish B17): every opening ran a FULL walk of the game's quests - 17 to 28 ms on the main thread, each
+				// time. A full walk now runs on an opening at most every 30 s (and always when none has run in this game);
+				// the openings between take the candidates-only pass (3-4 ms), which re-checks every config already seen.
+				static Clock::time_point s_lastFullOnOpen{};
+				const auto at = Clock::now();
+				const bool full = !g_fullWalkDone || s_lastFullOnOpen == Clock::time_point{} || at - s_lastFullOnOpen >= std::chrono::seconds(30);
+				if (full) { s_lastFullOnOpen = at; }
+				try { DiscoverNow(full); }
 				catch (const std::exception& e) { logger::error("MCM scripts: discovery failed - {}", e.what()); }
 			});
 		}

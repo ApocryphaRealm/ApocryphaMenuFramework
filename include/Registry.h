@@ -58,6 +58,9 @@ namespace registry
 	// Render-thread snapshot access. The copy is cheap at menu scale (a handful of mods) and
 	// means the render loop never holds the registration lock across user callbacks.
 	std::vector<Entry> Snapshot();
+	// 2.5.0: moves on every change to the registry (registration, removal, rename, a page shown or hidden). A caller
+	// that keeps a Snapshot reads this FIRST and copies again only when it has moved.
+	std::uint64_t Revision();
 
 	std::size_t Count();
 

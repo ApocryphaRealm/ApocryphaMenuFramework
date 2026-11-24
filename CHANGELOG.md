@@ -34,6 +34,9 @@ numbers (A1, B1 ...) are that report's.
 - A switch that is off is a neutral tone of the theme instead of red. Red read as a warning on a page of settings that were simply off. On stays green; Appearance > Colours > Switch off brings the red back (C9)
 - Settings > General is two sub-tabs, Menu and On-screen keyboard. The keyboard's fourteen controls made General the longest page of the menu; they are on their own sub-tab, as Appearance and Converted menus already had theirs. Nothing was removed (C3)
 - A key row on a converted page that is waiting for a press says "Press a key or button (Esc cancels)" on every kind of page. Script pages showed only "..." (B12)
+- Faster with the menu open: the list of registered mods is copied only when it changes (it was copied whole - every name and every page's callback - on every frame), and the list's order is worked out once a frame, not twice. One debug line per opening now gives the mod list's own share of a frame (B3, first half)
+- Opening the menu with its key looks for script menus that were set up since the last pass, as opening it from the System menu already did. The full walk of the game's quests that each opening ran (17 to 28 ms) now runs on an opening at most every 30 seconds; openings in between take the quick pass (B17)
+- A quieter log at the default level: a page AMF builds itself (an INI section, a TOML table, an MCM page) logs its registration and its hiding at debug. One mod with 150 INI sections wrote 300 lines at every start. Each mod's first page, and every page another mod registers, still logs at info (B16)
 
 ### Fixed
 - A greyed-out switch now fades with its label. Its pill kept its full green or red, so a setting that was switched off by another one still looked live - on AMF's own pages and on converted pages alike (True Directional Movement's gated rows) (A1)
