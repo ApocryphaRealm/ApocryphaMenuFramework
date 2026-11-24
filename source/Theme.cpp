@@ -426,7 +426,15 @@ namespace theme
 			themeRole[kRoleAccent] = unpack(accentId);
 			themeRole[kRoleSlider] = themeRole[kRoleAccent];
 			themeRole[kRoleSwitchOn] = ImVec4{ 76 / 255.0f, 175 / 255.0f, 80 / 255.0f, 1.0f };    // the switch's own green / red
-			themeRole[kRoleSwitchOff] = ImVec4{ 191 / 255.0f, 68 / 255.0f, 68 / 255.0f, 1.0f };
+			// 2.5.0 (polish C9): OFF is a neutral tone of the theme - part-way from its background to its dim text - where it
+			// was red until now. Red reads as a warning, and a page of settings that are simply off looked like a page of
+			// faults. On stays green, so the two are still told apart at a glance, and by more than colour (the knob's
+			// side). A player who wants the red back picks it under Appearance > Colours > Switch off.
+			{
+				const ImVec4& bg = themeRole[kRoleBackground];
+				const ImVec4& dim = themeRole[kRoleTextDim];
+				themeRole[kRoleSwitchOff] = ImVec4{ bg.x + (dim.x - bg.x) * 0.45f, bg.y + (dim.y - bg.y) * 0.45f, bg.z + (dim.z - bg.z) * 0.45f, 1.0f };
+			}
 			// Text roles: a theme without them takes its accent for headings (the colour it already uses to mark what matters)
 			// and, for help, its dim tone a third of the way toward the main text - apart from values, quieter than labels.
 			themeRole[kRoleHeading] = active.textHeader ? unpack(active.textHeader) : themeRole[kRoleAccent];

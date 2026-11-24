@@ -26,6 +26,13 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 The polish pass (assessment of 2026-11-23, `4. plans\ApocryphaMenuFramework\amf-polish-assessment-2026-11-23.md`). Item
 numbers (A1, B1 ...) are that report's.
 
+### Changed
+- The help paragraphs under the controls on AMF's own settings pages are drawn in the theme's quieter Help colour (53 on the settings pages, 2 on Presets), so the labels and values stand out from the explanation. Notices - "FLICK is not installed", "restart to apply" - keep full brightness. No wording changed (B1)
+- Buttons that throw work away ask for a second press: All back to the theme (colours), Theme's own art, Forget (remembered settings), Reset to alphabetical, a layout preset's Delete and Reset every control. The first press turns the button into "Press again to confirm" for four seconds (B8)
+- A click on a switch's label flips the switch, as a click on a tick box's label does (B9)
+- A switch's knob slides to its side and the track's colour goes with it, over about a tenth of a second, instead of jumping (C7)
+- A switch that is off is a neutral tone of the theme instead of red. Red read as a warning on a page of settings that were simply off. On stays green; Appearance > Colours > Switch off brings the red back (C9)
+
 ### Fixed
 - A greyed-out switch now fades with its label. Its pill kept its full green or red, so a setting that was switched off by another one still looked live - on AMF's own pages and on converted pages alike (True Directional Movement's gated rows) (A1)
 - A mod's message box, the Mod Function Menu reply, the rename box and the FLICK crash notice open centred on the menu every time. They used to open wherever one had first appeared, which for many players was a corner of the screen; their place is no longer written to the layout file (A2)

@@ -88,6 +88,20 @@ SET = {
         'korean': '저장되지 않음 - 로그를 확인하세요',
         'chinese': '未保存 - 请查看日志',
     },
+    # B8: a button that destroys something asks for a second press
+    'AMF_ConfirmAgain': {
+        'english': 'Press again to confirm',
+        'german': 'Zum Bestätigen erneut drücken',
+        'french': 'Appuyez de nouveau pour confirmer',
+        'spanish': 'Pulsa otra vez para confirmar',
+        'italian': 'Premi di nuovo per confermare',
+        'polish': 'Naciśnij ponownie, aby potwierdzić',
+        'czech': 'Stiskněte znovu pro potvrzení',
+        'russian': 'Нажмите ещё раз для подтверждения',
+        'japanese': 'もう一度押して確定',
+        'korean': '다시 눌러 확인',
+        'chinese': '再按一次以确认',
+    },
     # A10: Korean takes a particle after the key's name that depends on how the name ends; "키" (key) after it keeps it right
     'AMF_ManOpening1': {
         'korean': '%s 키를 눌러 메뉴를 열고 다시 %s 키를 눌러 닫습니다. Escape로도 닫힙니다. 키는 바꿀 수 있습니다: 조작 -> 메뉴 열고 닫기 -> 다시 지정을 누른 뒤 원하는 키를 누르세요.',

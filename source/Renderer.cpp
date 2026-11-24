@@ -41,6 +41,8 @@
 #include "FrameProfileCore.h"
 #include "WindowGeometryCore.h"
 #include "utils/ToggleSwitch.h"
+#include "utils/HelpText.h"
+#include "utils/ConfirmButton.h"
 #include "utils/Logger.h"
 #include "utils/ModalBox.h"
 #include "utils/NullGuard.h"
@@ -1922,7 +1924,7 @@ namespace renderer
 			if (values.skinEnabled && !(values.skinFrame.empty() && values.skinBackground.empty() && values.skinPlates.empty()))
 			{
 				ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
-				ImGui::TextWrapped("%s", TR("AMF_ArtSkinOverride", "Custom menu art from a UI author is on (Theme and text), so its art draws instead of the picks below."));
+				widgets::HelpPara(TR("AMF_ArtSkinOverride", "Custom menu art from a UI author is on (Theme and text), so its art draws instead of the picks below."));
 				ImGui::PopStyleColor();
 				ImGui::Spacing();
 			}
@@ -2056,10 +2058,10 @@ namespace renderer
 				ImGui::Spacing();
 			}
 			ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
-			ImGui::TextWrapped("%s", TR("AMF_ArtOskNote", "The on-screen keyboard follows Buttons for its keys and Frame and Background for its panel."));
+			widgets::HelpPara(TR("AMF_ArtOskNote", "The on-screen keyboard follows Buttons for its keys and Frame and Background for its panel."));
 			ImGui::PopStyleColor();
 			ImGui::Spacing();
-			if (ImGui::Button(icons::Label(icons::kReset, TR("AMF_ArtReset", "Theme's own art")).c_str()))
+			if (widgets::ConfirmButton(icons::Label(icons::kReset, TR("AMF_ArtReset", "Theme's own art")).c_str(), "artreset"))   // 2.5.0 (B8): asks first
 			{
 				values.themeArt.erase(active.id);
 				logger::info("settings page: art for theme {} -> theme's own", active.id);
@@ -2279,7 +2281,7 @@ namespace renderer
 			bool any = false;
 			for (const auto& c : picks) { any = any || !c.empty(); }
 			if (!any) { ImGui::BeginDisabled(); }
-			if (ImGui::Button(icons::Label(icons::kReset, TR("AMF_ColorAllTheme", "All back to the theme")).c_str()))
+			if (widgets::ConfirmButton(icons::Label(icons::kReset, TR("AMF_ColorAllTheme", "All back to the theme")).c_str(), "colorsalltheme"))   // 2.5.0 (B8): asks first
 			{
 				for (auto& c : picks) { c.clear(); }
 				logger::info("settings page: every colour -> the theme's{}", live ? "" : " (preview only)");
@@ -2353,7 +2355,7 @@ namespace renderer
 						curtain::Lift("turned off from the settings page");
 					}
 				}
-				ImGui::TextWrapped("%s", TR("AMF_BlackCurtainHelp", "On: the screen is held black from the first frame the game "
+				widgets::HelpPara(TR("AMF_BlackCurtainHelp", "On: the screen is held black from the first frame the game "
 								   "draws until its main menu is up, so the logo frames and the half-drawn menu behind it are never "
 								   "shown. It lifts the moment play begins, or after a couple of minutes if the main menu never "
 								   "appears, so a slow start can never leave you looking at nothing."));
@@ -2365,7 +2367,7 @@ namespace renderer
 					logger::info("settings page: delete orphaned save state -> {}", values.cleanOrphanedState);
 					settings::Save();
 				}
-				ImGui::TextWrapped("%s", TR("AMF_CleanStateHelp", "On: each time the game starts, every .amf-state.ini file whose save has been "
+				widgets::HelpPara(TR("AMF_CleanStateHelp", "On: each time the game starts, every .amf-state.ini file whose save has been "
 								   "deleted is deleted too - with its save gone it is of no use. A file whose save is still there is never "
 								   "touched, and nothing is deleted if no saves are found. Each file is named in the log. Off: they stay "
 								   "beside the saves."));
@@ -2376,7 +2378,7 @@ namespace renderer
 					logger::info("settings page: pause the game while open -> {}", values.pauseGameWhileOpen);
 					settings::Save();
 				}
-				ImGui::TextWrapped("%s", TR("AMF_PauseGameHelp", "On: time stops while this menu is open, the way it does in the game's own "
+				widgets::HelpPara(TR("AMF_PauseGameHelp", "On: time stops while this menu is open, the way it does in the game's own "
 								   "menus - nothing moves, fights or ticks down behind it. Off: the game keeps running while you change settings. "
 								   "Another mod's window that asks to pause the game stops time while it is open (as in SKSE Menu Framework): "
 								   "the world stands still, but scripts keep running so that mod can finish its work."));
@@ -2388,7 +2390,7 @@ namespace renderer
 					logger::info("settings page: keep the camera awake -> {}", values.keepCameraAwake);
 					settings::Save();
 				}
-				ImGui::TextWrapped("%s", TR("AMF_KeepCameraAwakeHelp", "On: with the game running behind this menu, the idle camera never starts "
+				widgets::HelpPara(TR("AMF_KeepCameraAwakeHelp", "On: with the game running behind this menu, the idle camera never starts "
 								   "circling your character, however long the menu is left open. When the menu closes the camera behaves as "
 								   "before. Off: after a while left alone, the camera starts circling as usual. With the game paused by this "
 								   "menu it changes nothing."));
@@ -2402,14 +2404,14 @@ namespace renderer
 					logger::info("settings page: pointer speed -> {:.2f}", values.pointerSpeed);
 					settings::Save();
 				}
-				ImGui::TextWrapped("%s", TR("AMF_PointerSpeedHelp", "How fast the mouse moves this menu's pointer. At 1.00 it moves exactly as "
+				widgets::HelpPara(TR("AMF_PointerSpeedHelp", "How fast the mouse moves this menu's pointer. At 1.00 it moves exactly as "
 								   "fast as the game's own menu cursor, at any screen size; higher is faster, lower is slower."));
 				if (widgets::Toggle(TR("AMF_WheelTabs", "Mouse wheel switches tabs"), &values.wheelSwitchesTabs))
 				{
 					logger::info("settings page: mouse wheel switches tabs -> {}", values.wheelSwitchesTabs);
 					settings::Save();
 				}
-				ImGui::TextWrapped("%s", TR("AMF_WheelTabsHelp", "On: with the pointer over a row of tabs - a mod's tabs or this menu's own (Settings, Controls, Help) - "
+				widgets::HelpPara(TR("AMF_WheelTabsHelp", "On: with the pointer over a row of tabs - a mod's tabs or this menu's own (Settings, Controls, Help) - "
 								   "rolling the wheel down opens the next tab and rolling it up the previous one."));
 				ImGui::Spacing();
 
@@ -2423,7 +2425,7 @@ namespace renderer
 					logger::info("settings page: system menu row -> {}", values.systemMenuRow);
 					settings::Save();
 				}
-				ImGui::TextWrapped("%s", TR("AMF_SystemRowHelp2", "On: a SKSE MENUS row is added to the journal's System tab, beside SAVE, "
+				widgets::HelpPara(TR("AMF_SystemRowHelp2", "On: a SKSE MENUS row is added to the journal's System tab, beside SAVE, "
 								   "LOAD and SETTINGS, and opens this menu in the middle of the screen. "
 								   "The row is added to the menu as it opens rather than by replacing any "
 								   "game file, so it works with whatever menu artwork you have installed. "
@@ -2439,7 +2441,7 @@ namespace renderer
 					logger::info("settings page: on-screen keyboard -> {}", values.onScreenKeyboard);
 					settings::Save();
 				}
-				ImGui::TextWrapped("%s", TR("AMF_OnScreenKeyboardHelp", "On: highlight any text box on a mod's page with the D-pad and press A, "
+				widgets::HelpPara(TR("AMF_OnScreenKeyboardHelp", "On: highlight any text box on a mod's page with the D-pad and press A, "
 								   "and a key grid appears across the bottom of the screen. The D-pad walks the keys, A types one, B puts "
 								   "the highlight back on the box, X is space, Y is backspace and RT is shift. It works in every mod's page. Off: text "
 								   "boxes take a real keyboard only."));
@@ -2453,7 +2455,7 @@ namespace renderer
 						logger::info("settings page: keyboard in game text boxes -> {}", values.keyboardGameFields);
 						settings::Save();
 					}
-					ImGui::TextWrapped("%s", TR("AMF_KbGameFieldsHelp", "On: the keyboard also types into SkyUI's item and spell search, the map's "
+					widgets::HelpPara(TR("AMF_KbGameFieldsHelp", "On: the keyboard also types into SkyUI's item and spell search, the map's "
 									   "location finder, the enchanting table's name box, SkyUI's MCM text boxes and other menus' text prompts. "
 									   "In an item or spell list, press Up on the first item (or the open button) to move to the search box. "
 									   "B once gives the box back, B twice ends typing, Start is Done."));
@@ -2553,7 +2555,7 @@ namespace renderer
 							logger::info("settings page: native CJK layouts in game boxes -> {}", values.keyboardNativeCjkInGame);
 							settings::Save();
 						}
-						ImGui::TextWrapped("%s", TR("AMF_KbNativeCjkHelp", "Off: the game's own text boxes get the Latin layout, because the game's "
+						widgets::HelpPara(TR("AMF_KbNativeCjkHelp", "Off: the game's own text boxes get the Latin layout, because the game's "
 										   "font draws Korean, Japanese and Chinese letters as empty boxes. Turn it on only with a font mod that adds "
 										   "those letters to the game's menus. This menu's own text boxes always have every layout."));
 					}
@@ -2602,7 +2604,7 @@ namespace renderer
 				// detector's reading is now simply used, and shown, so it can still be judged while
 				// playing rather than taken on trust.
 				ImGui::TextUnformatted(TR("AMF_Navigation", "Navigation"));
-				ImGui::TextWrapped("%s", TR("AMF_NavigationHelp", "Follows whatever you last used: press a key or move the mouse for "
+				widgets::HelpPara(TR("AMF_NavigationHelp", "Follows whatever you last used: press a key or move the mouse for "
 								   "keyboard navigation (arrow keys, Enter, Escape), touch the pad for "
 								   "controller navigation (D-pad moves, A activates, B cancels)."));
 				{
@@ -2627,7 +2629,7 @@ namespace renderer
 					auto& v = settings::Get();
 					const bool anySet = v.nestedWindow.IsSet() || v.hotkeyWindow.IsSet();
 					ImGui::TextUnformatted(TR("AMF_WindowSize", "Window size"));
-					ImGui::TextWrapped("%s", TR("AMF_WindowSizeHelp", "The first time, the menu opens in the middle of the screen, wide enough to "
+					widgets::HelpPara(TR("AMF_WindowSizeHelp", "The first time, the menu opens in the middle of the screen, wide enough to "
 									   "show the menu names and the page in full - the same from its key and from the System menu row. "
 									   "The size you drag it to is kept."));
 					ImGui::BeginDisabled(!anySet);
@@ -2699,7 +2701,7 @@ namespace renderer
 						values.themeId = themes[currentIndex].id;
 						settings::Save();
 					}
-					ImGui::TextWrapped("%s", TR("AMF_ThemeHelp", "A theme sets the menu's frame art, shapes and colours together. \"Skyrim\" is the "
+					widgets::HelpPara(TR("AMF_ThemeHelp", "A theme sets the menu's frame art, shapes and colours together. \"Skyrim\" is the "
 									   "Nordic knotwork frame, \"Untarnished\" is plain lines with no art, and each of the other "
 									   "themes brings its own art."));
 		
@@ -2726,7 +2728,7 @@ namespace renderer
 										 g_fontChoices[current].label,
 										 values.fontPath.empty() ? "auto" : values.fontPath.c_str());
 						}
-						ImGui::TextWrapped("%s", TR("AMF_FontHelp", "Drop a .ttf into Data/SKSE/Plugins/ApocryphaMenuFramework/fonts "
+						widgets::HelpPara(TR("AMF_FontHelp", "Drop a .ttf into Data/SKSE/Plugins/ApocryphaMenuFramework/fonts "
 										   "to add it to this list."));
 					}
 					ImGui::Spacing();
@@ -2753,7 +2755,7 @@ namespace renderer
 						{
 							strings::SetLanguage(current == 0 ? "" : s_langs[static_cast<std::size_t>(current - 1)]);
 						}
-						ImGui::TextWrapped("%s", TR("AMF_LanguageHelp", "The framework's own text. Game language follows Skyrim's setting; pick one to force it. "
+						widgets::HelpPara(TR("AMF_LanguageHelp", "The framework's own text. Game language follows Skyrim's setting; pick one to force it. "
 										   "Each mod's own page is translated by that mod. Translation files: Data/Interface/Translations/ApocryphaMenuFramework_<language>.txt."));
 					}
 					ImGui::Spacing();
@@ -2771,7 +2773,7 @@ namespace renderer
 						settings::Save();
 						g_fontRebuildPending = true;  // re-rasterise at the new size rather than stretch
 					}
-					ImGui::TextWrapped("%s", TR("AMF_TextSizeHelp", "Extra text scaling on top of the automatic resolution scale."));
+					widgets::HelpPara(TR("AMF_TextSizeHelp", "Extra text scaling on top of the automatic resolution scale."));
 					ImGui::Spacing();
 					ImGui::Spacing();
 					// CUSTOM MENU ART IS OFF UNLESS ASKED FOR (the owner, 2026-09-10: "i dont want the custom
@@ -2784,7 +2786,7 @@ namespace renderer
 						settings::Save();
 						skin::Reload();
 					}
-					ImGui::TextWrapped("%s", TR("AMF_SkinEnabledHelp", "Off: the menu keeps its built-in look, whatever is set under [Skin] in the "
+					widgets::HelpPara(TR("AMF_SkinEnabledHelp", "Off: the menu keeps its built-in look, whatever is set under [Skin] in the "
 									   "INI. On: the frame, background and toggle switch are replaced by the PNGs a UI "
 									   "author has pointed the framework at. Leave this off unless you have installed "
 									   "artwork made for it."));
@@ -2807,7 +2809,7 @@ namespace renderer
 							logger::info("settings page: move style -> {}", values.moveStyle);
 							settings::Save();
 						}
-						ImGui::TextWrapped("%s", TR("AMF_MoveStyleHelp", "Anywhere: drag the top row or any empty part of the menu to move it. "
+						widgets::HelpPara(TR("AMF_MoveStyleHelp", "Anywhere: drag the top row or any empty part of the menu to move it. "
 							"Top edge: drag only the top row - the name and version. Fixed: the menu stays where it is and cannot be moved or "
 							"resized. It always opens where you left it, and it is kept inside the screen."));
 					}
@@ -2818,7 +2820,7 @@ namespace renderer
 						logger::info("settings page: resize the window -> {}", values.freeResize);
 						settings::Save();
 					}
-					ImGui::TextWrapped("%s", TR("AMF_FreeResizeHelp", "On: drag any edge or corner to resize the menu - height "
+					widgets::HelpPara(TR("AMF_FreeResizeHelp", "On: drag any edge or corner to resize the menu - height "
 						"and width alike - and the size is kept. Off: the size is fixed."));
 					// RESIZE STYLE (2.3.0 - ssuamier on Nexus, 2026-10-23; the owner: "i can just make the resizing style a
 					// setting in the window settings tab"). Centred is the 1.7.7 behaviour the owner asked for and stays the default.
@@ -2832,7 +2834,7 @@ namespace renderer
 							settings::Save();
 						}
 						ImGui::EndDisabled();
-						ImGui::TextWrapped("%s", TR("AMF_ResizeStyleHelp", "Centred: dragging an edge moves the opposite edge too, so the "
+						widgets::HelpPara(TR("AMF_ResizeStyleHelp", "Centred: dragging an edge moves the opposite edge too, so the "
 							"menu grows or shrinks about its middle. Edges: the edge or corner you drag moves and the opposite one stays put, "
 							"like a normal window. Either way the menu never leaves the screen."));
 					}
@@ -2843,7 +2845,7 @@ namespace renderer
 						settings::Save();
 						theme::Apply();
 					}
-					ImGui::TextWrapped("%s", TR("AMF_SeeThroughHelp", "On: the opacity below fades the menu's background so the game "
+					widgets::HelpPara(TR("AMF_SeeThroughHelp", "On: the opacity below fades the menu's background so the game "
 						"shows through. Off: the background is solid."));
 					ImGui::BeginDisabled(!values.seeThrough);
 					ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
@@ -2860,7 +2862,7 @@ namespace renderer
 						logger::info("settings page: window opacity -> {}%", values.windowOpacity);
 						settings::Save();
 					}
-					ImGui::TextWrapped("%s", TR("AMF_WindowOpacityHelp", "How solid the menu is: 100% is solid, lower lets the game show through. The black background fades the most, boxes and borders less, text least; right-click menus stay solid."));
+					widgets::HelpPara(TR("AMF_WindowOpacityHelp", "How solid the menu is: 100% is solid, lower lets the game show through. The black background fades the most, boxes and borders less, text least; right-click menus stay solid."));
 					ImGui::EndDisabled();
 					// 2.1.5 (the owner, 2026-10-07): the help bar, with "a toggle just in case anybody doesn't like" it.
 					if (widgets::Toggle(TR("AMF_HelpBar", "Help bar"), &values.helpBar))
@@ -2868,7 +2870,7 @@ namespace renderer
 						logger::info("settings page: help bar -> {}", values.helpBar);
 						settings::Save();
 					}
-					ImGui::TextWrapped("%s", TR("AMF_HelpBarHelp", "On: the help for the highlighted option - on a converted MCM page, an INI or TOML page, and an SKSE mod's page "
+					widgets::HelpPara(TR("AMF_HelpBarHelp", "On: the help for the highlighted option - on a converted MCM page, an INI or TOML page, and an SKSE mod's page "
 						"- shows in a bar under the right pane, inside the menu, like SkyUI's info line. Off: it shows as a popup beside "
 						"the option."));
 						ImGui::EndTabItem();
@@ -2876,7 +2878,7 @@ namespace renderer
 					// 2.1.5: the player's own colours over the theme's, kept per theme (DrawColorRoles).
 					if (sub.Tab(icons::Label(icons::kDroplet, TR("AMF_Colors", "Colours")).c_str()))
 					{
-						ImGui::TextWrapped("%s", TR("AMF_ColorsHelp", "Your own colour for each part of the menu, over the theme's. Each starts as "
+						widgets::HelpPara(TR("AMF_ColorsHelp", "Your own colour for each part of the menu, over the theme's. Each starts as "
 							"the theme's own; Theme puts one back. Frame art tints the theme's frame and background pictures."));
 						DrawColorRoles();
 						ImGui::EndTabItem();
@@ -2884,7 +2886,7 @@ namespace renderer
 					// 2.1.6: the theme's art parts, swapped for any theme's, kept per theme (DrawArtPicks).
 					if (sub.Tab(icons::Label(icons::kImage, TR("AMF_SubArt", "Art")).c_str()))
 					{
-						ImGui::TextWrapped("%s", TR("AMF_ArtHelp", "Build your own look from every theme's art: pick each part of the menu for "
+						widgets::HelpPara(TR("AMF_ArtHelp", "Build your own look from every theme's art: pick each part of the menu for "
 							"this theme - five shapes of each, the default among them. Each theme keeps its own picks, and they take your Colours."));
 						ImGui::Spacing();
 						DrawArtPicks();
@@ -2924,7 +2926,7 @@ namespace renderer
 						settings::Save();
 						mcmloader::SetEnabled(values.loadMcmHelperConfigs);
 					}
-					ImGui::TextWrapped("%s", TR("AMF_McmLoadHelp", "On: every mod that uses MCM Helper also gets its menu here, read from "
+					widgets::HelpPara(TR("AMF_McmLoadHelp", "On: every mod that uses MCM Helper also gets its menu here, read from "
 									   "the mod's own files. A change goes through MCM Helper exactly as it does in SkyUI's menu."));
 					// 2.2.1 live apply (the owner, 2026-10-13, from ofrose's report that TrueHUD's bars moved only once AMF closed)
 					if (widgets::Toggle(TR("AMF_McmLiveApply", "Apply changes straight away"), &values.liveApplyConverted))
@@ -2932,7 +2934,7 @@ namespace renderer
 						logger::info("settings page: live apply on converted pages -> {}", values.liveApplyConverted);
 						settings::Save();
 					}
-					ImGui::TextWrapped("%s", TR("AMF_McmLiveApplyHelp", "On: once a change on an MCM Helper or Prisma page has settled (a slider "
+					widgets::HelpPara(TR("AMF_McmLiveApplyHelp", "On: once a change on an MCM Helper or Prisma page has settled (a slider "
 									   "let go), the mod is told to apply it, as when its page is closed - so a mod such as TrueHUD changes as you "
 									   "set it. Off: such mods apply a change only when you leave their page or close this menu."));
 					// phase 3: SkyUI menus written only in Papyrus (the owner, 2026-10-04: "do phase 3 for the SkyUI script menus")
@@ -2942,7 +2944,7 @@ namespace renderer
 						settings::Save();
 						mcmloader::SetScriptsEnabled(values.loadSkyUIScriptMenus);
 					}
-					ImGui::TextWrapped("%s", TR("AMF_McmScriptsHelp", "On: a mod whose SkyUI menu is written only in its own script also gets "
+					widgets::HelpPara(TR("AMF_McmScriptsHelp", "On: a mod whose SkyUI menu is written only in its own script also gets "
 									   "its menu here. This menu makes the same calls on that script as SkyUI's menu does."));
 					if (!anyMcm) { ImGui::BeginDisabled(); }
 					if (widgets::Toggle(TR("AMF_McmHideSkyUI", "Take those mods out of SkyUI's MCM list"), &values.hideMcmInSkyUI))
@@ -2951,13 +2953,13 @@ namespace renderer
 						settings::Save();
 						mcmloader::SetHideInSkyUI(values.hideMcmInSkyUI);
 					}
-					ImGui::TextWrapped("%s", TR("AMF_McmHideSkyUIHelp", "On: a mod whose whole menu is drawn here is set in one place - "
+					widgets::HelpPara(TR("AMF_McmHideSkyUIHelp", "On: a mod whose whole menu is drawn here is set in one place - "
 									   "here. A mod with anything this menu cannot draw stays in SkyUI's list. Off puts them all back."));
 					ImGui::TextDisabled(TR("AMF_McmHideSkyUICount", "%d of %d hidden from SkyUI's list now"),
 						mcmloader::HiddenInSkyUI(), mcmloader::HideableInSkyUI());
 					if (mcmloader::SkyUIListUnreadable())
 					{
-						ImGui::TextWrapped("%s", TR("AMF_McmHideUnreadable", "SkyUI's MCM list is run by another mod in a way this menu cannot read, "
+						widgets::HelpPara(TR("AMF_McmHideUnreadable", "SkyUI's MCM list is run by another mod in a way this menu cannot read, "
 										   "so this switch takes nothing out of it here."));
 					}
 					if (!anyMcm) { ImGui::EndDisabled(); }
@@ -3001,7 +3003,7 @@ namespace renderer
 						}
 						ImGui::TextUnformatted(header);
 						{
-							ImGui::TextWrapped("%s", TR("AMF_McmImportHelp", "Switch off a menu to keep it in SkyUI's menu only: it leaves this menu, "
+							widgets::HelpPara(TR("AMF_McmImportHelp", "Switch off a menu to keep it in SkyUI's menu only: it leaves this menu, "
 											   "and taking menus out of SkyUI's list leaves it alone."));
 							if (widgets::Toggle(TR("AMF_McmImportNew", "Bring in MCM menus not switched below"), &values.importNewMcmMenus))
 							{
@@ -3009,7 +3011,7 @@ namespace renderer
 								settings::Save();
 								mcmloader::SetImportNew(values.importNewMcmMenus);
 							}
-							ImGui::TextWrapped("%s", TR("AMF_McmImportNewHelp", "Off: only the menus switched on below come in - with a long list, "
+							widgets::HelpPara(TR("AMF_McmImportNewHelp", "Off: only the menus switched on below come in - with a long list, "
 											   "start from none and pick the few you use."));
 							if (ImGui::Button(TR("AMF_McmImportAllOn", "All on")))
 							{
@@ -3053,7 +3055,7 @@ namespace renderer
 					{
 						// REMEMBERED SETTINGS (the owner, 2026-10-06: "build it into AMF so that the settings you change for all these
 						// different MCMs are backed up and saved so that on a new game they still apply"). RememberedSettings.h.
-						ImGui::TextWrapped("%s", TR("AMF_McmMemHelp", "A new game forgets what menus written in a mod's script, and MCM Helper "
+						widgets::HelpPara(TR("AMF_McmMemHelp", "A new game forgets what menus written in a mod's script, and MCM Helper "
 										   "settings kept in your save, were set to. Those settings are remembered here and set again after a "
 										   "new game. MCM Helper's other settings are kept by MCM Helper itself."));
 						if (widgets::Toggle(TR("AMF_McmMemAuto", "Remember each change made here"), &values.mcmAutoBackup))
@@ -3071,7 +3073,7 @@ namespace renderer
 							logger::info("settings page: remembered settings: what was changed comes back on a load -> {}", values.mcmRestoreOnLoad);
 							settings::Save();
 						}
-						ImGui::TextWrapped("%s", TR("AMF_McmMemOnLoadHelp", "What you change on these menus comes back whenever you load a save or start a new game, in every "
+						widgets::HelpPara(TR("AMF_McmMemOnLoadHelp", "What you change on these menus comes back whenever you load a save or start a new game, in every "
 										   "save, the way a setting on an SKSE menu does. Only the rows you changed; a row already right is left alone. Rows that run something, "
 										   "like a reset or an uninstall, are never run again. Forget below drops what a menu remembers."));
 
@@ -3092,7 +3094,7 @@ namespace renderer
 							g_memStatus = rememberedsettings::RestoreNow() ? "" : TR("AMF_McmMemWait", "Close the MCM page that is open, or wait for the backup or restore that is running.");
 						}
 						if (memBusy) { ImGui::EndDisabled(); }
-						ImGui::TextWrapped("%s", TR("AMF_McmMemButtonsHelp", "Back up all now reads every menu this menu can read - also what you "
+						widgets::HelpPara(TR("AMF_McmMemButtonsHelp", "Back up all now reads every menu this menu can read - also what you "
 										   "set in SkyUI's own menu. Restore now sets this game's menus to the profile."));
 
 						// IMPORT FROM MCM MEMORY (2.1.5, the owner: "the whole point ... is so that they can import their settings and
@@ -3124,7 +3126,7 @@ namespace renderer
 									rememberedsettings::ImportFromMcmMemory(s_mmProfiles[static_cast<std::size_t>(s_mmPick)]);
 								}
 								if (memBusy) { ImGui::EndDisabled(); }
-								ImGui::TextWrapped("%s", TR("AMF_McmMemImportHelp", "Brings every setting MCM Memory saved in that profile into this "
+								widgets::HelpPara(TR("AMF_McmMemImportHelp", "Brings every setting MCM Memory saved in that profile into this "
 									"profile, so you can switch MCM Memory off afterwards: AMF sets them again after each new game. Its files "
 									"are only read, never changed."));
 							}
@@ -3152,7 +3154,7 @@ namespace renderer
 						ImGui::Spacing();
 						ImGui::TextUnformatted(memHeader);
 						{
-							ImGui::TextWrapped("%s", TR("AMF_McmMemMenusHelp", "Switch off a menu to leave it out of the automatic restore after a "
+							widgets::HelpPara(TR("AMF_McmMemMenusHelp", "Switch off a menu to leave it out of the automatic restore after a "
 											   "new game; Forget drops what this profile remembers of it."));
 							for (const auto& row : memRows)
 							{
@@ -3170,7 +3172,8 @@ namespace renderer
 								if (row.saved > 0)
 								{
 									ImGui::SameLine();
-									if (ImGui::SmallButton(icons::Label(icons::kTrash, TR("AMF_McmMemForget", "Forget")).c_str())) { rememberedsettings::Forget(row.key); }
+									// 2.5.0 (B8): asks first - the mod's remembered settings are gone for good
+									if (widgets::ConfirmButton(icons::Label(icons::kTrash, TR("AMF_McmMemForget", "Forget")).c_str(), "memforget", true)) { rememberedsettings::Forget(row.key); }
 								}
 								ImGui::PopID();
 							}
@@ -3189,7 +3192,7 @@ namespace renderer
 							logger::info("settings page: FLICK host -> {} (applies after a restart)", values.flickHost);
 							settings::Save();
 						}
-						ImGui::TextWrapped("%s", TR("AMF_FlickHostHelp", "On: mods written for FLICK show their settings page in this menu, "
+						widgets::HelpPara(TR("AMF_FlickHostHelp", "On: mods written for FLICK show their settings page in this menu, "
 							"with (FLICK) after the name - each one here or in FLICK's own window, as you choose below. Off: FLICK mods are "
 							"left alone. A change applies after you restart the game."));
 						if (values.flickHost != flick::Enabled())
@@ -3220,7 +3223,7 @@ namespace renderer
 						else
 						{
 							ImGui::SeparatorText(std::format("{} ({})", TR("AMF_FlickConnected", "FLICK mods here"), consumers.size()).c_str());
-							ImGui::TextWrapped("%s", TR("AMF_FlickWhereHelp", "Each FLICK mod's page is in one place at a time: in this menu, "
+							widgets::HelpPara(TR("AMF_FlickWhereHelp", "Each FLICK mod's page is in one place at a time: in this menu, "
 								"or in FLICK's own window (FLICK itself must be installed for that). A change applies from the next game start."));
 							const char* places[] = { TR("AMF_FlickInAmf", "This menu"), TR("AMF_FlickInFlick", "FLICK's own window") };
 							for (const auto& c : consumers)
@@ -3364,7 +3367,7 @@ namespace renderer
 								}
 								ImGui::EndCombo();
 							}
-							ImGui::TextWrapped("%s", TR("AMF_PrismaControlHelp", "Here and in Prisma's own window: the menus are in this menu, and "
+							widgets::HelpPara(TR("AMF_PrismaControlHelp", "Here and in Prisma's own window: the menus are in this menu, and "
 								"Prisma MCM Redux's own window still opens with its key. Here only: its key is switched off from the next game start, "
 								"and put back when you choose another option. Prisma's own window only: nothing of Prisma's is listed here."));
 							if (prisma::HotkeyHeldByAmf())
@@ -3416,14 +3419,14 @@ namespace renderer
 							inipages::ApplyVisibility();
 						}
 						// next after 2.1.9 (the owner, 2026-10-12: "any surface level ini file to have a menu" ... "add the data folder")
-						ImGui::TextWrapped("%s", TR("AMF_IniLoadHelp2", "On: every INI file directly in Data/SKSE/Plugins and in Data gets a page "
+						widgets::HelpPara(TR("AMF_IniLoadHelp2", "On: every INI file directly in Data/SKSE/Plugins and in Data gets a page "
 							"here, \"<name> (INI)\" - a tab per section, a control per key, the file's own comments as the help - unless its mod "
 							"already has a page here. A change is written to the file itself, only the value you change (or to its _custom.ini "
 							"when it has one), and the file as it first was is kept as .amf-backup. Mods and the game read these files when the "
 							"game starts, so a change takes effect next time. Each page has its own switch below."));
 						// 2.2.0 (the owner, 2026-10-13): each INI file's page starts off - the player turns on the ones wanted
 						ImGui::Spacing();
-						ImGui::TextWrapped("%s", TR("AMF_IniPickHelp", "Each INI file's page starts off: turn on the INI files you want below, "
+						widgets::HelpPara(TR("AMF_IniPickHelp", "Each INI file's page starts off: turn on the INI files you want below, "
 							"and only those appear in the Mods list."));
 						ImGui::Spacing();
 						inipages::DrawSettingsList();
@@ -3438,7 +3441,7 @@ namespace renderer
 							settings::Save();
 							mfmpages::ApplyVisibility();
 						}
-						ImGui::TextWrapped("%s", TR("AMF_MfmLoadHelp", "On: the buttons other mods add for Mod Function Menu (Toggle UI, "
+						widgets::HelpPara(TR("AMF_MfmLoadHelp", "On: the buttons other mods add for Mod Function Menu (Toggle UI, "
 							"Game Settings Override and others) are a menu here, \"Mod Function Menu\" - a heading for Mod and for Config, a "
 							"header per folder, a button per entry. A button calls a function of a mod that is already loaded; one whose mod "
 							"is not loaded is greyed out and says what is missing."));
@@ -3455,7 +3458,7 @@ namespace renderer
 							settings::Save();
 							tomlpages::ApplyVisibility();
 						}
-						ImGui::TextWrapped("%s", TR("AMF_TomlLoadHelp", "On: every TOML file directly in Data/SKSE/Plugins, and in its folders, can "
+						widgets::HelpPara(TR("AMF_TomlLoadHelp", "On: every TOML file directly in Data/SKSE/Plugins, and in its folders, can "
 							"be a page here - \"<name> (TOML)\", a tab per table (a folder's files: a tab per file), a control per value, the "
 							"file's own comments as the help; Game Settings Override's folder is the \"Game Settings Override\" page, with the "
 							"game's current value beside each setting. Each page starts off: turn on the ones you want below. A change is "
@@ -3478,7 +3481,7 @@ namespace renderer
 					// for some of them like Atlas map markers which are very close together"). Their colours are framework-wide, on
 					// Appearance > Colours (the owner: "some of these features may be redundant ... if we just move them over").
 					{
-						ImGui::TextWrapped("%s", TR("AMF_McmLookHelp", "The room between the columns and rows of the pages built from MCM "
+						widgets::HelpPara(TR("AMF_McmLookHelp", "The room between the columns and rows of the pages built from MCM "
 										   "menus. Their colours are on Appearance > Colours."));
 						ImGui::Spacing();
 						ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
@@ -3526,11 +3529,11 @@ namespace renderer
 																			 : TR("AMF_McmSortUndoFailed", "The order from before the sort could not be read.");
 						}
 					}
-					ImGui::TextWrapped("%s", TR("AMF_McmSortHelp", "Puts each MCM menu in this menu under a separator for its kind - Interface, "
+					widgets::HelpPara(TR("AMF_McmSortHelp", "Puts each MCM menu in this menu under a separator for its kind - Interface, "
 									   "Combat, Camera and so on - judged by its name; a menu with no match goes under Other. Nothing is hidden "
 									   "or removed. A menu you already put under a separator stays there. Undo puts "
 									   "the list back as it was before the last sort."));
-					ImGui::TextWrapped("%s", TR("AMF_McmSortLearnHelp", "Move a menu under another category's separator yourself and "
+					widgets::HelpPara(TR("AMF_McmSortLearnHelp", "Move a menu under another category's separator yourself and "
 										   "the sort remembers it: the next sort puts it there too."));
 					if (!g_mcmSortStatus.empty()) { ImGui::TextDisabled("%s", g_mcmSortStatus.c_str()); }
 					ImGui::Spacing();
@@ -3741,12 +3744,12 @@ namespace renderer
 		{
 			const std::vector<registry::Entry> entries = registry::Snapshot();
 			ImGui::SeparatorText(icons::Label(icons::kList, TR("AMF_MenuList", "Menu list")).c_str());
-			ImGui::TextWrapped("%s", TR("AMF_MenuListHelp", "Rename any mod's entry, and set the order of the list. Type a position "
+			widgets::HelpPara(TR("AMF_MenuListHelp", "Rename any mod's entry, and set the order of the list. Type a position "
 							   "number to move an entry there - every other entry re-flows around it."));
 
 			ImGui::Text(TR("AMF_Order", "Order: %s"), personalization::IsCustomOrder() ? TR("AMF_OrderCustom", "custom") : TR("AMF_OrderAlphabetical", "alphabetical"));
 			ImGui::SameLine();
-			if (ImGui::Button(icons::Label(icons::kReset, TR("AMF_ResetAlphabetical", "Reset to alphabetical")).c_str()))
+			if (widgets::ConfirmButton(icons::Label(icons::kReset, TR("AMF_ResetAlphabetical", "Reset to alphabetical")).c_str(), "resetalpha"))   // 2.5.0 (B8): asks first
 			{
 				personalization::ResetToAlphabetical();
 				settings::Save();
@@ -3766,7 +3769,7 @@ namespace renderer
 			// (the owner's standing rule for presets).
 			ImGui::Spacing();
 			ImGui::TextUnformatted(TR("AMF_LayoutPresets", "Layout presets"));
-			ImGui::TextWrapped("%s", TR("AMF_LayoutPresetsHelp", "Save this list - its order, separators, favourites and names - "
+			widgets::HelpPara(TR("AMF_LayoutPresetsHelp", "Save this list - its order, separators, favourites and names - "
 							   "under a name, and load it back any time. Your settings are kept in a file the download never "
 							   "contains, so an update does not reset them."));
 			ImGui::SetNextItemWidth(ImGui::GetFontSize() * 14.0f);
@@ -3795,7 +3798,7 @@ namespace renderer
 					g_presetStatusAt = ImGui::GetTime();
 				}
 				ImGui::SameLine();
-				if (ImGui::SmallButton(icons::Label(icons::kTrash, TR("AMF_DeletePreset", "Delete")).c_str()))
+				if (widgets::ConfirmButton(icons::Label(icons::kTrash, TR("AMF_DeletePreset", "Delete")).c_str(), "deletelayoutpreset", true))   // 2.5.0 (B8): asks first
 				{
 					g_presetStatus = settings::DeleteLayoutPreset(preset) ? TR("AMF_PresetDeleted", "Deleted.") : TR("AMF_PresetNotDeleted", "Could not be deleted - see the log.");
 					g_presetStatusAt = ImGui::GetTime();
@@ -3936,7 +3939,7 @@ namespace renderer
 			auto& values = settings::Get();
 			ImGui::TextUnformatted(icons::Label(icons::kGamepad, TR("AMF_Controls", "Controls")).c_str());
 			ImGui::Separator();
-			ImGui::TextWrapped("%s", TR("AMF_ControlsHelp2", "These are the framework's own controls - what moves through this menu and what opens "
+			widgets::HelpPara(TR("AMF_ControlsHelp2", "These are the framework's own controls - what moves through this menu and what opens "
 							   "and closes it. A mod's own keys belong on that mod's page. Press Rebind and then the "
 							   "key, mouse button, pad button or stick direction you want."));
 			ImGui::Spacing();
@@ -4129,14 +4132,14 @@ namespace renderer
 			// 2.3.0 (U1): on its own line when it would run past the pane's edge (a big text size in a narrow window)
 			const std::string resetLabel = icons::Label(icons::kReset, TR("AMF_BindReset", "Reset every control"));
 			tabfit::SameLineIfFits(tabfit::ButtonWidth(resetLabel.c_str()));
-			if (ImGui::Button(resetLabel.c_str()))
+			if (widgets::ConfirmButton(resetLabel.c_str(), "bindreset"))   // 2.5.0 (B8): asks first
 			{
 				bindings::ResetToDefaults();
 				settings::Save();
 			}
 			// Its own wrapped line (2.1.1): beside the buttons it ran off the pane's edge.
 			ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-			ImGui::TextWrapped("%s", TR("AMF_BindNote", "Reserved keys are refused, and two functions that can be used at the same time cannot share a control."));
+			widgets::HelpPara(TR("AMF_BindNote", "Reserved keys are refused, and two functions that can be used at the same time cannot share a control."));
 			ImGui::PopStyleColor();
 			(void)values;
 		}

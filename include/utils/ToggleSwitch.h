@@ -29,7 +29,7 @@ namespace widgets
 		const ImVec2 pos = ImGui::GetCursorScreenPos();
 		ImDrawList* drawList = ImGui::GetWindowDrawList();
 
-		const bool changed = ImGui::InvisibleButton("##toggle", ImVec2(width, height));
+		bool changed = ImGui::InvisibleButton("##toggle", ImVec2(width, height));
 		const bool hovered = ImGui::IsItemHovered();
 		// 2.1.6: the theme's hover frame round the switch under the mouse, as round every other control (drawn by hand, so
 		// not through the art hook)
@@ -42,18 +42,44 @@ namespace widgets
 
 		const bool isOn = a_value && *a_value;
 
+		// 2.5.0 (polish C7): the knob SLIDES to its side over about a tenth of a second, and the track's colour goes with
+		// it, instead of both jumping. Where it is on its way is kept per switch in the window's own storage. A switch not
+		// drawn last frame (its page was just opened, or another page's switch with the same name took its place) starts
+		// at rest, so opening a page never shows every knob travelling.
+		float slide = isOn ? 1.0f : 0.0f;
+		if (ImGuiStorage* const store = ImGui::GetStateStorage())
+		{
+			const float target = slide;
+			const int frame = ImGui::GetFrameCount();
+			int* const seen = store->GetIntRef(ImGui::GetID("##knobframe"), -1);
+			float* const at = store->GetFloatRef(ImGui::GetID("##knobat"), target);
+			if (seen && at)
+			{
+				if (*seen < frame - 1) { *at = target; }
+				else
+				{
+					const float step = ImGui::GetIO().DeltaTime * 9.0f;
+					*at = *at < target ? std::min(target, *at + step) : std::max(target, *at - step);
+				}
+				*seen = frame;
+				slide = *at;
+			}
+		}
+
 		// 2.1.5: the track takes the player's Switch on / Switch off colours (Appearance > Colours; the theme's green and
 		// red by default), a little lighter while hovered.
-		const std::uint32_t pickedU32 = theme::RoleColor(isOn ? theme::kRoleSwitchOn : theme::kRoleSwitchOff);
-		const ImU32 baseColor = pickedU32 ? static_cast<ImU32>(pickedU32) : (isOn ? IM_COL32(76, 175, 80, 255) : IM_COL32(191, 68, 68, 255));
-		ImVec4 track = ImGui::ColorConvertU32ToFloat4(baseColor);
+		const std::uint32_t onU32 = theme::RoleColor(theme::kRoleSwitchOn);
+		const std::uint32_t offU32 = theme::RoleColor(theme::kRoleSwitchOff);
+		const ImVec4 onColor = ImGui::ColorConvertU32ToFloat4(onU32 ? static_cast<ImU32>(onU32) : IM_COL32(76, 175, 80, 255));
+		const ImVec4 offColor = ImGui::ColorConvertU32ToFloat4(offU32 ? static_cast<ImU32>(offU32) : IM_COL32(191, 68, 68, 255));
+		ImVec4 track = ImLerp(offColor, onColor, slide);   // the colour travels with the knob
 		if (hovered) { track = ImVec4(std::min(track.x + 0.06f, 1.0f), std::min(track.y + 0.06f, 1.0f), std::min(track.z + 0.06f, 1.0f), track.w); }
 		// 2.5.0 (polish A1): a greyed-out switch kept its bright pill because these colours are made by hand and so never
 		// took the style's alpha. GetColorU32 multiplies by it, and BeginDisabled lowers it - the switch now fades with
 		// its label, as every other disabled control does.
 		const ImU32 trackColor = ImGui::GetColorU32(track);
 
-		const float knobX = pos.x + radius + (isOn ? (width - height) : 0.0f);
+		const float knobX = pos.x + radius + (width - height) * slide;
 
 		// A UI author may supply toggle.png to restyle the track (see Skin.h). The knob still
 		// draws over it, so the switch remains readable as a switch whatever the art does, and
@@ -121,6 +147,13 @@ namespace widgets
 				if (wrap) { ImGui::PushTextWrapPos(0.0f); }
 				ImGui::TextUnformatted(visible.data(), visible.data() + visible.size());
 				if (wrap) { ImGui::PopTextWrapPos(); }
+				// 2.5.0 (polish B9): a click on the label flips the switch, as a click on a tick box's label does - the
+				// label is the bigger and nearer target. A greyed-out switch's label is not hovered, so it stays put.
+				if (a_value && ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+				{
+					*a_value = !*a_value;
+					changed = true;
+				}
 			}
 		}
 

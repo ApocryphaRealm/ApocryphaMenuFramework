@@ -15,6 +15,7 @@
 #include "utils/Logger.h"
 #include "utils/NullGuard.h"
 #include "utils/ToggleSwitch.h"
+#include "utils/HelpText.h"
 
 #include <imgui.h>
 #include <nlohmann/json.hpp>
@@ -755,10 +756,10 @@ namespace presets
 	void DrawGeneralSection()
 	{
 		ImGui::SeparatorText(icons::Label(icons::kSave, TR("AMF_SetPresetTitle", "Presets")).c_str());
-		ImGui::TextWrapped("%s", TR("AMF_SetPresetHelp", "A preset keeps the settings of every mod in this menu - INI and TOML pages, Prisma and MCM "
+		widgets::HelpPara(TR("AMF_SetPresetHelp", "A preset keeps the settings of every mod in this menu - INI and TOML pages, Prisma and MCM "
 			"Helper menus and menus written in a mod's script - in one file. Keep several (easy, hard, ...) and load one any time: "
 			"you see what changes first, and your values from before are kept as a backup preset."));
-		ImGui::TextWrapped("%s", TR("AMF_SetPresetSnapshot", "A preset changes only when you save it. Changes you make in the menus are remembered for a new "
+		widgets::HelpPara(TR("AMF_SetPresetSnapshot", "A preset changes only when you save it. Changes you make in the menus are remembered for a new "
 			"game (Converted menus > MCM > Remembered settings), never written into a preset - so loading a preset puts back what it held."));
 
 		const bool busy = Busy();
