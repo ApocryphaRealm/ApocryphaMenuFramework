@@ -1713,6 +1713,9 @@ namespace renderer
 		// another mod's own code may read B itself, so there B is left to it and to ImGui as before.
 		bool g_sideNavLastFrame = false;
 		bool g_openPageIsOurs = true;
+		// 2.5.0 (test round 4): B was passed on to Dear ImGui from a page another mod draws. If its cancel then leaves the
+		// highlight in neither pane, the frame that sees it puts the highlight on the open entry of the list.
+		bool g_backPassedOn = false;
 		bool g_focusMainTabs = false;
 		// 2.1.5 - THE HIGHLIGHT FOLLOWS A BUMPER (the owner, 2026-10-07: switching tabs with the shoulder buttons "you can see a
 		// slight change in color, but the focus doesn't actually change like it should, where the frame should follow the current
@@ -5742,15 +5745,18 @@ namespace renderer
 					// left it on the window itself - and the D-pad then did nothing until the mouse was clicked. A direction
 					// press now puts it on the open entry of the mod list. Not with a box, a dropdown or the on-screen keyboard
 					// up: those have the highlight for themselves.
+					// 2.5.0 (test round 4, Q3): ... or at once, when it was B on a mod-drawn page that left it there.
+					const bool backLeftIt = g_backPassedOn;
+					g_backPassedOn = false;
 					if (!sideHasNav && !contentHasNav && !editing && GImGui && GImGui->OpenPopupStack.Size == 0 && !keyboard::Capturing() &&
-						(wantsLeft || wantsRight ||
+						(backLeftIt || wantsLeft || wantsRight ||
 						 ImGui::IsKeyPressed(ImGuiKey_GamepadDpadUp, false) || ImGui::IsKeyPressed(ImGuiKey_GamepadDpadDown, false) ||
 						 ImGui::IsKeyPressed(ImGuiKey_GamepadLStickUp, false) || ImGui::IsKeyPressed(ImGuiKey_GamepadLStickDown, false) ||
 						 ImGui::IsKeyPressed(ImGuiKey_UpArrow, false) || ImGui::IsKeyPressed(ImGuiKey_DownArrow, false)))
 					{
 						g_focusPane = 1;
 						g_navToSelected = true;
-						logger::debug("nav: the highlight was in neither pane - a direction press put it on the open entry of the list");
+						logger::debug("nav: the highlight was in neither pane - {} put it on the open entry of the list", backLeftIt ? "B on a mod-drawn page" : "a direction press");
 					}
 					// A driving tool's press is read here, alongside the real ones, so amf.menu
 					// op=nav proves THIS decision rather than a private path around it.
@@ -6651,12 +6657,25 @@ namespace renderer
 		if (!g || !IsMainWindowVisible()) { return false; }
 		// Something for ImGui's own cancel to do: a slider or field held, a dropdown, a box or a context menu open.
 		if (g->ActiveId != 0 || g->OpenPopupStack.Size > 0) { return false; }
-		if (!g_grabbedMod.empty()) { return false; }               // B puts a picked-up mod down (the side list reads it)
+		if (!g_grabbedMod.empty())
+		{
+			// 2.5.0 (test round 4, Q2): B puts a picked-up mod down HERE and stays the menu's own. Passed on so the side
+			// list could read it, it was also the library's cancel, and the highlight left the list with the mod.
+			logger::info("menu order: put \"{}\" down (B)", g_grabbedMod);
+			g_grabbedMod.clear();
+			return true;
+		}
 		if (keyboard::Capturing() || bindings::IsCapturing()) { return false; }
 		if (consumer::AnyBlockingWindowOpen()) { return false; }   // a mod's own window has the input
 		if (g_contentNavLastFrame)
 		{
-			if (!g_openPageIsOurs) { return false; }                 // another mod draws this page and may read B itself
+			if (!g_openPageIsOurs)
+			{
+				// another mod draws this page and may read B itself: it gets the press. What the library's cancel does to
+				// the highlight is put right in the frame (g_backPassedOn).
+				g_backPassedOn = true;
+				return false;
+			}
 			g_focusPane = 1;
 			g_navToSelected = true;   // land on the open entry, as Left out of a page does
 			logger::debug("nav: B in the page -> the mod list (the open entry)");
