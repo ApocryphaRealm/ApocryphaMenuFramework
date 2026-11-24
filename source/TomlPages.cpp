@@ -478,7 +478,9 @@ namespace tomlpages
 		}
 
 		// One value's row. Returns the input to write ("" = none this frame). Render thread, g_lock held.
-		std::string DrawRow(Page& a_p, File& a_f, std::size_t a_ri, const std::vector<const tomlcore::Document*>& a_gsoDocs, std::size_t a_fileIndex)
+		// 2.5.0 (test round 3, R2): returns the value to write, or nothing. It returned a string with "empty" meaning "no
+		// change", so a text field that had been EMPTIED was never written - the file kept the old text and nothing was logged.
+		std::optional<std::string> DrawRow(Page& a_p, File& a_f, std::size_t a_ri, const std::vector<const tomlcore::Document*>& a_gsoDocs, std::size_t a_fileIndex)
 		{
 			const tomlcore::Entry& e = a_f.doc.entries[a_ri];
 			Row& r = a_f.rows[a_ri];
@@ -646,7 +648,7 @@ namespace tomlpages
 				ImGui::PopStyleColor();
 			}
 			ImGui::PopID();
-			return now ? input : std::string();
+			return now ? std::optional<std::string>(input) : std::nullopt;
 		}
 
 		void DrawTab(std::size_t a_page, std::size_t a_tab)
@@ -709,8 +711,8 @@ namespace tomlpages
 				for (const std::size_t ri : sec.entries)
 				{
 					if (ri >= f.rows.size()) { continue; }
-					std::string input = DrawRow(p, f, ri, docs, t.file);
-					if (!input.empty() && commitId.empty()) { commitId = f.doc.entries[ri].id; commitInput = input; }
+					const std::optional<std::string> input = DrawRow(p, f, ri, docs, t.file);
+					if (input && commitId.empty()) { commitId = f.doc.entries[ri].id; commitInput = *input; }
 				}
 				ImGui::PopID();
 			};

@@ -1708,6 +1708,11 @@ namespace renderer
 			return kOrder[((i % 3) + a_dir + 3) % 3];
 		}
 		bool g_contentNavLastFrame = false;
+		// 2.5.0 (test round 3), for TakeBackPress: where the highlight was last frame, and whether the open page is one
+		// this menu draws itself (its own pages, and pages built from MCM / INI / TOML / FLICK data). A page drawn by
+		// another mod's own code may read B itself, so there B is left to it and to ImGui as before.
+		bool g_sideNavLastFrame = false;
+		bool g_openPageIsOurs = true;
 		bool g_focusMainTabs = false;
 		// 2.1.5 - THE HIGHLIGHT FOLLOWS A BUMPER (the owner, 2026-10-07: switching tabs with the shoulder buttons "you can see a
 		// slight change in color, but the focus doesn't actually change like it should, where the frame should follow the current
@@ -5393,6 +5398,8 @@ namespace renderer
 				if (entries.empty()) { ImGui::TextDisabled("%s", TR("AMF_NoneRegistered", "none registered")); }
 				else if (shown == 0) { ImGui::TextDisabled("%s", TR("AMF_NoMatch", "no mod matches that")); }
 				const bool sideHasNav = ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows);
+				g_sideNavLastFrame = sideHasNav;
+				g_openPageIsOurs = true;   // the framework's own panes; a mod's entry says below
 				ImGui::EndChild();
 				// 2.5.0 (polish B3): what the mod list costs, apart from the page beside it. The frame profile counts both as
 				// "menu", so whether the list was the larger part could only be guessed. One debug line per opening: the
@@ -5605,6 +5612,8 @@ namespace renderer
 				else if (sel == "mod" && !entries.empty())
 				{
 					const registry::Entry& entry = entries[selMod];
+					g_openPageIsOurs = !entry.pages.empty() &&
+									   std::all_of(entry.pages.begin(), entry.pages.end(), [](const registry::Page& a_p) { return a_p.converted; });
 					{
 						const std::string alias = personalization::GetAlias(entry.modName);
 						// 2.5.0 (test round 2, T25): the title shows the name the list shows - the source ending in the language
@@ -5729,6 +5738,20 @@ namespace renderer
 										   ImGui::IsKeyPressed(ImGuiKey_GamepadLStickLeft, false) ||
 										   ImGui::IsKeyPressed(ImGuiKey_LeftArrow, false);
 					const bool editing = ImGui::IsAnyItemActive();
+					// 2.5.0 (test round 3): THE HIGHLIGHT IS IN NEITHER PANE - after reopening the menu, or after anything else
+					// left it on the window itself - and the D-pad then did nothing until the mouse was clicked. A direction
+					// press now puts it on the open entry of the mod list. Not with a box, a dropdown or the on-screen keyboard
+					// up: those have the highlight for themselves.
+					if (!sideHasNav && !contentHasNav && !editing && GImGui && GImGui->OpenPopupStack.Size == 0 && !keyboard::Capturing() &&
+						(wantsLeft || wantsRight ||
+						 ImGui::IsKeyPressed(ImGuiKey_GamepadDpadUp, false) || ImGui::IsKeyPressed(ImGuiKey_GamepadDpadDown, false) ||
+						 ImGui::IsKeyPressed(ImGuiKey_GamepadLStickUp, false) || ImGui::IsKeyPressed(ImGuiKey_GamepadLStickDown, false) ||
+						 ImGui::IsKeyPressed(ImGuiKey_UpArrow, false) || ImGui::IsKeyPressed(ImGuiKey_DownArrow, false)))
+					{
+						g_focusPane = 1;
+						g_navToSelected = true;
+						logger::debug("nav: the highlight was in neither pane - a direction press put it on the open entry of the list");
+					}
 					// A driving tool's press is read here, alongside the real ones, so amf.menu
 					// op=nav proves THIS decision rather than a private path around it.
 					const int  driven   = g_navRequest.exchange(0);
@@ -6415,7 +6438,16 @@ namespace renderer
 					// Escape closes. The keypress was consumed input-side, so the game does
 					// not also react to the same stroke.
 					const bool escape = ImGui::IsKeyPressed(ImGuiKey_Escape, false);
-					if (escape && !escClosesPopup && !escLetsGo && !escForModal && !escEndsTyping)
+					// 2.5.0 (test round 3): Escape while the Controls page waits for a press cancels the wait, as its own prompt
+					// says ("Escape cancels"). On the controller side the wait takes pad presses only, so Escape went on to
+					// close the menu and the wait was still armed when the menu came back.
+					const bool escCancelsCapture = escape && bindings::IsCapturing();
+					if (escCancelsCapture)
+					{
+						bindings::CancelCapture();
+						logger::debug("input: Escape cancelled the Controls page's wait for a press; the menu stays open");
+					}
+					if (escape && !escCancelsCapture && !escClosesPopup && !escLetsGo && !escForModal && !escEndsTyping)
 					{
 						ToggleMainWindow();
 					}
@@ -6599,6 +6631,7 @@ namespace renderer
 		}
 		g_nested.store(false, std::memory_order_release);   // the hotkey opens our own window
 		g_windowVisible.store(now, std::memory_order_release);
+		if (!now) { bindings::CancelCapture(); }   // 2.5.0 (test round 3): a wait for a press does not outlive the menu
 
 		if (now)
 		{
@@ -6610,6 +6643,33 @@ namespace renderer
 		}
 
 		logger::info("Framework window {}", now ? "shown" : "hidden");
+	}
+
+	bool TakeBackPress()
+	{
+		const ImGuiContext* const g = GImGui;
+		if (!g || !IsMainWindowVisible()) { return false; }
+		// Something for ImGui's own cancel to do: a slider or field held, a dropdown, a box or a context menu open.
+		if (g->ActiveId != 0 || g->OpenPopupStack.Size > 0) { return false; }
+		if (!g_grabbedMod.empty()) { return false; }               // B puts a picked-up mod down (the side list reads it)
+		if (keyboard::Capturing() || bindings::IsCapturing()) { return false; }
+		if (consumer::AnyBlockingWindowOpen()) { return false; }   // a mod's own window has the input
+		if (g_contentNavLastFrame)
+		{
+			if (!g_openPageIsOurs) { return false; }                 // another mod draws this page and may read B itself
+			g_focusPane = 1;
+			g_navToSelected = true;   // land on the open entry, as Left out of a page does
+			logger::debug("nav: B in the page -> the mod list (the open entry)");
+			return true;
+		}
+		if (g_sideNavLastFrame)
+		{
+			// In the list there is nothing further back. The press is kept from ImGui so the highlight stays where it is.
+			// (Whether B here should close the menu is the owner's to decide - controller assessment, N2.)
+			logger::debug("nav: B in the mod list - kept, the highlight stays");
+			return true;
+		}
+		return false;
 	}
 
 	void* GetGameWindow()

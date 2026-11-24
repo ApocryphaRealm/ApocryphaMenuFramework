@@ -1564,7 +1564,12 @@ namespace input
 					// (a blocking consumer window) still gets it, as before.
 					const bool yIsOurs = key == ImGuiKey_GamepadFaceUp && renderer::IsMainWindowVisible() &&
 										 !consumer::AnyBlockingWindowOpen();
-					if (controllerMode && key != ImGuiKey_None && !yIsOurs && !TextFieldHasTheKeyboard(key))
+					// 2.5.0 (test round 3): B IS THE MENU'S "BACK" when nothing is held and nothing is open (renderer::TakeBackPress).
+					// Given to ImGui it was a "cancel" with nothing to cancel, which moved the highlight onto the page pane as
+					// one box and then off everything - the D-pad did nothing after it until the mouse was clicked.
+					const bool backIsOurs = controllerMode && key == ImGuiKey_GamepadFaceRight && record.down &&
+											!TextFieldHasTheKeyboard(key) && renderer::TakeBackPress();
+					if (controllerMode && key != ImGuiKey_None && !yIsOurs && !backIsOurs && !TextFieldHasTheKeyboard(key))
 					{
 						io.AddKeyEvent(key, record.down);
 					}

@@ -52,6 +52,11 @@ namespace renderer
 	// present thunk. Atomic: touched from the input thread, read on the render thread.
 	void ToggleMainWindow();
 	bool IsMainWindowVisible();
+
+	// 2.5.0 (test round 3): the pad's Back, pressed in the menu with nothing held and nothing open. Render thread (the
+	// input translation, before NewFrame). True = the press was the menu's own "back" and must not reach Dear ImGui,
+	// whose own cancel takes the highlight off the page onto the whole pane, and on the next press drops it altogether.
+	bool TakeBackPress();
 	// 2.3.0 (AMF_GetSideListRect): the side list's ("##side") screen rect as drawn in the latest frame; false while the
 	// menu is closed or the list was not drawn in this frame or the previous one. Render thread (a page's callback).
 	bool GetSideListRect(float& a_x0, float& a_y0, float& a_x1, float& a_y1);

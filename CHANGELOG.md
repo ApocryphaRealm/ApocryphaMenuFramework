@@ -51,6 +51,10 @@ numbers (A1, B1 ...) are that report's.
 ### Fixed
 - The first controller press after using the keyboard or mouse is no longer lost. The menu read which device was in use once per batch of input, so the press that switched to the controller was still treated as keyboard input and did nothing, in the menu and in every mod's window drawn by it
 - Text typed with the controller's on-screen keyboard is stored when you leave the field. On an INI page it stayed in the box and never reached the file; on MCM Helper and script pages the page was never told the field had been left. B lets go of the field as before, and Done on the keyboard now does too, so Done alone stores the text (test round 2)
+- B on a controller goes back: from a page this menu draws (its own pages and converted menus) to the mod list, landing on the open mod. In the list B is kept and the highlight stays. B used to reach the drawing library as a "cancel" with nothing to cancel, which moved the highlight onto the whole page pane and then off everything, after which the D-pad did nothing until the mouse was clicked (test round 3). On a page another mod draws itself B is left to that mod, as before
+- When the highlight is in neither pane (after reopening the menu, say), a direction press puts it on the open mod in the list
+- Escape while the Controls page waits for a controller button cancels the wait and leaves the menu open; it closed the menu and the wait was still armed when the menu came back. Closing the menu now ends a wait too
+- A text field on a TOML page that is emptied is written as empty; the file kept the old text
 - Escape in the rename box ends the typing first and closes the box on the next press; one press closed the box
 - The on-screen keyboard's second hint line no longer says "LT backspace" when LT is bound to something else
 - The page title shows the same name as the list: the source ending in the language picked, or none with the endings switched off
