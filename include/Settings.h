@@ -294,7 +294,10 @@ namespace settings
 	// next update - the download never ships User.ini (2.0.3). Since 2.0.5 it holds only what the player changed:
 	// a scalar key at the shipped value (or the compiled default, for a key the shipped file lacks) is left out, so
 	// the shipped file goes on deciding it. The list-shaped sections are written whole. Logs on failure, never throws.
-	void Save();
+	// 2.5.0 (polish A14 / A11): true when the player's file now holds the values. The file is written whole to a
+	// temporary file beside it and put in place in one step, under a lock (the render thread and the input thread both
+	// save), so a crash or a second save part-way cannot leave half a file.
+	bool Save();
 
 	// THE MENU KEY (2.0.5, HadToRegister's report). [Input] uToggleKey and Controls' "Open and close the menu" are
 	// one key; where its value came from on the last load or save, for the DevBench report and the log.

@@ -10,6 +10,7 @@
 #include "Strings.h"
 #include "Theme.h"
 #include "utils/Logger.h"
+#include "utils/ModalBox.h"
 
 #include <imgui.h>
 #include <nlohmann/json.hpp>
@@ -269,7 +270,8 @@ namespace mfmpages
 			}
 			if (!m.pending) { return; }
 			if (!ImGui::IsPopupOpen("##mfmmessage")) { ImGui::OpenPopup("##mfmmessage"); }
-			if (ImGui::BeginPopupModal("##mfmmessage", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar))
+			modalbox::CenterNext();   // 2.5.0: centred on the menu each time, never where an earlier one was left (utils/ModalBox.h)
+			if (ImGui::BeginPopupModal("##mfmmessage", nullptr, modalbox::kFlags))
 			{
 				const float font = ImGui::GetFontSize();
 				ImGui::PushStyleColor(ImGuiCol_Text, theme::HeaderTextColor());
@@ -286,7 +288,7 @@ namespace mfmpages
 				}
 				ImGui::EndChild();
 				ImGui::Spacing();
-				if (ImGui::Button(strings::TR("AMF_MfmOk", "OK"), ImVec2(font * 6.0f, 0.0f)))
+				if (ImGui::Button(strings::TR("AMF_MfmOk", "OK"), ImVec2(font * 6.0f, 0.0f)) || modalbox::CancelPressed())
 				{
 					std::scoped_lock l(g_lock);
 					g_modal.pending = false;

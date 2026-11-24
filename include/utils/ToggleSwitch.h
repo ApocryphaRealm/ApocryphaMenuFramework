@@ -48,7 +48,10 @@ namespace widgets
 		const ImU32 baseColor = pickedU32 ? static_cast<ImU32>(pickedU32) : (isOn ? IM_COL32(76, 175, 80, 255) : IM_COL32(191, 68, 68, 255));
 		ImVec4 track = ImGui::ColorConvertU32ToFloat4(baseColor);
 		if (hovered) { track = ImVec4(std::min(track.x + 0.06f, 1.0f), std::min(track.y + 0.06f, 1.0f), std::min(track.z + 0.06f, 1.0f), track.w); }
-		const ImU32 trackColor = ImGui::ColorConvertFloat4ToU32(track);
+		// 2.5.0 (polish A1): a greyed-out switch kept its bright pill because these colours are made by hand and so never
+		// took the style's alpha. GetColorU32 multiplies by it, and BeginDisabled lowers it - the switch now fades with
+		// its label, as every other disabled control does.
+		const ImU32 trackColor = ImGui::GetColorU32(track);
 
 		const float knobX = pos.x + radius + (isOn ? (width - height) : 0.0f);
 
@@ -65,7 +68,7 @@ namespace widgets
 			{
 				const std::uint32_t artTint = theme::RoleColor(theme::kRoleArt);
 				drawList->AddImage(reinterpret_cast<ImTextureID>(edge), pos, ImVec2(pos.x + width, pos.y + height),
-								   ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), artTint ? static_cast<ImU32>(artTint) : IM_COL32_WHITE);
+								   ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImGui::GetColorU32(artTint ? static_cast<ImU32>(artTint) : IM_COL32_WHITE));
 			}
 			else
 			{
@@ -88,13 +91,13 @@ namespace widgets
 			const float r = radius - 1.0f;
 			drawList->AddImage(reinterpret_cast<ImTextureID>(knob->main.srv), ImVec2(knobX - r, pos.y + radius - r),
 							   ImVec2(knobX + r, pos.y + radius + r), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f),
-							   knobTint ? static_cast<ImU32>(knobTint) : IM_COL32_WHITE);
+							   ImGui::GetColorU32(knobTint ? static_cast<ImU32>(knobTint) : IM_COL32_WHITE));
 		}
 		else
 		{
 			const bool picked = theme::RolePicked(theme::kRoleKnob);
 			drawList->AddCircleFilled(ImVec2(knobX, pos.y + radius), radius - 2.0f,
-									  picked ? static_cast<ImU32>(theme::RoleColor(theme::kRoleKnob)) : IM_COL32(240, 240, 240, 255), 32);
+									  ImGui::GetColorU32(picked ? static_cast<ImU32>(theme::RoleColor(theme::kRoleKnob)) : IM_COL32(240, 240, 240, 255)), 32);
 		}
 
 		ImGui::PopID();

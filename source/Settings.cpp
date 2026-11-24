@@ -13,6 +13,7 @@
 #include <charconv>
 #include <cmath>
 #include <limits>
+#include <mutex>
 #include <sstream>
 #include <unordered_set>
 #include <filesystem>
@@ -972,21 +973,22 @@ namespace settings
 		logger::info("settings: log level applied ({})", g_values.logLevel);
 	}
 
-	void Save()
+	bool Save()
 	{
+		// 2.5.0 (polish A14): one save at a time. The Controls page's capture saves from the input thread while the
+		// render thread saves on any change; two writers on one file could interleave. Nothing called from here saves.
+		static std::mutex s_saveLock;
+		const std::scoped_lock saving(s_saveLock);
+
 		// The menu key is the Controls page's binding; uToggleKey follows it, so a rebind there and the settings
 		// page's own Rebind (settings::SetToggleKey) both end up as the one value written below (2.0.5).
 		g_values.toggleKey = bindings::ToggleKeyboardCode();
 
 		std::error_code ec;
 		std::filesystem::create_directories(kUserDir, ec);
-		std::ofstream file(kUserPath, std::ios::trunc);
-
-		if (!file.is_open())
-		{
-			logger::error("settings: could not open {} for writing; the change will not survive this session", kUserPath);
-			return;
-		}
+		// The whole text first, then the file: until 2.5.0 the file was emptied and written in place, so a crash between
+		// the two left the player with no settings at all.
+		std::ostringstream file;
 
 		bool haveShipped = false;
 		Entries shipped;
@@ -1013,7 +1015,52 @@ namespace settings
 														 : ToggleKeySource::kUser),
 							 std::memory_order_release);
 
+		// Written beside the file and moved over it in one step. Where the move is refused (a file system that will not
+		// replace a file in use), the old way - writing in place - is the fallback, so a save is never lost to the safer path.
+		const std::string text = file.str();
+		const std::filesystem::path path = kUserPath;
+		std::filesystem::path tmp = path;
+		tmp += ".tmp";
+		bool written = false;
+		{
+			std::ofstream out(tmp, std::ios::trunc);
+			if (out.is_open())
+			{
+				out << text;
+				out.flush();
+				written = out.good();
+			}
+		}
+		if (written)
+		{
+			std::filesystem::rename(tmp, path, ec);
+			if (ec)
+			{
+				logger::warn("settings: {} could not replace {} ({}) - writing in place instead", tmp.string(), kUserPath, ec.message());
+				written = false;
+				std::error_code ignored;
+				std::filesystem::remove(tmp, ignored);
+			}
+		}
+		if (!written)
+		{
+			std::ofstream out(path, std::ios::trunc);
+			if (!out.is_open())
+			{
+				logger::error("settings: could not open {} for writing; the change will not survive this session", kUserPath);
+				return false;
+			}
+			out << text;
+			out.flush();
+			if (!out.good())
+			{
+				logger::error("settings: writing {} failed part-way; the change may not survive this session", kUserPath);
+				return false;
+			}
+		}
+
 		logger::debug("settings: saved to {} - {} value(s) of your own, {} at the shipped value left out", kUserPath, kept, dropped);
+		return true;
 	}
 
 	// ---- Menu-list layout presets (2.0.3) ------------------------------------------------------------------------------

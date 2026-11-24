@@ -3,6 +3,7 @@
 #include "GsoCore.h"
 #include "HelpBar.h"
 #include "IniCore.h"
+#include "Keyboard.h"
 #include "IniPages.h"
 #include "NavSide.h"
 #include "PageRefresh.h"
@@ -554,6 +555,8 @@ namespace tomlpages
 				ImGui::SetNextItemWidth(ImGui::GetFontSize() * 16.0f);
 				const bool tooLong = e.value.s.size() >= sizeof(r.text) - 1;
 				if (ImGui::InputText(label.c_str(), r.text, sizeof(r.text), tooLong ? ImGuiInputTextFlags_ReadOnly : 0)) { r.pending = true; }
+				// 2.5.0 (polish A6): known to the on-screen keyboard, so a controller player can type here
+				if (!tooLong) { keyboard::NoteTextField(ImGui::GetItemID()); }
 				break;
 			}
 			default:

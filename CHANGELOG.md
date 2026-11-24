@@ -21,6 +21,28 @@ Written as changes happen, not reconstructed afterwards (rule 61). Each version 
 >   through `rules-version.ps1 -Action bump`, both of which take their arithmetic from that same
 >   tool. A number typed by hand is wrong until the tool agrees.
 
+## 2.5.0 - 2026-11-23 - untested
+
+The polish pass (assessment of 2026-11-23, `4. plans\ApocryphaMenuFramework\amf-polish-assessment-2026-11-23.md`). Item
+numbers (A1, B1 ...) are that report's.
+
+### Fixed
+- A greyed-out switch now fades with its label. Its pill kept its full green or red, so a setting that was switched off by another one still looked live - on AMF's own pages and on converted pages alike (True Directional Movement's gated rows) (A1)
+- A mod's message box, the Mod Function Menu reply, the rename box and the FLICK crash notice open centred on the menu every time. They used to open wherever one had first appeared, which for many players was a corner of the screen; their place is no longer written to the layout file (A2)
+- A message box from a mod on an MCM Helper page shows the mod's own sentence. It was looked up in another mod's translations and came out as a tidied key ("Soulsy HUD Set Created Msg") (A3)
+- A message box left unanswered no longer follows you to the next mod's page or waits behind a closed menu: leaving its page or closing the menu answers it "no", as closing SkyUI's own menu does, so the mod's script stops waiting (A4)
+- The message box has the mod's name as its heading and equal-width buttons; Escape and B answer "no" where the mod offered one (B18)
+- Converted menus > Spacing can be reached with the bumpers and the mouse wheel. The tab row was declared one tab short (A5); a row declared with the wrong count now says so in the log
+- Text fields on INI and TOML pages open the on-screen keyboard for a controller player, as every other text field does (A6)
+- Escape while a text field is being typed in only ends the typing, and Escape or B with a box on screen goes to the box. Both used to close the whole menu (A7)
+- The open mod page is remembered by the mod's name, not its position, so removing an entry above it (a converted menu switched off) no longer opens the neighbouring mod (A8)
+- Sort above the mod list shows what it did under the row for a few seconds. The result was only in the button's mouse tooltip, so a controller player was told nothing (A9)
+- Help that described older versions: the theme help named two themes of eleven, the manual described the old A-Z / Z-A switches and the old window handling, the manual and troubleshooting named F1 whatever the menu key is bound to (they now name the bound key), and a line advised updating past 1.9.5 (removed). The repo README's heading no longer carries a version from 1.4.4 (A10)
+- "saved" beside Save menu list and Save controls says "not saved - see the log" when the write failed, and a save on one page no longer shows "saved" on the other (A11)
+- The on-screen keyboard's hint line names the buttons that space, backspace and shift are bound to, not fixed X, Y and RT (A12)
+- A number on an INI page is written once, when the box is let go. Each key typed used to write the file, so typing 150 wrote 1, then 15, then 150 (A13)
+- The player's own settings file (User.ini) is written to a temporary file and moved into place, one save at a time. It used to be emptied and rewritten in place from two threads, so a crash part-way could lose every setting (A14)
+
 ## 2.4.3 - 2026-11-23 - working
 
 ### Fixed

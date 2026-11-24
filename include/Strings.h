@@ -17,7 +17,9 @@
 // Consumer mods' pages are theirs to translate; this covers only what the framework draws.
 // ============================================================================================
 
+#include <initializer_list>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace strings
@@ -29,6 +31,22 @@ namespace strings
 	// The text for a key in the active language, UTF-8, or a_english when no file has it.
 	// Pointers stay valid until the next Load().
 	const char* TR(const char* a_key, const char* a_english);
+
+	// 2.5.0: a translated sentence with each "%s" filled in by hand, left to right. A translation is never handed to
+	// printf as the format: a file with one "%s" too many would read past the arguments. A "%s" with no value left for
+	// it stays as it is; a value with no "%s" left is dropped.
+	inline std::string Fill(std::string a_text, std::initializer_list<std::string_view> a_values)
+	{
+		std::size_t from = 0;
+		for (const std::string_view value : a_values)
+		{
+			const std::size_t at = a_text.find("%s", from);
+			if (at == std::string::npos) { break; }
+			a_text.replace(at, 2, value);
+			from = at + value.size();
+		}
+		return a_text;
+	}
 
 	// A COUNTED PHRASE IN THE RIGHT FORM (v4; the owner, 2026-10-12: the INI list said "1 tabs" and "1 settings").
 	// The plural form a count takes in the shown language, by CLDR's cardinal rules for the eleven languages AMF ships:

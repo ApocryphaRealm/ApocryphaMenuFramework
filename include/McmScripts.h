@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <functional>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -52,7 +53,11 @@ namespace mcmloader::scripts
 	void HostedCallBegin();      // any thread: one of AMF's calls into a config script has started
 	void HostedCallEnd();        // any thread: that call finished, or the VM dropped it
 	void EnsureRecorder();       // main thread: UI.InvokeStringA's recorder in place, whatever bLoadSkyUIScriptMenus says
-	void DrawPendingQuestion();  // render thread, inside the page being drawn: the question popup, when one waits
+	// render thread, inside the page being drawn: the question popup, when one waits. 2.5.0: a_owner names the MCM Helper
+	// mod whose page draws it (the box belongs to the page that first showed it), a_title is that mod's name for the
+	// box's heading and a_table its own translations, which the question's text is read with.
+	void DrawPendingQuestion(const std::string& a_owner, const std::string& a_title,
+							 const std::unordered_map<std::string, std::string>* a_table);
 
 	// For the SkyUI-list switch (McmLoader's SyncSkyUI, main thread): every config found in this game.
 	struct HideTarget

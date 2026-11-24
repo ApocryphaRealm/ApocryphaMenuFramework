@@ -42,6 +42,7 @@
 #include "WindowGeometryCore.h"
 #include "utils/ToggleSwitch.h"
 #include "utils/Logger.h"
+#include "utils/ModalBox.h"
 #include "utils/NullGuard.h"
 
 #include <array>
@@ -456,6 +457,10 @@ namespace renderer
 		std::string g_selTab  = "mods";            // kept for the DevBench state JSON; the SMF shape has one list
 		std::string g_selNode = "settings";        // side-list entry: settings|controls|help|mod
 		int g_selMod = 0;
+		// 2.5.0 (polish A8): the open mod's NAME, beside its position. The registry's positions move down when an entry
+		// above is removed (a converted menu switched off, a mod unregistering), and the position alone then opened the
+		// neighbouring mod. Empty: follow the position (a tool chose it by number, or nothing was chosen yet).
+		std::string g_selModName;
 		// The open mod's tab bar, mirrored under this same lock for the DevBench state JSON. The
 		// render loop owns the live values below; these are the copy the listener thread may read.
 		std::string g_selTabName;
@@ -872,14 +877,30 @@ namespace renderer
 			return g_onDemand;
 		}
 
-		// When Save was last pressed, so "saved" can appear beside the button for a few seconds
-		// rather than the press doing nothing visible. settings::Save() returns nothing, so there
-		// is no honest success/failure to report here - only that the write was asked for.
-		double g_menuListSavedAt = 0.0;
+		// When Save was last pressed, so its result can appear beside the button for a few seconds rather than the press
+		// doing nothing visible. 2.5.0 (polish A11): one clock per button - a save on the menu-list page no longer shows
+		// "saved" on the Controls page - and the word says what happened: settings::Save() now reports whether the file
+		// was written, so a failed write reads "not saved" instead of "saved".
+		struct SaveNote
+		{
+			double at = 0.0;
+			bool ok = true;
+		};
+		SaveNote g_menuListSaved, g_controlsSaved;
+		void DrawSaveNote(const SaveNote& a_note, bool a_fitLine)
+		{
+			if (a_note.at <= 0.0 || ImGui::GetTime() - a_note.at >= 3.0) { return; }
+			const char* text = a_note.ok ? TR("AMF_MenuListSaved", "saved") : TR("AMF_NotSavedSeeLog", "not saved - see the log");
+			if (a_fitLine) { tabfit::SameLineIfFits(ImGui::CalcTextSize(text).x); }
+			else { ImGui::SameLine(); }
+			if (a_note.ok) { ImGui::TextDisabled("%s", text); }
+			else { ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(theme::HelpTextColor()), "%s", text); }
+		}
 		// Layout presets (2.0.3): the name being typed, and the last action's result for a few seconds.
 		char g_presetName[64] = {};
 		char g_mcmImportFilter[64] = {};  // the settings page's filter over the MCM import list
 		std::string g_mcmSortStatus;      // the last MCM sort's one-line result under its buttons
+		double g_mcmSortShownUntil = 0.0; // 2.5.0: ImGui time until which the side list shows that result under its top row
 		char g_memProfileName[64] = {};   // Remembered MCM settings: the name typed for a new profile
 		std::string g_memStatus;          // Remembered MCM settings: why a button did nothing ("" when it ran)
 
@@ -1807,7 +1828,7 @@ namespace renderer
 		public:
 			// a_declare false (2.1.6): a row INSIDE a sub-tab (Converted menus > MCM) is a plain tab bar - the D-pad reaches it,
 			// and the bumpers keep walking the row it sits in.
-			SubTabs(const char* a_id, int a_count, int& a_current, bool a_declare = true) : _current(a_current)
+			SubTabs(const char* a_id, int a_count, int& a_current, bool a_declare = true) : _current(a_current), _id(a_id), _count(a_count)
 			{
 				if (a_declare) { _request = DeclareInnerTabs(a_count, a_current); }
 				_open = ImGui::BeginTabBar(a_id, ImGuiTabBarFlags_FittingPolicyScroll);
@@ -1826,6 +1847,18 @@ namespace renderer
 			~SubTabs()
 			{
 				if (_open) { ImGui::EndTabBar(); }
+				// 2.5.0 (polish A5): the count a row is declared with is what the bumpers and the wheel walk. "Converted menus"
+				// was declared with 7 and drew 8, so its last tab (Spacing) could not be reached with either. A row whose
+				// count is wrong now says so in the log, once, instead of quietly losing its last tab.
+				if (_open && _index != _count)
+				{
+					static bool s_logged = false;
+					if (!s_logged)
+					{
+						s_logged = true;
+						logger::error("tabs: sub-tab row {} is declared with {} tab(s) and drew {} - the bumpers and the wheel stop short", _id ? _id : "?", _count, _index);
+					}
+				}
 			}
 			SubTabs(const SubTabs&) = delete;
 			SubTabs& operator=(const SubTabs&) = delete;
@@ -1847,6 +1880,8 @@ namespace renderer
 
 		private:
 			int& _current;
+			const char* _id = nullptr;
+			int _count = 0;
 			int _request = -1;
 			int _index = 0;
 			bool _open = false;
@@ -2592,9 +2627,9 @@ namespace renderer
 					auto& v = settings::Get();
 					const bool anySet = v.nestedWindow.IsSet() || v.hotkeyWindow.IsSet();
 					ImGui::TextUnformatted(TR("AMF_WindowSize", "Window size"));
-					ImGui::TextWrapped("%s", TR("AMF_WindowSizeHelp", "The menu sits in the middle of the screen, from its key and from the "
-									   "System menu row alike, and opens wide enough to show the menu names and the page in full. Drag "
-									   "its edges to resize it; the size you choose is kept."));
+					ImGui::TextWrapped("%s", TR("AMF_WindowSizeHelp", "The first time, the menu opens in the middle of the screen, wide enough to "
+									   "show the menu names and the page in full - the same from its key and from the System menu row. "
+									   "The size you drag it to is kept."));
 					ImGui::BeginDisabled(!anySet);
 					if (ImGui::Button(icons::Label(icons::kReset, TR("AMF_ResetSize", "Reset to the default size")).c_str()))
 					{
@@ -2664,9 +2699,9 @@ namespace renderer
 						values.themeId = themes[currentIndex].id;
 						settings::Save();
 					}
-					ImGui::TextWrapped("%s", TR("AMF_ThemeHelp", "\"Skyrim\" is the knotwork look - the Nordic frame with silver and white "
-									   "lines. \"Untarnished\" is the framework's original identity: the same "
-									   "layout with clean lines and no frame art."));
+					ImGui::TextWrapped("%s", TR("AMF_ThemeHelp", "A theme sets the menu's frame art, shapes and colours together. \"Skyrim\" is the "
+									   "Nordic knotwork frame, \"Untarnished\" is plain lines with no art, and each of the other "
+									   "themes brings its own art."));
 		
 					ImGui::Spacing();
 
@@ -2872,7 +2907,9 @@ namespace renderer
 					static int s_mcmSub = 0;
 					// 2.1.6 (the owner, 2026-10-08: "I just want the tabs that apply to MCM menus to be within a tab called MCM"):
 					// one tab per menu system - MCM | FLICK | Prisma - and Spacing, which covers every converted page.
-					SubTabs sub("##mcmsub", 7, s_mcmSub);   // 2.1.9: MCM | FLICK | Prisma | INI | Spacing; next version: MFM after INI
+					// MCM | FLICK | Prisma | INI | MFM | TOML | ImGui menus | Spacing - eight. 2.5.0 (polish A5): it said 7, and
+					// Spacing was out of the bumpers' and the wheel's reach.
+					SubTabs sub("##mcmsub", 8, s_mcmSub);
 					if (sub.Tab(TR("AMF_SubMcm", "MCM")))
 					{
 					static int s_mcmInner = 0;
@@ -3720,14 +3757,9 @@ namespace renderer
 			// and the way out if a field was left mid-edit.
 			if (ImGui::Button(icons::Label(icons::kSave, TR("AMF_SaveMenuList", "Save menu list")).c_str()))
 			{
-				settings::Save();
-				g_menuListSavedAt = ImGui::GetTime();
+				g_menuListSaved = { ImGui::GetTime(), settings::Save() };
 			}
-			if (g_menuListSavedAt > 0.0 && ImGui::GetTime() - g_menuListSavedAt < 3.0)
-			{
-				ImGui::SameLine();
-				ImGui::TextDisabled("%s", TR("AMF_MenuListSaved", "saved"));
-			}
+			DrawSaveNote(g_menuListSaved, false);
 
 			// Layout presets (2.0.3, xLenax via the owner, 2026-10-02): the list's order, separators, favourites and
 			// renames saved under a name, to load back later or keep a second arrangement. Every preset can be deleted
@@ -4091,14 +4123,9 @@ namespace renderer
 			ImGui::Separator();
 			if (ImGui::Button(icons::Label(icons::kSave, TR("AMF_BindSave", "Save controls")).c_str()))
 			{
-				settings::Save();
-				g_menuListSavedAt = ImGui::GetTime();
+				g_controlsSaved = { ImGui::GetTime(), settings::Save() };
 			}
-			if (g_menuListSavedAt > 0.0 && ImGui::GetTime() - g_menuListSavedAt < 3.0)
-			{
-				tabfit::SameLineIfFits(ImGui::CalcTextSize(TR("AMF_MenuListSaved", "saved")).x);
-				ImGui::TextDisabled("%s", TR("AMF_MenuListSaved", "saved"));
-			}
+			DrawSaveNote(g_controlsSaved, true);
 			// 2.3.0 (U1): on its own line when it would run past the pane's edge (a big text size in a narrow window)
 			const std::string resetLabel = icons::Label(icons::kReset, TR("AMF_BindReset", "Reset every control"));
 			tabfit::SameLineIfFits(tabfit::ButtonWidth(resetLabel.c_str()));
@@ -4147,7 +4174,10 @@ namespace renderer
 			{
 				ImGui::Spacing();
 				ImGui::SeparatorText(icons::Label(icons::kDoor, TR("AMF_ManOpening", "Opening and closing the menu")).c_str());
-				para(TR("AMF_ManOpening1", "Press F1 to open the menu and F1 again to close it. Escape closes it too. The key is yours to change: Controls -> Open and close the menu -> Rebind, then press the key you want."));
+				// 2.5.0 (polish A10): the key named is the one the menu is bound to now, not a fixed "F1"
+				const std::string menuKey = bindings::KeyText(bindings::Action::kToggleMenu);
+				para(strings::Fill(TR("AMF_ManOpening1", "Press %s to open the menu and %s again to close it. Escape closes it too. The key is yours to change: Controls -> Open and close the menu -> Rebind, then press the key you want."),
+								   { menuKey, menuKey }).c_str());
 				para(TR("AMF_ManOpening2", "On a controller, Start closes the menu. There is no controller button that opens it - "
 						"open it from the journal instead: press Start, go to the System tab, and choose the "
 						"SKSE MENUS row. That row can be turned off under Settings if you would rather not have it."));
@@ -4188,8 +4218,8 @@ namespace renderer
 				para(TR("AMF_ManList1", "Every mod that registers a page appears under Mods, with the framework's own Settings, "
 						"Controls and this Help page above it. Type in the Search box to narrow the list - two or "
 						"three letters is usually enough - and it matches whatever name the entry is showing."));
-				bullet(TR("AMF_ManList2", "A-Z and Z-A beside Mods sort the list. Turn both off and the list goes back to the order "
-						  "you arranged it in."));
+				bullet(TR("AMF_ManList2", "The tick box beside Mods turns alphabetical order on, and the switch next to it picks A-Z or "
+						  "Z-A. Untick the box and the list goes back to the order you arranged it in."));
 				bullet(TR("AMF_ManList3", "Right-click a mod (or press Y on a controller) for its options: add it to your "
 						  "favourites, rename it, or move it to the top."));
 				bullet(TR("AMF_ManList4", "A favourite sits at the top of the list with a filled white box beside its name. "
@@ -4209,9 +4239,9 @@ namespace renderer
 				bullet(TR("AMF_ManLook3", "Text size scales on top of the automatic resolution scale, so the menu reads the same on "
 						  "a 1080p screen and a 4K one."));
 				bullet(TR("AMF_ManLook4", "Language: the framework's own text follows the game's language unless you force one."));
-				bullet(TR("AMF_ManLook5", "Window: move it by its title and resize it from any edge or corner, each with its own switch, "
-						  "and it remembers where you leave it, separately for each way of opening it. See-through lets the game show "
-						  "behind it. Settings -> Appearance -> Window."));
+				bullet(TR("AMF_ManLook5", "Window: Move style sets how it is dragged - anywhere, by its top edge, or not at all - and "
+						  "Resize style how its edges behave. It opens where you left it. See-through lets the game show behind it. "
+						  "Settings -> Appearance -> Window."));
 				bullet(TR("AMF_ManLook6", "Colours: your own colour for each part of the menu - background, borders, text, selection, "
 						  "sliders, switches, headings and help - kept for each theme. Settings -> Appearance -> Colours."));
 				bullet(TR("AMF_ManLook7", "Art: build your own look from every theme's art - five shapes of each part of the menu: "
@@ -4247,11 +4277,11 @@ namespace renderer
 				ImGui::Spacing();
 				bullet(TR("AMF_ManTrouble1", "A mod's page is missing: the mod has not registered one, or it needs a newer framework "
 						  "than the one installed. Its own log will say."));
-				bullet(TR("AMF_ManTrouble2", "The menu will not open: something else may have taken F1. Rebind it under Controls, or open the menu from the journal's System tab instead."));
+				bullet(strings::Fill(TR("AMF_ManTrouble2", "The menu will not open: something else may have taken %s. Rebind it under Controls, or open the menu from the journal's System tab instead."),
+									 { bindings::KeyText(bindings::Action::kToggleMenu) }).c_str());
 				bullet(TR("AMF_ManTrouble3", "A key does nothing inside the menu: another mod may be claiming it. The framework's log "
 						  "names the device and key whenever that happens."));
-				bullet(TR("AMF_ManTrouble5", "Text boxes take no typing: update the framework. Before 1.9.5 the engine was never asked "
-						  "to turn key presses into characters while the menu was up."));
+				// (2.5.0, polish A10: the line advising an update past 1.9.5 is gone - nobody on this version can need it)
 				ImGui::Spacing();
 				para(TR("AMF_ManTrouble4", "The log is at Documents/My Games/Skyrim Special Edition/SKSE/ApocryphaMenuFramework.log. uLogLevel under [Log] in the INI decides how much it writes: 0 writes the most."));
 				ImGui::EndTabItem();
@@ -4697,11 +4727,11 @@ namespace renderer
 				// window - a SIDE LIST of the registered mods (plus the framework's own entries) and a
 				// CONTENT pane for the selected mod's pages (tabs when it has several). No game-menu
 				// tabs, no Save/Load/Quit: the game's own menus are not this framework's job.
-				std::string sel;
+				std::string sel, selModName;
 				int selMod = 0;
 				{
 					std::scoped_lock l(g_selLock);
-					sel = g_selNode; selMod = g_selMod;
+					sel = g_selNode; selMod = g_selMod; selModName = g_selModName;
 					g_selExternal = false;
 				}
 				bool changed = false;  // set only by a real UI interaction this frame
@@ -4713,7 +4743,33 @@ namespace renderer
 				const bool navToSelected = g_navToSelected.exchange(false);
 				if (navToSelected) { g_frameNavConsumed = ImGui::GetFrameCount(); }
 				// (the registry snapshot is taken above, before the side pane's width is measured from it)
+				// 2.5.0 (polish A8): the open mod is the one with the remembered NAME, wherever the registry now holds it. Only
+				// when that name is gone (the open mod itself was removed) does the position decide, as before.
+				if (sel == "mod" && !selModName.empty() &&
+					(selMod < 0 || selMod >= static_cast<int>(entries.size()) || entries[selMod].modName != selModName))
+				{
+					const auto moved = std::find_if(entries.begin(), entries.end(), [&](const registry::Entry& a_e) { return a_e.modName == selModName; });
+					if (moved != entries.end())
+					{
+						const int now = static_cast<int>(moved - entries.begin());
+						logger::debug("selection: '{}' moved from position {} to {} in the registry - the open page follows it", selModName, selMod, now);
+						selMod = now;
+					}
+					else
+					{
+						logger::debug("selection: the open mod '{}' is no longer registered - position {} decides", selModName, selMod);
+						selModName.clear();
+					}
+					std::scoped_lock l(g_selLock);
+					g_selMod = selMod; g_selModName = selModName;
+				}
 				if (selMod >= static_cast<int>(entries.size())) { selMod = 0; }
+				// a position chosen by number (a tool, the first open) takes the name of what is there
+				if (sel == "mod" && selModName.empty() && selMod >= 0 && selMod < static_cast<int>(entries.size()))
+				{
+					std::scoped_lock l(g_selLock);
+					g_selModName = entries[selMod].modName;
+				}
 
 				// ---- SIDE LIST -------------------------------------------------------------------
 				// PANE CROSSING (author playtest 2026-09-01: "neither the d-pad the left or the right stick
@@ -4949,6 +5005,7 @@ namespace renderer
 						{
 							const auto r = mcmloader::SortIntoCategories(false);
 							g_mcmSortStatus = FormatSortStatus(r);
+							g_mcmSortShownUntil = ImGui::GetTime() + 8.0;   // 2.5.0 (polish A9): the result is shown under this row
 							logger::info("side list: Sort pressed - {}", g_mcmSortStatus);
 						}
 						if (ImGui::IsItemHovered())
@@ -4958,6 +5015,16 @@ namespace renderer
 						}
 					}
 					}
+				}
+				// 2.5.0 (polish A9): what Sort just did, under the row for a few seconds. Until now it was only in the button's
+				// mouse tooltip, so a controller player pressed Sort and was told nothing.
+				if (!g_mcmSortStatus.empty() && ImGui::GetTime() < g_mcmSortShownUntil)
+				{
+					ImGui::PushStyleColor(ImGuiCol_Text, theme::HelpTextColor());
+					ImGui::PushTextWrapPos(0.0f);
+					ImGui::TextUnformatted(g_mcmSortStatus.c_str());
+					ImGui::PopTextWrapPos();
+					ImGui::PopStyleColor();
 				}
 
 				// Search the list by name. Once a load order registers thirty or more pages the
@@ -5315,7 +5382,8 @@ namespace renderer
 					g_renameOpenPending = false;
 				}
 				// No title bar (2.1.1): the id has no visible title, so the bar was an empty strip above the box.
-				if (ImGui::BeginPopupModal("##amf_rename", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar))
+				modalbox::CenterNext();   // 2.5.0: centred on the menu each time (utils/ModalBox.h)
+				if (ImGui::BeginPopupModal("##amf_rename", nullptr, modalbox::kFlags))
 				{
 					const bool renamingSeparator = personalization::IsSeparator(g_renameTarget);
 					ImGui::TextUnformatted(renamingSeparator ? TR("AMF_SeparatorNameTitle", "Name this separator")
@@ -5334,7 +5402,11 @@ namespace renderer
 					ImGui::Spacing();
 					const bool ok = ImGui::Button(icons::Label(icons::kCheck, TR("AMF_RenameOk", "Rename")).c_str()) || entered;
 					ImGui::SameLine();
-					const bool cancel = ImGui::Button(icons::Label(icons::kClear, TR("AMF_RenameCancel", "Cancel")).c_str());
+					// 2.5.0 (polish A7): Escape and B cancel the box - but not while its field is being typed in or the on-screen
+					// keyboard is up, where the same press only ends the typing
+					const bool typing = ImGui::IsAnyItemActive() || keyboard::Capturing();
+					const bool cancel = ImGui::Button(icons::Label(icons::kClear, TR("AMF_RenameCancel", "Cancel")).c_str()) ||
+										(!entered && modalbox::CancelPressed(typing));
 					if (ok && !(renamingSeparator && g_renameBuffer[0] == '\0'))   // a separator keeps a name
 					{
 						personalization::SetAlias(g_renameTarget, g_renameBuffer);
@@ -5365,7 +5437,8 @@ namespace renderer
 						}
 						s_crashOpened = true;
 					}
-					if (ImGui::BeginPopupModal("##amf_flickcrash", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar))
+					modalbox::CenterNext();   // 2.5.0: centred on the menu (utils/ModalBox.h)
+					if (ImGui::BeginPopupModal("##amf_flickcrash", nullptr, modalbox::kFlags))
 					{
 						ImGui::TextUnformatted(TR("AMF_FlickCrashTitle", "The game crashed inside FLICK last time"));
 						ImGui::Spacing();
@@ -5393,7 +5466,7 @@ namespace renderer
 							ImGui::PopID();
 							ImGui::Spacing();
 						}
-						if (ImGui::Button(icons::Label(icons::kClear, TR("AMF_FlickCrashLater", "Not now")).c_str()))
+						if (ImGui::Button(icons::Label(icons::kClear, TR("AMF_FlickCrashLater", "Not now")).c_str()) || modalbox::CancelPressed())
 						{
 							logger::info("flick: crash notice - closed without a change");
 							close = true;
@@ -5588,6 +5661,7 @@ namespace renderer
 				{
 					std::scoped_lock l(g_selLock);
 					g_selNode = sel; g_selMod = selMod;
+					g_selModName = (sel == "mod" && selMod >= 0 && selMod < static_cast<int>(entries.size())) ? entries[selMod].modName : std::string();
 				}
 				// Right out of the list, left back into it. Only when nothing is being edited, so
 				// pushing left inside an ACTIVATED slider adjusts the value instead of leaving the pane; a slider that is only
@@ -6212,6 +6286,9 @@ namespace renderer
 				const bool escClosesPopup = navside::EscapeClosesAPopup();
 				// 2.4.0: and whether a slider or drag is held by the keys: Escape, like B, only lets go of it on that press
 				const bool escLetsGo = navside::SliderHeldByKeys();
+				// 2.5.0 (polish A7): nor does Escape close the menu from under a modal box, or while a text field is typed in
+				const bool escForModal = navside::EscapeIsForAModal();
+				const bool escEndsTyping = navside::TextBeingTyped();
 				ImGui::NewFrame();
 				// 2.3.0 (combined run 3266): the first Enter / Space / A after a mouse click on a slider or drag activates it - ImGui
 				// spent that press on showing the hidden highlight (NavSide.h ActivateAfterClick)
@@ -6270,7 +6347,7 @@ namespace renderer
 					// Escape closes. The keypress was consumed input-side, so the game does
 					// not also react to the same stroke.
 					const bool escape = ImGui::IsKeyPressed(ImGuiKey_Escape, false);
-					if (escape && !escClosesPopup && !escLetsGo)
+					if (escape && !escClosesPopup && !escLetsGo && !escForModal && !escEndsTyping)
 					{
 						ToggleMainWindow();
 					}
@@ -6282,6 +6359,8 @@ namespace renderer
 							if (GImGui && GImGui->ActiveId != 0) { ImGui::ClearActiveID(); }
 							logger::debug("input: Escape let go of a slider/drag; the menu stays open");
 						}
+						else if (escape && escForModal) { logger::debug("input: Escape went to the modal box on screen; the menu stays open"); }
+						else if (escape && escEndsTyping) { logger::debug("input: Escape ended typing in a text field; the menu stays open"); }
 						else if (escape) { logger::debug("input: Escape closed an open dropdown / popup; the menu stays open"); }
 						DrawFrameworkWindow();
 					}
@@ -6599,6 +6678,7 @@ namespace renderer
 		{
 			g_selNode = "mod";
 			try { g_selMod = std::stoi(a_node.substr(4)); } catch (...) {}
+			g_selModName.clear();   // 2.5.0: chosen by position - the draw takes the name of what is there
 			return;
 		}
 		std::string n = a_node;

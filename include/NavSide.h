@@ -352,6 +352,26 @@ namespace navside
 		return top && (top->Flags & ImGuiWindowFlags_Modal) == 0;
 	}
 
+	// 2.5.0 (polish A7). Both read BEFORE ImGui::NewFrame, like EscapeClosesAPopup above, and both mean "this Escape is
+	// not for the menu":
+	//  - a MODAL box is up (a mod's question, the rename box): Escape belongs to the box, which cancels where it can
+	//    (utils/ModalBox.h). Until now that press closed the whole menu from under the box;
+	//  - a text field is being typed in (Search, a preset's name, a number typed into a slider): ImGui's InputText ends
+	//    the typing on Escape by itself. Closing the menu on that same press threw the player out of it for cancelling
+	//    a word. The next Escape, with nothing being typed, closes the menu as before.
+	inline bool EscapeIsForAModal()
+	{
+		const ImGuiContext* const g = GImGui;
+		if (!g || g->OpenPopupStack.Size == 0) return false;
+		const ImGuiWindow* const top = g->OpenPopupStack.back().Window;
+		return top && (top->Flags & ImGuiWindowFlags_Modal) != 0;
+	}
+	inline bool TextBeingTyped()
+	{
+		const ImGuiContext* const g = GImGui;
+		return g && g->ActiveId != 0 && g->InputTextState.ID == g->ActiveId;
+	}
+
 	// This frame, after the page is drawn: ImGui made a move request in a_dir and a widget cancelled it (it used the press) -
 	// a page stepping its own value, or ImGui's own tree node closing on Left. A request FORWARDED to the next frame (a
 	// wrap-around) also passes through a cancel, but it is still moving, so it does not count.

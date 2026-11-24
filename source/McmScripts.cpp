@@ -14,6 +14,7 @@
 #include "Strings.h"
 #include "Theme.h"
 #include "utils/Logger.h"
+#include "utils/ModalBox.h"
 #include "utils/NullGuard.h"
 #include "utils/ToggleSwitch.h"
 
@@ -355,7 +356,12 @@ namespace mcmloader::scripts
 			bool pending = false;
 			std::string text, accept, cancel;
 			int mod = -1;
+			unsigned seq = 0;   // 2.5.0: one more per question recorded, so the drawer knows a new one from the one it showed
 		} g_message;
+		// render thread (2.5.0, polish A4): which page first drew the question now pending, and the frame it was last drawn
+		unsigned g_questionSeq = 0;
+		std::string g_questionOwner;
+		int g_questionDrawFrame = -10;
 
 		// Set while the memory drives a menu (a backup reading pages, a restore writing them): those are not the player's
 		// changes, so nothing is recorded, and no player is there to answer a question.
@@ -404,6 +410,7 @@ namespace mcmloader::scripts
 				else
 				{
 					g_message.pending = true;
+					++g_message.seq;
 					g_message.text = strings.size() > 0 ? strings[0] : std::string();
 					g_message.accept = strings.size() > 1 ? strings[1] : std::string("$Accept");
 					g_message.cancel = strings.size() > 2 ? strings[2] : std::string();
@@ -1455,7 +1462,17 @@ namespace mcmloader::scripts
 			ImGui::PopID();
 		}
 
-		void DrawQuestion()
+		// The question box. a_owner: the page asking to draw it ("script|3", "helper|Soulsy HUD"); a_title: that mod's
+		// name, shown as the box's heading; a_table: that mod's own translations (null: the script mod being drawn).
+		//
+		// 2.5.0 (polish A2-A4, B18). Three faults of the box as 2.4.3 left it:
+		//  - it opened wherever the first one ever had (utils/ModalBox.h) - now centred on the menu each time;
+		//  - on an MCM Helper page its text was looked up in the table of the last SCRIPT mod drawn, so Soulsy HUD's
+		//    "$SoulsyHUD_SetCreatedMsg" showed as a tidied key - the page now hands over its own mod's table;
+		//  - left unanswered it was drawn by whichever MCM page came next, under another mod's name, while the first
+		//    mod's script kept waiting - the page that first drew it owns it, and a different page (or no page: the menu
+		//    closed, Frame below) answers it "no", as closing SkyUI's own menu does.
+		void DrawQuestion(const std::string& a_owner, const std::string& a_title, const Table* a_table)
 		{
 			Message m;
 			{
@@ -1463,22 +1480,47 @@ namespace mcmloader::scripts
 				m = g_message;
 			}
 			if (!m.pending) { return; }
-			if (!ImGui::IsPopupOpen("##skyuiquestion")) { ImGui::OpenPopup("##skyuiquestion"); }
-			if (ImGui::BeginPopupModal("##skyuiquestion", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar))
+			if (m.seq != g_questionSeq)
 			{
+				g_questionSeq = m.seq;
+				g_questionOwner = a_owner;
+			}
+			else if (g_questionOwner != a_owner)
+			{
+				logger::info("MCM scripts: a question from \"{}\" was still open when \"{}\" was drawn - answered no", g_questionOwner, a_owner);
+				Answer(false);
+				return;
+			}
+			g_questionDrawFrame = ImGui::GetFrameCount();
+			const Table* const table = a_table ? a_table : g_drawTable;
+			if (!ImGui::IsPopupOpen("##skyuiquestion")) { ImGui::OpenPopup("##skyuiquestion"); }
+			modalbox::CenterNext();
+			if (ImGui::BeginPopupModal("##skyuiquestion", nullptr, modalbox::kFlags))
+			{
+				if (!a_title.empty())
+				{
+					ImGui::PushStyleColor(ImGuiCol_Text, theme::HeaderTextColor());
+					ImGui::TextUnformatted(a_title.c_str());
+					ImGui::PopStyleColor();
+					ImGui::Separator();
+				}
 				ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30.0f);
-				ImGui::TextUnformatted(Tr(m.text).c_str());
+				ImGui::TextUnformatted(Tr(table, m.text).c_str());
 				ImGui::PopTextWrapPos();
 				ImGui::Spacing();
-				if (ImGui::Button(Tr(m.accept.empty() ? std::string("$Accept") : m.accept).c_str()))
+				const std::string accept = Tr(table, m.accept.empty() ? std::string("$Accept") : m.accept);
+				const std::string cancel = m.cancel.empty() ? std::string() : Tr(table, m.cancel);
+				const float width = modalbox::ButtonWidth({ accept.c_str(), cancel.empty() ? nullptr : cancel.c_str() });
+				if (ImGui::Button((accept + "##yes").c_str(), ImVec2(width, 0.0f)))
 				{
 					Answer(true);
 					ImGui::CloseCurrentPopup();
 				}
-				if (!m.cancel.empty())
+				if (!cancel.empty())
 				{
 					ImGui::SameLine();
-					if (ImGui::Button(Tr(m.cancel).c_str()))
+					// Escape and B say no, where the mod offered a no
+					if (ImGui::Button((cancel + "##no").c_str(), ImVec2(width, 0.0f)) || modalbox::CancelPressed())
 					{
 						Answer(false);
 						ImGui::CloseCurrentPopup();
@@ -1486,6 +1528,17 @@ namespace mcmloader::scripts
 				}
 				ImGui::EndPopup();
 			}
+		}
+
+		// The question on a script mod's own page: owned by that mod, under its name, read with its table.
+		void DrawQuestion(int a_mod)
+		{
+			std::string title;
+			{
+				std::scoped_lock lock(g_mutex);
+				if (a_mod >= 0 && a_mod < static_cast<int>(g_mods.size())) { title = g_mods[a_mod]->entryName.empty() ? g_mods[a_mod]->modName : g_mods[a_mod]->entryName; }
+			}
+			DrawQuestion("script|" + std::to_string(a_mod), title, nullptr);
 		}
 
 		void DrawTab(int a_mod, const std::string& a_rawPage)
@@ -1549,7 +1602,7 @@ namespace mcmloader::scripts
 			if (s.page != page)
 			{
 				PageNote(icons::kLoading, TR("AMF_McmScriptLoading", "Loading..."));
-				DrawQuestion();
+				DrawQuestion(a_mod);
 				return;
 			}
 
@@ -1614,7 +1667,7 @@ namespace mcmloader::scripts
 					}
 				}
 			}
-			DrawQuestion();
+			DrawQuestion(a_mod);
 		}
 
 		// ------------------------------------------------------------------------------------------- discovery
@@ -2034,6 +2087,22 @@ namespace mcmloader::scripts
 			g_menuAsked = -1;
 			g_capturing.reset();
 		}
+		// 2.5.0 (polish A4): a question that WAS on screen and whose page is no longer drawn - the player closed the menu or
+		// went to a page that is not an MCM page - is answered "no", so the mod's script stops waiting. One never shown
+		// yet (asked while a tool drives the menu, or a frame before its page draws) is left for its page or the tool.
+		bool pending = false;
+		unsigned seq = 0;
+		{
+			std::scoped_lock lock(g_captureMutex);
+			pending = g_message.pending;
+			seq = g_message.seq;
+		}
+		if (pending && seq == g_questionSeq && !g_questionOwner.empty() && g_questionDrawFrame < ImGui::GetFrameCount() - 1 &&
+			!g_openedByTool.load() && !g_memoryDriving.load())
+		{
+			logger::info("MCM scripts: the page showing the question of '{}' is no longer drawn - answered no", g_questionOwner);
+			Answer(false);
+		}
 	}
 
 	void SetEnabled(bool a_on)
@@ -2103,7 +2172,10 @@ namespace mcmloader::scripts
 	void HostedCallBegin() { g_callsInFlight.fetch_add(1); }
 	void HostedCallEnd() { g_callsInFlight.fetch_sub(1); }
 	void EnsureRecorder() { InstallRecorder(); }
-	void DrawPendingQuestion() { DrawQuestion(); }
+	void DrawPendingQuestion(const std::string& a_owner, const std::string& a_title, const Table* a_table)
+	{
+		DrawQuestion("helper|" + a_owner, a_title, a_table);
+	}
 
 	int Count()
 	{

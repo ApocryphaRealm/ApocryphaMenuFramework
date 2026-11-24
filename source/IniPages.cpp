@@ -2,6 +2,7 @@
 
 #include "HelpBar.h"
 #include "IniCore.h"
+#include "Keyboard.h"
 #include "NavSide.h"
 #include "PageRefresh.h"
 #include "Registry.h"
@@ -64,6 +65,11 @@ namespace inipages
 			bool readOnly = false;    // a text too long for the edit box is shown, never written back cut short
 			int decimals = 0;
 			char text[256]{};         // kText's edit buffer
+			// 2.5.0 (polish A13): a number being changed, held here until the control is let go. Until now every key typed
+			// wrote the file - "150" was three writes, and the mod read "1", then "15", then "150".
+			bool pending = false;
+			int pendingInt = 0;
+			double pendingFloat = 0.0;
 		};
 
 		struct Section
@@ -709,24 +715,35 @@ namespace inipages
 				}
 				case Kind::kInt:
 				{
-					int v = std::atoi(s.value.c_str());
+					int v = s.pending ? s.pendingInt : std::atoi(s.value.c_str());
 					ImGui::SetNextItemWidth(ImGui::GetFontSize() * 9.0f);
-					if (ImGui::InputInt(label.c_str(), &v, 1, 10)) { SetValue(mod, *sec, s, std::to_string(v), error); }
+					if (ImGui::InputInt(label.c_str(), &v, 1, 10)) { s.pendingInt = v; s.pending = true; }
+					// written once, when the box and its - / + buttons are let go (the TOML pages' rule, TomlPages.cpp)
+					if (s.pending && !ImGui::IsItemActive())
+					{
+						s.pending = false;
+						if (const std::string text = std::to_string(s.pendingInt); text != s.value) { SetValue(mod, *sec, s, text, error); }
+					}
 					navside::NoteEntryField();
 					break;
 				}
 				case Kind::kFloat:
 				{
 					// a number box stepping ONE unit of the last digit the file shows (rule 68): "0.75" steps 0.01
-					double v = std::atof(s.value.c_str());
+					double v = s.pending ? s.pendingFloat : std::atof(s.value.c_str());
 					const double step = std::pow(10.0, -s.decimals);
 					char fmt[16];
 					std::snprintf(fmt, sizeof(fmt), "%%.%df", s.decimals);
 					ImGui::SetNextItemWidth(ImGui::GetFontSize() * 9.0f);
 					if (ImGui::InputDouble(label.c_str(), &v, step, step * 10.0, fmt))
 					{
-						v = std::round(v / step) * step;
-						SetValue(mod, *sec, s, FormatFloat(v, s.decimals), error);
+						s.pendingFloat = std::round(v / step) * step;
+						s.pending = true;
+					}
+					if (s.pending && !ImGui::IsItemActive())   // 2.5.0 (polish A13): once, when let go - see kInt above
+					{
+						s.pending = false;
+						if (const std::string text = FormatFloat(s.pendingFloat, s.decimals); text != s.value) { SetValue(mod, *sec, s, text, error); }
 					}
 					navside::NoteEntryField();
 					break;
@@ -750,6 +767,9 @@ namespace inipages
 				{
 					ImGui::SetNextItemWidth(ImGui::GetFontSize() * 14.0f);
 					ImGui::InputText(label.c_str(), s.text, sizeof(s.text), s.readOnly ? ImGuiInputTextFlags_ReadOnly : 0);
+					// 2.5.0 (polish A6): known to the on-screen keyboard, so a controller player can type here - every other
+					// text field of the menu already was
+					if (!s.readOnly) { keyboard::NoteTextField(ImGui::GetItemID()); }
 					if (!s.readOnly && ImGui::IsItemDeactivatedAfterEdit() && s.value != s.text) { SetValue(mod, *sec, s, s.text, error); }
 					break;
 				}

@@ -1,4 +1,4 @@
-# Apocrypha Menu Framework 1.4.4
+# Apocrypha Menu Framework
 
 An original SKSE menu framework that embeds Dear ImGui and exposes an API compatible with the
 public consumer header of SKSE Menu Framework - so mods written for that API register with this

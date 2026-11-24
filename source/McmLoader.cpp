@@ -2471,7 +2471,9 @@ namespace mcmloader
 				ImGui::PopID();
 				if (!active) { ImGui::EndDisabled(); }
 			}
-			scripts::DrawPendingQuestion();   // 2.4.3: a ShowMessage from this mod's script waits for the player's answer here
+			// 2.4.3: a ShowMessage from this mod's script waits for the player's answer here. 2.5.0: under this mod's name,
+			// read with this mod's own translations, and owned by this mod's pages (McmScripts.cpp DrawQuestion)
+			scripts::DrawPendingQuestion(mod->modName, mod->entryName.empty() ? mod->modName : mod->entryName, &mod->translations);
 		}
 
 		// ------------------------------------------------------------------------------------------- loading

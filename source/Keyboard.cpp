@@ -777,16 +777,22 @@ namespace keyboard
 		// The hint lines WRAP at the keyboard's width (batch 12: cut off at the right in en, de and ko - "X s..."): the window
 		// is as wide as its widest key row, and a hint longer than that ran past its edge.
 		ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+		// 2.5.0 (polish A12): space, backspace and shift can be rebound on the Controls page since 2.4.2, and the hint went on
+		// naming X, Y and RT. The names shown are now the buttons those three are bound to.
+		const std::string spacePad = bindings::PadText(bindings::Action::kOskSpace);
+		const std::string backPad = bindings::PadText(bindings::Action::kOskBackspace);
+		const std::string shiftPad = bindings::PadText(bindings::Action::kOskShift);
 		if (g_kind == TargetKind::kGame)
 		{
-			ImGui::TextWrapped("%s", TR("AMF_OskHintGame", "D-pad moves, A types, B goes back to the box (twice: done), X space, Y backspace, Start done"));
+			ImGui::TextWrapped("%s", strings::Fill(TR("AMF_OskHintGame", "D-pad moves, A types, B goes back to the box (twice: done), %s space, %s backspace, Start done"),
+												   { spacePad, backPad }).c_str());
 		}
 		else
 		{
-			ImGui::TextWrapped("%s", TR("AMF_OskHint", "D-pad moves, A types, B goes back to the box, X space, Y backspace"));
+			ImGui::TextWrapped("%s", strings::Fill(TR("AMF_OskHint", "D-pad moves, A types, B goes back to the box, %s space, %s backspace"), { spacePad, backPad }).c_str());
 		}
-		ImGui::TextWrapped("%s  |  %s: %s", TR("AMF_OskHintMore", "LT backspace, RT shift, LB / RB layout"), TR("AMF_OskLayout", "Layout"),
-						   CurrentLayout().label);
+		ImGui::TextWrapped("%s  |  %s: %s", strings::Fill(TR("AMF_OskHintMore", "LT backspace, %s shift, LB / RB layout"), { shiftPad }).c_str(),
+						   TR("AMF_OskLayout", "Layout"), CurrentLayout().label);
 		if (ShowCjkNote())
 		{
 			ImGui::TextWrapped("%s", TR("AMF_OskCjkLatin", "The game's own font has no Korean, Japanese or Chinese letters, so its text boxes "
